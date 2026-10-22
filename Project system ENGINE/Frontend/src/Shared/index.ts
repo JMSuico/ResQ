@@ -17,3 +17,5 @@ export * from './AccidentReportModal';
 export * from './SatelliteCommandMap';
 export * from './ResQTrackSvgSprite';
 export * from './Charts';
+export * from './TableCardToggle';
+export * from './ToggleDrawerSidebarMenu';

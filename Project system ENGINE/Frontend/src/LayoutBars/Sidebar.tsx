@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import { useDrawerSidebar, ToggleDrawerSidebarMenu } from '@/Shared/ToggleDrawerSidebarMenu';
 
 export interface SidebarProps {
   userRole?: string;
@@ -21,6 +22,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   userRole = 'LDRRMO_Admin',
   userUnit = 'LDRRMO'
 }) => {
+  const { isCollapsed } = useDrawerSidebar();
   const normRole = (userRole || '').toLowerCase();
   const normUnit = (userUnit || '').toUpperCase();
 
@@ -54,9 +56,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
     // 3.1 Super Admin (LDRRMO) — Port 5174
     menuItems = [
-      { to: '/admin/dashboard', label: 'Tactical Map', icon: '#i-grid' },
-      { to: '/admin/incidents', label: 'Incident Triage', icon: '#i-alert' },
+      { to: '/admin/dashboard', label: 'Dashboard', icon: '#i-grid' },
+      { to: '/admin/strategic-map', label: 'Strategic Map', icon: '#i-pin' },
+      { to: '/admin/incidents', label: 'Incident Operations & Triage Dispatch', icon: '#i-alert' },
       { to: '/admin/roster', label: 'Agency Fleet Roster', icon: '#i-people' },
+      { to: '/admin/analytics', label: 'Analytics & Reports', icon: '#i-clock' },
       { to: '/admin/users', label: 'User Governance', icon: '#i-shield-check' },
       { to: '/admin/alerts', label: 'Emergency Broadcasts', icon: '#i-bell' },
       { to: '/admin/settings', label: 'System Settings', icon: '#i-sliders' }
@@ -153,18 +157,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }
 
   return (
-    <aside className="sidebar" aria-label="Role Navigation Sidebar">
-      {/* Agency Identity Emblem */}
-      <div className="px-4 pt-4 pb-3 mb-2 border-b border-white/10">
-        <div
-          className="rounded-lg p-2.5 flex flex-col gap-1 border shadow-sm transition-all"
-          style={{
-            backgroundColor: `${agencyInfo.color}15`,
-            borderColor: `${agencyInfo.border}50`,
-            boxShadow: `0 0 12px ${agencyInfo.glow}`
-          }}
-        >
-          <div className="flex items-center justify-between">
+    <aside
+      className={`sidebar transition-all duration-200 select-none ${isCollapsed ? 'is-collapsed w-[72px] min-w-[72px]' : 'w-[250px] min-w-[250px]'}`}
+      style={{
+        width: isCollapsed ? '72px' : 'var(--side-w, 250px)',
+        minWidth: isCollapsed ? '72px' : 'var(--side-w, 250px)'
+      }}
+      aria-label="Role Navigation Sidebar"
+    >
+      {/* Agency Identity Emblem + Drawer Toggle Button */}
+      <div className={`pt-3 pb-2 mb-2 border-b border-white/10 ${isCollapsed ? 'px-2 flex flex-col items-center' : 'px-4'}`}>
+        <div className="flex items-center justify-between w-full mb-1">
+          {!isCollapsed ? (
             <span
               className="text-[10px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded"
               style={{
@@ -174,26 +178,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               {agencyInfo.badge}
             </span>
-            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: agencyInfo.border }} />
-          </div>
-          <span className="text-xs font-bold text-white tracking-tight truncate">{agencyInfo.name}</span>
-          <span className="text-[9px] font-mono text-slate-400 uppercase tracking-widest">{agencyInfo.category}</span>
+          ) : (
+            <span
+              className="w-2 h-2 rounded-full animate-pulse mx-auto mb-1"
+              style={{ backgroundColor: agencyInfo.border }}
+              title={agencyInfo.badge}
+            />
+          )}
+          <ToggleDrawerSidebarMenu />
         </div>
+
+        {!isCollapsed && (
+          <div
+            className="rounded-lg p-2 flex flex-col gap-0.5 border shadow-sm transition-all"
+            style={{
+              backgroundColor: `${agencyInfo.color}15`,
+              borderColor: `${agencyInfo.border}50`,
+              boxShadow: `0 0 12px ${agencyInfo.glow}`
+            }}
+          >
+            <span className="text-xs font-bold text-white tracking-tight truncate">{agencyInfo.name}</span>
+            <span className="text-[9px] font-mono text-slate-400 uppercase tracking-widest">{agencyInfo.category}</span>
+          </div>
+        )}
       </div>
 
-      <nav className="nav" aria-label="Primary Role Navigation">
+      <nav className="nav flex flex-col gap-1 px-1" aria-label="Primary Role Navigation">
         {menuItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
-            className={({ isActive }) => `nav__item ${isActive ? 'is-active' : ''}`}
+            className={({ isActive }) =>
+              `nav__item flex items-center transition-all rounded-md ${
+                isCollapsed ? 'justify-center px-0 h-10 w-full' : 'gap-3 px-3 h-10'
+              } ${isActive ? 'is-active' : ''}`
+            }
             title={item.label}
           >
-            <svg className="nav__icon" aria-hidden="true">
+            <svg className="nav__icon flex-shrink-0" aria-hidden="true">
               <use href={item.icon} />
             </svg>
-            <span className="nav__label">{item.label}</span>
-            {item.badge && <span className="nav__badge">{item.badge}</span>}
+            {!isCollapsed && (
+              <>
+                <span className="nav__label truncate flex-1">{item.label}</span>
+                {item.badge && <span className="nav__badge">{item.badge}</span>}
+              </>
+            )}
           </NavLink>
         ))}
       </nav>

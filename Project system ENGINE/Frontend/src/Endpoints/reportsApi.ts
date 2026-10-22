@@ -80,3 +80,24 @@ export const getAlerts = (): Promise<AlertItem[]> =>
 
 export const markAlertRead = (reportId: string): Promise<{ message: string }> =>
   requestJson<{ message: string }>(`/api/alerts/${reportId}/read`, { method: 'POST' });
+
+export const assignResponderToReport = (reportId: string, responderId: string): Promise<{ message: string; reportId: string; responderId: string }> =>
+  requestJson<{ message: string; reportId: string; responderId: string }>(`/api/reports/${reportId}/assign`, {
+    method: 'POST',
+    body: JSON.stringify({ responderId })
+  });
+
+export interface EmergencyBroadcastPayload {
+  title: string;
+  message: string;
+  severity: string;
+  externalLink?: string;
+  hasImage?: boolean;
+  hasVideo?: boolean;
+}
+
+export const sendEmergencyBroadcast = (payload: EmergencyBroadcastPayload): Promise<{ message: string; alertId: string }> =>
+  requestJson<{ message: string; alertId: string }>('/api/alerts/broadcast', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });

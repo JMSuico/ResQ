@@ -9,10 +9,13 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { LandingLayout, AdminLayout, ResponderLayout, CivilianLayout } from '@/LayoutBars/LayoutWrappers';
 
 // 100% Pixel-Faithful RISKQTRAK Converted Pages
+import { LandingPage } from '@/LANDING_PAGE/Features/Pages/LandingPage/LandingPage';
 import { LoginPage } from '@/LANDING_PAGE/Features/Pages/LoginPage/LoginPage';
 import { AdminLoginPage } from '@/LANDING_PAGE/Features/Pages/LoginPage/AdminLoginPage';
 import { RegisterPage } from '@/LANDING_PAGE/Features/Pages/RegisterPage/RegisterPage';
 import { AdminDashboard } from '@/UserRoles/Features/Pages/AdminsPanel/AdminDashboard';
+import { StrategicMapPage } from '@/UserRoles/Features/Pages/AdminsPanel/StrategicMapPage';
+import { AnalyticsReportsPage } from '@/UserRoles/Features/Pages/AdminsPanel/AnalyticsReportsPage';
 import { IncidentsPage } from '@/UserRoles/Features/Pages/AdminsPanel/IncidentsPage';
 import { RespondersRosterPage } from '@/UserRoles/Features/Pages/AdminsPanel/RespondersRosterPage';
 import { UserManagementPage } from '@/UserRoles/Features/Pages/AdminsPanel/UserManagementPage';
@@ -89,7 +92,9 @@ export const App: React.FC = () => {
       <Routes>
         {/* Public Landing & Authentication */}
         <Route element={<LandingLayout />}>
-          <Route path="/" element={isAdminPort ? <AdminLoginPage /> : <LoginPage />} />
+          <Route path="/" element={isAdminPort ? <AdminLoginPage /> : <LandingPage />} />
+          <Route path="/home" element={<LandingPage />} />
+          <Route path="/landing" element={<LandingPage />} />
           <Route path="/login" element={isAdminPort ? <AdminLoginPage /> : <LoginPage />} />
           <Route path="/admin/login" element={<AdminLoginPage />} />
           <Route path="/responder/login" element={<LoginPage />} />
@@ -107,8 +112,10 @@ export const App: React.FC = () => {
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="dashboard" element={<AdminDashboard />} />
+          <Route path="strategic-map" element={<StrategicMapPage />} />
           <Route path="incidents" element={<IncidentsPage />} />
           <Route path="roster" element={<RespondersRosterPage />} />
+          <Route path="analytics" element={<AnalyticsReportsPage />} />
           <Route path="users" element={<UserManagementPage />} />
           <Route path="alerts" element={<AlertsCenter />} />
           <Route path="settings" element={<SettingsPage />} />

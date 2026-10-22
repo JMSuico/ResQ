@@ -3,10 +3,13 @@
 // Tactical mobile dispatch unit HUD with rapid field legibility, severity chips, and quick acknowledge controls.
 // DO NOT hide critical severity alerts from tactical units.
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { getAlerts, markAlertRead, AlertItem } from '@/Endpoints/reportsApi';
 import { Button } from '@/Shared/Button';
 import { ImageLightboxModal } from '@/Shared/ImageLightboxModal';
+import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
+import { SearchBar } from '@/Shared/SearchBar';
+import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
 import { formatIsoTimestamp, formatRelativeTime } from '@/Libs/Assets/formatters';
 
 export const ResponderAlerts: React.FC = () => {
@@ -16,22 +19,28 @@ export const ResponderAlerts: React.FC = () => {
   const [filterMode, setFilterMode] = useState<'ALL' | 'UNREAD' | 'CRITICAL' | 'ACKNOWLEDGED'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [acknowledgeToast, setAcknowledgeToast] = useState<string | null>(null);
+  const [sirenMuted, setSirenMuted] = useState<boolean>(false);
+  const { viewMode, setViewMode } = useTableCardView('card');
 
-  const loadAlerts = async () => {
+  const loadAlerts = useCallback(async () => {
     try {
-      setLoading(true);
       const data = await getAlerts();
-      setAlerts(data);
+      setAlerts(data || []);
     } catch (err) {
       console.error('Failed to load responder alerts:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useValueRefreshAuto(loadAlerts, {
+    intervalMs: 6000,
+    enabled: true
+  });
 
   useEffect(() => {
     loadAlerts();
-  }, []);
+  }, [loadAlerts]);
 
   const showToast = (msg: string) => {
     setAcknowledgeToast(msg);
@@ -98,7 +107,7 @@ export const ResponderAlerts: React.FC = () => {
   }, [alerts, filterMode, searchQuery]);
 
   return (
-    <div className="flex flex-col gap-6 text-slate-100 select-none pb-8">
+    <div className="flex flex-col gap-6 text-slate-100 select-none pb-8 w-full">
       {/* Toast Feedback */}
       {acknowledgeToast && (
         <div className="fixed top-5 right-5 z-50 px-4 py-2.5 rounded-lg bg-slate-900 border-2 border-sky-400 text-sky-300 font-mono text-xs font-bold shadow-2xl flex items-center gap-2 animate-bounce">
@@ -187,22 +196,30 @@ export const ResponderAlerts: React.FC = () => {
             </button>
           </div>
 
-          <div className="relative w-full sm:w-60">
-            <input
-              type="text"
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => {
+                setSirenMuted((prev) => !prev);
+                showToast(sirenMuted ? 'AUDIO SIREN ACTIVATED FOR CRITICAL ALARMS' : 'AUDIO SIREN MUTED');
+              }}
+              className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold transition-all ${
+                sirenMuted
+                  ? 'bg-slate-950 text-slate-400 border-slate-800'
+                  : 'bg-rose-950 text-rose-300 border-rose-600/80 shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse'
+              }`}
+            >
+              {sirenMuted ? '🔇 SIREN MUTED' : '🚨 SIREN ACTIVE'}
+            </button>
+
+            <SearchBar
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search reference code..."
-              className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+              onChange={setSearchQuery}
+              placeholder="Search alert code, title..."
+              className="w-full sm:w-56"
             />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1.5 text-xs text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            )}
+
+            <TableCardToggle viewMode={viewMode} onChange={setViewMode} />
           </div>
         </div>
       </div>
@@ -357,6 +374,77 @@ export const ResponderAlerts: React.FC = () => {
           })
         )}
       </div>
+
+      {/* Structured Tactical Table View when Table Mode is Active */}
+      {viewMode === 'table' && filteredAlerts.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/90 shadow-2xl">
+          <table className="w-full text-left text-xs font-mono">
+            <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+              <tr>
+                <th className="p-3.5">Ref Code</th>
+                <th className="p-3.5">Agency</th>
+                <th className="p-3.5">Severity</th>
+                <th className="p-3.5">Alert Broadcast Headline</th>
+                <th className="p-3.5">Category</th>
+                <th className="p-3.5">State</th>
+                <th className="p-3.5 text-right">Acknowledge</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 bg-slate-950/40">
+              {filteredAlerts.map((a) => {
+                const agency = inferAgencyBadge(a.category, a.title);
+                return (
+                  <tr key={a.reportId} className="hover:bg-slate-900/60 transition-colors">
+                    <td className="p-3.5 text-sky-400 font-bold whitespace-nowrap">{a.referenceCode}</td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${agency.color}`}>
+                        {agency.icon} {agency.label}
+                      </span>
+                    </td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          a.severity === 'Critical'
+                            ? 'bg-rose-950 text-rose-300 border border-rose-600'
+                            : 'bg-amber-950 text-amber-300 border border-amber-600'
+                        }`}
+                      >
+                        {a.severity}
+                      </span>
+                    </td>
+                    <td className="p-3.5 text-white font-sans font-medium">{a.title}</td>
+                    <td className="p-3.5 text-slate-300">{a.category}</td>
+                    <td className="p-3.5 whitespace-nowrap">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] ${
+                          a.isRead
+                            ? 'bg-slate-900 text-slate-400 border border-slate-700'
+                            : 'bg-amber-950 text-amber-300 border border-amber-600'
+                        }`}
+                      >
+                        {a.isRead ? 'Acknowledged' : 'Unread'}
+                      </span>
+                    </td>
+                    <td className="p-3.5 text-right whitespace-nowrap">
+                      {!a.isRead ? (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkRead(a.reportId)}
+                          className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-[10px]"
+                        >
+                          Ack ✓
+                        </button>
+                      ) : (
+                        <span className="text-slate-500 text-[10px]">Logged</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Lightbox Modal for Full Alert Photographic Verification */}
       <ImageLightboxModal

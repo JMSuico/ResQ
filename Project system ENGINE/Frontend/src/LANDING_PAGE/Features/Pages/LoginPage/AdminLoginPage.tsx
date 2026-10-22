@@ -142,30 +142,20 @@ export const AdminLoginPage: FC = () => {
       </div>
 
       <div className="relative w-full max-w-[520px] my-auto z-10">
-        {/* Executive Clearance Header */}
-        <header className="text-center mb-5">
-          {/* Executive Command Level-4 Isolation Badge */}
-          <div className="inline-flex items-center gap-2.5 mb-2.5 px-3.5 py-1.5 rounded-full bg-[#20050e]/90 border border-[#e8114c]/70 shadow-[0_0_16px_rgba(232,17,76,0.35)] backdrop-blur-md">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#e8114c] shadow-[0_0_8px_#e8114c]"></span>
-            </span>
-            <span className="font-mono text-[10px] font-extrabold tracking-[0.16em] text-[#ff5c74] uppercase">
-              LEVEL-4 EXECUTIVE ISOLATION // PORT 5174 EXCLUSIVE
+        {/* Clean Professional Admin Login Header */}
+        <header className="text-center mb-6">
+          <div className="inline-flex items-center gap-2 mb-3 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/40 shadow-sm backdrop-blur-md">
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_#f43f5e]" />
+            <span className="font-mono text-[11px] font-bold tracking-wider text-rose-300 uppercase">
+              Official Command Portal
             </span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-black tracking-wider text-white font-['Montserrat',sans-serif]">
-            LDRRMO EXECUTIVE COMMAND
+            LDRRMO Admin Login
           </h1>
-          <p className="font-mono text-xs text-rose-300 font-semibold tracking-wide mt-1 uppercase">
-            Local Disaster Risk Reduction & Management Office &bull; Region IX
-          </p>
-          <p className="font-mono text-[11px] text-slate-400 mt-1">
-            Restricted C4I Tactical Administration & Multi-Agency Dispatch Architecture
-          </p>
           <div
-            className="w-48 h-[2px] mx-auto mt-3 rounded-full"
+            className="w-36 h-[2px] mx-auto mt-3 rounded-full"
             style={{
               background: 'linear-gradient(90deg, transparent, #e8114c 30%, #ff5c74 50%, #e8114c 70%, transparent)',
               boxShadow: '0 0 10px rgba(232, 17, 76, 0.6)'
@@ -195,43 +185,12 @@ export const AdminLoginPage: FC = () => {
           <h2 className="visually-hidden" id="admin-panel-title">LDRRMO Administrator Sign In</h2>
 
           <form className="p-5 sm:p-7 relative z-10" id="admin-login-form" onSubmit={handleSubmit} noValidate>
-            {/* Live Telemetry Status Bar */}
-            <div className="flex items-center justify-between font-mono text-[9.5px] tracking-wider text-rose-300/80 border-b border-rose-500/20 pb-2 mb-3">
-              <span className="flex items-center gap-1.5 font-bold">
-                <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
-                C4I SYSTEM: ACTIVE // CLEARANCE: LEVEL-4
-              </span>
-              <span className="text-slate-400 tracking-widest">ISOLATION MODE: AIR-GAPPED</span>
-            </div>
-
-            {/* Dual-Port Air-Gap Security Notice */}
-            <div
-              className="rounded-xl border border-rose-500/40 bg-gradient-to-b from-[#2a0614]/90 to-[#14020a]/95 p-3.5 mb-4 relative overflow-hidden backdrop-blur-md"
-              style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 4px 12px rgba(0,0,0,0.4)' }}
-            >
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-[#e8114c] shadow-[0_0_8px_#e8114c]" />
-                  <p className="font-mono text-[11px] font-bold tracking-wider text-white uppercase">
-                    DUAL-PORT AIR-GAP SECURITY NOTICE
-                  </p>
-                </div>
-                <span className="font-mono text-[9px] px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/50 text-rose-300 font-extrabold uppercase">
-                  ISOLATED :5174
-                </span>
-              </div>
-              <p className="text-slate-300 text-[11.5px] leading-relaxed">
-                Port 5174 is cryptographically isolated exclusively for LDRRMO Executive Directors and C2 Commanders. Emergency Field Responders (RHU, FIRE, PNP) and Citizen Residents are restricted to Port 5173. Non-executive logins trigger automated Level-4 lockout.
-              </p>
-            </div>
-
             {/* Email Field */}
-            <div className={`field ${emailError ? 'is-invalid' : ''}`} style={{ marginTop: '8px' }}>
-              <div className="flex items-center justify-between mb-1">
+            <div className={`field ${emailError ? 'is-invalid' : ''}`} style={{ marginTop: '4px' }}>
+              <div className="flex items-center justify-between mb-1.5">
                 <label className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="admin-email">
                   Admin Command Email
                 </label>
-                <span className="font-mono text-[9px] text-rose-400 font-bold">[LEVEL-4 CLEARANCE ID]</span>
               </div>
               <div
                 className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
@@ -271,21 +230,11 @@ export const AdminLoginPage: FC = () => {
             </div>
 
             {/* Password Field */}
-            <div className={`field field--password ${passwordError ? 'is-invalid' : ''}`} style={{ marginTop: '10px' }}>
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <label className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="admin-password">
-                    Executive Security Passphrase
-                  </label>
-                  <span className="font-mono text-[9px] text-rose-400 font-bold">[ARGON2.KEY]</span>
-                </div>
-                <a
-                  className="font-mono text-[10px] text-rose-400 hover:text-rose-300 font-semibold transition-colors"
-                  href="#"
-                  onClick={handleCliPasswordReset}
-                >
-                  CLI Reset (.ps1)
-                </a>
+            <div className={`field field--password ${passwordError ? 'is-invalid' : ''}`} style={{ marginTop: '12px' }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="admin-password">
+                  Security Passphrase
+                </label>
               </div>
               <div
                 className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
@@ -338,8 +287,8 @@ export const AdminLoginPage: FC = () => {
               )}
             </div>
 
-            {/* Terms Row & Auto-fill Helper */}
-            <div className="flex items-center justify-between mt-3 mb-2" style={{ minHeight: '24px' }}>
+            {/* Terms Row */}
+            <div className="flex items-center justify-between mt-4 mb-3" style={{ minHeight: '24px' }}>
               <Checkbox
                 id="admin-consent"
                 checked={consent}
@@ -348,20 +297,11 @@ export const AdminLoginPage: FC = () => {
                   if (val) setConsentError('');
                 }}
                 label={
-                  <span className="text-[11px] text-slate-300 font-medium select-none">
+                  <span className="text-[11.5px] text-slate-300 font-medium select-none">
                     Acknowledge LDRRMO Security Protocol
                   </span>
                 }
               />
-              <button
-                type="button"
-                onClick={fillAdminCredentials}
-                className="font-mono text-[10px] px-2.5 py-1 rounded border border-rose-500/40 bg-rose-950/70 text-rose-300 hover:border-rose-400 hover:bg-rose-900/80 font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                title="Populate test executive credentials"
-              >
-                <span>EXEC DEMO KEY</span>
-                <span className="text-xs">🔑</span>
-              </button>
             </div>
             {consentError && (
               <p className="font-mono text-[11px] text-[#ff5c74] font-medium -mt-1 mb-2" id="admin-consent-error" role="alert">

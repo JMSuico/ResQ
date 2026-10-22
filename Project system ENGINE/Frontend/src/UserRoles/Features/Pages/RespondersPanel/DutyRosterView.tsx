@@ -3,10 +3,15 @@
 // Tactical mobile dispatch HUD with high-contrast field status banner, agency badges, and GPS quick navigation.
 // DO NOT mutate shift assignments without recording operational timestamp.
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSession } from '@/Hooks/useSession';
 import { getDutyRoster, updateUnitDutyStatus, DutyUnit } from '@/Endpoints/responderOpsApi';
 import { getAgencyReports } from '@/Endpoints/reportsApi';
+import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
+import { SearchBar } from '@/Shared/SearchBar';
+import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
+import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
+import { Button } from '@/Shared/Button';
 import { formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
 
 export const DutyRosterView: React.FC = () => {
@@ -16,10 +21,18 @@ export const DutyRosterView: React.FC = () => {
   const [agencyFilter, setAgencyFilter] = useState<'ALL' | 'RHU' | 'FIRE' | 'PNP'>('ALL');
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
   const [activeDispatchesCount, setActiveDispatchesCount] = useState<number>(0);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isHandoverOpen, setIsHandoverOpen] = useState<boolean>(false);
+  const [handoverEquipment, setHandoverEquipment] = useState({
+    fuelLevel: 'Full (100%)',
+    radioComm: 'Channel 1 Tested OK',
+    medicalKit: 'Inspected & Sealed',
+    notes: 'All apparatus operational.'
+  });
+  const { viewMode, setViewMode } = useTableCardView('card');
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
-      setLoading(true);
       const data = await getDutyRoster();
       setRoster(data);
 
@@ -32,11 +45,16 @@ export const DutyRosterView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [session]);
+
+  useValueRefreshAuto(loadData, {
+    intervalMs: 8000,
+    enabled: true
+  });
 
   useEffect(() => {
     loadData();
-  }, [session]);
+  }, [loadData]);
 
   const myUnit = roster.find((u) => u.agency === session?.unit);
 
@@ -82,6 +100,20 @@ export const DutyRosterView: React.FC = () => {
     return roster.filter((u) => u.agency === agencyFilter);
   }, [roster, agencyFilter]);
 
+  const searchedRoster = useMemo(() => {
+    return filteredRoster.filter((u) => {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const codeMatch = u.unitCode?.toLowerCase().includes(q);
+        const nameMatch = u.commanderName?.toLowerCase().includes(q);
+        const agencyMatch = u.agency?.toLowerCase().includes(q);
+        const unitNameMatch = u.unitName?.toLowerCase().includes(q);
+        if (!codeMatch && !nameMatch && !agencyMatch && !unitNameMatch) return false;
+      }
+      return true;
+    });
+  }, [filteredRoster, searchQuery]);
+
   // Agency styling helper
   const getAgencyBadge = (agency: string) => {
     switch (agency) {
@@ -113,7 +145,7 @@ export const DutyRosterView: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-6 text-slate-100 select-none pb-8">
+    <div className="flex flex-col gap-6 text-slate-100 select-none pb-8 w-full">
       {/* Toast Feedback */}
       {statusFeedback && (
         <div className="fixed top-5 right-5 z-50 px-4 py-2.5 rounded-lg bg-slate-900 border-2 border-emerald-400 text-emerald-300 font-mono text-xs font-bold shadow-2xl flex items-center gap-2 animate-bounce">
@@ -338,71 +370,92 @@ export const DutyRosterView: React.FC = () => {
 
       {/* 3. MUNICIPAL RESPONSE AGENCY UNITS FEED */}
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
-          <h2 className="text-base font-black font-sans text-white tracking-wide uppercase flex items-center gap-2">
-            <span>🛡️ ALL MUNICIPAL RESPONSE AGENCY UNITS</span>
-            <span className="px-2 py-0.5 rounded bg-slate-800 text-sky-400 font-mono text-[11px]">
-              {filteredRoster.length} UNITS
-            </span>
-          </h2>
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pt-2 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-3">
+            <h2 className="text-base font-black font-sans text-white tracking-wide uppercase flex items-center gap-2">
+              <span>🛡️ MUNICIPAL RESPONSE AGENCY FLEET</span>
+              <span className="px-2 py-0.5 rounded bg-slate-800 text-sky-400 font-mono text-[11px]">
+                {searchedRoster.length} UNITS
+              </span>
+            </h2>
 
-          {/* Agency Filter Tabs */}
-          <div className="flex items-center gap-1.5 font-mono text-xs">
             <button
-              onClick={() => setAgencyFilter('ALL')}
-              className={`px-3 py-1 rounded border transition-colors ${
-                agencyFilter === 'ALL'
-                  ? 'bg-sky-500 text-slate-950 border-sky-400 font-bold'
-                  : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800'
-              }`}
+              type="button"
+              onClick={() => setIsHandoverOpen(true)}
+              className="px-3 py-1 rounded-lg bg-emerald-950 border border-emerald-500/60 text-emerald-300 font-mono text-xs font-bold hover:bg-emerald-900 transition-colors"
             >
-              ALL
+              📋 LOG SHIFT HANDOVER
             </button>
-            <button
-              onClick={() => setAgencyFilter('RHU')}
-              className={`px-3 py-1 rounded border transition-colors ${
-                agencyFilter === 'RHU'
-                  ? 'bg-sky-600 text-white border-sky-400 font-bold'
-                  : 'bg-slate-900 text-sky-400 border-slate-700 hover:bg-slate-800'
-              }`}
-            >
-              🚑 RHU
-            </button>
-            <button
-              onClick={() => setAgencyFilter('FIRE')}
-              className={`px-3 py-1 rounded border transition-colors ${
-                agencyFilter === 'FIRE'
-                  ? 'bg-orange-600 text-white border-orange-400 font-bold'
-                  : 'bg-slate-900 text-orange-400 border-slate-700 hover:bg-slate-800'
-              }`}
-            >
-              🚒 FIRE
-            </button>
-            <button
-              onClick={() => setAgencyFilter('PNP')}
-              className={`px-3 py-1 rounded border transition-colors ${
-                agencyFilter === 'PNP'
-                  ? 'bg-indigo-600 text-white border-indigo-400 font-bold'
-                  : 'bg-slate-900 text-indigo-400 border-slate-700 hover:bg-slate-800'
-              }`}
-            >
-              🚓 PNP
-            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            {/* Agency Filter Tabs */}
+            <div className="flex items-center gap-1.5 font-mono text-xs">
+              <button
+                onClick={() => setAgencyFilter('ALL')}
+                className={`px-3 py-1 rounded border transition-colors ${
+                  agencyFilter === 'ALL'
+                    ? 'bg-sky-500 text-slate-950 border-sky-400 font-bold'
+                    : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800'
+                }`}
+              >
+                ALL
+              </button>
+              <button
+                onClick={() => setAgencyFilter('RHU')}
+                className={`px-3 py-1 rounded border transition-colors ${
+                  agencyFilter === 'RHU'
+                    ? 'bg-sky-600 text-white border-sky-400 font-bold'
+                    : 'bg-slate-900 text-sky-400 border-slate-700 hover:bg-slate-800'
+                }`}
+              >
+                🚑 RHU
+              </button>
+              <button
+                onClick={() => setAgencyFilter('FIRE')}
+                className={`px-3 py-1 rounded border transition-colors ${
+                  agencyFilter === 'FIRE'
+                    ? 'bg-orange-600 text-white border-orange-400 font-bold'
+                    : 'bg-slate-900 text-orange-400 border-slate-700 hover:bg-slate-800'
+                }`}
+              >
+                🚒 FIRE
+              </button>
+              <button
+                onClick={() => setAgencyFilter('PNP')}
+                className={`px-3 py-1 rounded border transition-colors ${
+                  agencyFilter === 'PNP'
+                    ? 'bg-indigo-600 text-white border-indigo-400 font-bold'
+                    : 'bg-slate-900 text-indigo-400 border-slate-700 hover:bg-slate-800'
+                }`}
+              >
+                🚓 PNP
+              </button>
+            </div>
+
+            <SearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search callsign, officer, unit..."
+              className="w-full sm:w-56"
+            />
+
+            <TableCardToggle viewMode={viewMode} onChange={setViewMode} />
           </div>
         </div>
 
-        {/* Units Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {loading ? (
-            <div className="col-span-2 tactical-card p-12 text-center text-sky-400 font-mono text-sm animate-pulse">
-              LOADING ROSTER UNITS...
-            </div>
-          ) : filteredRoster.length === 0 ? (
-            <div className="col-span-2 tactical-card p-12 text-center text-slate-400 font-mono text-xs">
-              NO UNITS FOUND FOR FILTER [{agencyFilter}].
-            </div>
-          ) : (
-            filteredRoster.map((u) => {
+        {/* Units View (Cards or Table) */}
+        {loading ? (
+          <div className="col-span-2 tactical-card p-12 text-center text-sky-400 font-mono text-sm animate-pulse">
+            LOADING ROSTER UNITS...
+          </div>
+        ) : searchedRoster.length === 0 ? (
+          <div className="tactical-card p-12 text-center text-slate-400 font-mono text-xs">
+            NO UNITS FOUND FOR FILTER [{agencyFilter}] OR SEARCH &apos;{searchQuery}&apos;.
+          </div>
+        ) : viewMode === 'card' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {searchedRoster.map((u) => {
               const badge = getAgencyBadge(u.agency);
               const isOnDuty = u.status === 'OnDuty';
               const isDispatched = u.status === 'Dispatched';
@@ -425,7 +478,7 @@ export const DutyRosterView: React.FC = () => {
                         <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black border uppercase tracking-wider ${badge.color}`}>
                           {badge.icon} {badge.label}
                         </span>
-                        <span className="font-mono text-xs font-bold text-sky-400">[{u.unitCode}]</span>
+                        <span className="font-mono text-xs font-bold text-sky-400">[{u.unitName || u.unitCode}]</span>
                       </div>
 
                       <span
@@ -495,10 +548,156 @@ export const DutyRosterView: React.FC = () => {
                   </div>
                 </div>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/90 shadow-2xl">
+            <table className="w-full text-left text-xs font-mono">
+              <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                <tr>
+                  <th className="p-3.5">Call-Sign / Code</th>
+                  <th className="p-3.5">Agency</th>
+                  <th className="p-3.5">Status</th>
+                  <th className="p-3.5">Commander</th>
+                  <th className="p-3.5">Hotline</th>
+                  <th className="p-3.5">Crew Strength</th>
+                  <th className="p-3.5 text-right">Navigation</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 bg-slate-950/40">
+                {searchedRoster.map((u) => {
+                  const badge = getAgencyBadge(u.agency);
+                  return (
+                    <tr key={u.id} className="hover:bg-slate-900/60 transition-colors">
+                      <td className="p-3.5 text-sky-400 font-bold whitespace-nowrap">{u.unitName || u.unitCode}</td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${badge.color}`}>
+                          {badge.icon} {badge.label}
+                        </span>
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            u.status === 'OnDuty'
+                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-500'
+                              : u.status === 'Dispatched'
+                              ? 'bg-amber-950 text-amber-300 border border-amber-500'
+                              : 'bg-slate-900 text-slate-400 border border-slate-700'
+                          }`}
+                        >
+                          {u.status}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-white font-sans font-medium">{u.commanderName}</td>
+                      <td className="p-3.5 text-sky-400">
+                        <a href={`tel:${u.contactHotline}`} className="hover:underline">
+                          {u.contactHotline}
+                        </a>
+                      </td>
+                      <td className="p-3.5 text-emerald-400 font-bold">{u.activePersonnelCount} Officers</td>
+                      <td className="p-3.5 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => handleQuickNavigate(u.baseLatitude, u.baseLongitude)}
+                          className="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] transition-colors"
+                        >
+                          Navigate 🧭
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
+
+      {/* Shift Handover Equipment Verification Modal */}
+      {isHandoverOpen && (
+        <DefaultFloatingModalCard
+          isOpen={isHandoverOpen}
+          onClose={() => setIsHandoverOpen(false)}
+          title="TACTICAL SHIFT HANDOVER &amp; APPARATUS READINESS LOG"
+          maxWidth="max-w-xl"
+        >
+          <div className="flex flex-col gap-4 text-slate-200 text-xs font-mono">
+            <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-500/50">
+              <span className="font-bold text-emerald-300 block mb-1">Active Unit Check-In Checklist:</span>
+              <p className="text-slate-300 text-[11px] font-sans">
+                Complete equipment readiness inspection before assuming field patrol or handing off shift.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-slate-400 text-[10px] font-bold">APPARATUS FUEL LEVEL</label>
+                <select
+                  value={handoverEquipment.fuelLevel}
+                  onChange={(e) => setHandoverEquipment({ ...handoverEquipment, fuelLevel: e.target.value })}
+                  className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white"
+                >
+                  <option value="Full (100%)">Full (100%)</option>
+                  <option value="3/4 Tank (75%)">3/4 Tank (75%)</option>
+                  <option value="Half Tank (50%)">Half Tank (50%)</option>
+                  <option value="Low (<25%)">Low (&lt;25%) - Needs Fuel</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-slate-400 text-[10px] font-bold">RADIO COMMUNICATIONS</label>
+                <select
+                  value={handoverEquipment.radioComm}
+                  onChange={(e) => setHandoverEquipment({ ...handoverEquipment, radioComm: e.target.value })}
+                  className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white"
+                >
+                  <option value="Channel 1 Tested OK">Channel 1 Tested OK</option>
+                  <option value="Channel 2 Primary Backup">Channel 2 Primary Backup</option>
+                  <option value="Degraded Signal">Degraded Signal</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-slate-400 text-[10px] font-bold">EQUIPMENT / FIRST AID KIT STATUS</label>
+              <input
+                type="text"
+                value={handoverEquipment.medicalKit}
+                onChange={(e) => setHandoverEquipment({ ...handoverEquipment, medicalKit: e.target.value })}
+                className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white"
+                placeholder="Oxygen tanks full, defibrillator tested, trauma pack sealed..."
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-slate-400 text-[10px] font-bold">SHIFT NOTES FOR RELIEVING OFFICER</label>
+              <textarea
+                value={handoverEquipment.notes}
+                onChange={(e) => setHandoverEquipment({ ...handoverEquipment, notes: e.target.value })}
+                rows={2}
+                className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white"
+                placeholder="Specify ongoing incidents, road repairs in sector..."
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <Button variant="outline" size="sm" onClick={() => setIsHandoverOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  showToast('SHIFT HANDOVER LOG RECORDED & BROADCAST TO LDRRMO COMMAND');
+                  setIsHandoverOpen(false);
+                }}
+              >
+                Sign &amp; Transmit Handover Log ✓
+              </Button>
+            </div>
+          </div>
+        </DefaultFloatingModalCard>
+      )}
     </div>
   );
 };

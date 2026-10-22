@@ -3,7 +3,7 @@
 // Authentic mobile dispatch unit HUD with rapid field legibility, night-vision dark mode, and tactile status controls.
 // DO NOT permit cross-agency mutations from unassigned units.
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSession } from '@/Hooks/useSession';
 import { getAgencyReports, ReportItem } from '@/Endpoints/reportsApi';
 import { getIncidentFixtures, IncidentFixture } from '@/Endpoints/adminGovernanceApi';
@@ -11,7 +11,12 @@ import { getDutyRoster, updateUnitDutyStatus, DutyUnit } from '@/Endpoints/respo
 import { SatelliteCommandMap, MapMarker } from '@/Shared/SatelliteCommandMap';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
-import { formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
+import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
+import { SearchBar } from '@/Shared/SearchBar';
+import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
+import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
+import { Button } from '@/Shared/Button';
+import { formatGpsCoord, formatRelativeTime, formatIsoTimestamp } from '@/Libs/Assets/formatters';
 
 export type FieldStatusType = 'AVAILABLE' | 'EN ROUTE' | 'ON SCENE' | 'RETURNING';
 
@@ -25,10 +30,14 @@ export const ResponderDashboard: React.FC = () => {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<boolean>(false);
   const [mapFilter, setMapFilter] = useState<'ALL' | 'DISPATCHES' | 'FIXTURES'>('ALL');
   const [statusToast, setStatusToast] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [activeKpiFilter, setActiveKpiFilter] = useState<'ALL' | 'ACTIVE' | 'CRITICAL'>('ALL');
+  const [selectedIncident, setSelectedIncident] = useState<ReportItem | null>(null);
+  const { viewMode, setViewMode } = useTableCardView('card');
 
   const agencyKey = session?.unit || 'RHU';
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!session || session.unit === 'None') return;
     try {
       const [reps, fixs, rost] = await Promise.all([
@@ -50,11 +59,17 @@ export const ResponderDashboard: React.FC = () => {
     } catch (err) {
       console.error('Failed to load tactical responder telemetry:', err);
     }
-  };
+  }, [session]);
+
+  // Continuous auto-refresh every 6 seconds
+  useValueRefreshAuto(loadData, {
+    intervalMs: 6000,
+    enabled: true
+  });
 
   useEffect(() => {
     loadData();
-  }, [session]);
+  }, [loadData]);
 
   useReportEventBus(() => {
     loadData();
@@ -82,7 +97,12 @@ export const ResponderDashboard: React.FC = () => {
         showStatusFeedback(`STATUS BROADCAST: UNIT IS NOW ${nextStatus}`);
       } catch (err) {
         console.error('Failed to sync unit status to command server:', err);
-        showStatusFeedback(`LOCAL STATUS: ${nextStatus} (OFFLINE SYNC PENDING)`);
+        try {
+          const offlineQueue = JSON.parse(localStorage.getItem('resqtrack_offline_status_queue') || '[]');
+          offlineQueue.push({ unitId: myUnit.id, status: mappedDuty, timestamp: new Date().toISOString() });
+          localStorage.setItem('resqtrack_offline_status_queue', JSON.stringify(offlineQueue));
+        } catch {}
+        showStatusFeedback(`LOCAL STATUS: ${nextStatus} (OFFLINE SYNC QUEUED)`);
       } finally {
         setIsUpdatingStatus(false);
       }
@@ -91,6 +111,29 @@ export const ResponderDashboard: React.FC = () => {
       showStatusFeedback(`STATUS: ${nextStatus}`);
     }
   };
+
+  const handleQuickNavigate = (lat: number, lng: number) => {
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  // Filtered dispatches for Immediate Action Queue
+  const filteredDispatches = useMemo(() => {
+    return dispatches.filter((d) => {
+      if (activeKpiFilter === 'CRITICAL' && d.severity !== 'Critical' && d.severity !== 'High') return false;
+      if (activeKpiFilter === 'ACTIVE' && (d.status === 'Resolved' || d.status === 'Rejected')) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const refMatch = d.referenceCode?.toLowerCase().includes(q);
+        const titleMatch = d.title?.toLowerCase().includes(q);
+        const locMatch = d.locationLabel?.toLowerCase().includes(q);
+        const noteMatch = d.note?.toLowerCase().includes(q);
+        if (!refMatch && !titleMatch && !locMatch && !noteMatch) return false;
+      }
+      return true;
+    });
+  }, [dispatches, activeKpiFilter, searchQuery]);
 
   // Agency branding tokens
   const agencyMeta = useMemo(() => {
@@ -137,8 +180,7 @@ export const ResponderDashboard: React.FC = () => {
   );
 
   const assignedUnitsCount = useMemo(() => {
-    const active = roster.filter((u) => u.status === 'OnDuty' || u.status === 'Dispatched').length;
-    return active > 0 ? active : 4;
+    return roster.filter((u) => u.status === 'OnDuty' || u.status === 'Dispatched').length;
   }, [roster]);
 
   const criticalIncidentsCount = useMemo(
@@ -146,10 +188,10 @@ export const ResponderDashboard: React.FC = () => {
     [dispatches]
   );
 
-  const avgResponseTime = useMemo(() => {
-    if (dispatches.length === 0) return '3.8m';
-    return '4.2m';
-  }, [dispatches]);
+  const resolvedCount = useMemo(
+    () => dispatches.filter((d) => d.status === 'Resolved').length,
+    [dispatches]
+  );
 
   // Map Markers with High-Contrast Triage Types
   const markers: MapMarker[] = useMemo(() => {
@@ -236,7 +278,7 @@ export const ResponderDashboard: React.FC = () => {
   const currentStatusConfig = statusStyles[fieldStatus];
 
   return (
-    <div className="flex flex-col gap-6 text-slate-100 select-none pb-8">
+    <div className="flex flex-col gap-6 text-slate-100 select-none pb-8 w-full">
       {/* Tactical Status Toast */}
       {statusToast && (
         <div className="fixed top-5 right-5 z-50 px-4 py-2.5 rounded-lg bg-slate-900 border-2 border-sky-400 text-sky-300 font-mono text-xs font-bold shadow-2xl flex items-center gap-2 animate-bounce">
@@ -437,23 +479,25 @@ export const ResponderDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Counter 4: Avg Response Time */}
-        <div className="tactical-card p-4 bg-slate-900/90 border-slate-700/80 hover:border-amber-500/60 transition-colors relative overflow-hidden group">
+        {/* Counter 4: Resolved Missions */}
+        <div className="tactical-card p-4 bg-slate-900/90 border-slate-700/80 hover:border-emerald-500/60 transition-colors relative overflow-hidden group">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider">
-              AVG RESPONSE TIME
+              RESOLVED MISSIONS
             </span>
-            <span className="w-2 h-2 rounded-full bg-amber-400" />
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
           </div>
           <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-3xl font-black font-mono text-amber-400 tracking-tight">
-              {avgResponseTime}
+            <span className="text-3xl font-black font-mono text-emerald-400 tracking-tight">
+              {resolvedCount}
             </span>
-            <span className="text-xs font-mono text-amber-300 font-bold">TARGET &lt; 8.0M</span>
+            <span className="text-xs font-mono text-emerald-300 font-bold">OF {dispatches.length} DISPATCHES</span>
           </div>
           <div className="mt-2 flex items-center justify-between text-[10px] font-mono text-slate-400 border-t border-slate-800 pt-2">
-            <span>FIELD DISPATCH PACING</span>
-            <span className="text-emerald-400 font-bold font-mono">OPTIMAL</span>
+            <span>RESOLUTION RATE</span>
+            <span className="text-emerald-400 font-bold font-mono">
+              {dispatches.length > 0 ? `${Math.round((resolvedCount / dispatches.length) * 100)}%` : '0%'}
+            </span>
           </div>
         </div>
       </div>
@@ -528,7 +572,7 @@ export const ResponderDashboard: React.FC = () => {
 
       {/* 4. ACTIVE IMMEDIATE ACTION DISPATCH QUEUE PREVIEW */}
       <div className="tactical-card p-5 bg-slate-900/90 border border-slate-700/80 rounded-xl">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-800">
           <div>
             <h2 className="text-base font-black font-sans text-white tracking-wide uppercase flex items-center gap-2">
               <span>⚡ PRIORITY INCIDENT DISPATCH QUEUE</span>
@@ -537,25 +581,38 @@ export const ResponderDashboard: React.FC = () => {
               </span>
             </h2>
             <p className="text-xs text-slate-400 font-mono mt-0.5">
-              Live mission assignments allocated to your unit frequency
+              Live mission assignments allocated to your unit frequency • Real-time tactical queue
             </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <SearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search code, title, address..."
+              className="w-full sm:w-56"
+            />
+            <TableCardToggle viewMode={viewMode} onChange={setViewMode} />
           </div>
         </div>
 
-        {dispatches.length === 0 ? (
+        {filteredDispatches.length === 0 ? (
           <div className="p-8 text-center bg-slate-950/60 rounded-lg border border-slate-800 font-mono text-xs text-slate-400">
-            NO OUTSTANDING INCIDENTS ASSIGNED TO {session?.unit || 'UNIT'}. ALL SECTORS NOMINAL.
+            NO OUTSTANDING INCIDENTS FOUND MATCHING SEARCH / FILTER. ALL SECTORS NOMINAL.
           </div>
-        ) : (
+        ) : viewMode === 'card' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {dispatches.slice(0, 3).map((item) => (
+            {filteredDispatches.map((item) => (
               <div
                 key={item.id}
-                className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-sky-500/60 transition-all flex flex-col justify-between"
+                onClick={() => setSelectedIncident(item)}
+                className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-sky-500/80 transition-all flex flex-col justify-between cursor-pointer group shadow-md"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="font-mono text-xs font-bold text-sky-400">{item.referenceCode}</span>
+                    <span className="font-mono text-xs font-bold text-sky-400 group-hover:underline">
+                      {item.referenceCode}
+                    </span>
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-black uppercase font-mono ${
                         item.severity === 'Critical'
@@ -569,20 +626,167 @@ export const ResponderDashboard: React.FC = () => {
                     </span>
                   </div>
                   <h3 className="text-sm font-bold text-white line-clamp-1">{item.title}</h3>
-                  <p className="text-xs text-slate-400 mt-1 line-clamp-2">{item.note || 'No immediate field notes provided.'}</p>
+                  <p className="text-xs text-slate-400 mt-1 line-clamp-2">
+                    {item.note || 'No immediate field notes provided.'}
+                  </p>
                 </div>
 
                 <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between font-mono text-[11px] text-slate-400">
-                  <span className="truncate max-w-[150px]">
+                  <span className="truncate max-w-[140px]">
                     📍 {item.locationLabel || formatGpsCoord(item.latitude, item.longitude)}
                   </span>
-                  <span className="text-sky-300 font-bold">{formatRelativeTime(item.createdAt)}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleQuickNavigate(item.latitude, item.longitude);
+                      }}
+                      className="px-2 py-0.5 rounded bg-sky-950 border border-sky-600 text-[10px] text-sky-300 font-bold hover:bg-sky-900 transition-colors"
+                      title="Open Navigation"
+                    >
+                      NAV ↗
+                    </button>
+                    <span className="text-sky-300 font-bold">{formatRelativeTime(item.createdAt)}</span>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-slate-800">
+            <table className="w-full text-left text-xs font-mono">
+              <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                <tr>
+                  <th className="p-3">Ref Code</th>
+                  <th className="p-3">Severity</th>
+                  <th className="p-3">Headline</th>
+                  <th className="p-3">Location</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 bg-slate-950/40">
+                {filteredDispatches.map((item) => (
+                  <tr
+                    key={item.id}
+                    onClick={() => setSelectedIncident(item)}
+                    className="hover:bg-slate-900/60 cursor-pointer transition-colors"
+                  >
+                    <td className="p-3 text-sky-400 font-bold whitespace-nowrap">{item.referenceCode}</td>
+                    <td className="p-3 whitespace-nowrap">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          item.severity === 'Critical'
+                            ? 'bg-rose-950 text-rose-300 border border-rose-600'
+                            : 'bg-amber-950 text-amber-300 border border-amber-600'
+                        }`}
+                      >
+                        {item.severity}
+                      </span>
+                    </td>
+                    <td className="p-3 text-white font-sans font-medium">{item.title}</td>
+                    <td className="p-3 text-slate-400 truncate max-w-[200px]">
+                      {item.locationLabel || formatGpsCoord(item.latitude, item.longitude)}
+                    </td>
+                    <td className="p-3 whitespace-nowrap">
+                      <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                        {item.status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickNavigate(item.latitude, item.longitude);
+                        }}
+                        className="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] transition-colors"
+                      >
+                        Navigate ↗
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
+
+      {/* Incident Detail Floating Modal */}
+      {selectedIncident && (
+        <DefaultFloatingModalCard
+          isOpen={selectedIncident !== null}
+          onClose={() => setSelectedIncident(null)}
+          title={`INCIDENT DISPATCH DETAILS // ${selectedIncident.referenceCode}`}
+          maxWidth="max-w-2xl"
+        >
+          <div className="flex flex-col gap-4 text-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="text-xs font-mono text-sky-400 font-bold block">{selectedIncident.referenceCode}</span>
+                <h3 className="text-lg font-bold text-white mt-0.5">{selectedIncident.title}</h3>
+              </div>
+              <span
+                className={`px-3 py-1 rounded text-xs font-mono font-black uppercase ${
+                  selectedIncident.severity === 'Critical'
+                    ? 'bg-rose-950 text-rose-300 border border-rose-600 animate-pulse'
+                    : 'bg-amber-950 text-amber-300 border border-amber-600'
+                }`}
+              >
+                {selectedIncident.severity} SEVERITY
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                <span className="text-slate-500 block text-[10px]">CATEGORY</span>
+                <span className="text-white font-bold">{selectedIncident.category}</span>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                <span className="text-slate-500 block text-[10px]">CURRENT STATUS</span>
+                <span className="text-sky-400 font-bold">{selectedIncident.status}</span>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 col-span-2">
+                <span className="text-slate-500 block text-[10px]">GPS COORDINATES &amp; LOCATION</span>
+                <span className="text-emerald-400 font-bold">
+                  {formatGpsCoord(selectedIncident.latitude, selectedIncident.longitude)}
+                </span>
+                <p className="text-slate-400 text-[11px] mt-0.5">{selectedIncident.locationLabel || 'No landmark specified'}</p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+              <span className="text-slate-500 block font-mono text-[10px] mb-1">FIELD OBSERVATIONS</span>
+              <p className="text-slate-300 leading-relaxed">{selectedIncident.note || 'No notes provided by reporter.'}</p>
+            </div>
+
+            {selectedIncident.imageUrl && (
+              <div className="rounded-xl overflow-hidden border border-slate-800">
+                <img src={selectedIncident.imageUrl} alt="Incident Site" className="w-full h-48 object-cover" />
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedIncident(null)}
+              >
+                Close Window
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleQuickNavigate(selectedIncident.latitude, selectedIncident.longitude)}
+              >
+                Launch GPS Route ↗
+              </Button>
+            </div>
+          </div>
+        </DefaultFloatingModalCard>
+      )}
     </div>
   );
 };

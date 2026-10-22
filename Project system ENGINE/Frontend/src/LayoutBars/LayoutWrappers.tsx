@@ -9,6 +9,8 @@ import { Sidebar } from './Sidebar';
 import { ResQTrackSvgSprite } from '../Shared/ResQTrackSvgSprite';
 import { useSession } from '../Hooks/useSession';
 
+import { DrawerSidebarProvider } from '../Shared/ToggleDrawerSidebarMenu';
+
 export interface LayoutWrappersProps {
   children?: React.ReactNode;
   defaultRole?: string;
@@ -36,14 +38,20 @@ export const LayoutWrappers: React.FC<LayoutWrappersProps> = ({
   };
 
   return (
-    <div className="app-shell">
-      <ResQTrackSvgSprite />
-      <Header user={user} />
-      <div className="dash">
-        <Sidebar userRole={activeRole} userUnit={activeUnit} />
-        {children || <Outlet context={{ user, session }} />}
+    <DrawerSidebarProvider>
+      <div className="app-shell">
+        <ResQTrackSvgSprite />
+        <Header user={user} />
+        <div className="dash">
+          <Sidebar userRole={activeRole} userUnit={activeUnit} />
+          <main className="dash__main flex-1 w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 bg-slate-950/80">
+            <div className="w-full flex-1 min-h-0 flex flex-col">
+              {children || <Outlet context={{ user, session }} />}
+            </div>
+          </main>
+        </div>
       </div>
-    </div>
+    </DrawerSidebarProvider>
   );
 };
 
