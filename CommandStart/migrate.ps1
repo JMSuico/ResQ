@@ -135,8 +135,7 @@ function Invoke-Check {
 }
 
 function Invoke-Update {
-    Write-Header "Applying Pending Database Migrations"
-    Write-Info "Target Project: $BackendDir"
+    Write-Host "[*] Synchronizing SQL Server Database Schema via EF Core..." -ForegroundColor Magenta
 
     if (-not (Test-Path $BackendDir)) {
         Write-Err "Backend directory not found: $BackendDir"
@@ -150,8 +149,8 @@ function Invoke-Update {
 
     Push-Location $BackendDir
     try {
-        dotnet ef database update
-        Write-Success "Migrations applied successfully."
+        & dotnet ef database update
+        Write-Host "  [OK] Database schema is up to date." -ForegroundColor Green
     } catch {
         Write-Err "Failed to apply migrations: $_"
         exit 1
