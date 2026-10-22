@@ -249,16 +249,6 @@ The **Intact UI Flow Chain** provides a deterministic protocol for transforming 
 
 ---
 
-## 8. Full-Stack Technology Stack & Development Runtime
-
-| Tier | Technology | Standard & Port |
-|---|---|---|
-| **Frontend (Dual-Port)** | TypeScript 5.x + React 19 + Vite + Tailwind CSS | • **Port 5173:** Responders & Civilians Hub (`npm run dev:responder`)<br>• **Port 5174:** LDRRMO Admin Command Portal (`npm run dev:admin`) |
-| **Backend** | C# 13 + .NET 10 ASP.NET Core Web API (Kestrel bound to `http://0.0.0.0:5000`) | `http://localhost:5000` / `http://127.0.0.1:5000` (`dotnet run` / `.\start.ps1 -Dev`) |
-| **ORM & Database** | Entity Framework Core 10 (Code-First Migrations)<br>• **Primary:** Microsoft SQL Server (SSMS 19) via `Microsoft.EntityFrameworkCore.SqlServer`<br>• **Secondary Supported:** PostgreSQL (`Npgsql`) / MariaDB MySQL (`Pomelo` on XAMPP)<br>• **Zero SQLite Mandate:** Embedded file-based SQLite is strictly prohibited and removed | Relational Schema with Strict FK Constraints (8 Core Entities + Real-Life Philippine Emergency Hierarchy) |
-| **Authentication** | Scrypt + `CryptographicOperations.FixedTimeEquals` (`timingSafeEqual`) + Cookie/Bearer Session | Backend-Enforced + Per-Request `status === "verified"` + Dynamic Unified RBAC (Zero Role Tabs) |
-| **API Documentation** | Scalar V1 (`/scalar/v1`) + OpenAPI (`/openapi/v1.json`) | Development Environment Only |
-
 ---
 
 ### 7.4 Dynamic Unified RBAC Login (Zero Unit Selector Tabs)
@@ -277,6 +267,20 @@ The **Intact UI Flow Chain** provides a deterministic protocol for transforming 
   4. `DeleteUserConfirmModal.tsx`: Safe soft-delete dialog marking `IsDeleted = true`, terminating active sessions, and appending a chained SHA-256 cryptographic audit log.
 - **Real-Life Philippine Emergency Entities:** Built-in address hierarchy (Dipolog City & Zamboanga del Norte context) and statutory role credentials (PRC license, BFP rank/apparatus, PNP rank/assignment, civilian vulnerability flags).
 - **EF Core Soft-Delete Query Filter:** Standard queries automatically omit soft-deleted records via `entity.HasQueryFilter(u => !u.IsDeleted)`.
+
+---
+
+## 8. Full-Stack Technology Stack & Development Runtime
+
+| Tier | Technology | Standard & Port |
+|---|---|---|
+| **Frontend (Dual-Port)** | TypeScript 5.x + React 19 + Vite + Tailwind CSS | • **Port 5173:** Responders & Civilians Hub (`npm run dev:responder`)<br>• **Port 5174:** LDRRMO Admin Command Portal (`npm run dev:admin`) |
+| **Backend** | C# 13 + .NET 10 ASP.NET Core Web API (Kestrel bound to `http://0.0.0.0:5000`) | `http://localhost:5000` / `http://127.0.0.1:5000` (`dotnet run` / `.\start.ps1 -Dev`) |
+| **ORM & Database** | Entity Framework Core 10 (Code-First Migrations)<br>• **Primary:** Microsoft SQL Server (SSMS 19) via `Microsoft.EntityFrameworkCore.SqlServer`<br>• **Secondary Supported:** PostgreSQL (`Npgsql`) / MariaDB MySQL (`Pomelo` on XAMPP)<br>• **Zero SQLite Mandate:** Embedded file-based SQLite is strictly prohibited and removed | Relational Schema with Strict FK Constraints (8 Core Entities + Real-Life Philippine Emergency Hierarchy) |
+| **Authentication** | Scrypt + `CryptographicOperations.FixedTimeEquals` (`timingSafeEqual`) + Cookie/Bearer Session | Backend-Enforced + Per-Request `status === "verified"` + Dynamic Unified RBAC (Zero Role Tabs) |
+| **API Documentation** | Scalar V1 (`/scalar/v1`) + OpenAPI (`/openapi/v1.json`) | Development Environment Only |
+
+---
 
 ### 8.1 Microsoft SQL Server (SSMS 19) & Enterprise RDBMS Configuration
 
@@ -375,5 +379,3 @@ The **`CommandStart/`** directory is the central operational command hub for run
   - [`04_PLUGINS_AND_OBSIDIAN_GRAPHIFY_ICM_PLAN.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/Plans/10-20-2026/08-46-03%20AM/04_PLUGINS_AND_OBSIDIAN_GRAPHIFY_ICM_PLAN.md)
   - [`05_HTML_CSS_TO_REACT_TYPESCRIPT_INTACT_UI_CONVERSION_PLAN.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/Plans/10-20-2026/08-46-03%20AM/05_HTML_CSS_TO_REACT_TYPESCRIPT_INTACT_UI_CONVERSION_PLAN.md)
   - [`06_RDBMS_MIGRATION_SQLSERVER_SSMS19_AND_SQLITE_PURGE_PLAN.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/Plans/10-20-2026/08-46-03%20AM/06_RDBMS_MIGRATION_SQLSERVER_SSMS19_AND_SQLITE_PURGE_PLAN.md)
-#   R e s Q  
- 
