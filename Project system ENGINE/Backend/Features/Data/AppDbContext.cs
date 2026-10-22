@@ -42,12 +42,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(u => u.IsDeleted).HasDefaultValue(false);
         });
 
-        // Session indexes
+        // Session indexes and relationships
         modelBuilder.Entity<Session>(entity =>
         {
             entity.HasIndex(s => s.TokenHash).IsUnique();
             entity.HasIndex(s => s.UserId);
             entity.HasIndex(s => s.IsRevoked);
+
+            entity.HasOne(s => s.User)
+                  .WithMany(u => u.Sessions)
+                  .HasForeignKey(s => s.UserId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Report indexes and relationships (DeleteBehavior.NoAction for SQL Server cascade cycles)
@@ -59,8 +65,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(r => r.CreatedAt);
 
             entity.HasOne(r => r.Reporter)
-                  .WithMany()
+                  .WithMany(u => u.Reports)
                   .HasForeignKey(r => r.ReporterId)
+                  .IsRequired(false)
                   .OnDelete(DeleteBehavior.NoAction);
         });
 
@@ -72,6 +79,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasOne(a => a.User)
                   .WithMany(u => u.AlertReadStates)
                   .HasForeignKey(a => a.UserId)
+                  .IsRequired(false)
                   .OnDelete(DeleteBehavior.NoAction);
 
             entity.HasOne(a => a.Report)
