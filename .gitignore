@@ -1,0 +1,144 @@
+# =============================================================================
+# ResQTrack Incident AI System Detection — Git Ignore Rules
+# Root Workspace: C:\Users\provu\Desktop\INCIDENT AI SYSTEM DETECTION
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Custom Project Ignored Folders (Obsidian & Md Data)
+# -----------------------------------------------------------------------------
+Obsidian Memory Engine/
+Obsidian Memory Engine/**
+Md data/
+Md data/**
+
+# -----------------------------------------------------------------------------
+# 2. Project System Engine Tracking Guarantee
+# -----------------------------------------------------------------------------
+!Project system ENGINE/
+!Project system ENGINE/**
+
+# Ignore ONLY modules, packages, and build artifacts inside Project system ENGINE
+Project system ENGINE/Frontend/node_modules/
+Project system ENGINE/Frontend/node_modules/**
+Project system ENGINE/Frontend/dist/
+Project system ENGINE/Frontend/dist/**
+Project system ENGINE/Frontend/.vite/
+Project system ENGINE/Backend/bin/
+Project system ENGINE/Backend/bin/**
+Project system ENGINE/Backend/obj/
+Project system ENGINE/Backend/obj/**
+
+# -----------------------------------------------------------------------------
+# 2. Node.js, Frontend Libraries & Modules (React + Vite)
+# -----------------------------------------------------------------------------
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Vite & Frontend build outputs
+dist/
+**/dist/
+dist-ssr/
+**/dist-ssr/
+*.local
+.vite/
+**/.vite/
+.eslintcache
+.parcel-cache/
+
+# -----------------------------------------------------------------------------
+# 3. .NET 10 & C# Backend Libraries, Binaries & Build Artifacts
+# -----------------------------------------------------------------------------
+[Bb]in/
+**/[Bb]in/
+[Oo]bj/
+**/[Oo]bj/
+[Aa]pp_Data/
+**/[Aa]pp_Data/
+
+# Visual Studio / Rider / Omnisharp cache
+.vs/
+**/.vs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.userprefs
+*.pidb
+*.booproj
+*.svclog
+*.visualstate
+
+# .NET Core & Build caches
+project.lock.json
+project.fragment.lock.json
+artifacts/
+**/artifacts/
+*.DotSettings.user
+
+# -----------------------------------------------------------------------------
+# 4. Local Environment Configurations, Secrets & Credentials
+# -----------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+*.env
+*.pfx
+*.p12
+*.key
+*.pem
+secrets.json
+
+# -----------------------------------------------------------------------------
+# 5. Database, Local Storage & Dump Files
+# -----------------------------------------------------------------------------
+*.mdf
+*.ldf
+*.ndf
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.bak
+*.dmp
+
+# -----------------------------------------------------------------------------
+# 6. Log Files, Diagnostics & Crash Dumps
+# -----------------------------------------------------------------------------
+*.log
+logs/
+**/logs/
+*.crash
+*.dump
+*.stackdump
+
+# -----------------------------------------------------------------------------
+# 7. OS & System Generated Metadata
+# -----------------------------------------------------------------------------
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*

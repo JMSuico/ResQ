@@ -1,0 +1,23 @@
+/* MainLayout.css - RISKQTRAK Core Shell & Global Theme Extensions */
+:root {
+  --brand-primary: #00d2ff;
+  --brand-secondary: #3a7bd5;
+  --bg-dark: #0b0f19;
+  --surface-dark: rgba(18, 24, 38, 0.7);
+  --border-glass: rgba(255, 255, 255, 0.08);
+}
+
+.main-layout-container {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--bg-dark);
+  color: #f8fafc;
+  font-family: 'Inter', sans-serif;
+}
+
+.main-content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}

@@ -1,0 +1,219 @@
+/* ---------- responder dashboard: my submitted reports overlay ---------- */
+
+.myreports {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-height: min(56vh, 430px);
+  padding: 15px 16px 14px;
+  border-radius: 11px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 20px 44px rgba(2, 10, 20, 0.38);
+}
+
+.myreports__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 11px;
+}
+
+.myreports__icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--pink-solid);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.myreports__title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+
+.myreports__count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pink-solid);
+  white-space: nowrap;
+}
+
+.myreports__refresh {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1.5px solid var(--pink-solid);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pink-solid);
+  font-family: var(--font-ui);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.myreports__refresh svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.myreports__refresh:hover {
+  background: var(--pink-solid);
+  color: #fff;
+}
+
+.myreports__refresh:focus-visible {
+  outline: 2px solid rgba(74, 158, 218, 0.75);
+  outline-offset: 2px;
+}
+
+.myreports__state {
+  margin: 2px 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #46566a;
+}
+
+.myreports__list {
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.myrep {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid #e6e9ee;
+  border-radius: 8px;
+  background: #f7f9fb;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.myrep:hover {
+  border-color: var(--pink-solid);
+  background: #fff;
+}
+
+.myrep:focus-visible {
+  outline: 2px solid rgba(74, 158, 218, 0.75);
+  outline-offset: 2px;
+}
+
+.myrep__thumb {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #dde4ec;
+}
+
+.myrep__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.myrep__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.myrep__meta {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #66788c;
+}
+
+.myrep__note {
+  margin: 3px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #46566a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.myrep__view {
+  flex: none;
+  height: 24px;
+  padding: 0 9px;
+  border: 1.5px solid var(--navy-700);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--navy-700);
+  font-family: var(--font-ui);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.myrep__view:hover {
+  background: var(--navy-700);
+  color: #fff;
+}
+
+.myrep__view:focus-visible {
+  outline: 2px solid rgba(74, 158, 218, 0.75);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1080px) {
+  .myreports { width: 290px; }
+}
+
+@media (max-width: 700px) {
+  .myreports {
+    left: 12px;
+    right: 12px;
+    top: 12px;
+    width: auto;
+    max-height: 40vh;
+  }
+}

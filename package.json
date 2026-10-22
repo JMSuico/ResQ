@@ -1,0 +1,12 @@
+{
+  "name": "resqtrack-incident-ai-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ResQTrack Incident AI System Detection Fullstack Environment",
+  "scripts": {
+    "dev": "powershell -ExecutionPolicy Bypass -File ./CommandStart/startdev-all.ps1",
+    "start": "powershell -ExecutionPolicy Bypass -File ./CommandStart/startdev-all.ps1",
+    "stop": "powershell -ExecutionPolicy Bypass -File ./CommandStart/stopdev-all.ps1",
+    "status": "powershell -ExecutionPolicy Bypass -File ./CommandStart/manage.ps1 -Action status"
+  }
+}

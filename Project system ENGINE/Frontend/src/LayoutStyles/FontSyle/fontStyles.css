@@ -1,0 +1,25 @@
+/* [Layer: LayoutStyles/FontSyle]
+ * Responsibility: Semantic typography utility classes and text weights.
+ * DO NOT use arbitrary px text sizes in markup.
+ */
+
+.text-fluid-base {
+  font-size: var(--font-fluid-base);
+  line-height: 1.5;
+}
+
+.text-fluid-title {
+  font-size: var(--font-fluid-title);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.text-fluid-header {
+  font-size: var(--font-fluid-header);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.font-mono-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}

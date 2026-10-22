@@ -1,0 +1,45 @@
+/* [Layer: LayoutStyles]
+ * Responsibility: Component part tokens, glassmorphism cards, and tactical scrollbar styling.
+ * DO NOT introduce non-standard CSS properties breaking Vite/PostCSS builds.
+ */
+
+.tactical-card {
+  background-color: var(--color-surface-card);
+  border: 1px solid var(--color-surface-border);
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+}
+
+.tactical-glass {
+  background: rgba(30, 41, 59, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(51, 65, 85, 0.7);
+}
+
+.tactical-glow-danger {
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+}
+
+.tactical-glow-success {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+}
+
+/* Custom Tactical Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-command-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-dim);
+}
