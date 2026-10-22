@@ -12,13 +12,13 @@ import { LandingLayout, AdminLayout, ResponderLayout, CivilianLayout } from '@/L
 import { LoginPage } from '@/LANDING_PAGE/Features/Pages/LoginPage/LoginPage';
 import { AdminLoginPage } from '@/LANDING_PAGE/Features/Pages/LoginPage/AdminLoginPage';
 import { RegisterPage } from '@/LANDING_PAGE/Features/Pages/RegisterPage/RegisterPage';
-import { DashboardPage } from '@/UserRoles/Features/Pages/AdminsPanel/DashboardPage';
+import { AdminDashboard } from '@/UserRoles/Features/Pages/AdminsPanel/AdminDashboard';
 import { IncidentsPage } from '@/UserRoles/Features/Pages/AdminsPanel/IncidentsPage';
 import { RespondersRosterPage } from '@/UserRoles/Features/Pages/AdminsPanel/RespondersRosterPage';
 import { UserManagementPage } from '@/UserRoles/Features/Pages/AdminsPanel/UserManagementPage';
 import { SettingsPage } from '@/UserRoles/Features/Pages/AdminsPanel/SettingsPage';
-import { ResponderDashboardPage } from '@/UserRoles/Features/Pages/RespondersPanel/ResponderDashboardPage';
-import { CiviliansDashboardPage } from '@/UserRoles/Features/Pages/CiviliansPanel/CiviliansDashboardPage';
+import { ResponderDashboard } from '@/UserRoles/Features/Pages/RespondersPanel/ResponderDashboard';
+import { CivilianDashboard } from '@/UserRoles/Features/Pages/CiviliansPanel/CivilianDashboard';
 
 // Portal Feature Views
 import { AlertsCenter } from '@/UserRoles/Features/Pages/AdminsPanel/AlertsCenter';
@@ -33,6 +33,52 @@ import { MyReportsHistory } from '@/UserRoles/Features/Pages/CiviliansPanel/MyRe
 import { CommunityAlertsPage } from '@/UserRoles/Features/Pages/CiviliansPanel/CommunityAlertsPage';
 import { EmergencyHotlinesUnits } from '@/UserRoles/Features/Pages/CiviliansPanel/EmergencyHotlinesUnits';
 import { CivilianProfile } from '@/UserRoles/Features/Pages/CiviliansPanel/CivilianProfile';
+
+// Smart Dynamic Role Routers for Universal Compatibility
+const getStoredRole = (): string | null => {
+  try {
+    const raw = typeof window !== 'undefined'
+      ? (localStorage.getItem('resqtrack_session') || localStorage.getItem('resqtrack_user'))
+      : null;
+    return raw ? JSON.parse(raw)?.role : null;
+  } catch {
+    return null;
+  }
+};
+
+const SmartDashboardRouter: React.FC = () => {
+  const currentPort = typeof window !== 'undefined' ? window.location.port : '';
+  if (currentPort === '5174') {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+  const role = (getStoredRole() || '').toLowerCase();
+  if (role === 'ldrrmo_admin' || role === 'admin') return <Navigate to="/admin/dashboard" replace />;
+  if (role === 'responder') return <Navigate to="/responder/dashboard" replace />;
+  if (role === 'civilian') return <Navigate to="/civilian/dashboard" replace />;
+  return <Navigate to="/login" replace />;
+};
+
+const SmartIncidentsRouter: React.FC = () => {
+  const currentPort = typeof window !== 'undefined' ? window.location.port : '';
+  if (currentPort === '5174') {
+    return <Navigate to="/admin/incidents" replace />;
+  }
+  const role = (getStoredRole() || '').toLowerCase();
+  if (role === 'ldrrmo_admin' || role === 'admin') return <Navigate to="/admin/incidents" replace />;
+  if (role === 'responder') return <Navigate to="/responder/incidents" replace />;
+  return <Navigate to="/civilian/my-reports" replace />;
+};
+
+const SmartRosterRouter: React.FC = () => {
+  const currentPort = typeof window !== 'undefined' ? window.location.port : '';
+  if (currentPort === '5174') {
+    return <Navigate to="/admin/roster" replace />;
+  }
+  const role = (getStoredRole() || '').toLowerCase();
+  if (role === 'ldrrmo_admin' || role === 'admin') return <Navigate to="/admin/roster" replace />;
+  if (role === 'responder') return <Navigate to="/responder/roster" replace />;
+  return <Navigate to="/civilian/hotlines" replace />;
+};
 
 export const App: React.FC = () => {
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
@@ -51,18 +97,16 @@ export const App: React.FC = () => {
           <Route path="/register" element={<RegisterPage />} />
         </Route>
 
-        {/* Top-Level Tactical Routes (matching exact RISKQTRAK links) */}
-        <Route element={<AdminLayout />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/incidents" element={<IncidentsPage />} />
-          <Route path="/responders" element={<RespondersRosterPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Route>
+        {/* Top-Level Tactical Routes with Smart Role Navigation */}
+        <Route path="/dashboard" element={<SmartDashboardRouter />} />
+        <Route path="/incidents" element={<SmartIncidentsRouter />} />
+        <Route path="/responders" element={<SmartRosterRouter />} />
+        <Route path="/settings" element={<Navigate to="/admin/settings" replace />} />
 
-        {/* LDRRMO Admin Portal (/admin/*) */}
+        {/* LDRRMO Admin Executive Command Portal (/admin/*) */}
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="dashboard" element={<AdminDashboard />} />
           <Route path="incidents" element={<IncidentsPage />} />
           <Route path="roster" element={<RespondersRosterPage />} />
           <Route path="users" element={<UserManagementPage />} />
@@ -72,8 +116,8 @@ export const App: React.FC = () => {
 
         {/* Responders Portal (/responder/*) */}
         <Route path="/responder" element={<ResponderLayout />}>
-          <Route index element={<ResponderDashboardPage />} />
-          <Route path="dashboard" element={<ResponderDashboardPage />} />
+          <Route index element={<ResponderDashboard />} />
+          <Route path="dashboard" element={<ResponderDashboard />} />
           <Route path="incidents" element={<UnitIncidentsFeed />} />
           <Route path="roster" element={<DutyRosterView />} />
           <Route path="my-reports" element={<MyReportsPage />} />
@@ -83,8 +127,8 @@ export const App: React.FC = () => {
 
         {/* UG Residents & Civilians Portal (/civilian/*) */}
         <Route path="/civilian" element={<CivilianLayout />}>
-          <Route index element={<CiviliansDashboardPage />} />
-          <Route path="dashboard" element={<CiviliansDashboardPage />} />
+          <Route index element={<CivilianDashboard />} />
+          <Route path="dashboard" element={<CivilianDashboard />} />
           <Route path="report" element={<ReportAccidentPage />} />
           <Route path="my-reports" element={<MyReportsHistory />} />
           <Route path="alerts" element={<CommunityAlertsPage />} />
