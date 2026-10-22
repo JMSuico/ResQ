@@ -27,7 +27,7 @@ export const RespondersRoster: React.FC = () => {
     loadRoster();
   }, []);
 
-  const handleStatusChange = async (unitId: string, status: any) => {
+  const handleStatusChange = async (unitId: string, status: 'OnDuty' | 'Dispatched' | 'Standby' | 'OffDuty') => {
     try {
       await updateUnitDutyStatus(unitId, status);
       await loadRoster();

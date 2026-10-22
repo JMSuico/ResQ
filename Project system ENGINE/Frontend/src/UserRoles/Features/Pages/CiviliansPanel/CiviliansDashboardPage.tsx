@@ -9,6 +9,7 @@ import SatelliteCommandMap, { IncidentPinData } from '@/Shared/SatelliteCommandM
 import AccidentReportModal from '@/Shared/AccidentReportModal';
 import { ImageLightboxModal } from '@/Shared/ImageLightboxModal';
 import { requestJson } from '@/Endpoints/apiClient';
+import { ReportItem } from '@/Endpoints/reportsApi';
 import { useSession } from '@/Hooks/useSession';
 
 export const CiviliansDashboardPage: React.FC = () => {
@@ -35,7 +36,7 @@ export const CiviliansDashboardPage: React.FC = () => {
     }
   ]);
 
-  const [myReports, setMyReports] = useState<any[]>([]);
+  const [myReports, setMyReports] = useState<ReportItem[]>([]);
   const [loadingReports, setLoadingReports] = useState<boolean>(true);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [lightboxData, setLightboxData] = useState<{ url: string; title: string } | null>(null);
@@ -73,14 +74,15 @@ export const CiviliansDashboardPage: React.FC = () => {
   const loadMyReports = async () => {
     setLoadingReports(true);
     try {
-      const data = await requestJson<any>('/api/reports', { method: 'GET' });
-      const allReports = Array.isArray(data) ? data : data.reports || [];
+      const data = await requestJson<ReportItem[]>('/api/reports', { method: 'GET' });
+      const allReports = Array.isArray(data) ? data : [];
       const filtered = session?.employeeId
-        ? allReports.filter((r: any) => r.reporterEmployeeId === session.employeeId)
+        ? allReports.filter((r) => r.reporterId === session.employeeId)
         : allReports;
       setMyReports(filtered);
-    } catch (err: any) {
-      console.warn('Could not load civilian reports:', err.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('Could not load civilian reports:', msg);
     } finally {
       setLoadingReports(false);
     }
@@ -198,11 +200,11 @@ export const CiviliansDashboardPage: React.FC = () => {
                   tabIndex={0}
                   role="button"
                   aria-label={`Preview report ${rep.id}`}
-                  onClick={() => setLightboxData({ url: rep.imageUrl, title: `${rep.type} — ${rep.id} · ${rep.note || ''}` })}
+                  onClick={() => setLightboxData({ url: rep.imageUrl || '', title: `${rep.title || rep.category} — ${rep.id} · ${rep.note || ''}` })}
                 >
-                  <img className="myrep__thumb" src={rep.imageUrl} alt={`${rep.type} photo ${rep.id}`} />
+                  <img className="myrep__thumb" src={rep.imageUrl || ''} alt={`${rep.title || rep.category} photo ${rep.id}`} />
                   <div className="myrep__body">
-                    <p className="myrep__title">{rep.type || 'Road Accident'}</p>
+                    <p className="myrep__title">{rep.title || rep.category || 'Road Accident'}</p>
                     <p className="myrep__meta">{rep.id} · {formatTime(rep.createdAt)}</p>
                     {rep.note && <p className="myrep__note">{rep.note}</p>}
                   </div>
@@ -211,7 +213,7 @@ export const CiviliansDashboardPage: React.FC = () => {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setLightboxData({ url: rep.imageUrl, title: `${rep.type} — ${rep.id}` });
+                      setLightboxData({ url: rep.imageUrl || '', title: `${rep.title || rep.category} — ${rep.id}` });
                     }}
                   >
                     View

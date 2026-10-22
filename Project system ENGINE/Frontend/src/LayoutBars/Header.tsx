@@ -6,8 +6,9 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserSessionChip } from './UserSessionChip';
 import { NotificationsModal } from './NotificationsModal';
+import { UserSession } from '@/Endpoints/authEndpoints';
 
-export const Header: React.FC<{ user?: any }> = ({ user }) => {
+export const Header: React.FC<{ user?: { role?: string; [key: string]: unknown } | null }> = ({ user }) => {
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   const navigate = useNavigate();
 

@@ -60,8 +60,8 @@ export const Login: React.FC = () => {
       });
 
       // Role is determined strictly by the server response
-      const sessionUser = (res as any)?.session;
-      const detectedRole = sessionUser?.role || (res as any)?.role;
+      const sessionUser = res.session;
+      const detectedRole: string = String(sessionUser?.role || '');
 
       if (detectedRole === 'LDRRMO_Admin' || detectedRole === 'admin') {
         if (!isAdminPort && window.location.hostname === '127.0.0.1') {
@@ -74,8 +74,9 @@ export const Login: React.FC = () => {
       } else {
         navigate('/responder');
       }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Authentication failed. Please verify credentials.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Authentication failed. Please verify credentials.';
+      setErrorMessage(msg);
     } finally {
       setIsLoading(false);
     }

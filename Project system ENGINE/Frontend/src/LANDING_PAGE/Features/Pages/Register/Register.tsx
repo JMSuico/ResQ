@@ -93,8 +93,8 @@ export const Register: React.FC = () => {
       setTimeout(() => {
         navigate('/login');
       }, 3000);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Registration failed.');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Registration failed.');
     } finally {
       setIsLoading(false);
     }
@@ -148,7 +148,7 @@ export const Register: React.FC = () => {
                 <select
                   value={role}
                   onChange={(e) => {
-                    const r = e.target.value as any;
+                    const r = e.target.value as 'Civilian' | 'Responder' | 'LDRRMO_Admin';
                     setRole(r);
                     if (r === 'Civilian') setUnit('None');
                     else if (r === 'LDRRMO_Admin') setUnit('LDRRMO');
@@ -167,7 +167,7 @@ export const Register: React.FC = () => {
                   <label className="text-xs font-semibold text-slate-300">Assigned Agency Unit</label>
                   <select
                     value={unit}
-                    onChange={(e) => setUnit(e.target.value as any)}
+                    onChange={(e) => setUnit(e.target.value as 'None' | 'RHU' | 'FIRE' | 'PNP' | 'Security' | 'LDRRMO')}
                     className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-100"
                   >
                     <option value="RHU">RHU (Rural Health / Medical)</option>

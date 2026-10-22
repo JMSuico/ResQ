@@ -108,12 +108,12 @@ export const AdminLoginPage: FC = () => {
     <main
       className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 md:p-8"
       style={{
-        background: 'radial-gradient(circle at 50% 20%, #15060f 0%, #060e18 55%, #02070c 100%)',
+        background: 'radial-gradient(circle at 50% 12%, #340313 0%, #1f030c 35%, #0d0107 70%, #030002 100%)',
         position: 'relative',
         overflow: 'hidden'
       }}
     >
-      {/* Tactical Glow & Grid Background (Zero rotated wedge collision) */}
+      {/* Tactical Glow & Grid Background */}
       <div
         className="pointer-events-none absolute inset-0 opacity-20"
         style={{
@@ -124,79 +124,126 @@ export const AdminLoginPage: FC = () => {
       />
       <div
         className="pointer-events-none absolute w-[600px] h-[600px] rounded-full blur-[120px] -top-40 -left-40"
-        style={{ background: 'radial-gradient(circle, rgba(232,17,76,0.18), transparent 70%)' }}
+        style={{ background: 'radial-gradient(circle, rgba(232,17,76,0.22), transparent 70%)' }}
         aria-hidden="true"
       />
       <div
         className="pointer-events-none absolute w-[500px] h-[500px] rounded-full blur-[100px] -bottom-32 -right-32"
-        style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.15), transparent 70%)' }}
+        style={{ background: 'radial-gradient(circle, rgba(255,92,116,0.15), transparent 70%)' }}
         aria-hidden="true"
       />
 
-      <div className="relative w-full max-w-[500px] my-auto z-10">
+      {/* Military Telemetry Coordinate Markers */}
+      <div className="absolute top-4 left-6 hidden md:block font-mono text-[9px] text-rose-300/40 tracking-widest pointer-events-none">
+        C2-ISOLATE // SEC-GRID: KAT-01 // 8.5074°N, 123.3414°E
+      </div>
+      <div className="absolute top-4 right-6 hidden md:block font-mono text-[9px] text-rose-300/40 tracking-widest pointer-events-none">
+        HSM-ENCRYPT: AES-256-GCM // PORT: 5174
+      </div>
+
+      <div className="relative w-full max-w-[520px] my-auto z-10">
         {/* Executive Clearance Header */}
-        <header className="text-center mb-6">
-          <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-[#1a0510] border border-[#e8114c]/40">
-            <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#e8114c] shadow-[0_0_8px_#e8114c]" />
-            <span className="text-[10.5px] font-extrabold tracking-[0.14em] text-[#ff5c74] uppercase">
-              PORT 5174 EXCLUSIVE EXECUTIVE GATEWAY
+        <header className="text-center mb-5">
+          {/* Executive Command Level-4 Isolation Badge */}
+          <div className="inline-flex items-center gap-2.5 mb-2.5 px-3.5 py-1.5 rounded-full bg-[#20050e]/90 border border-[#e8114c]/70 shadow-[0_0_16px_rgba(232,17,76,0.35)] backdrop-blur-md">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#e8114c] shadow-[0_0_8px_#e8114c]"></span>
+            </span>
+            <span className="font-mono text-[10px] font-extrabold tracking-[0.16em] text-[#ff5c74] uppercase">
+              LEVEL-4 EXECUTIVE ISOLATION // PORT 5174 EXCLUSIVE
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-wide text-white font-['Montserrat',sans-serif]">
-            LDRRMO COMMAND & CONTROL
+
+          <h1 className="text-2xl sm:text-3xl font-black tracking-wider text-white font-['Montserrat',sans-serif]">
+            LDRRMO EXECUTIVE COMMAND
           </h1>
-          <p className="text-sky-400 font-semibold text-xs sm:text-sm mt-1">
-            Local Disaster Risk Reduction & Management Office
+          <p className="font-mono text-xs text-rose-300 font-semibold tracking-wide mt-1 uppercase">
+            Local Disaster Risk Reduction & Management Office &bull; Region IX
           </p>
-          <p className="text-slate-400 text-xs mt-1">
-            Restricted Tactical Administration & Multi-Agency Dispatch System
+          <p className="font-mono text-[11px] text-slate-400 mt-1">
+            Restricted C4I Tactical Administration & Multi-Agency Dispatch Architecture
           </p>
           <div
-            className="w-44 h-[3px] mx-auto mt-3 rounded-full"
+            className="w-48 h-[2px] mx-auto mt-3 rounded-full"
             style={{
-              background: 'linear-gradient(90deg, transparent, #e8114c, #38bdf8, transparent)',
-              boxShadow: '0 0 8px rgba(232, 17, 76, 0.5)'
+              background: 'linear-gradient(90deg, transparent, #e8114c 30%, #ff5c74 50%, #e8114c 70%, transparent)',
+              boxShadow: '0 0 10px rgba(232, 17, 76, 0.6)'
             }}
             aria-hidden="true"
           />
         </header>
 
-        {/* High Security Panel (Zero Unit Selector Tabs) */}
+        {/* High Security Panel with Tactical Military HUD Corner Brackets */}
         <section
-          className="relative w-full rounded-2xl bg-[#091522]/95 border border-[#e8114c]/30 shadow-2xl shadow-black/80 backdrop-blur-md overflow-hidden"
+          className="relative w-full rounded-2xl bg-gradient-to-b from-[#18030d]/95 via-[#0f0208]/95 to-[#070104]/98 border border-[#e8114c]/40 shadow-2xl shadow-black/90 backdrop-blur-md overflow-hidden"
           aria-labelledby="admin-panel-title"
+          style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.8), 0 0 25px rgba(232,17,76,0.18)' }}
         >
+          {/* Military HUD Corner Brackets */}
+          <div className="absolute top-0 left-0 w-3.5 h-3.5 border-t-2 border-l-2 border-[#e8114c] pointer-events-none rounded-tl-sm z-20" aria-hidden="true" />
+          <div className="absolute top-0 right-0 w-3.5 h-3.5 border-t-2 border-r-2 border-[#e8114c] pointer-events-none rounded-tr-sm z-20" aria-hidden="true" />
+          <div className="absolute bottom-0 left-0 w-3.5 h-3.5 border-b-2 border-l-2 border-[#e8114c] pointer-events-none rounded-bl-sm z-20" aria-hidden="true" />
+          <div className="absolute bottom-0 right-0 w-3.5 h-3.5 border-b-2 border-r-2 border-[#e8114c] pointer-events-none rounded-br-sm z-20" aria-hidden="true" />
+
+          {/* Top Subtle Scanner Line */}
           <div
-            className="absolute top-0 left-0 right-0 h-[2px]"
-            style={{ background: 'linear-gradient(90deg, #e8114c, #38bdf8)' }}
+            className="absolute top-0 left-0 right-0 h-[2px] z-10"
+            style={{ background: 'linear-gradient(90deg, transparent, #e8114c, #ff5c74, #e8114c, transparent)' }}
             aria-hidden="true"
           />
           <h2 className="visually-hidden" id="admin-panel-title">LDRRMO Administrator Sign In</h2>
 
-          <form className="p-5 sm:p-7" id="admin-login-form" onSubmit={handleSubmit} noValidate>
-            {/* High Security Notice */}
-            <div className="notice" id="admin-notice" style={{ background: '#071522', borderColor: 'rgba(232, 17, 76, 0.4)', marginTop: '0', marginBottom: '18px' }}>
-              <div className="notice__head">
-                <span className="notice__dot" aria-hidden="true" style={{ background: '#e8114c' }}></span>
-                <p className="notice__title" style={{ color: '#ffffff', fontWeight: 700 }}>
-                  RESTRICTED ACCESS CONSOLE
-                </p>
-                <span className="notice__badge" style={{ background: '#340313', color: '#ff5c74', border: '1px solid rgba(232,17,76,0.5)' }}>
-                  LDRRMO_ADMIN ONLY
+          <form className="p-5 sm:p-7 relative z-10" id="admin-login-form" onSubmit={handleSubmit} noValidate>
+            {/* Live Telemetry Status Bar */}
+            <div className="flex items-center justify-between font-mono text-[9.5px] tracking-wider text-rose-300/80 border-b border-rose-500/20 pb-2 mb-3">
+              <span className="flex items-center gap-1.5 font-bold">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+                C4I SYSTEM: ACTIVE // CLEARANCE: LEVEL-4
+              </span>
+              <span className="text-slate-400 tracking-widest">ISOLATION MODE: AIR-GAPPED</span>
+            </div>
+
+            {/* Dual-Port Air-Gap Security Notice */}
+            <div
+              className="rounded-xl border border-rose-500/40 bg-gradient-to-b from-[#2a0614]/90 to-[#14020a]/95 p-3.5 mb-4 relative overflow-hidden backdrop-blur-md"
+              style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 4px 12px rgba(0,0,0,0.4)' }}
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#e8114c] shadow-[0_0_8px_#e8114c]" />
+                  <p className="font-mono text-[11px] font-bold tracking-wider text-white uppercase">
+                    DUAL-PORT AIR-GAP SECURITY NOTICE
+                  </p>
+                </div>
+                <span className="font-mono text-[9px] px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/50 text-rose-300 font-extrabold uppercase">
+                  ISOLATED :5174
                 </span>
               </div>
-              <p className="notice__text" style={{ color: '#94a3b8', fontSize: '12px', marginTop: '6px' }}>
-                Only authorized LDRRMO Executive Directors and System Administrators are permitted. Responders (RHU, FIRE, PNP) and Civilians must sign in via Port 5173.
+              <p className="text-slate-300 text-[11.5px] leading-relaxed">
+                Port 5174 is cryptographically isolated exclusively for LDRRMO Executive Directors and C2 Commanders. Emergency Field Responders (RHU, FIRE, PNP) and Citizen Residents are restricted to Port 5173. Non-executive logins trigger automated Level-4 lockout.
               </p>
             </div>
 
             {/* Email Field */}
-            <div className={`field ${emailError ? 'is-invalid' : ''}`} style={{ marginTop: '12px' }}>
-              <label className="field__label" htmlFor="admin-email" style={{ color: '#cbd5e1' }}>Admin Official Email</label>
-              <div className="field__box" style={{ background: '#0e243a', borderColor: 'rgba(255,255,255,0.1)' }}>
-                <svg className="field__icon" aria-hidden="true"><use href="#i-shield"/></svg>
+            <div className={`field ${emailError ? 'is-invalid' : ''}`} style={{ marginTop: '8px' }}>
+              <div className="flex items-center justify-between mb-1">
+                <label className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="admin-email">
+                  Admin Command Email
+                </label>
+                <span className="font-mono text-[9px] text-rose-400 font-bold">[LEVEL-4 CLEARANCE ID]</span>
+              </div>
+              <div
+                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                style={{
+                  background: 'rgba(32, 6, 15, 0.85)',
+                  border: '1px solid rgba(255, 92, 116, 0.28)',
+                  borderRadius: '6px'
+                }}
+              >
+                <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-shield"/></svg>
                 <input
-                  className="field__input"
+                  className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                   id="admin-email"
                   name="email"
                   type="email"
@@ -217,29 +264,40 @@ export const AdminLoginPage: FC = () => {
                 />
               </div>
               {emailError && (
-                <p className="field__error" id="admin-email-error" role="alert">
+                <p className="field__error font-mono text-[10.5px]" id="admin-email-error" role="alert">
                   {emailError}
                 </p>
               )}
             </div>
 
             {/* Password Field */}
-            <div className={`field field--password ${passwordError ? 'is-invalid' : ''}`} style={{ marginTop: '12px' }}>
-              <div className="field__row">
-                <label className="field__label" htmlFor="admin-password" style={{ color: '#cbd5e1' }}>Admin Clearance Password</label>
+            <div className={`field field--password ${passwordError ? 'is-invalid' : ''}`} style={{ marginTop: '10px' }}>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <label className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="admin-password">
+                    Executive Security Passphrase
+                  </label>
+                  <span className="font-mono text-[9px] text-rose-400 font-bold">[ARGON2.KEY]</span>
+                </div>
                 <a
-                  className="link link--quiet"
+                  className="font-mono text-[10px] text-rose-400 hover:text-rose-300 font-semibold transition-colors"
                   href="#"
                   onClick={handleCliPasswordReset}
-                  style={{ color: '#38bdf8', fontSize: '11px', fontWeight: 600 }}
                 >
-                  CLI Password Reset
+                  CLI Reset (.ps1)
                 </a>
               </div>
-              <div className="field__box" style={{ background: '#0e243a', borderColor: 'rgba(255,255,255,0.1)' }}>
-                <svg className="field__icon" aria-hidden="true"><use href="#i-lock"/></svg>
+              <div
+                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                style={{
+                  background: 'rgba(32, 6, 15, 0.85)',
+                  border: '1px solid rgba(255, 92, 116, 0.28)',
+                  borderRadius: '6px'
+                }}
+              >
+                <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-lock"/></svg>
                 <input
-                  className="field__input"
+                  className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                   id="admin-password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
@@ -258,7 +316,7 @@ export const AdminLoginPage: FC = () => {
                   style={{ color: '#ffffff' }}
                 />
                 <button
-                  className="field__toggle"
+                  className="field__toggle hover:text-rose-300"
                   type="button"
                   id="admin-pw-toggle"
                   aria-pressed={showPassword}
@@ -274,7 +332,7 @@ export const AdminLoginPage: FC = () => {
                 </button>
               </div>
               {passwordError && (
-                <p className="field__error" id="admin-password-error" role="alert">
+                <p className="field__error font-mono text-[10.5px]" id="admin-password-error" role="alert">
                   {passwordError}
                 </p>
               )}
@@ -298,36 +356,27 @@ export const AdminLoginPage: FC = () => {
               <button
                 type="button"
                 onClick={fillAdminCredentials}
-                style={{
-                  fontSize: '11px',
-                  padding: '3px 9px',
-                  borderRadius: '4px',
-                  border: '1px solid rgba(14,165,233,0.4)',
-                  background: '#071522',
-                  color: '#38bdf8',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  transition: 'all 0.15s ease'
-                }}
-                className="hover:bg-[#0c243a] hover:border-[#38bdf8]"
+                className="font-mono text-[10px] px-2.5 py-1 rounded border border-rose-500/40 bg-rose-950/70 text-rose-300 hover:border-rose-400 hover:bg-rose-900/80 font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                title="Populate test executive credentials"
               >
-                Auto-fill Admin Demo
+                <span>EXEC DEMO KEY</span>
+                <span className="text-xs">🔑</span>
               </button>
             </div>
             {consentError && (
-              <p className="text-[11px] text-[#ff5c74] font-medium -mt-1 mb-2" id="admin-consent-error" role="alert">
+              <p className="font-mono text-[11px] text-[#ff5c74] font-medium -mt-1 mb-2" id="admin-consent-error" role="alert">
                 {consentError}
               </p>
             )}
 
             {/* Port 5173 Redirect Link if Responder/Civilian */}
-            <div style={{ textAlign: 'center', marginTop: '8px', marginBottom: '12px', fontSize: '11.5px', color: '#64748b' }}>
-              Are you an Emergency Responder or Citizen Resident?{' '}
+            <div className="font-mono text-[11px] text-center my-3 text-slate-400 border border-slate-700/40 bg-slate-900/40 py-1.5 px-2 rounded">
+              Emergency Responder or Citizen Resident?{' '}
               <a
                 href="http://127.0.0.1:5173/login"
-                style={{ color: '#ff5c74', textDecoration: 'underline', fontWeight: 600 }}
+                className="text-rose-400 hover:text-rose-300 underline font-bold tracking-wide"
               >
-                Go to Port 5173 Portal &rarr;
+                Go to Port 5173 Gateway &rarr;
               </a>
             </div>
 
@@ -336,13 +385,11 @@ export const AdminLoginPage: FC = () => {
               <div
                 role="status"
                 aria-live="polite"
+                className="font-mono text-[11px] font-semibold text-center my-2 p-2 rounded border"
                 style={{
-                  textAlign: 'center',
-                  fontSize: '11.5px',
-                  fontWeight: 600,
-                  marginTop: '4px',
-                  marginBottom: '10px',
-                  color: statusTone === 'ok' ? '#34d399' : statusTone === 'bad' ? '#ff5c74' : '#c9c3ca',
+                  background: statusTone === 'ok' ? 'rgba(6, 32, 21, 0.85)' : statusTone === 'bad' ? 'rgba(52, 3, 19, 0.85)' : 'rgba(30, 41, 59, 0.85)',
+                  borderColor: statusTone === 'ok' ? 'rgba(52, 211, 153, 0.4)' : statusTone === 'bad' ? 'rgba(255, 92, 116, 0.5)' : 'rgba(148, 163, 184, 0.3)',
+                  color: statusTone === 'ok' ? '#34d399' : statusTone === 'bad' ? '#ff5c74' : '#e2e8f0',
                   letterSpacing: '0.02em',
                   wordBreak: 'break-word'
                 }}
@@ -371,7 +418,7 @@ export const AdminLoginPage: FC = () => {
                     </svg>
                   )
                 }
-                className="!h-[46px] !bg-gradient-to-r !from-[#e8114c] !to-[#c50337] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase !shadow-lg !shadow-[#e8114c]/30 active:!scale-[0.99] transition-all rounded-lg group cursor-pointer"
+                className="!h-[48px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-black !tracking-widest !uppercase !shadow-lg !shadow-[#e8114c]/40 active:!scale-[0.99] transition-all rounded-lg group cursor-pointer border border-[#ff5c74]/50"
               >
                 {isLoading ? 'Verifying clearance…' : isSuccess ? 'Clearance Granted' : 'ACCESS COMMAND CONSOLE'}
               </Button>

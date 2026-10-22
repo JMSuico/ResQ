@@ -187,8 +187,9 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
           videoRef.current.play().catch(() => {});
         }
         setIsUsingFallback(false);
-      } catch (err: any) {
-        setCameraError(err.message || 'Camera inaccessible. Synthetic sensor frame active.');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Camera inaccessible. Synthetic sensor frame active.';
+        setCameraError(msg);
         setIsUsingFallback(true);
       }
     };

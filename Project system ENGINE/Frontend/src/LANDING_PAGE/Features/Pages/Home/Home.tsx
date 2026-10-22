@@ -6,6 +6,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/Shared/Button';
 import { AGENCY_METADATA } from '@/Libs/Assets/data';
+import { InkOrbitFeatures } from '@/components/ui';
 
 export const Home: React.FC = () => {
   return (
@@ -72,6 +73,35 @@ export const Home: React.FC = () => {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Deterministic Dispatch & Incident Telemetry Architecture */}
+      <section className="w-full py-12 px-4 md:px-6 bg-[#0a0f1d] border-t border-slate-800/80 flex flex-col items-center">
+        <InkOrbitFeatures
+          theme="dark"
+          brand="ResQTrack AI"
+          tag="Deterministic Telemetry"
+          title="Deterministic Dispatch &\n*Incident Telemetry* Architecture"
+          collaboration={{
+            title: "Multi-Agency Coordination Mesh",
+            description: "LDRRMO Command, RHU Medical, BFP Firefighters, and PNP Patrols stay continuously synchronized with shared telemetry and automated priority routing.",
+          }}
+          reports={{
+            title: "Deterministic Incident Verification",
+            description: "Instantaneous AI severity grading, biometric anti-spoofing verification, and tamper-proof dispatch incident logs.",
+          }}
+          integrations={{
+            title: "Joint Tactical Telemetry",
+            description: "Live data pipelines linking GIS vector layers, edge camera blur detection, GPS geofencing, and rapid unit responder dispatch.",
+            tools: ["LDRRMO", "RHU Triage", "BFP Ops", "PNP Patrol"],
+          }}
+          insights={{
+            title: "Predictive Municipal Incident Vector",
+            description: "Real-time municipal risk scoring and response velocity analytics projecting high-risk clusters for strategic pre-deployment.",
+            values: [14, 18, 16, 25, 23, 31, 29, 38, 35, 44, 49, 56],
+            forecastFrom: 8,
+          }}
+        />
       </section>
     </div>
   );

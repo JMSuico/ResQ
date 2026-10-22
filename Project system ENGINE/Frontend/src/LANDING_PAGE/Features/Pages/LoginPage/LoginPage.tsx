@@ -188,43 +188,87 @@ export const LoginPage: FC = () => {
           </span>
         </div>
 
-        {/* Dedicated RBAC Login Panel (Zero Unit Selector Tabs) */}
-        <section className="panel" aria-labelledby="panel-title">
-          <span className="panel__rule" aria-hidden="true"></span>
+        {/* Dedicated RBAC Login Panel with Military HUD Styling (Zero Unit Selector Tabs) */}
+        <section
+          className="panel relative"
+          aria-labelledby="panel-title"
+          style={{
+            height: 'auto',
+            minHeight: 'calc(455 * var(--u))',
+            paddingBottom: '20px',
+            border: '1px solid rgba(255, 92, 116, 0.22)',
+            boxShadow: '0 24px 60px rgba(0,0,0,0.65), 0 0 20px rgba(232,17,76,0.15)'
+          }}
+        >
+          {/* Military HUD Corner Brackets */}
+          <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-[#ff5c74]/70 pointer-events-none rounded-tl-[3px]" aria-hidden="true" />
+          <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-[#ff5c74]/70 pointer-events-none rounded-tr-[3px]" aria-hidden="true" />
+          <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-[#ff5c74]/70 pointer-events-none rounded-bl-[3px]" aria-hidden="true" />
+          <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-[#ff5c74]/70 pointer-events-none rounded-br-[3px]" aria-hidden="true" />
+
+          {/* Top Subtle Tactical Scanline Accent */}
+          <span className="panel__rule" aria-hidden="true" />
           <h2 className="visually-hidden" id="panel-title">Responder and Civilian Sign In</h2>
 
           <form className="panel__body" id="login-form" onSubmit={handleSubmit} noValidate>
+            {/* Live Telemetry HUD Status Row */}
+            <div className="flex items-center justify-between font-mono text-[9.5px] tracking-wider text-rose-300/80 border-b border-rose-500/20 pb-2 mb-3">
+              <span className="flex items-center gap-1.5 font-bold">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+                AUTH ENGINE // SYS.ONLINE
+              </span>
+              <span className="text-slate-400 tracking-widest hidden sm:inline">GATEWAY :5173 // 256-BIT</span>
+            </div>
+
             {/* Dynamic RBAC Notice Banner */}
             <div
               className="notice"
               id="notice"
               role="region"
               aria-label="Role-Based Access Control Notice"
-              style={{ marginTop: '0', marginBottom: '14px' }}
+              style={{
+                marginTop: '0',
+                marginBottom: '14px',
+                background: 'linear-gradient(135deg, rgba(52, 3, 19, 0.95), rgba(20, 2, 10, 0.95))',
+                border: '1px solid rgba(255, 92, 116, 0.25)',
+                borderRadius: '8px'
+              }}
             >
               <div className="notice__head">
-                <span className="notice__dot" aria-hidden="true"></span>
-                <p className="notice__title">
+                <span className="notice__dot" aria-hidden="true" style={{ background: '#ff5c74', boxShadow: '0 0 8px #ff5c74' }} />
+                <p className="notice__title" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, letterSpacing: '0.04em' }}>
                   DYNAMIC ROLE DETECTION (RBAC) ACTIVE (:5173)
                 </p>
-                <span className="notice__badge">
+                <span className="notice__badge" style={{ background: '#340313', color: '#ff5c74', border: '1px solid rgba(255,92,116,0.4)', borderRadius: '4px' }}>
                   MULTI-AGENCY RBAC
                 </span>
               </div>
-              <p className="notice__text">
+              <p className="notice__text" style={{ color: '#d1d5db', fontSize: '11.5px', lineHeight: 1.5 }}>
                 Emergency Responders (RHU, FIRE, PNP) and Civilians share this login. The backend automatically determines your operational dashboard from your account role.
               </p>
             </div>
 
             {/* Email Address Field */}
-            <div className={`field ${emailError ? 'is-invalid' : ''}`} style={{ marginTop: '12px' }}>
-              <label className="field__label" htmlFor="email">Email address</label>
-              <div className="field__box">
-                <svg className="field__icon" aria-hidden="true">
+            <div className={`field ${emailError ? 'is-invalid' : ''}`} style={{ marginTop: '8px' }}>
+              <div className="flex items-center justify-between mb-1">
+                <label className="font-mono text-[10.5px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="email">
+                  Email Address
+                </label>
+                <span className="font-mono text-[9px] text-rose-400/90 tracking-widest">[AUTH.IDENTIFIER]</span>
+              </div>
+              <div
+                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                style={{
+                  background: 'rgba(46, 10, 22, 0.85)',
+                  border: '1px solid rgba(255, 92, 116, 0.22)',
+                  borderRadius: '6px'
+                }}
+              >
+                <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}>
                   <use href="#i-user" />
                 </svg>
                 <input
-                  className="field__input"
+                  className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                   id="email"
                   name="email"
                   type="email"
@@ -244,31 +288,42 @@ export const LoginPage: FC = () => {
                 />
               </div>
               {emailError && (
-                <p className="field__error" id="email-error" role="alert">
+                <p className="field__error font-mono text-[10.5px]" id="email-error" role="alert">
                   {emailError}
                 </p>
               )}
             </div>
 
             {/* Password Field */}
-            <div className={`field field--password ${passwordError ? 'is-invalid' : ''}`} style={{ marginTop: '12px' }}>
-              <div className="field__row">
-                <label className="field__label" htmlFor="password">Password</label>
+            <div className={`field field--password ${passwordError ? 'is-invalid' : ''}`} style={{ marginTop: '10px' }}>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <label className="font-mono text-[10.5px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="password">
+                    Clearance Key
+                  </label>
+                  <span className="font-mono text-[9px] text-rose-400/90 tracking-widest">[ARGON2.KEY]</span>
+                </div>
                 <a
-                  className="link link--quiet"
+                  className="link link--quiet font-mono text-[10px] text-rose-400 hover:text-rose-300 font-semibold transition-colors"
                   href="#"
                   onClick={handleForgotPassword}
-                  style={{ fontSize: '11px', color: '#ff5c74', fontWeight: 600 }}
                 >
-                  Forgot password?
+                  Forgot key?
                 </a>
               </div>
-              <div className="field__box">
-                <svg className="field__icon" aria-hidden="true">
+              <div
+                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                style={{
+                  background: 'rgba(46, 10, 22, 0.85)',
+                  border: '1px solid rgba(255, 92, 116, 0.22)',
+                  borderRadius: '6px'
+                }}
+              >
+                <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}>
                   <use href="#i-lock" />
                 </svg>
                 <input
-                  className="field__input"
+                  className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                   id="password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
@@ -286,7 +341,7 @@ export const LoginPage: FC = () => {
                   aria-invalid={!!passwordError}
                 />
                 <button
-                  className="field__toggle"
+                  className="field__toggle hover:text-rose-300"
                   type="button"
                   id="pw-toggle"
                   aria-pressed={showPassword}
@@ -306,7 +361,7 @@ export const LoginPage: FC = () => {
                 </button>
               </div>
               {passwordError && (
-                <p className="field__error" id="password-error" role="alert">
+                <p className="field__error font-mono text-[10.5px]" id="password-error" role="alert">
                   {passwordError}
                 </p>
               )}
@@ -326,7 +381,7 @@ export const LoginPage: FC = () => {
                 }}
                 label={
                   <span className="text-[11px] text-slate-300 font-medium select-none">
-                    Confirm access terms
+                    Confirm operational access terms
                   </span>
                 }
               />
@@ -335,60 +390,123 @@ export const LoginPage: FC = () => {
                 id="register-link"
                 to="/register"
               >
-                Don't have an account? Register
+                Register emergency account &rarr;
               </Link>
             </div>
             {consentError && (
-              <p className="text-[11px] text-[#ff5c74] font-medium -mt-1 mb-2" id="consent-error" role="alert">
+              <p className="font-mono text-[11px] text-[#ff5c74] font-medium -mt-1 mb-2" id="consent-error" role="alert">
                 {consentError}
               </p>
             )}
 
-            {/* Quick Test Credentials (RBAC Presets) */}
-            <div style={{ marginTop: '6px', marginBottom: '12px' }}>
-              <span style={{ fontSize: '10px', color: '#8fa2b6', width: '100%', display: 'block', marginBottom: '5px', fontWeight: 600, letterSpacing: '0.04em' }}>
-                Quick Test Credentials (RBAC Presets):
-              </span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {/* Quick Test Credentials - Authentic Tactical Authorization Tokens */}
+            <div className="mt-2 mb-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-mono text-[9.5px] uppercase tracking-wider text-slate-300 font-semibold flex items-center gap-1.5">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-400" />
+                  Tactical Authorization Tokens (RBAC Presets)
+                </span>
+                <span className="font-mono text-[8.5px] text-slate-400 tracking-widest hidden sm:inline">QUICK CLEARANCE</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {/* LDRRMO Admin Token */}
                 <button
                   type="button"
                   onClick={() => applyPreset('admin')}
-                  style={{ fontSize: '10px', padding: '4px 9px', borderRadius: '4px', border: '1px solid rgba(232,17,76,0.5)', background: '#340313', color: '#ff5c74', cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s ease' }}
+                  className={`text-left p-1.5 rounded border transition-all duration-150 flex items-center justify-between group ${
+                    email === 'ldrrmo.admin@resqtrack.gov.ph'
+                      ? 'border-rose-400 bg-rose-950/80 shadow-[0_0_8px_rgba(232,17,76,0.35)]'
+                      : 'border-rose-500/30 bg-[#2b0816]/70 hover:border-rose-400 hover:bg-[#340313]'
+                  }`}
                   title="Switch to LDRRMO Admin clearance"
                 >
-                  LDRRMO Admin
+                  <div className="min-w-0 pr-1">
+                    <div className="text-[10px] font-bold text-rose-300 truncate">LDRRMO Command</div>
+                    <div className="font-mono text-[8px] text-rose-400/80">L4 ADMIN</div>
+                  </div>
+                  <span className="font-mono text-[8px] px-1 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold shrink-0">
+                    C2
+                  </span>
                 </button>
+
+                {/* RHU Medic Token */}
                 <button
                   type="button"
                   onClick={() => applyPreset('rhu')}
-                  style={{ fontSize: '10px', padding: '4px 9px', borderRadius: '4px', border: '1px solid rgba(14,165,233,0.5)', background: '#071522', color: '#38bdf8', cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s ease' }}
+                  className={`text-left p-1.5 rounded border transition-all duration-150 flex items-center justify-between group ${
+                    email === 'rhu.medic@resqtrack.gov.ph'
+                      ? 'border-sky-400 bg-sky-950/80 shadow-[0_0_8px_rgba(14,165,233,0.35)]'
+                      : 'border-sky-500/30 bg-[#071927]/70 hover:border-sky-400 hover:bg-[#0c243a]'
+                  }`}
                   title="Switch to Rural Health Unit responder"
                 >
-                  RHU Medic
+                  <div className="min-w-0 pr-1">
+                    <div className="text-[10px] font-bold text-sky-300 truncate">RHU Medical</div>
+                    <div className="font-mono text-[8px] text-sky-400/80">EMS AMBULANCE</div>
+                  </div>
+                  <span className="font-mono text-[8px] px-1 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold shrink-0">
+                    MED
+                  </span>
                 </button>
+
+                {/* FIRE BFP Token */}
                 <button
                   type="button"
                   onClick={() => applyPreset('fire')}
-                  style={{ fontSize: '10px', padding: '4px 9px', borderRadius: '4px', border: '1px solid rgba(249,115,22,0.5)', background: '#260510', color: '#fb923c', cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s ease' }}
+                  className={`text-left p-1.5 rounded border transition-all duration-150 flex items-center justify-between group ${
+                    email === 'bfp.fire@resqtrack.gov.ph'
+                      ? 'border-orange-400 bg-orange-950/80 shadow-[0_0_8px_rgba(249,115,22,0.35)]'
+                      : 'border-orange-500/30 bg-[#250d06]/70 hover:border-orange-400 hover:bg-[#34130a]'
+                  }`}
                   title="Switch to Bureau of Fire Protection responder"
                 >
-                  FIRE BFP
+                  <div className="min-w-0 pr-1">
+                    <div className="text-[10px] font-bold text-orange-300 truncate">FIRE BFP</div>
+                    <div className="font-mono text-[8px] text-orange-400/80">STATION CHIEF</div>
+                  </div>
+                  <span className="font-mono text-[8px] px-1 py-0.5 rounded bg-orange-500/20 text-orange-300 border border-orange-500/30 font-bold shrink-0">
+                    BFP
+                  </span>
                 </button>
+
+                {/* PNP Police Token */}
                 <button
                   type="button"
                   onClick={() => applyPreset('pnp')}
-                  style={{ fontSize: '10px', padding: '4px 9px', borderRadius: '4px', border: '1px solid rgba(99,102,241,0.5)', background: '#0a1a2b', color: '#818cf8', cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s ease' }}
+                  className={`text-left p-1.5 rounded border transition-all duration-150 flex items-center justify-between group ${
+                    email === 'pnp.patrol@resqtrack.gov.ph'
+                      ? 'border-indigo-400 bg-indigo-950/80 shadow-[0_0_8px_rgba(99,102,241,0.35)]'
+                      : 'border-indigo-500/30 bg-[#0c142b]/70 hover:border-indigo-400 hover:bg-[#152145]'
+                  }`}
                   title="Switch to Philippine National Police responder"
                 >
-                  PNP Police
+                  <div className="min-w-0 pr-1">
+                    <div className="text-[10px] font-bold text-indigo-300 truncate">PNP Police</div>
+                    <div className="font-mono text-[8px] text-indigo-400/80">PATROL DISPATCH</div>
+                  </div>
+                  <span className="font-mono text-[8px] px-1 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold shrink-0">
+                    PNP
+                  </span>
                 </button>
+
+                {/* Civilian SOS Token */}
                 <button
                   type="button"
                   onClick={() => applyPreset('civilian')}
-                  style={{ fontSize: '10px', padding: '4px 9px', borderRadius: '4px', border: '1px solid rgba(16,185,129,0.5)', background: '#062015', color: '#34d399', cursor: 'pointer', fontWeight: 600, transition: 'all 0.15s ease' }}
+                  className={`text-left p-1.5 rounded border transition-all duration-150 flex items-center justify-between group col-span-2 sm:col-span-1 ${
+                    email === 'resident.juan@resqtrack.gov.ph'
+                      ? 'border-emerald-400 bg-emerald-950/80 shadow-[0_0_8px_rgba(16,185,129,0.35)]'
+                      : 'border-emerald-500/30 bg-[#062015]/70 hover:border-emerald-400 hover:bg-[#0c3322]'
+                  }`}
                   title="Switch to Citizen Resident SOS user"
                 >
-                  Civilian SOS
+                  <div className="min-w-0 pr-1">
+                    <div className="text-[10px] font-bold text-emerald-300 truncate">Civilian SOS</div>
+                    <div className="font-mono text-[8px] text-emerald-400/80">COMMUNITY RESIDENT</div>
+                  </div>
+                  <span className="font-mono text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold shrink-0">
+                    CIV
+                  </span>
                 </button>
               </div>
             </div>
@@ -398,13 +516,11 @@ export const LoginPage: FC = () => {
               <div
                 role="status"
                 aria-live="polite"
+                className="font-mono text-[11px] font-semibold text-center my-2 p-2 rounded border"
                 style={{
-                  textAlign: 'center',
-                  fontSize: '11.5px',
-                  fontWeight: 600,
-                  marginTop: '4px',
-                  marginBottom: '10px',
-                  color: statusTone === 'ok' ? '#34d399' : statusTone === 'bad' ? '#ff5c74' : '#c9c3ca',
+                  background: statusTone === 'ok' ? 'rgba(6, 32, 21, 0.85)' : statusTone === 'bad' ? 'rgba(52, 3, 19, 0.85)' : 'rgba(30, 41, 59, 0.85)',
+                  borderColor: statusTone === 'ok' ? 'rgba(52, 211, 153, 0.4)' : statusTone === 'bad' ? 'rgba(255, 92, 116, 0.5)' : 'rgba(148, 163, 184, 0.3)',
+                  color: statusTone === 'ok' ? '#34d399' : statusTone === 'bad' ? '#ff5c74' : '#e2e8f0',
                   letterSpacing: '0.02em',
                   wordBreak: 'break-word'
                 }}
@@ -433,9 +549,9 @@ export const LoginPage: FC = () => {
                     </svg>
                   )
                 }
-                className="!h-[44px] !bg-gradient-to-r !from-[#a5002e] !to-[#f20540] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase !shadow-lg !shadow-[#e8114c]/30 active:!scale-[0.99] transition-all rounded-lg group cursor-pointer"
+                className="!h-[46px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-black !tracking-widest !uppercase !shadow-lg !shadow-[#e8114c]/40 active:!scale-[0.99] transition-all rounded-lg group cursor-pointer border border-[#ff5c74]/50"
               >
-                {isLoading ? 'Signing in' : isSuccess ? 'Access granted' : 'LOGIN'}
+                {isLoading ? 'Authenticating...' : isSuccess ? 'Access Granted' : 'AUTHENTICATE & ENTER'}
               </Button>
             </div>
           </form>
