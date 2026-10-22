@@ -60,7 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { to: '/admin/strategic-map', label: 'Strategic Map', icon: '#i-pin' },
       { to: '/admin/incidents', label: 'Incident Operations & Triage Dispatch', icon: '#i-alert' },
       { to: '/admin/roster', label: 'Agency Fleet Roster', icon: '#i-people' },
-      { to: '/admin/analytics', label: 'Analytics & Reports', icon: '#i-clock' },
+      { to: '/admin/analytics', label: 'Analytics & Reports', icon: '#i-chart' },
       { to: '/admin/users', label: 'User Governance', icon: '#i-shield-check' },
       { to: '/admin/alerts', label: 'Emergency Broadcasts', icon: '#i-bell' },
       { to: '/admin/settings', label: 'System Settings', icon: '#i-sliders' }
@@ -158,10 +158,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside
-      className={`sidebar transition-all duration-200 select-none ${isCollapsed ? 'is-collapsed w-[72px] min-w-[72px]' : 'w-[250px] min-w-[250px]'}`}
+      className={`sidebar transition-all duration-200 select-none border-r border-rose-950/80 shadow-2xl shadow-black/80 z-20 flex flex-col flex-shrink-0 ${
+        isCollapsed ? 'is-collapsed w-[72px] min-w-[72px] max-w-[72px]' : 'w-[260px] min-w-[260px] max-w-[260px]'
+      }`}
       style={{
-        width: isCollapsed ? '72px' : 'var(--side-w, 250px)',
-        minWidth: isCollapsed ? '72px' : 'var(--side-w, 250px)'
+        width: isCollapsed ? '72px' : 'var(--side-w, 260px)',
+        minWidth: isCollapsed ? '72px' : 'var(--side-w, 260px)'
       }}
       aria-label="Role Navigation Sidebar"
     >

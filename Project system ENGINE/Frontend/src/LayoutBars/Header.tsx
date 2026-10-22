@@ -6,10 +6,12 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserSessionChip } from './UserSessionChip';
 import { NotificationsModal } from './NotificationsModal';
+import { useDrawerSidebar } from '@/Shared/ToggleDrawerSidebarMenu';
 import { UserSession } from '@/Endpoints/authEndpoints';
 
 export const Header: React.FC<{ user?: { role?: string; [key: string]: unknown } | null }> = ({ user }) => {
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
+  const { isCollapsed } = useDrawerSidebar();
   const navigate = useNavigate();
 
   const handleSettingsClick = () => {
@@ -29,11 +31,27 @@ export const Header: React.FC<{ user?: { role?: string; [key: string]: unknown }
 
   return (
     <header className="topbar">
-      <div className="brandbar">
-        <span className="brandbar__mark">
-          Res<span className="brandbar__accent">Qtrack</span>
-        </span>
-        <span className="brandbar__sub">Katipunan Emergency Response</span>
+      <div
+        className="brandbar flex items-center justify-between transition-all duration-200 border-r border-white/5 pr-3 overflow-hidden"
+        style={{
+          width: isCollapsed ? '72px' : 'var(--brand-w, 260px)',
+          minWidth: isCollapsed ? '72px' : 'var(--brand-w, 260px)'
+        }}
+      >
+        {!isCollapsed ? (
+          <div>
+            <span className="brandbar__mark">
+              Res<span className="brandbar__accent">Qtrack</span>
+            </span>
+            <span className="brandbar__sub">Katipunan Emergency Response</span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center w-full">
+            <span className="brandbar__mark text-base">
+              R<span className="brandbar__accent">Q</span>
+            </span>
+          </div>
+        )}
       </div>
 
       <form className="search" id="search-form" role="search" onSubmit={(e) => e.preventDefault()}>

@@ -42,10 +42,10 @@ export const LayoutWrappers: React.FC<LayoutWrappersProps> = ({
       <div className="app-shell">
         <ResQTrackSvgSprite />
         <Header user={user} />
-        <div className="dash">
+        <div className="dash relative flex flex-1 min-h-0 w-full overflow-hidden bg-slate-950">
           <Sidebar userRole={activeRole} userUnit={activeUnit} />
-          <main className="dash__main flex-1 w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 bg-slate-950/80">
-            <div className="w-full flex-1 min-h-0 flex flex-col">
+          <main className="dash__main flex-1 w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-6 sm:px-8 sm:py-8 md:px-10 md:py-8 lg:px-12 bg-slate-950/95 transition-all">
+            <div className="w-full flex-1 min-h-0 flex flex-col max-w-[1720px] mx-auto">
               {children || <Outlet context={{ user, session }} />}
             </div>
           </main>
