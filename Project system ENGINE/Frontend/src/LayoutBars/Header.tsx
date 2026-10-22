@@ -29,6 +29,15 @@ export const Header: React.FC<{ user?: { role?: string; [key: string]: unknown }
     alert('ResQTrack Emergency Response Command System\nKatipunan, Zamboanga del Norte\nHotline: 911 / (065) 908-1234');
   };
 
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+    } catch (err) {
+      console.error('Logout error', err);
+    }
+    navigate('/login');
+  };
+
   return (
     <header className="topbar">
       <div
@@ -117,6 +126,21 @@ export const Header: React.FC<{ user?: { role?: string; [key: string]: unknown }
         <span className="topbar__sep" aria-hidden="true" />
 
         <UserSessionChip user={user} />
+
+        <button
+          className="iconbtn iconbtn--logout text-rose-400 hover:text-white hover:bg-rose-950/80 border border-rose-900/50 ml-2"
+          type="button"
+          id="btn-logout"
+          title="Sign Out"
+          aria-label="Sign Out"
+          onClick={handleLogout}
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+        </button>
       </div>
     </header>
   );

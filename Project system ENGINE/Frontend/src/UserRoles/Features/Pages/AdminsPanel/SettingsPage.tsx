@@ -60,7 +60,9 @@ export const SettingsPage: FC = () => {
         if (parsed.highContrastHud !== undefined) setHighContrastHud(parsed.highContrastHud);
       }
 
-      const storedAvatar = localStorage.getItem('resqtrack_admin_avatar');
+      const storedAvatar =
+        localStorage.getItem('resqtrack_user_avatar') ||
+        localStorage.getItem('resqtrack_admin_avatar');
       if (storedAvatar) setAvatarUrl(storedAvatar);
     } catch {
       // ignore
@@ -83,6 +85,10 @@ export const SettingsPage: FC = () => {
       setAvatarUrl(result);
       try {
         localStorage.setItem('resqtrack_admin_avatar', result);
+        localStorage.setItem('resqtrack_user_avatar', result);
+        window.dispatchEvent(
+          new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: result } })
+        );
         showToast('Profile photo updated.');
       } catch {
         showToast('Avatar set for current session.');
@@ -225,6 +231,10 @@ export const SettingsPage: FC = () => {
                     onClick={() => {
                       setAvatarUrl('');
                       localStorage.removeItem('resqtrack_admin_avatar');
+                      localStorage.removeItem('resqtrack_user_avatar');
+                      window.dispatchEvent(
+                        new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } })
+                      );
                       showToast('Reverted to default static avatar.');
                     }}
                     className="text-xs text-slate-400 hover:text-rose-400 font-mono transition-colors"

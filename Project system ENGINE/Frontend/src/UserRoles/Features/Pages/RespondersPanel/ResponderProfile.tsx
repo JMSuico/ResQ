@@ -17,6 +17,65 @@ export const ResponderProfile: React.FC = () => {
   const [apparatusPlate, setApparatusPlate] = useState<string>('');
   const [emergencyPhone, setEmergencyPhone] = useState<string>('');
   const [isSaved, setIsSaved] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => {
+    try {
+      return (
+        localStorage.getItem('resqtrack_responder_avatar') ||
+        localStorage.getItem('resqtrack_user_avatar') ||
+        null
+      );
+    } catch {
+      return null;
+    }
+  });
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('Avatar image exceeds 2MB limit.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setAvatarUrl(dataUrl);
+      try {
+        localStorage.setItem('resqtrack_user_avatar', dataUrl);
+        localStorage.setItem('resqtrack_responder_avatar', dataUrl);
+        window.dispatchEvent(
+          new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: dataUrl } })
+        );
+        showToast('Officer identity photo updated & synchronized.');
+      } catch (err) {
+        console.error('Failed to save responder avatar', err);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleResetAvatar = () => {
+    setAvatarUrl(null);
+    try {
+      localStorage.removeItem('resqtrack_user_avatar');
+      localStorage.removeItem('resqtrack_responder_avatar');
+      window.dispatchEvent(
+        new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } })
+      );
+      showToast('Reverted to default responder photo avatar.');
+    } catch (err) {
+      console.error('Failed to reset avatar', err);
+    }
+  };
 
   const loadData = useCallback(async () => {
     if (!session || !session.unit || session.unit === 'None') return;
@@ -95,6 +154,13 @@ export const ResponderProfile: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 w-full text-slate-100 select-none pb-10">
+      {toastMessage && (
+        <div className="p-3.5 rounded-xl bg-sky-950/95 border border-sky-500 text-sky-200 text-xs font-medium flex items-center gap-3 shadow-lg shadow-sky-950/50">
+          <span className="text-base font-bold">✓</span>
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       <div>
         <div className="flex items-center gap-2 mb-1">
           <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse" />
@@ -149,9 +215,38 @@ export const ResponderProfile: React.FC = () => {
 
       <div className="tactical-card p-6 flex flex-col gap-6 bg-slate-900/90 border-slate-800 rounded-xl">
         <div className="flex items-center gap-4 pb-6 border-b border-slate-800">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-sky-600 to-indigo-600 flex items-center justify-center text-2xl font-black text-white shadow-lg border border-sky-400/50">
-            {session?.fullName?.charAt(0) || 'R'}
+          <div className="relative group w-16 h-16 rounded-2xl overflow-hidden border border-sky-400/50 shadow-lg bg-slate-950 flex items-center justify-center flex-shrink-0">
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={session?.fullName || 'Responder'}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-tr from-sky-600 to-indigo-600 flex items-center justify-center text-2xl font-black text-white">
+                {session?.fullName?.charAt(0) || 'R'}
+              </div>
+            )}
+
+            {/* Photo Upload Overlay Button */}
+            <label
+              className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white text-[10px] font-mono font-bold"
+              title="Upload Officer Photo"
+            >
+              <svg className="w-5 h-5 mb-0.5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+              <span>PHOTO</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarUpload}
+                className="hidden"
+              />
+            </label>
           </div>
+
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-bold text-white font-sans">{session?.fullName}</h3>
@@ -162,6 +257,28 @@ export const ResponderProfile: React.FC = () => {
               )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5 font-mono">{session?.email}</p>
+
+            {/* Upload photo / Reset actions */}
+            <div className="flex items-center gap-3 mt-1.5">
+              <label className="text-[11px] font-mono font-bold text-sky-400 hover:text-sky-300 cursor-pointer flex items-center gap-1">
+                <span>📷 Upload Photo</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  className="hidden"
+                />
+              </label>
+              {avatarUrl && (
+                <button
+                  type="button"
+                  onClick={handleResetAvatar}
+                  className="text-[11px] font-mono text-slate-400 hover:text-rose-400 underline transition-colors cursor-pointer"
+                >
+                  Reset to Default Photo
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

@@ -10,6 +10,7 @@ export * from './SearchBar';
 export * from './SkeletonLoader';
 export * from './FormPrimitives';
 export * from './DefaultFloatingModalCard';
+export * from './ProfileFloatingModalCard';
 export * from './ImageLightboxModal';
 export * from './CameraCaptureModal';
 export * from './CaptureViewerModal';
