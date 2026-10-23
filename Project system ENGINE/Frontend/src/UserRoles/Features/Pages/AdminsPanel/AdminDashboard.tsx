@@ -116,8 +116,11 @@ export const AdminDashboard: FC = () => {
     };
 
     reports.forEach((r) => {
-      if (!r.createdAt) return;
-      const hour = new Date(r.createdAt).getHours();
+      const ts = r.createdAt || r.timestamp;
+      if (!ts) return;
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return;
+      const hour = d.getHours();
       if (hour < 4) buckets['00:00']++;
       else if (hour < 8) buckets['04:00']++;
       else if (hour < 12) buckets['08:00']++;
@@ -180,7 +183,7 @@ export const AdminDashboard: FC = () => {
           <div>
             <p className="text-xs font-mono uppercase text-slate-400 font-bold">Active Duty Units</p>
             <h3 className="text-2xl font-extrabold text-white mt-1">
-              {onDutyCount || 2} / {roster.length || 4}
+              {onDutyCount} / {roster.length}
             </h3>
             <span className="text-[10px] text-sky-400 font-mono">Multi-Agency Roster</span>
           </div>

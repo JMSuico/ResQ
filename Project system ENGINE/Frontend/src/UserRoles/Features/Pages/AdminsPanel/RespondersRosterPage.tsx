@@ -2,11 +2,11 @@
 // RespondersRosterPage.tsx -- Agency Fleet Roster Management.
 // Conforms to Tasks 20 & 21:
 // - 5 Overview KPI cards:
-//   1. RHU (Medical) Active Units 12
-//   2. PNP (Police) Active Units 08
-//   3. BFP (Fire) Active Units 05
-//   4. Off-Duty Roster Units 06
-//   5. In-Transit / Standby Units 03
+//   1. RHU (Medical) Active Units
+//   2. PNP (Police) Active Units
+//   3. BFP (Fire) Active Units
+//   4. Off-Duty Roster Units
+//   5. In-Transit / Standby Units
 // - SearchBar with debounced input, pagination, and draggable wide table
 // - Table-to-Card and Card-to-Table view toggle (TableCardToggle)
 // - On-duty, Off-duty, and Dispatched filter dropdowns
@@ -79,11 +79,11 @@ export const RespondersRosterPage: FC = () => {
   } = usePagination(filteredUnits, { initialPageSize: 10 });
 
   // Task 21: Counts
-  const rhuCount = roster.filter((u) => u.agency === 'RHU').length || 12;
-  const pnpCount = roster.filter((u) => u.agency === 'PNP').length || 8;
-  const bfpCount = roster.filter((u) => u.agency === 'FIRE').length || 5;
-  const offDutyCount = roster.filter((u) => u.status === 'OffDuty').length || 6;
-  const standbyCount = roster.filter((u) => u.status === 'Standby' || u.status === 'EnRoute').length || 3;
+  const rhuCount = roster.filter((u) => u.agency === 'RHU').length;
+  const pnpCount = roster.filter((u) => u.agency === 'PNP').length;
+  const bfpCount = roster.filter((u) => u.agency === 'FIRE').length;
+  const offDutyCount = roster.filter((u) => u.status === 'OffDuty').length;
+  const standbyCount = roster.filter((u) => u.status === 'Standby' || u.status === 'EnRoute').length;
 
   return (
     <div className="flex flex-col gap-6 w-full">
@@ -109,7 +109,7 @@ export const RespondersRosterPage: FC = () => {
             <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
           </svg>
-          VIEW COMPLETE FLEET ({roster.length || 34})
+          VIEW COMPLETE FLEET ({roster.length})
         </Button>
       </div>
 
@@ -348,7 +348,7 @@ export const RespondersRosterPage: FC = () => {
         <DefaultFloatingModalCard
           isOpen={isViewAllModalOpen}
           onClose={() => setIsViewAllModalOpen(false)}
-          title={`All Emergency Responders Fleet (${roster.length || 34} Units)`}
+          title={`All Emergency Responders Fleet (${roster.length} Units)`}
           subtitle="Complete multi-agency on-duty, off-duty, and dispatched responder roster"
           className="max-w-3xl max-h-[80vh] flex flex-col"
         >

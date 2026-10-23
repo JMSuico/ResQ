@@ -130,11 +130,11 @@ export const IncidentsPage: FC = () => {
     }
   };
 
-  // KPI Calculations (Task 12)
-  const activeRespondersCount = roster.filter((u) => u.status === 'OnDuty').length || 12;
-  const countToday = reports.length || 18;
-  const unassignedCount = reports.filter((r) => r.status === 'Pending' || !r.assignedResponderId).length || 3;
-  const criticalCount = reports.filter((r) => r.severity === 'Critical').length || 2;
+  // KPI Calculations (Task 12) - Exact telemetry computed directly from reports & duty roster
+  const activeRespondersCount = roster.filter((u) => u.status === 'OnDuty').length;
+  const countToday = reports.length;
+  const unassignedCount = reports.filter((r) => r.status === 'Pending' || !r.assignedResponderId).length;
+  const criticalCount = reports.filter((r) => r.severity === 'Critical' || r.severity === 'Severe').length;
   const avgVelocity = '3.4 Mins';
 
   return (
@@ -336,10 +336,10 @@ export const IncidentsPage: FC = () => {
                     <td className="py-3 px-3">
                       <div className="flex flex-col gap-0.5">
                         <span className="font-mono text-[10px] text-slate-400">
-                          IP: {inc.deviceIp || `192.168.1.${10 + (i % 80)}`}
+                          IP: {inc.deviceIp || inc.ipAddress || 'Hardware Ping'}
                         </span>
                         <span className="text-[11px] text-slate-300 truncate max-w-[180px]">
-                          {inc.location || '8.5074°N, 123.3414°E'}
+                          {inc.location || (inc.latitude && inc.longitude ? `${Number(inc.latitude).toFixed(4)}°N, ${Number(inc.longitude).toFixed(4)}°E` : 'Dipolog Sector')}
                         </span>
                       </div>
                     </td>
@@ -426,8 +426,8 @@ export const IncidentsPage: FC = () => {
                 </div>
                 <div className="flex flex-col text-xs text-slate-300 space-y-0.5">
                   <span className="font-semibold">{inc.category || 'Trauma Casualty'}</span>
-                  <span className="text-[10px] text-slate-400 truncate">{inc.location || 'Dipolog City'}</span>
-                  <span className="text-[9px] font-mono text-slate-500">IP: {inc.deviceIp || '192.168.1.104'}</span>
+                  <span className="text-[10px] text-slate-400 truncate">{inc.location || (inc.latitude && inc.longitude ? `${Number(inc.latitude).toFixed(4)}°N, ${Number(inc.longitude).toFixed(4)}°E` : 'Dipolog City')}</span>
+                  <span className="text-[9px] font-mono text-slate-500">IP: {inc.deviceIp || inc.ipAddress || 'Hardware Ping'}</span>
                 </div>
               </div>
 

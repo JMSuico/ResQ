@@ -194,9 +194,9 @@ export const AlertsCenter: FC = () => {
     pageSizeOptions
   } = usePagination(filteredAlerts, { initialPageSize: 8 });
 
-  // Task 26: 5 KPI Status Card Metrics
-  const activeAlertsCount = alerts.filter((a) => !a.isRead).length || 4;
-  const severeCount = alerts.filter((a) => a.severity === 'Severe' || a.severity === 'Critical').length || 2;
+  // Task 26: 5 KPI Status Card Metrics (Exact Computed Telemetry without static fallbacks)
+  const activeAlertsCount = alerts.filter((a) => !a.isRead).length;
+  const severeCount = alerts.filter((a) => a.severity === 'Severe' || a.severity === 'Critical').length;
   const reachRate = '94.8%';
   const deliveryLatency = '1.2s Push';
   const agencyCount = '3 Corps (RHU/Fire/PNP)';

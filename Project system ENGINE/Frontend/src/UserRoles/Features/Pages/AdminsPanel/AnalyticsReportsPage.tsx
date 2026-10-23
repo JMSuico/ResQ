@@ -11,7 +11,7 @@ import { getAllReports } from '@/Endpoints/reportsApi';
 import { getDutyRoster } from '@/Endpoints/responderOpsApi';
 import { LinearCurveyChart, BarGraphChart, PieGraphChart, HeatmapChart } from '@/Shared/Charts';
 import { Button, Dropdown, DefaultFloatingModalCard } from '@/Shared';
-import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
+import { useValueRefreshAuto, useAnalyticsTelemetry } from '@/Hooks';
 
 export const AnalyticsReportsPage: FC = () => {
   const [reports, setReports] = useState<any[]>([]);
@@ -36,33 +36,28 @@ export const AnalyticsReportsPage: FC = () => {
 
   useValueRefreshAuto(loadData, { intervalMs: 10000 });
 
-  // Telemetry algorithms & derived mathematical curves
-  const responseCurveData = [
-    { label: 'W1', value: 12 },
-    { label: 'W2', value: 18 },
-    { label: 'W3', value: 15 },
-    { label: 'W4', value: Math.max(reports.length, 22) }
-  ];
+  // Live Database-Derived Telemetry & Mathematical Modeling (ZERO fake static multipliers or mock offsets)
+  const {
+    responseCurveData,
+    severityBarData,
+    agencyPieData,
+    heatmapMatrix,
+    totalReportsCount,
+    activeReportsCount,
+    criticalReportsCount,
+    resolvedReportsCount,
+    onDutyUnitsCount,
+    totalUnitsCount,
+    dispatchedUnitsCount,
+    dispatchRatioPercent
+  } = useAnalyticsTelemetry(reports, roster);
 
-  const severityBarData = [
-    { label: 'Low Severity', value: reports.filter((r) => r.severity === 'Low').length || 4, color: '#10b981' },
-    { label: 'Medium Tier', value: reports.filter((r) => r.severity === 'Medium').length || 8, color: '#f59e0b' },
-    { label: 'High Priority', value: reports.filter((r) => r.severity === 'High').length || 6, color: '#ea580c' },
-    { label: 'Critical SOS', value: reports.filter((r) => r.severity === 'Critical').length || 3, color: '#ef4444' }
-  ];
-
-  const agencyPieData = [
-    { label: 'RHU Medical', value: roster.filter((u) => u.agency === 'RHU').length + 5, color: '#0284c7' },
-    { label: 'BFP Fire Rescue', value: roster.filter((u) => u.agency === 'FIRE').length + 3, color: '#ea580c' },
-    { label: 'PNP Police Force', value: roster.filter((u) => u.agency === 'PNP').length + 7, color: '#3b82f6' }
-  ];
-
-  // Mathematical formula progress tracker
+  // Mathematical formula progress tracker bound to real live database telemetry
   const analysisItems = [
     {
       title: 'Triage Ingestion Velocity Algorithm (TIVA)',
       formula: 'V(t) = \\sum_{i=1}^{n} (w_i \\cdot S_i) / \\Delta t',
-      status: 'OPTIMAL (4.2 ms latency)',
+      status: `LIVE (${totalReportsCount} Ingested, ${criticalReportsCount} SOS)`,
       description: 'Calculates continuous weight-adjusted report density per square kilometer.'
     },
     {
@@ -74,7 +69,7 @@ export const AnalyticsReportsPage: FC = () => {
     {
       title: 'Multi-Agency Dispatch Optimization Ratio',
       formula: 'D_{ratio} = \\frac{Units_{Dispatched}}{Units_{Available}} \\times 100\\%',
-      status: '74.2% Fleet Allocation',
+      status: totalUnitsCount > 0 ? `${dispatchRatioPercent} Fleet Allocation (${dispatchedUnitsCount}/${totalUnitsCount} Units Dispatched)` : '0.0% Fleet Allocation',
       description: 'Ensures equitable distribution of emergency responders across municipal sectors.'
     }
   ];
@@ -174,10 +169,36 @@ export const AnalyticsReportsPage: FC = () => {
         </div>
       )}
 
+      {/* Live Database Telemetry Metrics Overview */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        <div className="tactical-card p-3.5 border-l-4 border-l-rose-500">
+          <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Total Ingested Reports</p>
+          <h3 className="text-2xl font-extrabold text-white mt-1">{totalReportsCount}</h3>
+          <span className="text-[10px] text-emerald-400 font-mono">Live DB Registry</span>
+        </div>
+        <div className="tactical-card p-3.5 border-l-4 border-l-sky-500">
+          <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Active On-Duty Units</p>
+          <h3 className="text-2xl font-extrabold text-sky-400 mt-1">
+            {onDutyUnitsCount} / {totalUnitsCount}
+          </h3>
+          <span className="text-[10px] text-slate-400 font-mono">Multi-Agency Roster</span>
+        </div>
+        <div className="tactical-card p-3.5 border-l-4 border-l-amber-500">
+          <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Critical Priority Queue</p>
+          <h3 className="text-2xl font-extrabold text-amber-400 mt-1">{criticalReportsCount}</h3>
+          <span className="text-[10px] text-rose-400 font-mono">Immediate Action</span>
+        </div>
+        <div className="tactical-card p-3.5 border-l-4 border-l-emerald-500">
+          <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Dispatched Fleet Ratio</p>
+          <h3 className="text-2xl font-extrabold text-emerald-400 mt-1">{dispatchRatioPercent}</h3>
+          <span className="text-[10px] text-emerald-400 font-mono">{dispatchedUnitsCount} Units Deployed</span>
+        </div>
+      </div>
+
       {/* Primary Analytics Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="tactical-card p-4">
-          <LinearCurveyChart data={responseCurveData} title="Incident Response Velocity Trend" />
+          <LinearCurveyChart data={responseCurveData} title="Incident Response Velocity Trend (24h Live)" />
         </div>
         <div className="tactical-card p-4">
           <BarGraphChart data={severityBarData} title="Incident Severity Triage Distribution" />
@@ -189,7 +210,10 @@ export const AnalyticsReportsPage: FC = () => {
 
       {/* Geospatial Weekly Incident Density Matrix (Heatmap) */}
       <div className="tactical-card p-4">
-        <HeatmapChart title="Geospatial Weekly Incident Density Matrix (Barangay Heat Distribution)" />
+        <HeatmapChart
+          matrix={heatmapMatrix}
+          title="Geospatial Weekly Incident Density Matrix (Barangay Heat Distribution)"
+        />
       </div>
 
       {/* Pure Analysis & Progress Tracking */}
@@ -262,16 +286,16 @@ export const AnalyticsReportsPage: FC = () => {
                 <h4 className="text-lg font-black text-white mt-1">70.0 Var</h4>
               </div>
               <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 text-center">
-                <p className="text-[10px] text-slate-400 uppercase font-mono">GPS Polling Rate</p>
-                <h4 className="text-lg font-black text-emerald-400 mt-1">1 Hz Continuous</h4>
+                <p className="text-[10px] text-slate-400 uppercase font-mono">Active Reports</p>
+                <h4 className="text-lg font-black text-rose-400 mt-1">{activeReportsCount} Live</h4>
               </div>
               <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 text-center">
-                <p className="text-[10px] text-slate-400 uppercase font-mono">RBAC Port Separation</p>
-                <h4 className="text-lg font-black text-rose-400 mt-1">5174 / 5173</h4>
+                <p className="text-[10px] text-slate-400 uppercase font-mono">Duty Allocation</p>
+                <h4 className="text-lg font-black text-sky-400 mt-1">{onDutyUnitsCount} / {totalUnitsCount}</h4>
               </div>
               <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 text-center">
-                <p className="text-[10px] text-slate-400 uppercase font-mono">Avg Dispatch Time</p>
-                <h4 className="text-lg font-black text-sky-400 mt-1">3.4 Mins</h4>
+                <p className="text-[10px] text-slate-400 uppercase font-mono">Critical Queue</p>
+                <h4 className="text-lg font-black text-amber-400 mt-1">{criticalReportsCount}</h4>
               </div>
             </div>
 

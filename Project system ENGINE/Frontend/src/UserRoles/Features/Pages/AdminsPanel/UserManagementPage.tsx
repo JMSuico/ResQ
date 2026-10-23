@@ -341,7 +341,7 @@ export const UserManagementPage: React.FC = () => {
         <div className="p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-[#1d3c5c] shadow-lg flex items-center justify-between relative overflow-hidden">
           <div className="space-y-0.5">
             <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest block">Total Registered</span>
-            <div className="text-xl font-black text-white font-mono">{stats.total || 8}</div>
+            <div className="text-xl font-black text-white font-mono">{stats.total}</div>
             <div className="text-[10px] text-slate-500 font-mono">100% on DB telemetry</div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-300 text-base font-bold shadow-inner">
@@ -352,7 +352,7 @@ export const UserManagementPage: React.FC = () => {
         <div className="p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-emerald-900/60 shadow-lg flex items-center justify-between relative overflow-hidden">
           <div className="space-y-0.5">
             <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-widest block">Verified Active</span>
-            <div className="text-xl font-black text-emerald-300 font-mono">{stats.verified || 8}</div>
+            <div className="text-xl font-black text-emerald-300 font-mono">{stats.verified}</div>
             <div className="text-[10px] text-emerald-500/80 font-mono">Ready for dispatch</div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-950/70 border border-emerald-700/80 text-emerald-300 flex items-center justify-center text-base font-bold shadow-[0_0_12px_rgba(16,185,129,0.3)]">
@@ -363,7 +363,7 @@ export const UserManagementPage: React.FC = () => {
         <div className="p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-amber-900/60 shadow-lg flex items-center justify-between relative overflow-hidden">
           <div className="space-y-0.5">
             <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-widest block">Pending Review</span>
-            <div className="text-xl font-black text-amber-300 font-mono">{stats.pending || 0}</div>
+            <div className="text-xl font-black text-amber-300 font-mono">{stats.pending}</div>
             <div className="text-[10px] text-amber-500/80 font-mono">ID / Face validation</div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-950/70 border border-amber-700/80 text-amber-300 flex items-center justify-center text-base font-bold shadow-[0_0_12px_rgba(245,158,11,0.3)]">
@@ -374,9 +374,9 @@ export const UserManagementPage: React.FC = () => {
         <div className="p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-sky-900/60 shadow-lg flex items-center justify-between relative overflow-hidden">
           <div className="space-y-0.5">
             <span className="text-[10px] font-mono font-bold text-sky-400 uppercase tracking-widest block">First Responders</span>
-            <div className="text-xl font-black text-sky-300 font-mono">{stats.responders || 8}</div>
+            <div className="text-xl font-black text-sky-300 font-mono">{stats.responders}</div>
             <div className="text-[10px] text-sky-400/80 font-mono">
-              RHU:{stats.rhuCount || 4} · BFP:{stats.fireCount || 2} · PNP:{stats.pnpCount || 2}
+              RHU:{stats.rhuCount} · BFP:{stats.fireCount} · PNP:{stats.pnpCount}
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-sky-950/70 border border-sky-700/80 text-sky-300 flex items-center justify-center text-base font-bold shadow-[0_0_12px_rgba(14,165,233,0.3)]">

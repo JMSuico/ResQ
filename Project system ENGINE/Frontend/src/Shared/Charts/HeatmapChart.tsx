@@ -24,18 +24,13 @@ export const HeatmapChart: React.FC<{
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const hours = ['00', '04', '08', '12', '16', '20'];
 
-  // 7 days x 6 time blocks dummy/telemetry matrix
-  const defaultGrid = [
-    [1, 0, 4, 8, 3, 2],
-    [0, 1, 6, 9, 5, 1],
-    [2, 0, 5, 7, 8, 4],
-    [1, 2, 7, 12, 6, 3],
-    [3, 1, 9, 14, 11, 7],
-    [5, 4, 11, 15, 12, 9],
-    [4, 2, 8, 10, 7, 5]
-  ];
+  // 7 days x 6 time blocks all-zero baseline matrix
+  const cleanZeroGrid = Array.from({ length: 7 }, () => Array(6).fill(0));
 
-  const grid = matrix && matrix.length === 7 ? matrix : defaultGrid;
+  const grid =
+    matrix && matrix.length === 7 && matrix.every((row) => Array.isArray(row) && row.length === 6)
+      ? matrix
+      : cleanZeroGrid;
 
   const getCellBaseStyle = (val: number) => {
     if (val === 0) return 'bg-slate-800/40 text-slate-500 border border-slate-800/60';

@@ -204,21 +204,21 @@ export const StrategicMapPage: FC = () => {
                   <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
                   RHU Medical
                 </span>
-                <span className="font-mono font-bold text-white">{roster.filter(u => u.agency === 'RHU').length + 2} Units</span>
+                <span className="font-mono font-bold text-white">{roster.filter(u => u.agency === 'RHU').length} Units</span>
               </div>
               <div className="flex items-center justify-between text-slate-300 p-1.5 rounded bg-slate-900/60">
                 <span className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
                   BFP Fire Rescue
                 </span>
-                <span className="font-mono font-bold text-white">{roster.filter(u => u.agency === 'FIRE').length + 1} Units</span>
+                <span className="font-mono font-bold text-white">{roster.filter(u => u.agency === 'FIRE').length} Units</span>
               </div>
               <div className="flex items-center justify-between text-slate-300 p-1.5 rounded bg-slate-900/60">
                 <span className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                   PNP Police Force
                 </span>
-                <span className="font-mono font-bold text-white">{roster.filter(u => u.agency === 'PNP').length + 3} Units</span>
+                <span className="font-mono font-bold text-white">{roster.filter(u => u.agency === 'PNP').length} Units</span>
               </div>
             </div>
           </div>

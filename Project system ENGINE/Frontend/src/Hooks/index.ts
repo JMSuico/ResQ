@@ -13,3 +13,4 @@ export * from './useReportEventBus';
 export * from './useResponsive';
 export * from './useSession';
 export * from './useValueRefreshAuto';
+export * from './useAnalyticsTelemetry';
