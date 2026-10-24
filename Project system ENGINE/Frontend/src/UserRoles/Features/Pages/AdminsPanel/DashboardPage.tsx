@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import SatelliteCommandMap, { IncidentPinData } from '@/Shared/SatelliteCommandMap';
 import AccidentReportModal from '@/Shared/AccidentReportModal';
-import { getAllReports } from '@/Endpoints/reportsApi';
+import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 
 export const DashboardPage: React.FC = () => {
@@ -60,7 +60,7 @@ export const DashboardPage: React.FC = () => {
       try {
         const reports = await getAllReports();
         if (reports && reports.length > 0) {
-          const mapped: IncidentPinData[] = reports.map((r: any) => ({
+          const mapped: IncidentPinData[] = reports.map((r: ReportItem) => ({
             id: r.referenceCode || r.id,
             type: r.title || r.category || 'Road Accident',
             status: r.status === 'Resolved' ? 'resolved' : 'critical',

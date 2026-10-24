@@ -10,7 +10,7 @@ import { useGpsLocation } from '../Hooks/useGpsLocation';
 export interface AccidentReportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onReportCreated?: (report: any) => void;
+  onReportCreated?: (report: unknown) => void;
 }
 
 // Client-side Laplacian edge variance for blurriness detection
@@ -187,7 +187,7 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
       }
       setHint('Point at accident scene and press Capture. Single snapshot is anti-tamper locked.');
       setIsStarting(false);
-    } catch (err: any) {
+    } catch (_err: unknown) {
       setIsStarting(false);
       setErrorMsg('Camera access denied or unavailable. Generating synthetic sensor snapshot.');
       generateSyntheticSnapshot();
@@ -337,9 +337,10 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
       if (onReportCreated) {
         onReportCreated(newReport);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsSending(false);
-      setErrorMsg(err.message || 'Could not send the report.');
+      const msg = err instanceof Error ? err.message : 'Could not send the report.';
+      setErrorMsg(msg);
     }
   };
 

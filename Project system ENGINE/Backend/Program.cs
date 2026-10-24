@@ -108,6 +108,7 @@ builder.Services.AddScoped<ITriageService, TriageService>();
 builder.Services.AddScoped<IRespondersService, RespondersService>();
 builder.Services.AddScoped<IUserGovernanceService, UserGovernanceService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
+builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 
 // CORS configuration for React 19 Frontend
 builder.Services.AddCors(options => options.AddPolicy("AllowViteFrontend", policy =>

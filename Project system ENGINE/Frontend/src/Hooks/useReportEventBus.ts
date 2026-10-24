@@ -4,8 +4,8 @@
 
 import { useEffect, useCallback } from 'react';
 
-export const useReportEventBus = (onReportReceived?: (report: any) => void) => {
-  const dispatchReportEvent = useCallback((report: any) => {
+export const useReportEventBus = <T = unknown>(onReportReceived?: (report: T) => void) => {
+  const dispatchReportEvent = useCallback((report: T) => {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('resqtrack:report', { detail: report }));
     }
@@ -15,7 +15,7 @@ export const useReportEventBus = (onReportReceived?: (report: any) => void) => {
     if (!onReportReceived || typeof window === 'undefined') return;
 
     const handler = (e: Event) => {
-      const customEvent = e as CustomEvent;
+      const customEvent = e as CustomEvent<T>;
       onReportReceived(customEvent.detail);
     };
 

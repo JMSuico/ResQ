@@ -190,7 +190,7 @@ export const Dropdown = <T = string,>({
           onClick={() => setIsOpen(!isOpen)}
           aria-haspopup="listbox"
           aria-expanded={isOpen}
-          className={`w-full flex items-center justify-between gap-2 bg-slate-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-sm text-left hover:border-slate-500 transition-all cursor-pointer select-none ${
+          className={`w-full flex items-center justify-between gap-2 bg-slate-900/90 hover:bg-slate-800/60 backdrop-blur-sm border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-sm text-left hover:border-slate-500 transition-all duration-150 cursor-pointer select-none ${
             isOpen ? 'ring-2 ring-sky-500/40 border-sky-500 bg-slate-800' : ''
           } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
@@ -217,7 +217,7 @@ export const Dropdown = <T = string,>({
           type="button"
           disabled={disabled}
           onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center justify-between gap-1.5 bg-slate-900 border border-slate-700/80 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-200 hover:border-slate-500 transition-all cursor-pointer select-none ${
+          className={`flex items-center justify-between gap-1.5 bg-slate-900/90 hover:bg-slate-800/60 backdrop-blur-sm border border-slate-700/80 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-200 hover:border-slate-500 transition-all duration-150 cursor-pointer select-none ${
             isOpen ? 'ring-2 ring-sky-500/30 border-sky-500 bg-slate-800' : ''
           } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
@@ -236,7 +236,7 @@ export const Dropdown = <T = string,>({
           type="button"
           disabled={disabled}
           onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center gap-2 bg-slate-900 border border-slate-700/80 px-3.5 py-2 rounded-xl text-xs text-slate-300 hover:border-slate-500 transition-all cursor-pointer select-none ${
+          className={`flex items-center gap-2 bg-slate-900/90 hover:bg-slate-800/60 backdrop-blur-sm border border-slate-700/80 px-3.5 py-2 rounded-xl text-xs text-slate-300 hover:border-slate-500 transition-all duration-150 cursor-pointer select-none ${
             isOpen ? 'ring-2 ring-sky-500/30 border-sky-500 bg-slate-800' : ''
           } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
@@ -262,7 +262,7 @@ export const Dropdown = <T = string,>({
             actualDirection === 'up' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
           } ${
             align === 'right' ? 'right-0' : 'left-0'
-          } ${effectiveMenuWidth} bg-slate-900/98 backdrop-blur-xl rounded-xl shadow-2xl border border-slate-700/90 py-1 z-50 animate-scaleUp overflow-hidden`}
+          } ${effectiveMenuWidth} bg-slate-900/98 backdrop-blur-xl rounded-xl shadow-2xl shadow-black/80 border border-slate-700/80 py-1.5 z-50 animate-scaleUp overflow-hidden`}
         >
           {searchable && (
             <div className="px-2 pt-1.5 pb-1 border-b border-slate-800">
@@ -331,22 +331,22 @@ export const Dropdown = <T = string,>({
                   type="button"
                   disabled={item.disabled}
                   onClick={() => handleSelect(item)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer select-none ${
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition-all duration-150 cursor-pointer select-none ${
                     item.disabled
                       ? 'opacity-40 cursor-not-allowed'
                       : isSelected
-                      ? 'bg-sky-950/70 text-sky-300 font-bold border border-sky-800/50'
+                      ? 'bg-sky-950/70 text-sky-300 font-bold border border-sky-800/60 shadow-sm'
                       : isActive
                       ? 'bg-slate-800 text-sky-400 ring-1 ring-sky-500/30'
                       : item.danger
-                      ? 'text-rose-400 hover:bg-rose-950/30'
-                      : 'text-slate-200 hover:bg-slate-800/80'
+                      ? 'text-rose-400 hover:bg-rose-950/40 hover:text-rose-200'
+                      : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     {item.icon && (
                       <span
-                        className={`material-symbols-outlined text-[18px] ${
+                        className={`material-symbols-outlined text-[18px] transition-colors ${
                           item.danger ? 'text-rose-400' : isSelected ? 'text-sky-400' : 'text-slate-400'
                         }`}
                       >
@@ -365,7 +365,7 @@ export const Dropdown = <T = string,>({
 
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     {item.badge !== undefined && (
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300">
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
                         {item.badge}
                       </span>
                     )}

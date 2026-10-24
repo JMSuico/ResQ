@@ -55,3 +55,12 @@ public interface ISettingsService
     Task<List<SettingResponse>> GetAllSettingsAsync(CancellationToken ct = default);
     Task<bool> UpdateSettingAsync(string key, string value, Guid adminId, CancellationToken ct = default);
 }
+
+public interface IAnalyticsService
+{
+    Task<AnalyticsSummaryResponse> GetSummaryAsync(CancellationToken ct = default);
+    Task<List<TelemetryDataPoint>> GetVolume24hAsync(CancellationToken ct = default);
+    Task<List<SeverityBreakdownItem>> GetSeverityBreakdownAsync(CancellationToken ct = default);
+    Task<List<AgencyWorkloadItem>> GetAgencyWorkloadAsync(CancellationToken ct = default);
+    Task<HeatmapMatrixResponse> GetHeatmapMatrixAsync(CancellationToken ct = default);
+}

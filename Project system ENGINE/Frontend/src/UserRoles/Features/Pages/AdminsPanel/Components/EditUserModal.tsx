@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { DefaultFloatingModalCard, Button } from '@/Shared';
-import { getUserDetail, updateUser, UserDetail, UserSummary, ResponderUnit } from '@/Endpoints/adminGovernanceApi';
+import { getUserDetail, updateUser, UserDetail, UserSummary, ResponderUnit, UpdateUserPayload } from '@/Endpoints/adminGovernanceApi';
 
 export interface EditUserModalProps {
   user: UserSummary | UserDetail | null;
@@ -153,8 +153,9 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
         executiveDesignation: d.executiveDesignation || 'Operations Officer',
         clearanceLevel: d.clearanceLevel || 'Level 2 - Tactical Operations',
       });
-    } catch (err: any) {
-      setErrorText(err?.message || 'Failed to populate existing profile details.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to populate existing profile details.';
+      setErrorText(msg);
     } finally {
       setIsLoading(false);
     }
@@ -186,7 +187,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const payload: any = {
+      const payload: UpdateUserPayload = {
         firstName: formData.firstName.trim(),
         middleName: formData.middleName.trim() || null,
         surname: formData.surname.trim(),
@@ -245,46 +246,74 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
       showToast(`User profile for ${payload.firstName} ${payload.surname} updated successfully.`, 'success');
       onUserUpdated();
       onClose();
-    } catch (err: any) {
-      setErrorText(err?.message || 'Failed to update user profile.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update user profile.';
+      setErrorText(msg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const tabs = [
-    { key: 'info', label: '1. Identity & Contact', icon: '👤' },
-    { key: 'address', label: '2. Residence & Address', icon: '📍' },
-    { key: 'role', label: '3. Role & Status', icon: '🛡️' },
-    { key: 'credentials', label: '4. Emergency Credentials', icon: '📜' },
+    { key: 'info', step: '01', label: 'Identity & Vitals', icon: '👤' },
+    { key: 'address', step: '02', label: 'Residence Sector', icon: '📍' },
+    { key: 'role', step: '03', label: 'Governance & Role', icon: '🛡️' },
+    { key: 'credentials', step: '04', label: 'Emergency Badges', icon: '📜' },
   ] as const;
 
   return (
     <DefaultFloatingModalCard
       isOpen={isOpen}
       onClose={onClose}
-      title={`Edit User Profile: ${user?.fullName || ''}`}
-      subtitle="Modify account status, station assignment, contact information, and role credentials"
+      title={`Modify Profile: ${user?.fullName || ''}`}
+      subtitle="Update station assignment, Philippine credentials, authorization status, and contact telemetry"
       maxWidth="2xl"
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-xs text-slate-200">
         {isLoading && (
-          <div className="p-8 text-center text-slate-400">
-            <div className="w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            Loading profile parameters…
+          <div className="p-10 text-center text-slate-400 space-y-2">
+            <div className="w-7 h-7 border-2 border-sky-400 border-t-transparent rounded-full animate-spin mx-auto" />
+            <div className="font-mono text-xs">Retrieving authoritative database record…</div>
           </div>
         )}
 
         {errorText && (
-          <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-300 font-medium">
-            {errorText}
+          <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-600 text-rose-200 font-mono flex items-center gap-2">
+            <span>⚠️</span>
+            <span>{errorText}</span>
           </div>
         )}
 
         {!isLoading && (
           <>
-            {/* Tab Header */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-800 scrollbar-none">
+            {/* Top Identity Hero Pill */}
+            {user && (
+              <div className="p-3 rounded-xl bg-[#071522] border border-[#1d3c5c] flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-[#0a1a2b] border border-[#1d3c5c] flex items-center justify-center text-sky-400 font-mono font-bold text-xs">
+                    {user.fullName?.charAt(0)?.toUpperCase() || 'U'}
+                  </div>
+                  <div>
+                    <div className="font-bold text-white text-xs">{user.fullName}</div>
+                    <div className="text-[10px] text-slate-400 font-mono">{user.email}</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {user.employeeOrResidentId && (
+                    <span className="text-[10px] font-mono text-sky-400 bg-sky-950/60 px-2 py-0.5 rounded border border-sky-800">
+                      ID: {user.employeeOrResidentId}
+                    </span>
+                  )}
+                  <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                    {user.role} {user.unit !== 'None' ? `(${user.unit})` : ''}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Crisp Tactical Tab Header */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-[#1d3c5c] scrollbar-none bg-[#071522]/60 p-1 rounded-xl">
               {tabs.map((tab) => {
                 const isActive = activeTab === tab.key;
                 return (
@@ -292,12 +321,13 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                     key={tab.key}
                     type="button"
                     onClick={() => setActiveTab(tab.key)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-all cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold whitespace-nowrap transition-all cursor-pointer ${
                       isActive
-                        ? 'bg-sky-600 text-white font-bold shadow-md shadow-sky-950/50'
-                        : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                        ? 'bg-[#16304a] text-sky-300 border border-sky-500/80 shadow-[0_0_12px_rgba(14,165,233,0.3)]'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-[#0e243a]/80'
                     }`}
                   >
+                    <span className="text-[10px] text-slate-500 font-bold">{tab.step}</span>
                     <span>{tab.icon}</span>
                     <span>{tab.label}</span>
                   </button>
@@ -305,63 +335,67 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
               })}
             </div>
 
-            {/* Tab 1: Info */}
+            {/* Tab 1: Info & Vitals */}
             {activeTab === 'info' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">First Name *</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
+                    First Name <span className="text-rose-400">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={formData.firstName}
                     onChange={(e) => handleChange('firstName', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Middle Name</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Middle Name</label>
                   <input
                     type="text"
                     value={formData.middleName}
                     onChange={(e) => handleChange('middleName', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Surname *</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
+                    Surname <span className="text-rose-400">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={formData.surname}
                     onChange={(e) => handleChange('surname', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Suffix</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Suffix</label>
                   <input
                     type="text"
                     value={formData.suffix}
                     onChange={(e) => handleChange('suffix', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Date of Birth</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Date of Birth</label>
                   <input
                     type="date"
                     value={formData.dateOfBirth}
                     onChange={(e) => handleChange('dateOfBirth', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 focus:border-sky-400 focus:outline-none font-mono"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Sex</label>
+                    <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Sex</label>
                     <select
                       value={formData.sex}
                       onChange={(e) => handleChange('sex', e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 focus:border-sky-400 focus:outline-none font-mono"
                     >
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
@@ -369,11 +403,11 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Blood Type</label>
+                    <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Blood Type</label>
                     <select
                       value={formData.bloodType}
                       onChange={(e) => handleChange('bloodType', e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-rose-300 font-bold focus:border-sky-400 focus:outline-none font-mono"
                     >
                       {['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'].map((b) => (
                         <option key={b} value={b}>{b}</option>
@@ -382,21 +416,21 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                   </div>
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Phone Number</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Phone Number</label>
                   <input
                     type="tel"
                     value={formData.phoneNumber}
                     onChange={(e) => handleChange('phoneNumber', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Resident / Employee ID</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Resident / Employee ID</label>
                   <input
                     type="text"
                     value={formData.employeeOrResidentId}
                     onChange={(e) => handleChange('employeeOrResidentId', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-sky-400 focus:border-sky-400 focus:outline-none font-mono font-semibold"
                   />
                 </div>
               </div>
@@ -406,31 +440,31 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
             {activeTab === 'address' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Province *</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Province *</label>
                   <input
                     type="text"
                     required
                     value={formData.province}
                     onChange={(e) => handleChange('province', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none font-semibold"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">City / Municipality *</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">City / Municipality *</label>
                   <input
                     type="text"
                     required
                     value={formData.cityOrMunicipality}
                     onChange={(e) => handleChange('cityOrMunicipality', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none font-semibold"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Barangay *</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Barangay Sector *</label>
                   <select
                     value={formData.barangay}
                     onChange={(e) => handleChange('barangay', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-sky-300 font-bold focus:border-sky-400 focus:outline-none font-mono"
                   >
                     {DIPOLOG_BARANGAYS.map((brgy) => (
                       <option key={brgy} value={brgy}>{brgy}</option>
@@ -438,44 +472,44 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Street / Purok</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Street / Purok</label>
                   <input
                     type="text"
                     value={formData.streetOrPurok}
                     onChange={(e) => handleChange('streetOrPurok', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none"
                   />
                 </div>
 
-                <div className="md:col-span-2 pt-2 border-t border-slate-800">
-                  <h4 className="text-xs font-bold text-sky-400 mb-2 uppercase tracking-wider">
-                    Emergency Contact Details
+                <div className="md:col-span-2 p-3.5 rounded-xl bg-[#0a1a2b]/80 border border-amber-900/60 shadow-md">
+                  <h4 className="text-xs font-mono font-bold text-amber-300 mb-2.5 uppercase tracking-wider flex items-center gap-2">
+                    <span>🚨</span> Emergency Contact (Next of Kin)
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Contact Person</label>
+                      <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Contact Person</label>
                       <input
                         type="text"
                         value={formData.emergencyContactName}
                         onChange={(e) => handleChange('emergencyContactName', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                        className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 focus:border-sky-400 focus:outline-none"
                       />
                     </div>
                     <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Contact Phone</label>
+                      <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Contact Phone</label>
                       <input
                         type="tel"
                         value={formData.emergencyContactPhone}
                         onChange={(e) => handleChange('emergencyContactPhone', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                        className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-amber-300 focus:border-sky-400 focus:outline-none font-mono"
                       />
                     </div>
                     <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Relationship</label>
+                      <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Relationship</label>
                       <select
                         value={formData.emergencyContactRelationship}
                         onChange={(e) => handleChange('emergencyContactRelationship', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                        className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 focus:border-sky-400 focus:outline-none font-mono"
                       >
                         {['Spouse', 'Parent', 'Sibling', 'Child', 'Relative', 'Colleague', 'Friend', 'Guardian'].map((r) => (
                           <option key={r} value={r}>{r}</option>
@@ -487,15 +521,17 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
               </div>
             )}
 
-            {/* Tab 3: Role & Status */}
+            {/* Tab 3: Governance & Role */}
             {activeTab === 'role' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Account Governance Status *</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
+                    Account Authorization Status <span className="text-rose-400">*</span>
+                  </label>
                   <select
                     value={formData.status}
                     onChange={(e) => handleChange('status', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 font-bold"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-white font-mono font-bold focus:border-sky-400 focus:outline-none"
                   >
                     <option value="Verified">Verified (Active / Authorized)</option>
                     <option value="Pending">Pending Approval</option>
@@ -504,11 +540,13 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">System Access Role *</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
+                    System Access Role <span className="text-rose-400">*</span>
+                  </label>
                   <select
                     value={formData.role}
                     onChange={(e) => handleChange('role', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 font-semibold"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 font-bold focus:border-sky-400 focus:outline-none"
                   >
                     <option value="Civilian">Civilian</option>
                     <option value="Responder">Responder</option>
@@ -518,11 +556,11 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
 
                 {formData.role === 'Responder' && (
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">Tactical Unit Agency</label>
+                    <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Tactical Unit Agency</label>
                     <select
                       value={formData.unit}
                       onChange={(e) => handleChange('unit', e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 font-semibold text-sky-400"
+                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-sky-400 font-bold font-mono focus:border-sky-400 focus:outline-none"
                     >
                       <option value="RHU">RHU (City Health Office / Medical)</option>
                       <option value="FIRE">FIRE (Bureau of Fire Protection)</option>
@@ -532,254 +570,279 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                 )}
 
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Station / Department</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Station / Sector Department</label>
                   <input
                     type="text"
                     value={formData.departmentOrBarangay}
                     onChange={(e) => handleChange('departmentOrBarangay', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Rank or Title</label>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Official Rank or Operational Title</label>
                   <input
                     type="text"
                     value={formData.rankOrTitle}
                     onChange={(e) => handleChange('rankOrTitle', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100"
+                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none"
                   />
                 </div>
               </div>
             )}
 
-            {/* Tab 4: Credentials */}
+            {/* Tab 4: Role Credentials */}
             {activeTab === 'credentials' && (
               <div className="space-y-3.5">
                 {formData.role === 'Civilian' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 p-3 rounded-xl bg-slate-950/80 border border-slate-800">
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Government ID Type</label>
-                      <select
-                        value={formData.governmentIdType}
-                        onChange={(e) => handleChange('governmentIdType', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      >
-                        <option value="PhilSys National ID">PhilSys National ID</option>
-                        <option value="UMID">UMID</option>
-                        <option value="Driver's License">Driver's License</option>
-                        <option value="Voter's ID">Voter's ID</option>
-                        <option value="Passport">Philippine Passport</option>
-                        <option value="Senior Citizen ID">Senior Citizen ID</option>
-                        <option value="PWD ID">PWD ID</option>
-                      </select>
+                  <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-800/60 space-y-3 shadow-lg">
+                    <div className="text-purple-300 font-mono font-bold text-xs uppercase tracking-wider">
+                      Civilian Resident Badges & Identification
                     </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">ID Card Number</label>
-                      <input
-                        type="text"
-                        value={formData.governmentIdNumber}
-                        onChange={(e) => handleChange('governmentIdNumber', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Residency Category</label>
-                      <select
-                        value={formData.residencyCategory}
-                        onChange={(e) => handleChange('residencyCategory', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      >
-                        <option value="Permanent">Permanent</option>
-                        <option value="Transient">Transient</option>
-                        <option value="Student">Student</option>
-                        <option value="Displaced / Evacuee">Displaced / Evacuee</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Vulnerability Flags</label>
-                      <select
-                        value={formData.vulnerabilityFlags}
-                        onChange={(e) => handleChange('vulnerabilityFlags', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      >
-                        <option value="None">None</option>
-                        <option value="Senior Citizen">Senior Citizen</option>
-                        <option value="PWD">PWD</option>
-                        <option value="Pregnant">Pregnant</option>
-                        <option value="Solo Parent">Solo Parent</option>
-                      </select>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Government ID Type</label>
+                        <select
+                          value={formData.governmentIdType}
+                          onChange={(e) => handleChange('governmentIdType', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-mono"
+                        >
+                          <option value="PhilSys National ID">PhilSys National ID</option>
+                          <option value="UMID">UMID</option>
+                          <option value="Driver's License">Driver's License</option>
+                          <option value="Voter's ID">Voter's ID</option>
+                          <option value="Passport">Philippine Passport</option>
+                          <option value="Senior Citizen ID">Senior Citizen ID</option>
+                          <option value="PWD ID">PWD ID</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">ID Card Number</label>
+                        <input
+                          type="text"
+                          value={formData.governmentIdNumber}
+                          onChange={(e) => handleChange('governmentIdNumber', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Residency Category</label>
+                        <select
+                          value={formData.residencyCategory}
+                          onChange={(e) => handleChange('residencyCategory', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-mono"
+                        >
+                          <option value="Permanent">Permanent</option>
+                          <option value="Transient">Transient</option>
+                          <option value="Student">Student</option>
+                          <option value="Displaced / Evacuee">Displaced / Evacuee</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Vulnerability Flags</label>
+                        <select
+                          value={formData.vulnerabilityFlags}
+                          onChange={(e) => handleChange('vulnerabilityFlags', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-amber-300 font-mono font-bold"
+                        >
+                          <option value="None">None</option>
+                          <option value="Senior Citizen">Senior Citizen</option>
+                          <option value="PWD">PWD</option>
+                          <option value="Pregnant">Pregnant</option>
+                          <option value="Solo Parent">Solo Parent</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {formData.role === 'Responder' && formData.unit === 'RHU' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 p-3 rounded-xl bg-emerald-950/30 border border-emerald-900/60">
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">PRC License Number</label>
-                      <input
-                        type="text"
-                        value={formData.medicalLicenseNumber}
-                        onChange={(e) => handleChange('medicalLicenseNumber', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
+                  <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-600/70 space-y-3 shadow-lg">
+                    <div className="text-emerald-300 font-mono font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🚑</span> RHU Medical Badges & License
                     </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Medical Cadre</label>
-                      <select
-                        value={formData.medicalCadre}
-                        onChange={(e) => handleChange('medicalCadre', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      >
-                        <option value="Physician">Physician</option>
-                        <option value="Registered Nurse">Registered Nurse</option>
-                        <option value="Paramedic">Paramedic</option>
-                        <option value="First Responder">First Responder</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Health Station</label>
-                      <input
-                        type="text"
-                        value={formData.stationHealthCenter}
-                        onChange={(e) => handleChange('stationHealthCenter', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Ambulance Call Sign</label>
-                      <input
-                        type="text"
-                        value={formData.ambulanceCallSign}
-                        onChange={(e) => handleChange('ambulanceCallSign', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="block text-slate-400 mb-1 font-semibold">Medical Certifications</label>
-                      <input
-                        type="text"
-                        value={formData.medicalCertifications}
-                        onChange={(e) => handleChange('medicalCertifications', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">PRC License Number</label>
+                        <input
+                          type="text"
+                          value={formData.medicalLicenseNumber}
+                          onChange={(e) => handleChange('medicalLicenseNumber', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-emerald-300 font-mono font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Medical Cadre</label>
+                        <select
+                          value={formData.medicalCadre}
+                          onChange={(e) => handleChange('medicalCadre', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-mono"
+                        >
+                          <option value="Physician">Physician</option>
+                          <option value="Registered Nurse">Registered Nurse</option>
+                          <option value="Paramedic">Paramedic</option>
+                          <option value="First Responder">First Responder</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Health Station</label>
+                        <input
+                          type="text"
+                          value={formData.stationHealthCenter}
+                          onChange={(e) => handleChange('stationHealthCenter', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Ambulance Call Sign</label>
+                        <input
+                          type="text"
+                          value={formData.ambulanceCallSign}
+                          onChange={(e) => handleChange('ambulanceCallSign', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-emerald-300 font-mono font-bold"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Medical Certifications</label>
+                        <input
+                          type="text"
+                          value={formData.medicalCertifications}
+                          onChange={(e) => handleChange('medicalCertifications', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-mono"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {formData.role === 'Responder' && formData.unit === 'FIRE' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 p-3 rounded-xl bg-orange-950/30 border border-orange-900/60">
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">BFP Firefighter Rank</label>
-                      <select
-                        value={formData.firefighterRank}
-                        onChange={(e) => handleChange('firefighterRank', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      >
-                        <option value="Fire Officer 1 (FO1)">FO1</option>
-                        <option value="Fire Officer 2 (FO2)">FO2</option>
-                        <option value="Fire Officer 3 (FO3)">FO3</option>
-                        <option value="Senior Fire Officer 1 (SFO1)">SFO1</option>
-                        <option value="Senior Fire Officer 2 (SFO2)">SFO2</option>
-                        <option value="Fire Inspector (FINSP)">FINSP</option>
-                      </select>
+                  <div className="p-4 rounded-xl bg-orange-950/20 border border-orange-600/70 space-y-3 shadow-lg">
+                    <div className="text-orange-300 font-mono font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🚒</span> Bureau of Fire Protection (BFP) Badges
                     </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">BFP Badge Number</label>
-                      <input
-                        type="text"
-                        value={formData.bfpBadgeNumber}
-                        onChange={(e) => handleChange('bfpBadgeNumber', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Fire Station</label>
-                      <input
-                        type="text"
-                        value={formData.fireStation}
-                        onChange={(e) => handleChange('fireStation', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Apparatus Call Sign</label>
-                      <input
-                        type="text"
-                        value={formData.apparatusCallSign}
-                        onChange={(e) => handleChange('apparatusCallSign', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">BFP Firefighter Rank</label>
+                        <select
+                          value={formData.firefighterRank}
+                          onChange={(e) => handleChange('firefighterRank', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-orange-300 font-bold font-mono"
+                        >
+                          <option value="Fire Officer 1 (FO1)">FO1</option>
+                          <option value="Fire Officer 2 (FO2)">FO2</option>
+                          <option value="Fire Officer 3 (FO3)">FO3</option>
+                          <option value="Senior Fire Officer 1 (SFO1)">SFO1</option>
+                          <option value="Senior Fire Officer 2 (SFO2)">SFO2</option>
+                          <option value="Fire Inspector (FINSP)">FINSP</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">BFP Badge Number</label>
+                        <input
+                          type="text"
+                          value={formData.bfpBadgeNumber}
+                          onChange={(e) => handleChange('bfpBadgeNumber', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-orange-300 font-mono font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Fire Station</label>
+                        <input
+                          type="text"
+                          value={formData.fireStation}
+                          onChange={(e) => handleChange('fireStation', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Apparatus Call Sign</label>
+                        <input
+                          type="text"
+                          value={formData.apparatusCallSign}
+                          onChange={(e) => handleChange('apparatusCallSign', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-orange-300 font-mono font-bold"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {formData.role === 'Responder' && formData.unit === 'PNP' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 p-3 rounded-xl bg-sky-950/30 border border-sky-900/60">
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">PNP Police Rank</label>
-                      <select
-                        value={formData.policeRank}
-                        onChange={(e) => handleChange('policeRank', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      >
-                        <option value="Patrolman">Patrolman / Patrolwoman</option>
-                        <option value="Police Corporal (PCpl)">PCpl</option>
-                        <option value="Police Staff Sergeant (PSSg)">PSSg</option>
-                        <option value="Police Master Sergeant (PMSg)">PMSg</option>
-                        <option value="Police Lieutenant (PLT)">PLT</option>
-                        <option value="Police Captain (PCPT)">PCPT</option>
-                      </select>
+                  <div className="p-4 rounded-xl bg-sky-950/20 border border-sky-600/70 space-y-3 shadow-lg">
+                    <div className="text-sky-300 font-mono font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                      <span>👮</span> Philippine National Police (PNP) Badges
                     </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">PNP Badge Number</label>
-                      <input
-                        type="text"
-                        value={formData.pnpBadgeNumber}
-                        onChange={(e) => handleChange('pnpBadgeNumber', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Sidearm Serial Number</label>
-                      <input
-                        type="text"
-                        value={formData.sidearmSerial}
-                        onChange={(e) => handleChange('sidearmSerial', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Precinct / Station</label>
-                      <input
-                        type="text"
-                        value={formData.precinctOrStation}
-                        onChange={(e) => handleChange('precinctOrStation', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">PNP Police Rank</label>
+                        <select
+                          value={formData.policeRank}
+                          onChange={(e) => handleChange('policeRank', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-sky-300 font-bold font-mono"
+                        >
+                          <option value="Patrolman">Patrolman / Patrolwoman</option>
+                          <option value="Police Corporal (PCpl)">PCpl</option>
+                          <option value="Police Staff Sergeant (PSSg)">PSSg</option>
+                          <option value="Police Master Sergeant (PMSg)">PMSg</option>
+                          <option value="Police Lieutenant (PLT)">PLT</option>
+                          <option value="Police Captain (PCPT)">PCPT</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">PNP Badge Number</label>
+                        <input
+                          type="text"
+                          value={formData.pnpBadgeNumber}
+                          onChange={(e) => handleChange('pnpBadgeNumber', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-sky-300 font-mono font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Sidearm Serial Number</label>
+                        <input
+                          type="text"
+                          value={formData.sidearmSerial}
+                          onChange={(e) => handleChange('sidearmSerial', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-rose-300 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Precinct / Station</label>
+                        <input
+                          type="text"
+                          value={formData.precinctOrStation}
+                          onChange={(e) => handleChange('precinctOrStation', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {formData.role === 'LDRRMO_Admin' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 p-3 rounded-xl bg-amber-950/30 border border-amber-900/60">
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Plantilla Number</label>
-                      <input
-                        type="text"
-                        value={formData.plantillaNumber}
-                        onChange={(e) => handleChange('plantillaNumber', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
+                  <div className="p-4 rounded-xl bg-rose-950/20 border border-amber-600/70 space-y-3 shadow-lg">
+                    <div className="text-amber-300 font-mono font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🏛️</span> LDRRMO Administrative Credentials
                     </div>
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">Executive Designation</label>
-                      <input
-                        type="text"
-                        value={formData.executiveDesignation}
-                        onChange={(e) => handleChange('executiveDesignation', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">LGU Plantilla Number</label>
+                        <input
+                          type="text"
+                          value={formData.plantillaNumber}
+                          onChange={(e) => handleChange('plantillaNumber', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-amber-300 font-mono font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Executive Designation</label>
+                        <input
+                          type="text"
+                          value={formData.executiveDesignation}
+                          onChange={(e) => handleChange('executiveDesignation', e.target.value)}
+                          className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-semibold"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -789,13 +852,24 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
         )}
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+        <div className="flex items-center justify-end gap-2.5 pt-3.5 border-t border-[#1d3c5c] mt-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" size="sm" isLoading={isSubmitting}>
-            Save Changes
-          </Button>
+          <button
+            type="submit"
+            disabled={isSubmitting || isLoading}
+            className="px-4 py-2 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-sky-600 hover:bg-sky-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.4)] transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
+          >
+            {isSubmitting ? (
+              <>
+                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Committing Changes…
+              </>
+            ) : (
+              <>✓ Commit Changes</>
+            )}
+          </button>
         </div>
       </form>
     </DefaultFloatingModalCard>

@@ -55,6 +55,8 @@ const BOUNDS_PADDING: [number, number] = [18, 18];
 export const SatelliteCommandMap: React.FC<SatelliteCommandMapProps> = ({
   incidents = [],
   markers = [],
+  centerLat,
+  centerLng,
   onMapReady,
   className = "mapview__map"
 }) => {
@@ -68,6 +70,10 @@ export const SatelliteCommandMap: React.FC<SatelliteCommandMapProps> = ({
     if (mapInstanceRef.current) return; // already initialized
 
     const homeBounds = L.latLngBounds(AREA_BOUNDS[0], AREA_BOUNDS[1]);
+    const initialCenter: [number, number] =
+      typeof centerLat === 'number' && typeof centerLng === 'number'
+        ? [centerLat, centerLng]
+        : HOME_CENTER;
 
     const map = L.map(mapContainerRef.current, {
       zoomControl: false,
@@ -75,7 +81,7 @@ export const SatelliteCommandMap: React.FC<SatelliteCommandMapProps> = ({
       maxZoom: MAX_ZOOM,
       maxBoundsViscosity: 1.0,
       attributionControl: true
-    }).setView(HOME_CENTER, HOME_ZOOM);
+    }).setView(initialCenter, HOME_ZOOM);
 
     map.attributionControl.setPosition("bottomleft");
     map.setMaxBounds(homeBounds.pad(0.05));
@@ -113,6 +119,14 @@ export const SatelliteCommandMap: React.FC<SatelliteCommandMapProps> = ({
       mapInstanceRef.current = null;
     };
   }, []);
+
+  // Smoothly pan when center coordinates change dynamically
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    if (typeof centerLat === 'number' && typeof centerLng === 'number') {
+      mapInstanceRef.current.panTo([centerLat, centerLng], { animate: true, duration: 0.8 });
+    }
+  }, [centerLat, centerLng]);
 
   // Sync incident pins & GPS accuracy radii
   useEffect(() => {

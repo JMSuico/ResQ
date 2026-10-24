@@ -139,6 +139,15 @@ export const ResQTrackSvgSprite = () => (
       <path d="M12 20V4" />
       <path d="M19 20v-6" />
     </symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </symbol>
+    <symbol id="i-analytics" viewBox="0 0 24 24">
+      <line x1="18" y1="20" x2="18" y2="10" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="14" />
+    </symbol>
     <symbol id="i-bolt" viewBox="0 0 24 24">
       <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" />
     </symbol>
@@ -173,6 +182,11 @@ export const ResQTrackSvgSprite = () => (
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
       <polyline points="15 3 21 3 21 9" />
       <line x1="10" y1="14" x2="21" y2="3" />
+    </symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
     </symbol>
   </svg>
 );

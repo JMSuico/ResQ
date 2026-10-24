@@ -6,5 +6,5 @@ echo   RESQTRACK INCIDENT AI SYSTEM -- STOPPING ALL SERVICES
 echo   Freeing Ports 5000, 5173, 5174, and 5175
 echo ======================================================================
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0manage.ps1" stop
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0stopdev-all.ps1" %*
 pause

@@ -18,36 +18,51 @@ export const SkeletonLoader: FC<SkeletonLoaderProps> = ({
   className = '',
 }) => {
   if (variant === 'circle') {
-    return <div className={`rounded-full bg-slate-800/80 animate-pulse ${className}`} />;
+    return (
+      <div
+        className={`rounded-full bg-slate-800/80 border border-slate-700/30 animate-pulse ${className}`}
+      />
+    );
   }
 
   if (variant === 'card') {
     return (
       <div
-        className={`rounded-xl bg-slate-900/90 p-4 border border-slate-700/80 flex flex-col gap-3 animate-pulse ${className}`}
+        className={`rounded-xl bg-slate-900/90 p-4 border border-slate-700/80 shadow-lg flex flex-col gap-3 animate-pulse ${className}`}
       >
-        <div className="h-36 bg-slate-800/80 rounded-lg w-full" />
-        <div className="h-4 bg-slate-800/80 rounded w-3/4" />
-        <div className="h-3 bg-slate-800/60 rounded w-1/2" />
+        <div className="h-36 bg-slate-800/80 rounded-lg w-full border border-slate-700/30" />
+        <div className="h-4 bg-slate-800/80 rounded-md w-3/4" />
+        <div className="h-3 bg-slate-800/60 rounded-md w-1/2" />
       </div>
     );
   }
 
   if (variant === 'rect') {
-    return <div className={`rounded-lg bg-slate-800/80 animate-pulse ${className}`} />;
+    return (
+      <div
+        className={`rounded-lg bg-slate-800/80 border border-slate-700/30 animate-pulse ${className}`}
+      />
+    );
   }
 
   if (rows > 1) {
     return (
       <div className={`flex flex-col gap-2.5 animate-pulse ${className}`}>
         {Array.from({ length: rows }).map((_, i) => (
-          <div key={i} className="h-8 bg-slate-800/70 rounded-md w-full" />
+          <div
+            key={i}
+            className="h-9 bg-slate-800/70 rounded-lg border border-slate-700/30 w-full"
+          />
         ))}
       </div>
     );
   }
 
-  return <div className={`h-4 rounded bg-slate-800/80 animate-pulse ${className}`} />;
+  return (
+    <div
+      className={`h-4 rounded-md bg-slate-800/80 border border-slate-700/30 animate-pulse ${className}`}
+    />
+  );
 };
 
 export default SkeletonLoader;

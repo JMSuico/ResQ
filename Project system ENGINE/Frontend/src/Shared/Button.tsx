@@ -43,10 +43,10 @@ export const Button: FC<ButtonProps> = ({
   ...props
 }) => {
   const baseClasses =
-    'inline-flex items-center justify-center font-semibold transition-all duration-200 select-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100';
+    'inline-flex items-center justify-center font-semibold tracking-wide transition-all duration-150 select-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100';
 
   const sizeClasses: Record<ButtonSize, string> = {
-    xs: 'px-2.5 py-1 text-xs gap-1 rounded-md',
+    xs: 'px-2.5 py-1 text-[11px] gap-1 rounded-md',
     sm: 'px-3 py-1.5 text-xs gap-1.5 rounded-lg',
     md: 'px-4 py-2 text-sm gap-2 rounded-lg',
     lg: 'px-5 py-2.5 text-base gap-2.5 rounded-xl',
@@ -54,23 +54,23 @@ export const Button: FC<ButtonProps> = ({
 
   const variantClasses: Record<ButtonVariant, string> = {
     primary:
-      'bg-sky-600 hover:bg-sky-500 text-white focus:ring-sky-500 shadow-md shadow-sky-950/50',
+      'bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white border border-sky-400/30 hover:border-sky-300/60 focus:ring-sky-500 shadow-md shadow-sky-950/60',
     secondary:
-      'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700/80 focus:ring-slate-500 shadow-sm',
+      'bg-slate-800/90 hover:bg-slate-700/90 active:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 hover:border-slate-600 focus:ring-slate-500 shadow-sm backdrop-blur-sm',
     'action-green':
-      'bg-emerald-600 hover:bg-emerald-500 text-white focus:ring-emerald-500 shadow-md shadow-emerald-950/50 font-bold',
+      'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white border border-emerald-400/30 hover:border-emerald-300/60 focus:ring-emerald-500 shadow-md shadow-emerald-950/60 font-bold',
     success:
-      'bg-emerald-600 hover:bg-emerald-500 text-white focus:ring-emerald-500 shadow-md shadow-emerald-950/50',
+      'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white border border-emerald-400/30 hover:border-emerald-300/60 focus:ring-emerald-500 shadow-md shadow-emerald-950/60',
     danger:
-      'bg-rose-600 hover:bg-rose-500 text-white focus:ring-rose-500 shadow-md shadow-rose-950/50',
+      'bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white border border-rose-400/30 hover:border-rose-300/60 focus:ring-rose-500 shadow-md shadow-rose-950/60',
     warning:
-      'bg-amber-600 hover:bg-amber-500 text-white focus:ring-amber-500 shadow-md shadow-amber-950/50',
+      'bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white border border-amber-400/30 hover:border-amber-300/60 focus:ring-amber-500 shadow-md shadow-amber-950/60',
     ghost:
-      'bg-transparent text-slate-300 hover:bg-slate-800 hover:text-white focus:ring-slate-700',
+      'bg-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white focus:ring-slate-700',
     outline:
-      'bg-transparent border border-slate-600 hover:border-slate-400 text-slate-200 hover:bg-slate-800/50 focus:ring-sky-500',
+      'bg-transparent border border-slate-600/80 hover:border-slate-400 text-slate-200 hover:bg-slate-800/60 hover:text-white focus:ring-sky-500',
     'soft-blue':
-      'bg-sky-950/80 text-sky-300 border border-sky-800/60 hover:bg-sky-900/80 hover:text-sky-200 focus:ring-sky-500 font-bold',
+      'bg-sky-950/70 text-sky-300 border border-sky-800/60 hover:bg-sky-900/80 hover:text-sky-100 hover:border-sky-700/80 focus:ring-sky-500 font-semibold backdrop-blur-sm',
   };
 
   const widthClass = fullWidth ? 'w-full' : '';
