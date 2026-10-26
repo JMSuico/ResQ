@@ -66,9 +66,7 @@ export const AdminLayout: React.FC = () => (
   <LayoutWrappers defaultRole="LDRRMO_Admin" defaultUnit="LDRRMO" />
 );
 
-export const ResponderLayout: React.FC = () => (
-  <LayoutWrappers defaultRole="Responder" defaultUnit="RHU" />
-);
+export { ResponderLayout } from './ResponderLayout';
 
 export const CivilianLayout: React.FC = () => (
   <LayoutWrappers defaultRole="Civilian" defaultUnit="None" />

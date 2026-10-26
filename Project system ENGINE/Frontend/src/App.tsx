@@ -20,16 +20,27 @@ import { IncidentsPage } from '@/UserRoles/Features/Pages/AdminsPanel/IncidentsP
 import { RespondersRosterPage } from '@/UserRoles/Features/Pages/AdminsPanel/RespondersRosterPage';
 import { UserManagementPage } from '@/UserRoles/Features/Pages/AdminsPanel/UserManagementPage';
 import { SettingsPage } from '@/UserRoles/Features/Pages/AdminsPanel/SettingsPage';
-import { ResponderDashboard } from '@/UserRoles/Features/Pages/RespondersPanel/ResponderDashboard';
 import { CivilianDashboard } from '@/UserRoles/Features/Pages/CiviliansPanel/CivilianDashboard';
 
 // Portal Feature Views
 import { AlertsCenter } from '@/UserRoles/Features/Pages/AdminsPanel/AlertsCenter';
-import { UnitIncidentsFeed } from '@/UserRoles/Features/Pages/RespondersPanel/UnitIncidentsFeed';
-import { DutyRosterView } from '@/UserRoles/Features/Pages/RespondersPanel/DutyRosterView';
-import { MyReportsPage } from '@/UserRoles/Features/Pages/RespondersPanel/MyReportsPage';
-import { ResponderAlerts } from '@/UserRoles/Features/Pages/RespondersPanel/ResponderAlerts';
-import { ResponderProfile } from '@/UserRoles/Features/Pages/RespondersPanel/ResponderProfile';
+import {
+  DynamicResponderDashboard,
+  DynamicResponderIncidents,
+  DynamicResponderRoster,
+  DynamicResponderReports,
+  DynamicResponderProfile,
+  PatientCareRecordPage,
+  HospitalBedRadarPage,
+  HydrantTacticalMapPage,
+  ApparatusTelemetryPage,
+  HazmatGuidebookPage,
+  FireAarReportsPage,
+  PoliceBlotterPage,
+  TacticalPerimeterMapPage,
+  EvidenceVaultPage,
+  ResponderAlerts
+} from '@/UserRoles/Features/Pages/RespondersPanel';
 
 import { ReportAccidentPage } from '@/UserRoles/Features/Pages/CiviliansPanel/ReportAccidentPage';
 import { MyReportsHistory } from '@/UserRoles/Features/Pages/CiviliansPanel/MyReportsHistory';
@@ -123,13 +134,31 @@ export const App: React.FC = () => {
 
         {/* Responders Portal (/responder/*) */}
         <Route path="/responder" element={<ResponderLayout />}>
-          <Route index element={<ResponderDashboard />} />
-          <Route path="dashboard" element={<ResponderDashboard />} />
-          <Route path="incidents" element={<UnitIncidentsFeed />} />
-          <Route path="roster" element={<DutyRosterView />} />
-          <Route path="my-reports" element={<MyReportsPage />} />
+          <Route index element={<DynamicResponderDashboard />} />
+          <Route path="dashboard" element={<DynamicResponderDashboard />} />
+          <Route path="incidents" element={<DynamicResponderIncidents />} />
+          <Route path="roster" element={<DynamicResponderRoster />} />
+          <Route path="my-reports" element={<DynamicResponderReports />} />
+
+          {/* Explicit Branch Routes */}
+          {/* RHU Medic */}
+          <Route path="pcr" element={<PatientCareRecordPage />} />
+          <Route path="hospital-radar" element={<HospitalBedRadarPage />} />
+
+          {/* BFP Fire */}
+          <Route path="hydrants" element={<HydrantTacticalMapPage />} />
+          <Route path="apparatus" element={<ApparatusTelemetryPage />} />
+          <Route path="hazmat" element={<HazmatGuidebookPage />} />
+          <Route path="aar" element={<FireAarReportsPage />} />
+
+          {/* PNP Police */}
+          <Route path="blotter" element={<PoliceBlotterPage />} />
+          <Route path="perimeter" element={<TacticalPerimeterMapPage />} />
+          <Route path="evidence" element={<EvidenceVaultPage />} />
+
+          {/* Tactical Alarms & Credentials Profile */}
           <Route path="alerts" element={<ResponderAlerts />} />
-          <Route path="profile" element={<ResponderProfile />} />
+          <Route path="profile" element={<DynamicResponderProfile />} />
         </Route>
 
         {/* UG Residents & Civilians Portal (/civilian/*) */}

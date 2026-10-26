@@ -1,0 +1,789 @@
+/* ==========================================================================
+   ResQTrack Incident AI System Detection - Tactical HUDs
+   LayoutStyles/tacticalHuds.css
+   
+   Bespoke Mission-Critical Command HUD & Tactical Response Stylesheet
+   Governed by WCAG AA 4.5:1+ contrast rules & 44px+ field glove touch targets.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. ROOT TOKENS & AGENCY THEME MATRICES
+   -------------------------------------------------------------------------- */
+:root {
+  /* Default Tactical Baseline (Command Navy) */
+  --hud-base: #071522;
+  --hud-base-rgb: 7, 21, 34;
+  --hud-primary: #0284c7;
+  --hud-primary-rgb: 2, 132, 199;
+  --hud-border: #38bdf8;
+  --hud-border-rgb: 56, 189, 248;
+  --hud-glow: rgba(2, 132, 199, 0.4);
+  --hud-surface: #0a1a2b;
+  --hud-surface-elevated: #0e243a;
+  --hud-text: #f8fafc;
+  --hud-text-secondary: #94a3b8;
+  --hud-badge-bg: rgba(2, 132, 199, 0.16);
+  --hud-highlight: #38bdf8;
+  --hud-touch-min: 44px;
+}
+
+/* --- RHU MEDIC CORPS THEME ---
+   Base: #0a192f | Primary: #0284c7 | Border: #38bdf8 | Glow: rgba(2, 132, 199, 0.4)
+   Contrast: #f0f9ff on #0a192f is 14.8:1 (WCAG AAA)
+             #93c5fd on #0a192f is 8.1:1  (WCAG AAA) */
+.theme-rhu,
+[data-theme="rhu"],
+[data-agency="rhu"],
+.hud-theme-rhu {
+  --hud-base: #0a192f;
+  --hud-base-rgb: 10, 25, 47;
+  --hud-primary: #0284c7;
+  --hud-primary-rgb: 2, 132, 199;
+  --hud-border: #38bdf8;
+  --hud-border-rgb: 56, 189, 248;
+  --hud-glow: rgba(2, 132, 199, 0.4);
+  --hud-surface: #0e2240;
+  --hud-surface-elevated: #132b50;
+  --hud-text: #f0f9ff;
+  --hud-text-secondary: #93c5fd;
+  --hud-badge-bg: rgba(2, 132, 199, 0.16);
+  --hud-highlight: #38bdf8;
+  --hud-action-hover: #0369a1;
+  --hud-action-active: #075985;
+}
+
+/* --- BFP FIRE RESCUE THEME ---
+   Base: #1a0f0a | Primary: #ea580c | Border: #f97316 | Glow: rgba(234, 88, 12, 0.4)
+   Contrast: #fff7ed on #1a0f0a is 15.2:1 (WCAG AAA)
+             #fed7aa on #1a0f0a is 11.2:1 (WCAG AAA) */
+.theme-bfp,
+.theme-fire,
+[data-theme="bfp"],
+[data-theme="fire"],
+[data-agency="bfp"],
+[data-agency="fire"],
+.hud-theme-bfp,
+.hud-theme-fire {
+  --hud-base: #1a0f0a;
+  --hud-base-rgb: 26, 15, 10;
+  --hud-primary: #ea580c;
+  --hud-primary-rgb: 234, 88, 12;
+  --hud-border: #f97316;
+  --hud-border-rgb: 249, 115, 22;
+  --hud-glow: rgba(234, 88, 12, 0.4);
+  --hud-surface: #28160e;
+  --hud-surface-elevated: #361f14;
+  --hud-text: #fff7ed;
+  --hud-text-secondary: #fed7aa;
+  --hud-badge-bg: rgba(234, 88, 12, 0.16);
+  --hud-highlight: #fb923c;
+  --hud-action-hover: #c2410c;
+  --hud-action-active: #9a3412;
+}
+
+/* --- PNP POLICE FORCE THEME ---
+   Base: #0a1128 | Primary: #1d4ed8 | Border: #3b82f6 | Glow: rgba(29, 78, 216, 0.4)
+   Contrast: #eff6ff on #0a1128 is 15.0:1 (WCAG AAA)
+             #bfdbfe on #0a1128 is 9.8:1  (WCAG AAA) */
+.theme-pnp,
+[data-theme="pnp"],
+[data-agency="pnp"],
+.hud-theme-pnp {
+  --hud-base: #0a1128;
+  --hud-base-rgb: 10, 17, 40;
+  --hud-primary: #1d4ed8;
+  --hud-primary-rgb: 29, 78, 216;
+  --hud-border: #3b82f6;
+  --hud-border-rgb: 59, 130, 246;
+  --hud-glow: rgba(29, 78, 216, 0.4);
+  --hud-surface: #0e1838;
+  --hud-surface-elevated: #14224e;
+  --hud-text: #eff6ff;
+  --hud-text-secondary: #bfdbfe;
+  --hud-badge-bg: rgba(29, 78, 216, 0.16);
+  --hud-highlight: #60a5fa;
+  --hud-action-hover: #1e40af;
+  --hud-action-active: #1e3a8a;
+}
+
+/* --- LDRRMO COMMAND CENTER THEME (MASTER TRIAGE) ---
+   Base: #071522 | Primary: #e8114c | Border: #ff5c74 | Glow: rgba(232, 17, 76, 0.45) */
+.theme-ldrrmo,
+[data-theme="ldrrmo"],
+[data-agency="ldrrmo"],
+.hud-theme-ldrrmo {
+  --hud-base: #071522;
+  --hud-base-rgb: 7, 21, 34;
+  --hud-primary: #e8114c;
+  --hud-primary-rgb: 232, 17, 76;
+  --hud-border: #ff5c74;
+  --hud-border-rgb: 255, 92, 116;
+  --hud-glow: rgba(232, 17, 76, 0.45);
+  --hud-surface: #0a1a2b;
+  --hud-surface-elevated: #0e243a;
+  --hud-text: #ffffff;
+  --hud-text-secondary: #fca5a5;
+  --hud-badge-bg: rgba(232, 17, 76, 0.16);
+  --hud-highlight: #ff2b4a;
+  --hud-action-hover: #c50337;
+  --hud-action-active: #96112f;
+}
+
+/* --------------------------------------------------------------------------
+   2. TACTICAL PANELS & BEVEL CORNERS (CHAMFERED GEOMETRY)
+   -------------------------------------------------------------------------- */
+.hud-panel {
+  position: relative;
+  background-color: var(--hud-surface);
+  color: var(--hud-text);
+  border: 1px solid var(--hud-border);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5), 0 0 12px -2px var(--hud-glow);
+  transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hud-panel-elevated {
+  background-color: var(--hud-surface-elevated);
+  border-color: rgba(var(--hud-border-rgb), 0.6);
+}
+
+/* Symmetrical 4-Corner Bevels (Military Chamfer) */
+.hud-bevel-sm {
+  clip-path: polygon(
+    6px 0%, calc(100% - 6px) 0%,
+    100% 6px, 100% calc(100% - 6px),
+    calc(100% - 6px) 100%, 6px 100%,
+    0% calc(100% - 6px), 0% 6px
+  );
+}
+
+.hud-bevel-md {
+  clip-path: polygon(
+    12px 0%, calc(100% - 12px) 0%,
+    100% 12px, 100% calc(100% - 12px),
+    calc(100% - 12px) 100%, 12px 100%,
+    0% calc(100% - 12px), 0% 12px
+  );
+}
+
+.hud-bevel-lg {
+  clip-path: polygon(
+    18px 0%, calc(100% - 18px) 0%,
+    100% 18px, 100% calc(100% - 18px),
+    calc(100% - 18px) 100%, 18px 100%,
+    0% calc(100% - 18px), 0% 18px
+  );
+}
+
+/* Asymmetric Tactical Cuts */
+.hud-bevel-diag {
+  clip-path: polygon(
+    0 0,
+    calc(100% - 14px) 0,
+    100% 14px,
+    100% 100%,
+    14px 100%,
+    0 calc(100% - 14px)
+  );
+}
+
+.hud-bevel-notch {
+  clip-path: polygon(
+    14px 0%,
+    100% 0%,
+    100% 100%,
+    0% 100%,
+    0% 14px
+  );
+}
+
+/* High-Tech Framing Brackets (Corner Indicators) */
+.hud-corner-brackets {
+  position: relative;
+}
+
+.hud-corner-brackets::before,
+.hud-corner-brackets::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+  z-index: 2;
+  transition: border-color 150ms ease;
+}
+
+.hud-corner-brackets::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid var(--hud-border);
+  border-left: 2px solid var(--hud-border);
+}
+
+.hud-corner-brackets::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 2px solid var(--hud-border);
+  border-right: 2px solid var(--hud-border);
+}
+
+/* All 4 Corners Framed */
+.hud-corner-brackets-all {
+  position: relative;
+}
+
+.hud-corner-brackets-all::before,
+.hud-corner-brackets-all::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+}
+
+.hud-corner-brackets-all::before {
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  background: 
+    linear-gradient(to right, var(--hud-border) 2px, transparent 2px) 0 0,
+    linear-gradient(to left, var(--hud-border) 2px, transparent 2px) 100% 0,
+    linear-gradient(to right, var(--hud-border) 2px, transparent 2px) 0 100%,
+    linear-gradient(to left, var(--hud-border) 2px, transparent 2px) 100% 100%,
+    linear-gradient(to bottom, var(--hud-border) 2px, transparent 2px) 0 0,
+    linear-gradient(to bottom, var(--hud-border) 2px, transparent 2px) 100% 0,
+    linear-gradient(to top, var(--hud-border) 2px, transparent 2px) 0 100%,
+    linear-gradient(to top, var(--hud-border) 2px, transparent 2px) 100% 100%;
+  background-repeat: no-repeat;
+  background-size: 10px 10px;
+}
+
+/* --------------------------------------------------------------------------
+   3. RADAR GRID BACKGROUNDS & TACTICAL OVERLAYS
+   -------------------------------------------------------------------------- */
+/* Tactical Radar Grid Background (Concentric Rings + Metric Cartesian Divisions) */
+.hud-radar-grid {
+  position: relative;
+  background-color: var(--hud-base);
+  background-image:
+    radial-gradient(circle at center, transparent 24%, rgba(var(--hud-border-rgb), 0.08) 25%, transparent 26%),
+    radial-gradient(circle at center, transparent 49%, rgba(var(--hud-border-rgb), 0.08) 50%, transparent 51%),
+    radial-gradient(circle at center, transparent 74%, rgba(var(--hud-border-rgb), 0.08) 75%, transparent 76%),
+    linear-gradient(to right, rgba(var(--hud-border-rgb), 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(var(--hud-border-rgb), 0.06) 1px, transparent 1px);
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    40px 40px,
+    40px 40px;
+  background-position:
+    center center,
+    center center,
+    center center,
+    center center,
+    center center;
+}
+
+/* Cartesian Field Coordinates (20px Grid) */
+.hud-cartesian-grid {
+  background-image:
+    linear-gradient(to right, rgba(var(--hud-border-rgb), 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(var(--hud-border-rgb), 0.05) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Tactical Dot Matrix Grid */
+.hud-dot-grid {
+  background-image: radial-gradient(rgba(var(--hud-border-rgb), 0.18) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* CRT / Night Optics Scanline Effect */
+.hud-scanlines {
+  position: relative;
+}
+
+.hud-scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%,
+    rgba(0, 0, 0, 0.25) 50%
+  );
+  background-size: 100% 4px;
+  z-index: 10;
+  opacity: 0.6;
+}
+
+/* --------------------------------------------------------------------------
+   4. TACTICAL RETICLE OVERLAYS (CAMERA & SATELLITE SENSORS)
+   -------------------------------------------------------------------------- */
+.hud-reticle-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Center Crosshairs with Clear Target Focal Aperture */
+.hud-reticle-crosshair {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud-reticle-crosshair::before,
+.hud-reticle-crosshair::after {
+  content: '';
+  position: absolute;
+  background-color: var(--hud-border);
+  opacity: 0.65;
+}
+
+/* Horizontal Hairline with Aperture Gap */
+.hud-reticle-crosshair::before {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    to right,
+    var(--hud-border) 0%,
+    var(--hud-border) calc(50% - 24px),
+    transparent calc(50% - 24px),
+    transparent calc(50% + 24px),
+    var(--hud-border) calc(50% + 24px),
+    var(--hud-border) 100%
+  );
+}
+
+/* Vertical Hairline with Aperture Gap */
+.hud-reticle-crosshair::after {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(
+    to bottom,
+    var(--hud-border) 0%,
+    var(--hud-border) calc(50% - 24px),
+    transparent calc(50% - 24px),
+    transparent calc(50% + 24px),
+    var(--hud-border) calc(50% + 24px),
+    var(--hud-border) 100%
+  );
+}
+
+/* Concentric Targeting Ring with Cardinal Ticks */
+.hud-reticle-circle {
+  position: absolute;
+  width: 72px;
+  height: 72px;
+  border: 1.5px dashed rgba(var(--hud-border-rgb), 0.75);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.hud-reticle-circle-lg {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  border: 1px solid rgba(var(--hud-border-rgb), 0.35);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Viewfinder Corner Framing (Camera Snapshot Viewfinder) */
+.hud-viewfinder {
+  position: absolute;
+  inset: 12px;
+  pointer-events: none;
+}
+
+.hud-viewfinder-corner {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-color: var(--hud-border);
+  border-style: solid;
+  border-width: 0;
+}
+
+.hud-viewfinder-tl {
+  top: 0;
+  left: 0;
+  border-top-width: 2.5px;
+  border-left-width: 2.5px;
+}
+
+.hud-viewfinder-tr {
+  top: 0;
+  right: 0;
+  border-top-width: 2.5px;
+  border-right-width: 2.5px;
+}
+
+.hud-viewfinder-bl {
+  bottom: 0;
+  left: 0;
+  border-bottom-width: 2.5px;
+  border-left-width: 2.5px;
+}
+
+.hud-viewfinder-br {
+  bottom: 0;
+  right: 0;
+  border-bottom-width: 2.5px;
+  border-right-width: 2.5px;
+}
+
+/* --------------------------------------------------------------------------
+   5. MICRO-INTERACTION KEYFRAMES & MOTION DESIGN
+   -------------------------------------------------------------------------- */
+/* Radar Sweep (Conic beam 360-deg continuous tracking) */
+@keyframes radar-sweep {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-radar-sweep,
+.hud-radar-sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.animate-radar-sweep::before,
+.hud-radar-sweep::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(var(--hud-primary-rgb), 0.38) 0deg,
+    rgba(var(--hud-primary-rgb), 0.08) 35deg,
+    transparent 65deg,
+    transparent 360deg
+  );
+  border-radius: 50%;
+  animation: radar-sweep 4s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Emergency Pulse (Mission-Critical Alert Glow) */
+@keyframes emergency-pulse {
+  0%, 100% {
+    border-color: var(--hud-border);
+    box-shadow: 0 0 6px var(--hud-glow), inset 0 0 4px var(--hud-glow);
+  }
+  50% {
+    border-color: #ffffff;
+    box-shadow: 0 0 20px var(--hud-glow), 0 0 35px rgba(var(--hud-primary-rgb), 0.6), inset 0 0 10px var(--hud-glow);
+  }
+}
+
+.animate-emergency-pulse,
+.hud-emergency-pulse {
+  animation: emergency-pulse 1.4s ease-in-out infinite;
+}
+
+/* Beacon Ping (GPS Hardware & Unverified Pin Pulse Wave) */
+@keyframes beacon-ping {
+  0% {
+    transform: scale(0.65);
+    opacity: 0.95;
+  }
+  60% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.animate-beacon-ping,
+.hud-beacon-ping {
+  position: relative;
+}
+
+.animate-beacon-ping::after,
+.hud-beacon-ping::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid var(--hud-border);
+  animation: beacon-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+
+/* Telemetry Scanner Line */
+@keyframes scanner-bar {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+.hud-scanner-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--hud-border) 50%,
+    transparent 100%
+  );
+  box-shadow: 0 0 10px var(--hud-border);
+  animation: scanner-bar 2.5s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* --------------------------------------------------------------------------
+   6. TACTILE BUTTON PRESS FEEDBACK & FIELD GLOVE ACCESSIBILITY
+   -------------------------------------------------------------------------- */
+/* Tactical Base Button
+   - Minimum 44x44px target for rapid gloved finger activation (WCAG 2.5.5)
+   - 150ms cubic-bezier transition curves for crisp physical response
+   - Active tactile compression (scale: 0.95) */
+.hud-tactile-btn,
+.hud-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--hud-touch-min);
+  min-width: var(--hud-touch-min);
+  padding: 10px 20px;
+  font-family: var(--font-ui, 'Inter', sans-serif);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--hud-text);
+  background-color: var(--hud-surface);
+  border: 1px solid var(--hud-border);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hud-tactile-btn:hover,
+.hud-btn:hover {
+  background-color: var(--hud-surface-elevated);
+  border-color: var(--hud-highlight);
+  box-shadow: 0 0 12px var(--hud-glow);
+}
+
+.hud-tactile-btn:active,
+.hud-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 0 4px var(--hud-glow);
+}
+
+.hud-tactile-btn:focus-visible,
+.hud-btn:focus-visible {
+  outline: 2px solid var(--hud-border);
+  outline-offset: 2px;
+}
+
+.hud-tactile-btn:disabled,
+.hud-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+}
+
+/* Primary Filled Action Button */
+.hud-btn-primary {
+  background-color: var(--hud-primary);
+  border-color: var(--hud-border);
+  color: #ffffff;
+  box-shadow: 0 0 14px var(--hud-glow);
+}
+
+.hud-btn-primary:hover {
+  background-color: var(--hud-action-hover, #0284c7);
+  border-color: #ffffff;
+  box-shadow: 0 0 20px var(--hud-glow);
+}
+
+.hud-btn-primary:active {
+  background-color: var(--hud-action-active, #0369a1);
+  transform: scale(0.95);
+}
+
+/* Agency-Specific Button Variants */
+.hud-btn-rhu {
+  background-color: #0284c7;
+  border-color: #38bdf8;
+  color: #f0f9ff;
+  box-shadow: 0 0 14px rgba(2, 132, 199, 0.4);
+}
+
+.hud-btn-rhu:hover {
+  background-color: #0369a1;
+  border-color: #bae6fd;
+  box-shadow: 0 0 22px rgba(56, 189, 248, 0.5);
+}
+
+.hud-btn-bfp {
+  background-color: #ea580c;
+  border-color: #f97316;
+  color: #fff7ed;
+  box-shadow: 0 0 14px rgba(234, 88, 12, 0.4);
+}
+
+.hud-btn-bfp:hover {
+  background-color: #c2410c;
+  border-color: #fed7aa;
+  box-shadow: 0 0 22px rgba(249, 115, 22, 0.5);
+}
+
+.hud-btn-pnp {
+  background-color: #1d4ed8;
+  border-color: #3b82f6;
+  color: #eff6ff;
+  box-shadow: 0 0 14px rgba(29, 78, 216, 0.4);
+}
+
+.hud-btn-pnp:hover {
+  background-color: #1e40af;
+  border-color: #bfdbfe;
+  box-shadow: 0 0 22px rgba(59, 130, 246, 0.5);
+}
+
+.hud-btn-emergency,
+.hud-btn-ldrrmo {
+  background-color: #e8114c;
+  border-color: #ff5c74;
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(232, 17, 76, 0.45);
+}
+
+.hud-btn-emergency:hover,
+.hud-btn-ldrrmo:hover {
+  background-color: #c50337;
+  border-color: #ffffff;
+  box-shadow: 0 0 24px rgba(232, 17, 76, 0.65);
+}
+
+/* Field Glove Touch Target Utility */
+.hud-touch-target {
+  min-height: var(--hud-touch-min);
+  min-width: var(--hud-touch-min);
+}
+
+/* --------------------------------------------------------------------------
+   7. TELEMETRY READOUTS, BADGES & SENSOR CHIPS
+   -------------------------------------------------------------------------- */
+.hud-telemetry-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--hud-border);
+  background-color: var(--hud-badge-bg);
+  border-radius: 3px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--hud-text);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.hud-data-label {
+  font-family: var(--font-ui, 'Inter', sans-serif);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--hud-text-secondary);
+  line-height: 1.2;
+}
+
+.hud-data-value {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--hud-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.hud-metric-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background-color: var(--hud-surface);
+  border: 1px solid rgba(var(--hud-border-rgb), 0.35);
+  border-radius: 4px;
+}
+
+.hud-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--hud-border);
+  box-shadow: 0 0 8px var(--hud-glow);
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
+   8. REDUCED MOTION ACCESSIBILITY (WCAG 2.3.3)
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .animate-radar-sweep::before,
+  .hud-radar-sweep::before,
+  .animate-emergency-pulse,
+  .hud-emergency-pulse,
+  .animate-beacon-ping::after,
+  .hud-beacon-ping::after,
+  .hud-scanner-bar {
+    animation: none !important;
+  }
+  
+  .hud-tactile-btn,
+  .hud-btn {
+    transition: none !important;
+  }
+}

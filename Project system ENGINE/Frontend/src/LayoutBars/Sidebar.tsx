@@ -76,10 +76,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
     // 3.2 RHU Medical Responder — Port 5173
     menuItems = [
-      { to: '/responder/dashboard', label: 'EMS Trauma Board', icon: '#i-medical' },
+      { to: '/responder/dashboard', label: 'EMS Trauma Hub', icon: '#i-medical' },
       { to: '/responder/incidents', label: 'Casualty Dispatches', icon: '#i-alert' },
+      { to: '/responder/pcr', label: 'Patient Care Record (PCR)', icon: '#i-document' },
+      { to: '/responder/hospital-radar', label: 'Hospital ER Radar', icon: '#i-building' },
       { to: '/responder/roster', label: 'Ambulance Crew', icon: '#i-people' },
-      { to: '/responder/my-reports', label: 'Patient Logs', icon: '#i-badge' },
       { to: '/responder/alerts', label: 'Hospital ER Alarms', icon: '#i-bell' },
       { to: '/responder/profile', label: 'Medic Credentials', icon: '#i-user' }
     ];
@@ -95,11 +96,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // 3.3 FIRE (BFP) Responder — Port 5173
     menuItems = [
       { to: '/responder/dashboard', label: 'Fire Command Hub', icon: '#i-flame' },
-      { to: '/responder/incidents', label: 'Hazmat & 2-Alarm', icon: '#i-alert' },
-      { to: '/responder/roster', label: 'Engine Apparatus', icon: '#i-people' },
-      { to: '/responder/my-reports', label: 'After-Action Logs', icon: '#i-badge' },
-      { to: '/responder/alerts', label: 'Station Alarms', icon: '#i-bell' },
-      { to: '/responder/profile', label: 'Officer Profile', icon: '#i-user' }
+      { to: '/responder/incidents', label: 'Fire Ground Dispatches', icon: '#i-alert' },
+      { to: '/responder/hydrants', label: 'Hydrant Tactical Map', icon: '#i-pin' },
+      { to: '/responder/apparatus', label: 'Apparatus Telemetry', icon: '#i-truck' },
+      { to: '/responder/hazmat', label: 'Hazmat Chemical Guide', icon: '#i-shield-alert' },
+      { to: '/responder/aar', label: 'After-Action Reports', icon: '#i-badge' },
+      { to: '/responder/roster', label: 'Engine Company Roster', icon: '#i-people' },
+      { to: '/responder/profile', label: 'Firefighter Credentials', icon: '#i-user' }
     ];
   } else if (isResponder && (normUnit === 'PNP' || normUnit === 'SECURITY')) {
     agencyInfo = {
@@ -113,11 +116,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // 3.4 PNP Police Responder — Port 5173
     menuItems = [
       { to: '/responder/dashboard', label: 'Sector Patrol Hub', icon: '#i-shield' },
-      { to: '/responder/incidents', label: 'Blotter & Dispatches', icon: '#i-alert' },
+      { to: '/responder/incidents', label: 'Crime & Disturbance Feed', icon: '#i-alert' },
+      { to: '/responder/blotter', label: 'Digital Police Blotter', icon: '#i-document' },
+      { to: '/responder/perimeter', label: 'Tactical Perimeter & Beats', icon: '#i-pin' },
+      { to: '/responder/evidence', label: 'Evidence & Chain of Custody', icon: '#i-lock' },
       { to: '/responder/roster', label: 'Patrol Beat Roster', icon: '#i-people' },
-      { to: '/responder/my-reports', label: 'Police Action Logs', icon: '#i-badge' },
-      { to: '/responder/alerts', label: 'Distress Alarms', icon: '#i-bell' },
-      { to: '/responder/profile', label: 'Officer Credentials', icon: '#i-user' }
+      { to: '/responder/alerts', label: 'Tactical Alarms', icon: '#i-bell' },
+      { to: '/responder/profile', label: 'Officer Credentials & Armory', icon: '#i-user' }
     ];
   } else if (isResponder) {
     agencyInfo = {

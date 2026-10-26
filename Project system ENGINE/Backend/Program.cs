@@ -106,6 +106,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<ITriageService, TriageService>();
 builder.Services.AddScoped<IRespondersService, RespondersService>();
+builder.Services.AddScoped<IResponderOpsService, RespondersService>();
 builder.Services.AddScoped<IUserGovernanceService, UserGovernanceService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();

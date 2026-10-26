@@ -154,6 +154,75 @@ public static class DatabaseSeeder
 
                 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Reports') AND name = 'RecommendedAgencyUnit')
                     ALTER TABLE [Reports] ADD [RecommendedAgencyUnit] NVARCHAR(50) NULL;
+
+                IF OBJECT_ID(N'dbo.PatientCareRecords', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [PatientCareRecords] (
+                        [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        [PcrReference] NVARCHAR(50) NOT NULL,
+                        [ReportId] UNIQUEIDENTIFIER NULL,
+                        [ResponderUserId] UNIQUEIDENTIFIER NULL,
+                        [MedicName] NVARCHAR(120) NOT NULL,
+                        [UnitCode] NVARCHAR(50) NOT NULL,
+                        [PatientName] NVARCHAR(120) NOT NULL,
+                        [Age] INT NOT NULL,
+                        [Gender] NVARCHAR(20) NOT NULL,
+                        [WeightKg] FLOAT NOT NULL,
+                        [LevelOfConsciousness] NVARCHAR(50) NOT NULL,
+                        [BloodPressureSystolic] INT NOT NULL,
+                        [BloodPressureDiastolic] INT NOT NULL,
+                        [HeartRateBpm] INT NOT NULL,
+                        [RespiratoryRate] INT NOT NULL,
+                        [SpO2Percent] INT NOT NULL,
+                        [BloodGlucoseMgDl] INT NOT NULL,
+                        [TemperatureCelsius] FLOAT NOT NULL,
+                        [InterventionsJson] NVARCHAR(MAX) NOT NULL,
+                        [AnatomicalInjuriesJson] NVARCHAR(MAX) NOT NULL,
+                        [ChiefComplaint] NVARCHAR(500) NOT NULL,
+                        [Narrative] NVARCHAR(MAX) NOT NULL,
+                        [CreatedAt] DATETIME2 NOT NULL
+                    );
+                END
+
+                IF OBJECT_ID(N'dbo.PoliceBlotterEntries', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [PoliceBlotterEntries] (
+                        [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        [BlotterNumber] NVARCHAR(50) NOT NULL,
+                        [ReportId] UNIQUEIDENTIFIER NULL,
+                        [IncidentClassification] NVARCHAR(150) NOT NULL,
+                        [ComplainantName] NVARCHAR(120) NOT NULL,
+                        [ComplainantContact] NVARCHAR(50) NULL,
+                        [ComplainantAddress] NVARCHAR(250) NULL,
+                        [SuspectName] NVARCHAR(120) NULL,
+                        [SuspectDescription] NVARCHAR(500) NULL,
+                        [Witnesses] NVARCHAR(250) NULL,
+                        [NarrativeStatement] NVARCHAR(MAX) NOT NULL,
+                        [IncidentLocation] NVARCHAR(250) NOT NULL,
+                        [IncidentDateTime] DATETIME2 NOT NULL,
+                        [InvestigatingOfficerName] NVARCHAR(120) NOT NULL,
+                        [InvestigatingOfficerBadge] NVARCHAR(50) NOT NULL,
+                        [Station] NVARCHAR(100) NOT NULL,
+                        [CryptographicSeal] NVARCHAR(128) NOT NULL,
+                        [CreatedAt] DATETIME2 NOT NULL
+                    );
+                END
+
+                IF OBJECT_ID(N'dbo.FireAlarmStatuses', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [FireAlarmStatuses] (
+                        [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        [ReportId] UNIQUEIDENTIFIER NULL,
+                        [AlarmLevel] NVARCHAR(80) NOT NULL,
+                        [BuildingType] NVARCHAR(100) NOT NULL,
+                        [TrappedOccupantsCount] INT NOT NULL,
+                        [CommanderName] NVARCHAR(120) NOT NULL,
+                        [ReportingUnit] NVARCHAR(50) NOT NULL,
+                        [Remarks] NVARCHAR(500) NOT NULL,
+                        [WaterSupplyGallons] INT NOT NULL,
+                        [UpdatedAt] DATETIME2 NOT NULL
+                    );
+                END
             ");
         }
         catch { /* Fallback for InMemory or non-SQL Server providers */ }
