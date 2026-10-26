@@ -20,9 +20,23 @@ import {
 import { getDutyRoster, updateUnitDutyStatus, DutyUnit } from '@/Endpoints/responderOpsApi';
 import { formatGpsCoord, formatRelativeTime, formatIsoTimestamp } from '@/Libs/Assets/formatters';
 
+import { HydrantTacticalMapPage } from './HydrantTacticalMapPage';
+import { ApparatusTelemetryPage } from './ApparatusTelemetryPage';
+import { HazmatGuidebookPage } from './HazmatGuidebookPage';
+import { FireAarReportsPage } from './FireAarReportsPage';
+import { FireApparatusRosterPage } from './FireApparatusRosterPage';
+
 // --------------------------------------------------------------------------
 // Types & Contracts
 // --------------------------------------------------------------------------
+
+export type FireNavTab =
+  | 'COMMAND'
+  | 'HYDRANTS'
+  | 'TELEMETRY'
+  | 'HAZMAT'
+  | 'AAR'
+  | 'ROSTER';
 
 export type FireAlarmLevel =
   | '1st Alarm'
@@ -210,6 +224,7 @@ export const FireCommandDashboard: React.FC = () => {
   const [selectedIncident, setSelectedIncident] = useState<ReportItem | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [activeSector, setActiveSector] = useState<'Alpha' | 'Bravo' | 'Charlie' | 'Delta'>('Alpha');
+  const [activeNavTab, setActiveNavTab] = useState<FireNavTab>('COMMAND');
 
   // Leaflet Map Refs
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
