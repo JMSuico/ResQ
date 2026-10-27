@@ -15,6 +15,9 @@ import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { SearchBar } from '@/Shared/SearchBar';
 import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
+import { PatientCareRecordModal } from '@/Shared/PatientCareRecordModal';
+import { FireAlarmEscalationModal } from '@/Shared/FireAlarmEscalationModal';
+import { PoliceBlotterModal } from '@/Shared/PoliceBlotterModal';
 import { Button } from '@/Shared/Button';
 import { formatGpsCoord, formatRelativeTime, formatIsoTimestamp } from '@/Libs/Assets/formatters';
 import {
@@ -29,7 +32,8 @@ import {
   Clock,
   Phone,
   AlertCircle,
-  ExternalLink
+  ExternalLink,
+  HeartPulse
 } from 'lucide-react';
 
 export type FieldStatusType = 'AVAILABLE' | 'EN ROUTE' | 'ON SCENE' | 'RETURNING';
@@ -47,6 +51,9 @@ export const ResponderDashboard: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeKpiFilter, setActiveKpiFilter] = useState<'ALL' | 'ACTIVE' | 'CRITICAL'>('ALL');
   const [selectedIncident, setSelectedIncident] = useState<ReportItem | null>(null);
+  const [isPcrModalOpen, setIsPcrModalOpen] = useState<boolean>(false);
+  const [isAlarmModalOpen, setIsAlarmModalOpen] = useState<boolean>(false);
+  const [isBlotterModalOpen, setIsBlotterModalOpen] = useState<boolean>(false);
   const { viewMode, setViewMode } = useTableCardView('card');
 
   const agencyKey = session?.unit || 'RHU';
@@ -359,6 +366,40 @@ export const ResponderDashboard: React.FC = () => {
               <Radio className={`w-4 h-4 ${isLocating ? 'animate-spin' : ''}`} />
               <span>{isLocating ? 'LOCKING GPS...' : 'BROADCAST PING'}</span>
             </button>
+
+            {/* Specialized Agency Operation Trigger */}
+            {session?.unit === 'RHU' && (
+              <button
+                type="button"
+                onClick={() => setIsPcrModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-mono text-xs font-bold uppercase tracking-wider border border-rose-400 shadow-lg shadow-rose-900/40 active:scale-95 transition-all"
+              >
+                <HeartPulse className="w-4 h-4" />
+                <span>LOG PCR VITALS</span>
+              </button>
+            )}
+
+            {session?.unit === 'FIRE' && (
+              <button
+                type="button"
+                onClick={() => setIsAlarmModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-mono text-xs font-bold uppercase tracking-wider border border-amber-400 shadow-lg shadow-amber-900/40 active:scale-95 transition-all"
+              >
+                <Flame className="w-4 h-4" />
+                <span>FIRE ALARM</span>
+              </button>
+            )}
+
+            {session?.unit === 'PNP' && (
+              <button
+                type="button"
+                onClick={() => setIsBlotterModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-bold uppercase tracking-wider border border-indigo-400 shadow-lg shadow-indigo-900/40 active:scale-95 transition-all"
+              >
+                <Shield className="w-4 h-4" />
+                <span>POLICE BLOTTER</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -793,6 +834,36 @@ export const ResponderDashboard: React.FC = () => {
               >
                 Close Window
               </Button>
+              {session?.unit === 'RHU' && (
+                <Button
+                  variant="action-green"
+                  size="sm"
+                  onClick={() => setIsPcrModalOpen(true)}
+                  icon={<HeartPulse className="w-3.5 h-3.5" />}
+                >
+                  Record PCR Vitals
+                </Button>
+              )}
+              {session?.unit === 'FIRE' && (
+                <Button
+                  variant="warning"
+                  size="sm"
+                  onClick={() => setIsAlarmModalOpen(true)}
+                  icon={<Flame className="w-3.5 h-3.5" />}
+                >
+                  Update Fire Alarm
+                </Button>
+              )}
+              {session?.unit === 'PNP' && (
+                <Button
+                  variant="action-green"
+                  size="sm"
+                  onClick={() => setIsBlotterModalOpen(true)}
+                  icon={<Shield className="w-3.5 h-3.5" />}
+                >
+                  File Police Blotter
+                </Button>
+              )}
               <Button
                 variant="primary"
                 size="sm"
@@ -803,6 +874,44 @@ export const ResponderDashboard: React.FC = () => {
             </div>
           </div>
         </DefaultFloatingModalCard>
+      )}
+
+      {/* Specialized Agency Operation Modals */}
+      {isPcrModalOpen && (
+        <PatientCareRecordModal
+          isOpen={isPcrModalOpen}
+          onClose={() => setIsPcrModalOpen(false)}
+          reportId={selectedIncident?.id}
+          onSuccess={(pcr) => {
+            showStatusFeedback(`PATIENT CARE RECORD [${pcr.pcrReference}] SAVED`);
+            loadData();
+          }}
+        />
+      )}
+
+      {isAlarmModalOpen && (
+        <FireAlarmEscalationModal
+          isOpen={isAlarmModalOpen}
+          onClose={() => setIsAlarmModalOpen(false)}
+          reportId={selectedIncident?.id}
+          onSuccess={(alarm) => {
+            showStatusFeedback(`BFP ALARM LEVEL UPDATED TO ${alarm.alarmLevel.toUpperCase()}`);
+            loadData();
+          }}
+        />
+      )}
+
+      {isBlotterModalOpen && (
+        <PoliceBlotterModal
+          isOpen={isBlotterModalOpen}
+          onClose={() => setIsBlotterModalOpen(false)}
+          reportId={selectedIncident?.id}
+          defaultLocation={selectedIncident?.locationLabel || 'Dipolog City Location'}
+          onSuccess={(blotter) => {
+            showStatusFeedback(`POLICE BLOTTER ENTRY [${blotter.blotterNumber}] SEALED WITH SHA-256`);
+            loadData();
+          }}
+        />
       )}
     </div>
   );
