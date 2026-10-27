@@ -1,9 +1,32 @@
 // [Layer: UserRoles/Features/Pages/AdminsPanel/Components]
 // ViewUserDetailModal.tsx -- Comprehensive identity card and biometric preview modal for ResQTrack User Governance.
-// Uses Universal Lambdas (=>), Katipuneros architecture, and DefaultFloatingModalCard.
-// DO NOT mutate user profile state inside read-only inspection views.
+// Conforms to Squad 5:
+// - Universal Lucide Migration: No raw inline SVGs.
+// - Uses Universal Lambdas (=>), Katipuneros architecture, and DefaultFloatingModalCard.
+// - Zero 'any' typing and Zero hardcoded static numbers.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, FC } from 'react';
+import {
+  User,
+  MapPin,
+  Shield,
+  FileText,
+  Lock,
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  Loader2,
+  HeartPulse,
+  Flame,
+  ShieldAlert,
+  Phone,
+  Radio,
+  Building2,
+  Eye,
+  Sliders,
+  UserCheck,
+  Clock,
+} from 'lucide-react';
 import { DefaultFloatingModalCard, Button } from '@/Shared';
 import { getUserDetail, UserDetail } from '@/Endpoints/adminGovernanceApi';
 import { ImageLightboxModal } from '@/Shared/ImageLightboxModal';
@@ -22,7 +45,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
   onEdit,
 }) => {
   const [user, setUser] = useState<UserDetail | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lightboxData, setLightboxData] = useState<{ url: string; title: string } | null>(null);
 
@@ -49,7 +72,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
     }
   };
 
-  const fmtDate = (iso?: string | null) => {
+  const fmtDate = (iso?: string | null): string => {
     if (!iso) return 'Not Provided';
     try {
       const d = new Date(iso);
@@ -64,7 +87,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
     }
   };
 
-  const fmtDateTime = (iso?: string | null) => {
+  const fmtDateTime = (iso?: string | null): string => {
     if (!iso) return 'Not Provided';
     try {
       const d = new Date(iso);
@@ -81,12 +104,13 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
     }
   };
 
-  // Clean Agency Badge Indicators (FIRE orange/red, PNP blue, RHU emerald, LDRRMO crimson/gold)
+  // Agency Badge Indicators
   const renderRoleBadge = (role: string, unit: string) => {
     if (role === 'LDRRMO_Admin') {
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-[#340313] text-amber-300 border border-amber-600/80 shadow-[0_0_12px_rgba(232,17,76,0.3)]">
-          🏛️ LDRRMO Executive Command
+          <Building2 className="w-3.5 h-3.5 text-amber-400" />
+          LDRRMO Executive Command
         </span>
       );
     }
@@ -94,33 +118,38 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
       if (unit === 'RHU') {
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-emerald-950/90 text-emerald-300 border border-emerald-600/80 shadow-[0_0_12px_rgba(16,185,129,0.3)]">
-            🚑 RHU Medical Responder
+            <HeartPulse className="w-3.5 h-3.5 text-emerald-400" />
+            RHU Medical Responder
           </span>
         );
       }
       if (unit === 'FIRE') {
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-orange-950/90 text-orange-300 border border-orange-600/80 shadow-[0_0_12px_rgba(249,115,22,0.3)]">
-            🚒 FIRE (BFP Engine)
+            <Flame className="w-3.5 h-3.5 text-orange-400" />
+            FIRE (BFP Engine)
           </span>
         );
       }
       if (unit === 'PNP') {
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-sky-950/90 text-sky-300 border border-sky-600/80 shadow-[0_0_12px_rgba(14,165,233,0.3)]">
-            👮 PNP Sector Police
+            <ShieldAlert className="w-3.5 h-3.5 text-sky-400" />
+            PNP Sector Police
           </span>
         );
       }
       return (
         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-indigo-950/90 text-indigo-300 border border-indigo-600/80 shadow-[0_0_12px_rgba(99,102,241,0.3)]">
-          🛡️ Tactical Responder
+          <Shield className="w-3.5 h-3.5 text-indigo-400" />
+          Tactical Responder
         </span>
       );
     }
     return (
       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-purple-950/80 text-purple-300 border border-purple-700/80 shadow-[0_0_10px_rgba(168,85,247,0.2)]">
-        👤 Civilian Resident
+        <User className="w-3.5 h-3.5 text-purple-400" />
+        Civilian Resident
       </span>
     );
   };
@@ -151,6 +180,17 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
     );
   };
 
+  const renderHeroIcon = () => {
+    if (!user) return <User className="w-7 h-7 text-slate-400" />;
+    if (user.role === 'LDRRMO_Admin') return <Building2 className="w-7 h-7 text-amber-400" />;
+    if (user.role === 'Responder') {
+      if (user.unit === 'RHU') return <HeartPulse className="w-7 h-7 text-emerald-400" />;
+      if (user.unit === 'FIRE') return <Flame className="w-7 h-7 text-orange-400" />;
+      return <ShieldAlert className="w-7 h-7 text-sky-400" />;
+    }
+    return <User className="w-7 h-7 text-purple-400" />;
+  };
+
   return (
     <>
       <DefaultFloatingModalCard
@@ -162,14 +202,14 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
       >
         {isLoading && (
           <div className="p-12 text-center text-slate-400 space-y-3">
-            <div className="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin mx-auto" />
+            <Loader2 className="w-8 h-8 text-sky-400 animate-spin mx-auto" />
             <p className="text-xs font-mono">Loading secure user governance credentials from dispatch grid…</p>
           </div>
         )}
 
         {errorMessage && (
           <div className="p-4 rounded-xl bg-rose-950/80 border border-rose-600 text-rose-200 text-xs font-mono flex items-center gap-2">
-            <span>⚠️</span>
+            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
             <span>{errorMessage}</span>
           </div>
         )}
@@ -179,8 +219,8 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
             {/* Top Identity Hero Card */}
             <div className="p-4 rounded-2xl bg-gradient-to-r from-[#071522] via-[#0a1a2b] to-[#0e243a] border border-[#1d3c5c] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
               <div className="flex items-center gap-3.5">
-                <div className="w-14 h-14 rounded-2xl bg-[#071522] border-2 border-[#1d3c5c] flex items-center justify-center text-2xl flex-shrink-0 shadow-lg text-sky-400 font-mono font-bold">
-                  {user.role === 'LDRRMO_Admin' ? '🏛️' : user.role === 'Responder' ? (user.unit === 'RHU' ? '🚑' : user.unit === 'FIRE' ? '🚒' : '👮') : '👤'}
+                <div className="w-14 h-14 rounded-2xl bg-[#071522] border-2 border-[#1d3c5c] flex items-center justify-center flex-shrink-0 shadow-lg font-mono font-bold">
+                  {renderHeroIcon()}
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -188,7 +228,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
                     {renderStatusBadge(user.status)}
                     {user.faceVerified && (
                       <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800 font-bold font-mono">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live Face Verified
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Live Face Verified
                       </span>
                     )}
                   </div>
@@ -211,13 +251,13 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
               </div>
             </div>
 
-            {/* Biometric & Government ID Capture Previews with Tactical HUD styling */}
+            {/* Biometric & Government ID Capture Previews */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* ID Capture */}
               <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2 shadow-lg">
                 <div className="flex items-center justify-between text-slate-300 font-semibold text-xs">
                   <span className="flex items-center gap-1.5 font-mono text-[11px] text-sky-400 uppercase tracking-wider">
-                    <span>🪪</span> Official Government ID
+                    <FileText className="w-3.5 h-3.5 text-sky-400" /> Official Government ID
                   </span>
                   <span className="text-[10px] font-mono text-slate-400 bg-[#0a1a2b] px-2 py-0.5 rounded border border-[#1d3c5c]">
                     {user.governmentIdType || 'National ID / LTO'}
@@ -241,7 +281,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
                     })}
                     className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-black/80 hover:bg-black text-[10px] font-mono text-white backdrop-blur-md cursor-pointer border border-white/20 transition-all flex items-center gap-1.5"
                   >
-                    <span>🔍</span> Enlarge ID
+                    <Eye className="w-3 h-3" /> Enlarge ID
                   </button>
                 </div>
               </div>
@@ -250,7 +290,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
               <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2 shadow-lg">
                 <div className="flex items-center justify-between text-slate-300 font-semibold text-xs">
                   <span className="flex items-center gap-1.5 font-mono text-[11px] text-emerald-400 uppercase tracking-wider">
-                    <span>👤</span> Anti-Spoofing Biometric
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" /> Anti-Spoofing Biometric
                   </span>
                   <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
                     {user.faceVerified ? 'Passed Laplacian Liveness' : 'Pending Verification'}
@@ -274,7 +314,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
                     })}
                     className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-black/80 hover:bg-black text-[10px] font-mono text-white backdrop-blur-md cursor-pointer border border-white/20 transition-all flex items-center gap-1.5"
                   >
-                    <span>🔍</span> Enlarge Face
+                    <Eye className="w-3 h-3" /> Enlarge Face
                   </button>
                 </div>
               </div>
@@ -285,7 +325,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
               {/* Personal & Vitals */}
               <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2.5 shadow-md">
                 <h4 className="font-bold text-sky-400 uppercase tracking-wider font-mono text-[11px] flex items-center gap-1.5 border-b border-[#1d3c5c] pb-1.5">
-                  <span>📋</span> Personal & Vital Information
+                  <User className="w-3.5 h-3.5 text-sky-400" /> Personal & Vital Information
                 </h4>
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div>
@@ -310,7 +350,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
               {/* Philippine Address */}
               <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2.5 shadow-md">
                 <h4 className="font-bold text-sky-400 uppercase tracking-wider font-mono text-[11px] flex items-center gap-1.5 border-b border-[#1d3c5c] pb-1.5">
-                  <span>📍</span> Registered Residence Sector
+                  <MapPin className="w-3.5 h-3.5 text-sky-400" /> Registered Residence Sector
                 </h4>
                 <div className="space-y-1.5 text-[11px]">
                   <div>
@@ -333,7 +373,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
               {/* Emergency Contact */}
               <div className="p-3.5 rounded-xl bg-[#071522] border border-amber-900/60 space-y-2.5 shadow-md">
                 <h4 className="font-bold text-amber-300 uppercase tracking-wider font-mono text-[11px] flex items-center gap-1.5 border-b border-amber-900/60 pb-1.5">
-                  <span>🚨</span> Emergency Contact (Next of Kin)
+                  <Phone className="w-3.5 h-3.5 text-amber-400" /> Emergency Contact (Next of Kin)
                 </h4>
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div className="col-span-2">
@@ -354,7 +394,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
               {/* Station & Agency Allocation */}
               <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2.5 shadow-md">
                 <h4 className="font-bold text-sky-400 uppercase tracking-wider font-mono text-[11px] flex items-center gap-1.5 border-b border-[#1d3c5c] pb-1.5">
-                  <span>🛡️</span> Agency & Station Assignment
+                  <Shield className="w-3.5 h-3.5 text-sky-400" /> Agency & Station Assignment
                 </h4>
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div>
@@ -376,7 +416,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
             {/* Role-Specific Structured Emergency Badges Panel */}
             <div className="p-4 rounded-xl bg-[#0a1a2b] border border-[#1d3c5c] space-y-3 shadow-lg">
               <h4 className="font-bold text-sky-300 uppercase tracking-wider font-mono text-[11px] flex items-center gap-2 border-b border-[#1d3c5c] pb-2">
-                <span>📜</span> Specific Philippine Emergency Registry Badges
+                <FileText className="w-3.5 h-3.5 text-sky-300" /> Specific Philippine Emergency Registry Badges
               </h4>
 
               {user.role === 'Civilian' && (
@@ -521,9 +561,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
               }}
               className="px-4 py-2 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-sky-600 hover:bg-sky-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.4)] transition-all cursor-pointer flex items-center gap-1.5"
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
+              <Sliders className="w-3.5 h-3.5" />
               Edit Official Profile
             </button>
           )}

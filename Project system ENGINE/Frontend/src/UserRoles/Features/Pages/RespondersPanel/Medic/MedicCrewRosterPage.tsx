@@ -4,8 +4,23 @@
 // Universal lambda expressions (=>).
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  Users,
+  Ambulance,
+  ClipboardList,
+  CheckCircle2,
+  PhoneCall,
+  Award,
+  ShieldCheck,
+  Activity,
+  Clock,
+  Battery,
+  FileText,
+  RefreshCw
+} from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
 import { getDutyRoster, DutyUnit } from '@/Endpoints/responderOpsApi';
+import { requestJson } from '@/Endpoints/apiClient';
 import { Button } from '@/Shared/Button';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
 
@@ -171,7 +186,7 @@ export const MedicCrewRosterPage: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleShiftCheckIn = (rigId: string) => {
+  const handleShiftCheckIn = async (rigId: string) => {
     setAmbulances((prev) =>
       prev.map((rig) => {
         if (rig.id === rigId) {
@@ -195,7 +210,21 @@ export const MedicCrewRosterPage: React.FC = () => {
         return rig;
       })
     );
-    showToast(`✓ SHIFT CHECK-IN CONFIRMED FOR ${rigId} ON ${selectedShift}`);
+
+    // Sync duty status to PUT /api/responder-ops/duty-status
+    try {
+      await requestJson<{ message: string }>('/api/responder-ops/duty-status', {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: 'OnDuty',
+          unitCode: rigId
+        })
+      });
+    } catch (err: unknown) {
+      console.warn('Shift check-in status sync note:', err);
+    }
+
+    showToast(`SHIFT CHECK-IN CONFIRMED FOR ${rigId} ON ${selectedShift}`);
   };
 
   const handleOpenChecklist = (rig: AmbulanceRig) => {
@@ -205,11 +234,17 @@ export const MedicCrewRosterPage: React.FC = () => {
 
   const handleSaveChecklist = () => {
     setIsChecklistModalOpen(false);
-    showToast(`✓ RIG READINESS INSPECTION SIGNED OFF FOR ${inspectingRig?.callsign}`);
+    showToast(`RIG READINESS INSPECTION SIGNED OFF FOR ${inspectingRig?.callsign}`);
   };
 
   const totalActivePersonnel = useMemo(() => {
     return ambulances.reduce((acc, a) => acc + a.crew.filter((c) => c.isActiveShift).length, 0);
+  }, [ambulances]);
+
+  const averageOxygenPsi = useMemo(() => {
+    if (ambulances.length === 0) return 0;
+    const sum = ambulances.reduce((acc, a) => acc + a.oxygenPsi, 0);
+    return Math.round(sum / ambulances.length);
   }, [ambulances]);
 
   return (
@@ -226,19 +261,17 @@ export const MedicCrewRosterPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-sky-950/80 via-[#0a1a2b] to-slate-950 border border-sky-600/30 shadow-lg">
         <div className="flex items-start gap-4">
           <div className="p-3 rounded-xl bg-sky-600/20 border border-sky-500/40 text-sky-400 shadow-[0_0_15px_rgba(56,189,248,0.3)]">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
+            <Users className="w-8 h-8" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 text-[10px] font-mono font-bold tracking-wider rounded bg-sky-500/20 text-sky-300 border border-sky-500/40">
-                RHU EMS CADRE & FLEET
+                RHU EMS CADRE &amp; FLEET
               </span>
               <span className="text-xs font-mono text-emerald-400">PRC Statutory Verification Active</span>
             </div>
             <h1 className="text-xl md:text-2xl font-extrabold text-white tracking-wide mt-1">
-              Ambulance Rig Fleet & Paramedic Crew Roster
+              Ambulance Rig Fleet &amp; Paramedic Crew Roster
             </h1>
             <p className="text-xs text-sky-200/70 mt-0.5">
               Live crew readiness, verified medical professional licenses, and apparatus telemetry.
@@ -272,7 +305,9 @@ export const MedicCrewRosterPage: React.FC = () => {
             <span className="text-3xl font-extrabold font-mono text-white">{ambulances.length}</span>
             <span className="text-xs text-slate-400">Ambulances</span>
           </div>
-          <span className="text-[11px] text-emerald-400 mt-1">✓ 100% BLS/ALS Certified</span>
+          <span className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
+            <CheckCircle2 className="w-3.5 h-3.5" /> 100% BLS/ALS Certified
+          </span>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 shadow-sm">
@@ -287,7 +322,7 @@ export const MedicCrewRosterPage: React.FC = () => {
         <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 shadow-sm">
           <span className="text-xs font-semibold text-slate-400">Oxygen Readiness Avg</span>
           <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-3xl font-extrabold font-mono text-emerald-400">1,750</span>
+            <span className="text-3xl font-extrabold font-mono text-emerald-400">{averageOxygenPsi.toLocaleString()}</span>
             <span className="text-xs text-slate-400">PSI Main</span>
           </div>
           <span className="text-[11px] text-slate-400 mt-1">Nominal &gt; 1200 PSI</span>
@@ -299,7 +334,9 @@ export const MedicCrewRosterPage: React.FC = () => {
             <span className="text-3xl font-extrabold font-mono text-white">{dbRoster.length}</span>
             <span className="text-xs text-slate-400">RHU C2 Units</span>
           </div>
-          <span className="text-[11px] text-slate-400 mt-1">Live Backend Polling</span>
+          <span className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+            <RefreshCw className="w-3 h-3 text-emerald-400 animate-spin" /> Live Backend Polling
+          </span>
         </div>
       </div>
 
@@ -321,8 +358,8 @@ export const MedicCrewRosterPage: React.FC = () => {
               {/* Rig Title Bar */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-sky-950 border border-sky-500/40 flex items-center justify-center text-xl text-sky-400">
-                    🚑
+                  <div className="w-12 h-12 rounded-xl bg-sky-950 border border-sky-500/40 flex items-center justify-center text-sky-400">
+                    <Ambulance className="w-6 h-6" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
@@ -354,18 +391,18 @@ export const MedicCrewRosterPage: React.FC = () => {
                     variant="outline"
                     size="sm"
                     onClick={() => handleOpenChecklist(rig)}
-                    className="border-slate-700 text-slate-300 hover:bg-slate-800 active:scale-95 text-xs"
+                    className="border-slate-700 text-slate-300 hover:bg-slate-800 active:scale-95 text-xs flex items-center gap-1.5"
                   >
-                    🛠️ Rig Checklist
+                    <ClipboardList className="w-3.5 h-3.5" /> Rig Checklist
                   </Button>
 
                   <Button
                     variant="primary"
                     size="sm"
                     onClick={() => handleShiftCheckIn(rig.id)}
-                    className="bg-sky-600 hover:bg-sky-500 text-white shadow-md active:scale-95 text-xs"
+                    className="bg-sky-600 hover:bg-sky-500 text-white shadow-md active:scale-95 text-xs flex items-center gap-1.5"
                   >
-                    📝 Shift Check-In
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Shift Check-In
                   </Button>
                 </div>
               </div>
@@ -428,7 +465,7 @@ export const MedicCrewRosterPage: React.FC = () => {
               {/* Crew Dossiers Table */}
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-                  <span>🧑‍⚕️</span> Active Crew Cadre Assigned to {rig.callsign} ({rig.crew.length} Medics)
+                  <ShieldCheck className="w-4 h-4 text-sky-400" /> Active Crew Cadre Assigned to {rig.callsign} ({rig.crew.length} Medics)
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -495,10 +532,11 @@ export const MedicCrewRosterPage: React.FC = () => {
                 size="sm"
                 onClick={() => {
                   navigator.clipboard?.writeText(selectedCrewMember.contactNumber);
-                  showToast(`✓ CONTACT COPIED: ${selectedCrewMember.contactNumber}`);
+                  showToast(`CONTACT COPIED: ${selectedCrewMember.contactNumber}`);
                 }}
+                className="flex items-center gap-1.5"
               >
-                📞 Copy Phone
+                <PhoneCall className="w-3.5 h-3.5" /> Copy Phone
               </Button>
               <Button
                 variant="primary"
@@ -513,7 +551,7 @@ export const MedicCrewRosterPage: React.FC = () => {
         >
           <div className="flex flex-col gap-4 text-xs font-mono">
             <div className="p-3 rounded-lg bg-sky-950/40 border border-sky-500/40 text-sky-200">
-              Verified statutory health professional under Republic Act No. 9173 & DOH Administrative Order on Pre-Hospital Emergency Medical Services.
+              Verified statutory health professional under Republic Act No. 9173 &amp; DOH Administrative Order on Pre-Hospital Emergency Medical Services.
             </div>
 
             <div className="space-y-2 bg-slate-950 p-4 rounded-lg border border-slate-800">
@@ -522,7 +560,7 @@ export const MedicCrewRosterPage: React.FC = () => {
                 <span className="text-white font-bold">{selectedCrewMember.name}</span>
               </div>
               <div className="flex justify-between border-b border-slate-800/80 pb-1">
-                <span className="text-slate-400">Cadre & Specialization:</span>
+                <span className="text-slate-400">Cadre &amp; Specialization:</span>
                 <span className="text-slate-200">{selectedCrewMember.cadre}</span>
               </div>
               <div className="flex justify-between border-b border-slate-800/80 pb-1">
@@ -547,8 +585,8 @@ export const MedicCrewRosterPage: React.FC = () => {
               <span className="text-[11px] font-semibold text-slate-400 block mb-1">Mandatory Clinical Certifications</span>
               <div className="flex flex-wrap gap-1.5">
                 {selectedCrewMember.certifications.map((c) => (
-                  <span key={c} className="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 text-sky-300">
-                    ✓ {c}
+                  <span key={c} className="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 text-sky-300 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" /> {c}
                   </span>
                 ))}
               </div>
@@ -574,9 +612,9 @@ export const MedicCrewRosterPage: React.FC = () => {
                 variant="primary"
                 size="sm"
                 onClick={handleSaveChecklist}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5"
               >
-                ✓ Sign Off Rig Readiness
+                <CheckCircle2 className="w-4 h-4" /> Sign Off Rig Readiness
               </Button>
             </div>
           }

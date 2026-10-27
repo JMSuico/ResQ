@@ -1,18 +1,85 @@
 // [Layer: LayoutBars]
-// Responsibility: Top navigation header with live search, alert drawer trigger, settings navigation, and session chip.
-// 100% authentic RISKQTRAK topbar styling with React Router integration.
+// Responsibility: Top navigation command header with live search, dynamic unread alert counter from GET /api/alerts,
+// contextual system routing, floating profile trigger, and authenticated logout session termination.
+// ResQTrack Incident AI System Detection -- Universal Lucide icon standard with strict typing (ZERO any).
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserSessionChip } from './UserSessionChip';
+import {
+  Search,
+  Bell,
+  Settings,
+  HelpCircle,
+  LogOut
+} from 'lucide-react';
+import { UserSessionChip, UserSessionChipProps } from './UserSessionChip';
 import { NotificationsModal } from './NotificationsModal';
 import { useDrawerSidebar } from '@/Shared/ToggleDrawerSidebarMenu';
-import { UserSession } from '@/Endpoints/authEndpoints';
 
-export const Header: React.FC<{ user?: { role?: string; [key: string]: unknown } | null }> = ({ user }) => {
-  const [isAlertsOpen, setIsAlertsOpen] = useState(false);
+export interface HeaderProps {
+  user?: UserSessionChipProps['user'];
+}
+
+const COLLAPSED_SIDEBAR_WIDTH = '72px';
+const EXPANDED_SIDEBAR_VAR = 'var(--brand-w, 260px)';
+const ALERT_POLL_INTERVAL_MS = 15000;
+const MAX_DISPLAY_UNREAD_COUNT = 99;
+const LOCAL_STORAGE_READ_KEY = 'resqtrack.alerts.read';
+
+export const Header: React.FC<HeaderProps> = ({ user }) => {
+  const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
   const { isCollapsed } = useDrawerSidebar();
   const navigate = useNavigate();
+
+  const fetchUnreadAlerts = useCallback(async () => {
+    try {
+      const response = await fetch('/api/alerts', { credentials: 'include' });
+      if (response.ok) {
+        const data = (await response.json()) as Array<{
+          reportId?: string;
+          id?: string;
+          referenceCode?: string;
+          isRead?: boolean;
+        }>;
+
+        if (Array.isArray(data)) {
+          let locallyReadIds: string[] = [];
+          try {
+            const raw = window.localStorage.getItem(LOCAL_STORAGE_READ_KEY);
+            if (raw) locallyReadIds = JSON.parse(raw) as string[];
+          } catch {
+            // Ignore storage parse error
+          }
+
+          const unread = data.filter((item) => {
+            const key = item.reportId || item.id || item.referenceCode || '';
+            return !item.isRead && !locallyReadIds.includes(key);
+          }).length;
+
+          setUnreadCount(unread);
+        }
+      }
+    } catch (err) {
+      // Non-blocking warning on network jitter
+      console.warn('Alert counter synchronization deferred:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUnreadAlerts();
+    const intervalId = window.setInterval(fetchUnreadAlerts, ALERT_POLL_INTERVAL_MS);
+
+    const handleAlertsUpdated = () => {
+      fetchUnreadAlerts();
+    };
+
+    window.addEventListener('resqtrack:alerts-updated', handleAlertsUpdated);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('resqtrack:alerts-updated', handleAlertsUpdated);
+    };
+  }, [fetchUnreadAlerts]);
 
   const handleSettingsClick = () => {
     const role = (user?.role || '').toLowerCase();
@@ -26,25 +93,36 @@ export const Header: React.FC<{ user?: { role?: string; [key: string]: unknown }
   };
 
   const handleHelpClick = () => {
-    alert('ResQTrack Emergency Response Command System\nKatipunan, Zamboanga del Norte\nHotline: 911 / (065) 908-1234');
+    alert(
+      'ResQTrack Emergency Response Command System\nKatipunan, Zamboanga del Norte\nHotline: 911 / (065) 908-1234'
+    );
   };
 
   const handleLogout = async () => {
     try {
       await fetch('/api/logout', { method: 'POST', credentials: 'include' });
     } catch (err) {
-      console.error('Logout error', err);
+      console.error('Logout error encountered:', err);
     }
     navigate('/login');
   };
 
+  const handleToggleAlerts = () => {
+    setIsAlertsOpen((prev) => !prev);
+  };
+
+  const handleCloseAlerts = () => {
+    setIsAlertsOpen(false);
+    fetchUnreadAlerts();
+  };
+
   return (
-    <header className="topbar">
+    <header className="topbar select-none" role="banner">
       <div
         className="brandbar flex items-center justify-between transition-all duration-200 border-r border-white/5 pr-3 overflow-hidden"
         style={{
-          width: isCollapsed ? '72px' : 'var(--brand-w, 260px)',
-          minWidth: isCollapsed ? '72px' : 'var(--brand-w, 260px)'
+          width: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : EXPANDED_SIDEBAR_VAR,
+          minWidth: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : EXPANDED_SIDEBAR_VAR
         }}
       >
         {!isCollapsed ? (
@@ -64,9 +142,7 @@ export const Header: React.FC<{ user?: { role?: string; [key: string]: unknown }
       </div>
 
       <form className="search" id="search-form" role="search" onSubmit={(e) => e.preventDefault()}>
-        <svg className="search__icon" aria-hidden="true">
-          <use href="#i-search" />
-        </svg>
+        <Search className="search__icon w-4 h-4 text-slate-400 pointer-events-none flex-shrink-0" aria-hidden="true" />
         <input
           className="search__input"
           id="search"
@@ -79,67 +155,68 @@ export const Header: React.FC<{ user?: { role?: string; [key: string]: unknown }
         />
       </form>
 
-      <div className="topbar__actions">
-        <div className="alerts" id="alerts">
+      <div className="topbar__actions flex items-center gap-1 sm:gap-2">
+        <div className="alerts relative" id="alerts">
           <button
-            className="iconbtn"
+            className="iconbtn relative flex items-center justify-center p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all"
             type="button"
             id="btn-alerts"
-            aria-label="Alerts"
+            aria-label={`Alerts (${unreadCount} unread)`}
             aria-haspopup="true"
             aria-expanded={isAlertsOpen}
             aria-controls="alerts-panel"
-            onClick={() => setIsAlertsOpen(!isAlertsOpen)}
+            onClick={handleToggleAlerts}
           >
-            <svg aria-hidden="true">
-              <use href="#i-bell" />
-            </svg>
-            <span className="iconbtn__dot" aria-hidden="true" />
+            <Bell className="w-4 h-4 text-slate-300 hover:text-white transition-colors" aria-hidden="true" />
+            {unreadCount > 0 && (
+              <span
+                className="iconbtn__dot absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-rose-600 text-white text-[10px] font-bold font-mono rounded-full flex items-center justify-center border border-slate-900 shadow-md animate-pulse"
+                aria-label={`${unreadCount} unread alerts`}
+              >
+                {unreadCount > MAX_DISPLAY_UNREAD_COUNT ? `${MAX_DISPLAY_UNREAD_COUNT}+` : unreadCount}
+              </span>
+            )}
           </button>
-          <NotificationsModal isOpen={isAlertsOpen} onClose={() => setIsAlertsOpen(false)} />
+          <NotificationsModal isOpen={isAlertsOpen} onClose={handleCloseAlerts} />
         </div>
 
         <button
-          className="iconbtn iconbtn--desk"
+          className="iconbtn iconbtn--desk p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all hidden sm:flex items-center justify-center"
           type="button"
           id="btn-settings"
           aria-label="Settings"
+          title="System Settings"
           onClick={handleSettingsClick}
         >
-          <svg aria-hidden="true">
-            <use href="#i-gear" />
-          </svg>
+          <Settings className="w-4 h-4 text-slate-300 hover:text-white transition-colors" aria-hidden="true" />
         </button>
 
         <button
-          className="iconbtn iconbtn--desk"
+          className="iconbtn iconbtn--desk p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all hidden sm:flex items-center justify-center"
           type="button"
           id="btn-help"
           aria-label="Help"
+          title="Emergency Command Support"
           onClick={handleHelpClick}
         >
-          <svg aria-hidden="true">
-            <use href="#i-help" />
-          </svg>
+          <HelpCircle className="w-4 h-4 text-slate-300 hover:text-white transition-colors" aria-hidden="true" />
         </button>
 
-        <span className="topbar__sep" aria-hidden="true" />
+        <span className="topbar__sep w-px h-5 bg-white/10 mx-1" aria-hidden="true" />
 
+        {/* User profile avatar session chip with profile card toggle */}
         <UserSessionChip user={user} />
 
+        {/* Dedicated Logout button cleanly positioned after avatar */}
         <button
-          className="iconbtn iconbtn--logout text-rose-400 hover:text-white hover:bg-rose-950/80 border border-rose-900/50 ml-2"
+          className="iconbtn iconbtn--logout group flex items-center justify-center p-2 rounded-lg text-rose-400 hover:text-white hover:bg-rose-950/80 border border-rose-900/50 hover:border-rose-700 ml-1.5 transition-all focus:outline-none focus:ring-1 focus:ring-rose-500"
           type="button"
           id="btn-logout"
-          title="Sign Out"
+          title="Sign Out of Session"
           aria-label="Sign Out"
           onClick={handleLogout}
         >
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
-          </svg>
+          <LogOut className="w-4 h-4 text-rose-400 group-hover:text-white transition-colors" aria-hidden="true" />
         </button>
       </div>
     </header>

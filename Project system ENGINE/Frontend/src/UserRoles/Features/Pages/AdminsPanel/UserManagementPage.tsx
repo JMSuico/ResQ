@@ -2,11 +2,54 @@
 // UserManagementPage.tsx -- Elite Emergency Dispatch Command Console & User Governance Registry for ResQTrack.
 // Incorporates Philippine emergency entity attributes, Katipuneros architecture, and Universal Lambdas (=>).
 // Fully wires AddUserModal, ViewUserDetailModal, EditUserModal, DeleteUserConfirmModal, and usePagination.
+// Conforms to Squad 5: Universal Lucide Migration, Relational Synchronization (POST /api/users/{id}/status & DELETE /api/users/{id}), zero any, zero hardcoded numbers.
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  Users,
+  UserPlus,
+  UserCheck,
+  UserX,
+  Shield,
+  ShieldAlert,
+  Search,
+  Filter,
+  MoreVertical,
+  Key,
+  Trash2,
+  Eye,
+  Check,
+  X,
+  Bell,
+  AlertTriangle,
+  CheckCheck,
+  RefreshCw,
+  Lock,
+  Terminal,
+  CheckCircle2,
+  Mail,
+  Phone,
+  MapPin,
+  Calendar,
+  Loader2,
+  Sliders,
+  Flame,
+  HeartPulse,
+  Clock,
+  Building2,
+  Activity,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 import { Button, Dropdown, SearchBar, SkeletonLoader } from '@/Shared';
 import { useDebounce, usePagination, useToasts } from '@/Hooks';
-import { getUsers, updateUserStatus, UserSummary } from '@/Endpoints/adminGovernanceApi';
+import {
+  getUsers,
+  updateUserStatus,
+  deleteUser,
+  UserSummary,
+  AccountStatus,
+} from '@/Endpoints/adminGovernanceApi';
 import {
   AddUserModal,
   ViewUserDetailModal,
@@ -14,26 +57,39 @@ import {
   DeleteUserConfirmModal,
 } from './Components';
 
+// Architectural Telemetry & Layout Constants (Zero hardcoded static numbers)
+const SEARCH_DEBOUNCE_DELAY_MS = 250;
+const INITIAL_PAGE_INDEX = 1;
+const DEFAULT_PAGE_SIZE = 10;
+const PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
+const SKELETON_ROWS_COUNT = 6;
+const TABLE_COLUMNS_COUNT = 6;
+const INITIAL_INDEX = 0;
+const INCREMENT_OFFSET = 1;
+const MODULO_EVEN_DIVISOR = 2;
+const MODULO_EVEN_REMAINDER = 0;
+const EMPTY_COUNT = 0;
+
 export const UserManagementPage: React.FC = () => {
   // Global toasts
   const { toasts, addToast, removeToast } = useToasts();
 
   // State
   const [users, setUsers] = useState<UserSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [search, setSearch] = useState<string>('');
   const [selectedRole, setSelectedRole] = useState<string>('ALL');
   const [selectedUnit, setSelectedUnit] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
 
   // Modal active targets
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [viewUserId, setViewUserId] = useState<string | null>(null);
   const [editUserTarget, setEditUserTarget] = useState<UserSummary | null>(null);
   const [deleteUserTarget, setDeleteUserTarget] = useState<UserSummary | null>(null);
 
   // Debounced search query
-  const debouncedSearch = useDebounce(search, 250);
+  const debouncedSearch = useDebounce(search, SEARCH_DEBOUNCE_DELAY_MS);
 
   // Load all users from backend API
   const loadUsers = useCallback(async () => {
@@ -53,18 +109,32 @@ export const UserManagementPage: React.FC = () => {
     loadUsers();
   }, [loadUsers]);
 
-  // Quick Status Toggle Handler
-  const handleQuickStatusToggle = async (user: UserSummary) => {
-    const nextStatus = user.status === 'Verified' ? 'Suspended' : 'Verified';
+  // Relational Status Transition Handler: Approve, Suspend, Restrict (POST /api/users/{id}/status)
+  const handleStatusTransition = async (user: UserSummary, nextStatus: AccountStatus) => {
     try {
       await updateUserStatus(user.id, nextStatus);
-      addToast(
-        `${user.fullName} status updated to ${nextStatus === 'Verified' ? 'ACTIVE & VERIFIED' : 'SUSPENDED'}.`,
-        nextStatus === 'Verified' ? 'success' : 'warning'
-      );
-      loadUsers();
+      const labelMap: Record<AccountStatus, string> = {
+        Verified: 'ACTIVE & VERIFIED',
+        Suspended: 'SUSPENDED',
+        Pending: 'RESTRICTED / PENDING',
+      };
+      const toastType = nextStatus === 'Verified' ? 'success' : 'warning';
+      addToast(`${user.fullName} authorization transitioned to ${labelMap[nextStatus]}.`, toastType);
+      await loadUsers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to update user status.';
+      addToast(msg, 'error');
+    }
+  };
+
+  // Relational Direct Soft Delete Handler (DELETE /api/users/{id})
+  const handleDirectSoftDelete = async (user: UserSummary) => {
+    try {
+      await deleteUser(user.id);
+      addToast(`Official account for ${user.fullName} soft-deleted. Audit telemetry preserved.`, 'success');
+      await loadUsers();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to soft-delete user account.';
       addToast(msg, 'error');
     }
   };
@@ -113,9 +183,9 @@ export const UserManagementPage: React.FC = () => {
     setPageSize,
     pageSizeOptions,
   } = usePagination(filteredUsers, {
-    initialPage: 1,
-    initialPageSize: 10,
-    pageSizeOptions: [10, 25, 50],
+    initialPage: INITIAL_PAGE_INDEX,
+    initialPageSize: DEFAULT_PAGE_SIZE,
+    pageSizeOptions: [...PAGE_SIZE_OPTIONS],
   });
 
   // Analytics Metrics
@@ -133,7 +203,7 @@ export const UserManagementPage: React.FC = () => {
   }, [users]);
 
   // Date Formatter
-  const fmtDate = (iso?: string) => {
+  const fmtDate = (iso?: string): string => {
     if (!iso) return '—';
     try {
       const d = new Date(iso);
@@ -148,14 +218,12 @@ export const UserManagementPage: React.FC = () => {
     }
   };
 
-  // Clean Agency Badge Indicators (FIRE orange/red, PNP blue, RHU emerald, LDRRMO crimson/gold)
+  // Clean Agency Badge Indicators using Universal Lucide Icons
   const renderRoleBadge = (role: string, unit: string) => {
     if (role === 'LDRRMO_Admin') {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold tracking-wider uppercase bg-[#340313] text-amber-300 border border-amber-600/80 shadow-[0_0_10px_rgba(232,17,76,0.25)]">
-          <svg className="w-3 h-3 text-amber-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M10 2l2.5 5.5L18 8.5l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-1L10 2z" />
-          </svg>
+          <Shield className="w-3 h-3 text-amber-400 flex-shrink-0" />
           LDRRMO Command
         </span>
       );
@@ -164,9 +232,7 @@ export const UserManagementPage: React.FC = () => {
       if (unit === 'RHU') {
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold tracking-wider uppercase bg-emerald-950/90 text-emerald-300 border border-emerald-600/80 shadow-[0_0_10px_rgba(16,185,129,0.25)]">
-            <svg className="w-3 h-3 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V4a1 1 0 011-1z" clipRule="evenodd" />
-            </svg>
+            <HeartPulse className="w-3 h-3 text-emerald-400 flex-shrink-0" />
             RHU Medical
           </span>
         );
@@ -174,9 +240,7 @@ export const UserManagementPage: React.FC = () => {
       if (unit === 'FIRE') {
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold tracking-wider uppercase bg-orange-950/90 text-orange-300 border border-orange-600/80 shadow-[0_0_10px_rgba(249,115,22,0.25)]">
-            <svg className="w-3 h-3 text-orange-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.527.82-1.109 2.158-1.123 3.654C8.98 7.02 8.5 7.6 8.5 8.5c0 .35.085.678.236.966-.462.298-.826.745-.985 1.282A3.5 3.5 0 0010 14.5a3.5 3.5 0 003.5-3.5c0-.65-.18-1.259-.496-1.782.35-.453.66-1.01.815-1.668.21-.892.1-1.766-.176-2.528a7.025 7.025 0 00-1.248-2.469z" clipRule="evenodd" />
-            </svg>
+            <Flame className="w-3 h-3 text-orange-400 flex-shrink-0" />
             FIRE (BFP)
           </span>
         );
@@ -184,27 +248,21 @@ export const UserManagementPage: React.FC = () => {
       if (unit === 'PNP') {
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold tracking-wider uppercase bg-sky-950/90 text-sky-300 border border-sky-600/80 shadow-[0_0_10px_rgba(14,165,233,0.25)]">
-            <svg className="w-3 h-3 text-sky-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 1.944A11.954 11.954 0 012.166 5C2.056 5.649 2 6.319 2 7c0 5.225 3.34 9.67 8 11 4.66-1.33 8-5.775 8-11 0-.682-.057-1.35-.166-2.001A11.954 11.954 0 0110 1.944z" clipRule="evenodd" />
-            </svg>
+            <ShieldAlert className="w-3 h-3 text-sky-400 flex-shrink-0" />
             PNP Police
           </span>
         );
       }
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold tracking-wider uppercase bg-indigo-950/90 text-indigo-300 border border-indigo-600/80 shadow-[0_0_10px_rgba(99,102,241,0.25)]">
-          <svg className="w-3 h-3 text-indigo-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 11H9v-2h2v2zm0-4H9V5h2v4z" clipRule="evenodd" />
-          </svg>
+          <Shield className="w-3 h-3 text-indigo-400 flex-shrink-0" />
           Tactical Unit
         </span>
       );
     }
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold tracking-wider uppercase bg-purple-950/80 text-purple-300 border border-purple-700/70 shadow-[0_0_8px_rgba(168,85,247,0.15)]">
-        <svg className="w-3 h-3 text-purple-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-        </svg>
+        <Users className="w-3 h-3 text-purple-400 flex-shrink-0" />
         Civilian
       </span>
     );
@@ -294,12 +352,13 @@ export const UserManagementPage: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-5 w-full text-slate-100 font-sans">
-      {/* 1. Clean Tactical Header Strip */}
+      {/* 1. Tactical Header Strip */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#071522] via-[#0a1a2b] to-[#14020a] border border-[#1d3c5c] p-4 md:p-6 shadow-2xl">
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-sky-500 via-[#e8114c] to-emerald-500" />
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1">
             <h1 className="text-xl md:text-2xl font-black text-white tracking-wide font-display flex items-center gap-2">
+              <Shield className="w-6 h-6 text-[#e8114c]" />
               LDRRMO User Governance & Identity Registry
             </h1>
             <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
@@ -313,11 +372,7 @@ export const UserManagementPage: React.FC = () => {
               variant="secondary"
               size="sm"
               onClick={loadUsers}
-              icon={
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              }
+              icon={<RefreshCw className="w-3.5 h-3.5" />}
             >
               Sync Registry
             </Button>
@@ -327,16 +382,14 @@ export const UserManagementPage: React.FC = () => {
               onClick={() => setIsAddModalOpen(true)}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold font-mono tracking-wider uppercase bg-[#e8114c] hover:bg-[#ff2b4a] text-white shadow-[0_0_18px_rgba(232,17,76,0.45)] transition-all cursor-pointer border border-[#ff5c74]/50 active:scale-95"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
-              </svg>
+              <UserPlus className="w-4 h-4" />
               + Enroll Official
             </button>
           </div>
         </div>
       </div>
 
-      {/* 2. Task 24: Tactical KPI Telemetry Deck */}
+      {/* 2. Tactical KPI Telemetry Deck */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
         <div className="p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-[#1d3c5c] shadow-lg flex items-center justify-between relative overflow-hidden">
           <div className="space-y-0.5">
@@ -344,8 +397,8 @@ export const UserManagementPage: React.FC = () => {
             <div className="text-xl font-black text-white font-mono">{stats.total}</div>
             <div className="text-[10px] text-slate-500 font-mono">100% on DB telemetry</div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-300 text-base font-bold shadow-inner">
-            👥
+          <div className="w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-300 shadow-inner">
+            <Users className="w-5 h-5 text-slate-300" />
           </div>
         </div>
 
@@ -355,8 +408,8 @@ export const UserManagementPage: React.FC = () => {
             <div className="text-xl font-black text-emerald-300 font-mono">{stats.verified}</div>
             <div className="text-[10px] text-emerald-500/80 font-mono">Ready for dispatch</div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-950/70 border border-emerald-700/80 text-emerald-300 flex items-center justify-center text-base font-bold shadow-[0_0_12px_rgba(16,185,129,0.3)]">
-            ✓
+          <div className="w-10 h-10 rounded-xl bg-emerald-950/70 border border-emerald-700/80 text-emerald-300 flex items-center justify-center shadow-[0_0_12px_rgba(16,185,129,0.3)]">
+            <UserCheck className="w-5 h-5 text-emerald-300" />
           </div>
         </div>
 
@@ -366,8 +419,8 @@ export const UserManagementPage: React.FC = () => {
             <div className="text-xl font-black text-amber-300 font-mono">{stats.pending}</div>
             <div className="text-[10px] text-amber-500/80 font-mono">ID / Face validation</div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-950/70 border border-amber-700/80 text-amber-300 flex items-center justify-center text-base font-bold shadow-[0_0_12px_rgba(245,158,11,0.3)]">
-            ⏳
+          <div className="w-10 h-10 rounded-xl bg-amber-950/70 border border-amber-700/80 text-amber-300 flex items-center justify-center shadow-[0_0_12px_rgba(245,158,11,0.3)]">
+            <Clock className="w-5 h-5 text-amber-300" />
           </div>
         </div>
 
@@ -379,8 +432,8 @@ export const UserManagementPage: React.FC = () => {
               RHU:{stats.rhuCount} · BFP:{stats.fireCount} · PNP:{stats.pnpCount}
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-sky-950/70 border border-sky-700/80 text-sky-300 flex items-center justify-center text-base font-bold shadow-[0_0_12px_rgba(14,165,233,0.3)]">
-            🛡️
+          <div className="w-10 h-10 rounded-xl bg-sky-950/70 border border-sky-700/80 text-sky-300 flex items-center justify-center shadow-[0_0_12px_rgba(14,165,233,0.3)]">
+            <ShieldAlert className="w-5 h-5 text-sky-300" />
           </div>
         </div>
       </div>
@@ -403,73 +456,79 @@ export const UserManagementPage: React.FC = () => {
             <button
               type="button"
               onClick={() => handleQuickAgencyFilter('ALL')}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
                 isAgencyActive('ALL')
                   ? 'bg-slate-700 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
               }`}
             >
+              <Filter className="w-3 h-3" />
               ALL
             </button>
 
             <button
               type="button"
               onClick={() => handleQuickAgencyFilter('LDRRMO')}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
                 isAgencyActive('LDRRMO')
                   ? 'bg-[#340313] text-amber-300 border border-amber-600/80 shadow-[0_0_8px_rgba(232,17,76,0.3)]'
                   : 'text-amber-400/80 hover:text-amber-300 hover:bg-rose-950/40'
               }`}
             >
-              🏛️ LDRRMO
+              <Building2 className="w-3 h-3 text-amber-400" />
+              LDRRMO
             </button>
 
             <button
               type="button"
               onClick={() => handleQuickAgencyFilter('RHU')}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
                 isAgencyActive('RHU')
                   ? 'bg-emerald-950 text-emerald-300 border border-emerald-600/80 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
                   : 'text-emerald-400/80 hover:text-emerald-300 hover:bg-emerald-950/40'
               }`}
             >
-              🚑 RHU
+              <HeartPulse className="w-3 h-3 text-emerald-400" />
+              RHU
             </button>
 
             <button
               type="button"
               onClick={() => handleQuickAgencyFilter('FIRE')}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
                 isAgencyActive('FIRE')
                   ? 'bg-orange-950 text-orange-300 border border-orange-600/80 shadow-[0_0_8px_rgba(249,115,22,0.3)]'
                   : 'text-orange-400/80 hover:text-orange-300 hover:bg-orange-950/40'
               }`}
             >
-              🚒 FIRE
+              <Flame className="w-3 h-3 text-orange-400" />
+              FIRE
             </button>
 
             <button
               type="button"
               onClick={() => handleQuickAgencyFilter('PNP')}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
                 isAgencyActive('PNP')
                   ? 'bg-sky-950 text-sky-300 border border-sky-600/80 shadow-[0_0_8px_rgba(14,165,233,0.3)]'
                   : 'text-sky-400/80 hover:text-sky-300 hover:bg-sky-950/40'
               }`}
             >
-              👮 PNP
+              <ShieldAlert className="w-3 h-3 text-sky-400" />
+              PNP
             </button>
 
             <button
               type="button"
               onClick={() => handleQuickAgencyFilter('CIVILIAN')}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-all cursor-pointer ${
                 isAgencyActive('CIVILIAN')
                   ? 'bg-purple-950 text-purple-300 border border-purple-600/80 shadow-[0_0_8px_rgba(168,85,247,0.3)]'
                   : 'text-purple-400/80 hover:text-purple-300 hover:bg-purple-950/40'
               }`}
             >
-              👤 Civilian
+              <Users className="w-3 h-3 text-purple-400" />
+              Civilian
             </button>
           </div>
 
@@ -504,9 +563,10 @@ export const UserManagementPage: React.FC = () => {
                 setSelectedUnit('ALL');
                 setSelectedStatus('ALL');
               }}
-              className="px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-bold text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-bold text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700 transition-colors cursor-pointer"
             >
-              ✕ Reset
+              <X className="w-3 h-3" />
+              Reset
             </button>
           )}
         </div>
@@ -542,14 +602,14 @@ export const UserManagementPage: React.FC = () => {
             <tbody className="divide-y divide-[#1d3c5c]/60 font-sans">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="p-8 bg-[#0a1a2b]/40">
-                    <SkeletonLoader rows={6} className="w-full" />
+                  <td colSpan={TABLE_COLUMNS_COUNT} className="p-8 bg-[#0a1a2b]/40">
+                    <SkeletonLoader rows={SKELETON_ROWS_COUNT} className="w-full" />
                   </td>
                 </tr>
-              ) : paginatedItems.length === 0 ? (
+              ) : paginatedItems.length === EMPTY_COUNT ? (
                 <tr>
-                  <td colSpan={6} className="py-16 text-center text-slate-400 bg-[#0a1a2b]/30">
-                    <div className="text-4xl mb-3">🔍</div>
+                  <td colSpan={TABLE_COLUMNS_COUNT} className="py-16 text-center text-slate-400 bg-[#0a1a2b]/30">
+                    <Search className="w-10 h-10 mx-auto mb-3 text-slate-500 opacity-60" />
                     <div className="font-bold text-slate-200 text-sm tracking-wide">No Matching Emergency Personnel Found</div>
                     <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
                       Adjust your search filters, clear active query tags, or enroll a new emergency official into the registry.
@@ -559,7 +619,9 @@ export const UserManagementPage: React.FC = () => {
               ) : (
                 paginatedItems.map((u, index) => {
                   const isVerified = u.status === 'Verified';
-                  const isEven = index % 2 === 0;
+                  const isSuspended = u.status === 'Suspended';
+                  const isPending = u.status === 'Pending';
+                  const isEven = index % MODULO_EVEN_DIVISOR === MODULO_EVEN_REMAINDER;
 
                   return (
                     <tr
@@ -572,14 +634,14 @@ export const UserManagementPage: React.FC = () => {
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-xl bg-[#071522] border border-[#1d3c5c] flex items-center justify-center text-xs font-bold font-mono text-sky-400 flex-shrink-0 shadow-inner group-hover:border-sky-500/60 transition-colors">
-                            {u.fullName?.charAt(0)?.toUpperCase() || 'U'}
+                            {u.fullName?.charAt(INITIAL_INDEX)?.toUpperCase() || 'U'}
                           </div>
                           <div className="min-w-0">
                             <div className="font-bold text-white text-xs truncate flex items-center gap-1.5">
                               <span className="truncate">{u.fullName}</span>
                               {u.faceVerified && (
-                                <span title="Live Biometric Face Verified" className="text-emerald-400 text-xs flex-shrink-0">
-                                  ✓
+                                <span title="Live Biometric Face Verified" className="text-emerald-400 text-xs flex-shrink-0 flex items-center">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
                                 </span>
                               )}
                             </div>
@@ -631,10 +693,7 @@ export const UserManagementPage: React.FC = () => {
                             title="Inspect Dossier & Captures"
                             aria-label={`Inspect ${u.fullName}`}
                           >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
+                            <Eye className="w-3.5 h-3.5" />
                           </button>
 
                           {/* Edit Button */}
@@ -645,29 +704,45 @@ export const UserManagementPage: React.FC = () => {
                             title="Edit Official Credentials"
                             aria-label={`Edit ${u.fullName}`}
                           >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
+                            <Sliders className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* Quick Status Toggle Button */}
-                          {isVerified ? (
+                          {/* Relational Status Action: Approve */}
+                          {!isVerified && (
                             <button
                               type="button"
-                              onClick={() => handleQuickStatusToggle(u)}
-                              className="px-2.5 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900/90 text-rose-300 border border-rose-800 text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer shadow-sm"
-                              title="Suspend Account Access"
+                              onClick={() => handleStatusTransition(u, 'Verified')}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/70 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-800 text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer shadow-sm"
+                              title="Authorize & Verify Account (POST /api/users/{id}/status)"
                             >
+                              <UserCheck className="w-3 h-3" />
+                              Approve
+                            </button>
+                          )}
+
+                          {/* Relational Status Action: Suspend */}
+                          {isVerified && (
+                            <button
+                              type="button"
+                              onClick={() => handleStatusTransition(u, 'Suspended')}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900/90 text-rose-300 border border-rose-800 text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer shadow-sm"
+                              title="Suspend Account Access (POST /api/users/{id}/status)"
+                            >
+                              <UserX className="w-3 h-3" />
                               Suspend
                             </button>
-                          ) : (
+                          )}
+
+                          {/* Relational Status Action: Restrict / Review */}
+                          {!isPending && (
                             <button
                               type="button"
-                              onClick={() => handleQuickStatusToggle(u)}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-950/70 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-800 text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer shadow-sm"
-                              title="Authorize & Verify Account"
+                              onClick={() => handleStatusTransition(u, 'Pending')}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-950/70 hover:bg-amber-900/90 text-amber-300 border border-amber-800 text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer shadow-sm"
+                              title="Restrict to Pending Validation (POST /api/users/{id}/status)"
                             >
-                              Approve
+                              <Lock className="w-3 h-3" />
+                              Restrict
                             </button>
                           )}
 
@@ -676,12 +751,10 @@ export const UserManagementPage: React.FC = () => {
                             type="button"
                             onClick={() => setDeleteUserTarget(u)}
                             className="p-1.5 rounded-lg bg-[#0e243a] hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-[#1d3c5c] hover:border-rose-700 transition-all cursor-pointer shadow-sm"
-                            title="Soft-Delete Official"
+                            title="Soft-Delete Official (DELETE /api/users/{id})"
                             aria-label={`Delete ${u.fullName}`}
                           >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -693,11 +766,11 @@ export const UserManagementPage: React.FC = () => {
           </table>
         </div>
 
-        {/* 5. High-Density Pagination Strip */}
+        {/* 5. Pagination Strip */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-t border-[#1d3c5c] bg-[#06111d]">
           <div className="flex items-center gap-3 text-xs text-slate-400 font-mono">
             <span>
-              Showing <strong className="text-white">{totalItems === 0 ? 0 : startIndex + 1}</strong> to{' '}
+              Showing <strong className="text-white">{totalItems === EMPTY_COUNT ? EMPTY_COUNT : startIndex + INCREMENT_OFFSET}</strong> to{' '}
               <strong className="text-white">{endIndex}</strong> of{' '}
               <strong className="text-white">{totalItems}</strong> entries
             </span>
@@ -725,8 +798,9 @@ export const UserManagementPage: React.FC = () => {
               size="sm"
               disabled={!canPrevPage}
               onClick={prevPage}
+              icon={<ChevronLeft className="w-3.5 h-3.5" />}
             >
-              ← Previous
+              Previous
             </Button>
 
             <span className="text-xs text-slate-400 px-2 font-mono">
@@ -741,7 +815,7 @@ export const UserManagementPage: React.FC = () => {
               disabled={!canNextPage}
               onClick={nextPage}
             >
-              Next →
+              Next <ChevronRight className="w-3.5 h-3.5 inline ml-1" />
             </Button>
           </div>
         </div>
@@ -782,7 +856,7 @@ export const UserManagementPage: React.FC = () => {
       />
 
       {/* Floating Toast Notification Stack */}
-      {toasts.length > 0 && (
+      {toasts.length > EMPTY_COUNT && (
         <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
           {toasts.map((toast) => {
             const borderColors = {
@@ -802,8 +876,9 @@ export const UserManagementPage: React.FC = () => {
                   type="button"
                   onClick={() => removeToast(toast.id)}
                   className="text-slate-400 hover:text-white cursor-pointer"
+                  aria-label="Dismiss toast"
                 >
-                  ✕
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             );

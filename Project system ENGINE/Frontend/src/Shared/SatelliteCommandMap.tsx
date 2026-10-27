@@ -2,8 +2,9 @@
 // Responsibility: Interactive Leaflet satellite command map matching dashboard.js / dashboard.html.
 // Features: Real-time incident pins, live GPS accuracy radius circles, Laplacian blur warning beacons,
 // and deterministic agency dispatch tags.
+// Universal lambda expressions (=>).
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { FC, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -51,8 +52,14 @@ const HOME_ZOOM = 12;
 const MIN_ZOOM = 11;
 const MAX_ZOOM = 18;
 const BOUNDS_PADDING: [number, number] = [18, 18];
+const MIN_ACCURACY_RADIUS_METERS = 15;
+const PAN_DURATION_SECONDS = 0.8;
 
-export const SatelliteCommandMap: React.FC<SatelliteCommandMapProps> = ({
+// Lucide Icon SVG definitions for Leaflet divIcon markup
+const LUCIDE_PIN_SVG = `<svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
+const LUCIDE_WARN_SVG = `<svg class="w-3.5 h-3.5 text-amber-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+
+export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   incidents = [],
   markers = [],
   centerLat,
@@ -124,7 +131,7 @@ export const SatelliteCommandMap: React.FC<SatelliteCommandMapProps> = ({
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     if (typeof centerLat === 'number' && typeof centerLng === 'number') {
-      mapInstanceRef.current.panTo([centerLat, centerLng], { animate: true, duration: 0.8 });
+      mapInstanceRef.current.panTo([centerLat, centerLng], { animate: true, duration: PAN_DURATION_SECONDS });
     }
   }, [centerLat, centerLng]);
 
@@ -145,11 +152,8 @@ export const SatelliteCommandMap: React.FC<SatelliteCommandMapProps> = ({
       return L.divIcon({
         className: `incident-pin ${statusClass}${warnClass}`,
         html: `
-          <span class="incident-pin__dot">
-            ${isWarn
-              ? '<span style="font-size: 11px; transform: rotate(45deg); display: block;">⚠️</span>'
-              : '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pin"/></svg>'
-            }
+          <span class="incident-pin__dot flex items-center justify-center">
+            ${isWarn ? LUCIDE_WARN_SVG : LUCIDE_PIN_SVG}
           </span>
         `,
         iconSize: [30, 30],
@@ -169,7 +173,7 @@ export const SatelliteCommandMap: React.FC<SatelliteCommandMapProps> = ({
       // Render GPS hardware accuracy radius circle if available
       if (inc.gpsAccuracyMeters && inc.gpsAccuracyMeters > 0) {
         const accuracyCircle = L.circle([inc.lat, inc.lng], {
-          radius: Math.max(inc.gpsAccuracyMeters, 15),
+          radius: Math.max(inc.gpsAccuracyMeters, MIN_ACCURACY_RADIUS_METERS),
           color: isWarn ? '#f59e0b' : '#e8114c',
           weight: 1.5,
           fillColor: isWarn ? '#f59e0b' : '#e8114c',
@@ -179,7 +183,9 @@ export const SatelliteCommandMap: React.FC<SatelliteCommandMapProps> = ({
       }
 
       const warningHtml = isWarn
-        ? '<div class="incpop__warning">⚠️ REVIEW NEEDED (Blurry Photo)</div>'
+        ? '<div class="incpop__warning" style="display:flex;align-items:center;gap:4px;">' +
+          LUCIDE_WARN_SVG +
+          '<span>REVIEW NEEDED (Blurry Photo)</span></div>'
         : '';
 
       const agencyHtml = inc.recommendedAgency
@@ -199,7 +205,7 @@ export const SatelliteCommandMap: React.FC<SatelliteCommandMapProps> = ({
           agencyHtml +
           gpsHtml +
           '<a class="incpop__link" href="#incidents">View captured evidence</a>' +
-        '</div>'
+          '</div>'
       );
 
       markersLayer.addLayer(marker);

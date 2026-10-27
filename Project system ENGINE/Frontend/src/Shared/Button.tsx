@@ -6,6 +6,7 @@
 // DO NOT put feature-specific or API business logic here.
 
 import React, { FC, ButtonHTMLAttributes, ReactNode } from 'react';
+import { Loader2 } from 'lucide-react';
 
 export type ButtonVariant =
   | 'primary'
@@ -98,10 +99,7 @@ export const Button: FC<ButtonProps> = ({
       {...props}
     >
       {isLoading ? (
-        <svg className="animate-spin h-4 w-4 text-current flex-shrink-0" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-        </svg>
+        <Loader2 className="animate-spin h-4 w-4 text-current flex-shrink-0" />
       ) : iconPosition === 'left' ? (
         renderIcon()
       ) : null}

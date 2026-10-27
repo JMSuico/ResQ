@@ -1,11 +1,36 @@
 // [Layer: UserRoles/Features/Pages/AdminsPanel/Components]
 // AddUserModal.tsx -- Elite Emergency Command Personnel & Resident Registration Modal for ResQTrack.
-// Supports full Philippine emergency credentials, Universal Lambdas (=>), and Katipuneros architecture.
-// DO NOT expose cleartext credentials or omit required backend DTO attributes.
+// Conforms to Squad 5:
+// - Universal Lucide Migration: No raw inline SVGs.
+// - Supports full Philippine emergency credentials, Universal Lambdas (=>), and Katipuneros architecture.
+// - Zero 'any' typing and Zero hardcoded static numbers.
 
-import React, { useState } from 'react';
+import React, { useState, FC, ChangeEvent, FormEvent } from 'react';
+import {
+  User,
+  MapPin,
+  Shield,
+  FileText,
+  Lock,
+  AlertTriangle,
+  Check,
+  Loader2,
+  HeartPulse,
+  Flame,
+  ShieldAlert,
+  Phone,
+  Radio,
+  Building2,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 import { DefaultFloatingModalCard, Button } from '@/Shared';
 import { createUser, ResponderUnit, CreateUserPayload } from '@/Endpoints/adminGovernanceApi';
+
+// Architectural Telemetry Constants (Zero hardcoded static numbers)
+const MIN_PASSWORD_LENGTH = 12;
+const STEP_ZERO = 0;
+const STEP_OFFSET = 1;
 
 export interface AddUserModalProps {
   isOpen: boolean;
@@ -43,7 +68,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
   showToast,
 }) => {
   const [activeTab, setActiveTab] = useState<'personal' | 'address' | 'role' | 'credentials' | 'account'>('personal');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
   // Form state
@@ -168,7 +193,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErrorText(null);
 
@@ -185,9 +210,9 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
       return;
     }
 
-    if (!formData.password || formData.password.length < 12) {
+    if (!formData.password || formData.password.length < MIN_PASSWORD_LENGTH) {
       setActiveTab('account');
-      setErrorText('Password must be at least 12 characters long according to emergency security policies.');
+      setErrorText(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long according to emergency security policies.`);
       return;
     }
 
@@ -268,11 +293,11 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
   };
 
   const tabs = [
-    { key: 'personal', step: '01', label: 'Personal & Vitals', icon: '👤' },
-    { key: 'address', step: '02', label: 'Residence Sector', icon: '📍' },
-    { key: 'role', step: '03', label: 'Role & Agency', icon: '🛡️' },
-    { key: 'credentials', step: '04', label: 'Emergency Badges', icon: '📜' },
-    { key: 'account', step: '05', label: 'Security & Auth', icon: '🔐' },
+    { key: 'personal', step: '01', label: 'Personal & Vitals', icon: User },
+    { key: 'address', step: '02', label: 'Residence Sector', icon: MapPin },
+    { key: 'role', step: '03', label: 'Role & Agency', icon: Shield },
+    { key: 'credentials', step: '04', label: 'Emergency Badges', icon: FileText },
+    { key: 'account', step: '05', label: 'Security & Auth', icon: Lock },
   ] as const;
 
   return (
@@ -289,17 +314,16 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-xs text-slate-200">
         {errorText && (
           <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-600 text-rose-200 flex items-start gap-2.5 shadow-[0_0_12px_rgba(244,63,94,0.25)]">
-            <svg className="w-4 h-4 text-rose-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+            <AlertTriangle className="w-4 h-4 text-rose-400 mt-0.5 flex-shrink-0" />
             <div className="flex-1 font-mono font-medium">{errorText}</div>
           </div>
         )}
 
-        {/* Crisp Tactical Tab Header */}
+        {/* Tab Header Strip */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-[#1d3c5c] scrollbar-none bg-[#071522]/60 p-1 rounded-xl">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
+            const TabIcon = tab.icon;
             return (
               <button
                 key={tab.key}
@@ -312,7 +336,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                 }`}
               >
                 <span className="text-[10px] text-slate-500 font-bold">{tab.step}</span>
-                <span>{tab.icon}</span>
+                <TabIcon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
               </button>
             );
@@ -424,10 +448,11 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
               />
             </div>
 
-            {/* Structured Emergency Contact Section */}
+            {/* Emergency Contact Section */}
             <div className="md:col-span-2 p-3.5 rounded-xl bg-[#0a1a2b]/80 border border-amber-900/60 shadow-md">
               <h4 className="text-xs font-mono font-bold text-amber-300 mb-2.5 uppercase tracking-wider flex items-center gap-2">
-                <span>🚨</span> Philippine Emergency Contact Information (Next of Kin)
+                <Phone className="w-3.5 h-3.5 text-amber-400" />
+                Philippine Emergency Contact Information (Next of Kin)
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
@@ -521,7 +546,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
               />
             </div>
             <div className="md:col-span-2 p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-[#1d3c5c] text-[11px] text-slate-300 flex items-start gap-2.5">
-              <span className="text-sky-400 text-sm mt-0.5">🛰️</span>
+              <Radio className="w-4 h-4 text-sky-400 mt-0.5 flex-shrink-0" />
               <div>
                 <strong className="text-sky-300 font-mono">Geographic Triage Allocation: </strong>
                 Barangay coordinates anchor live GPS responder routing and evacuation alert dispatch to the LDRRMO Command Console.
@@ -598,13 +623,14 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
           </div>
         )}
 
-        {/* Tab 4: Role-Specific Structured Emergency Badges */}
+        {/* Tab 4: Role-Specific Emergency Badges */}
         {activeTab === 'credentials' && (
           <div className="space-y-3.5">
             {formData.role === 'Civilian' && (
               <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-800/60 space-y-3 shadow-lg">
                 <div className="flex items-center gap-2 text-purple-300 font-mono font-bold text-xs uppercase tracking-wider">
-                  <span>👤</span> Philippine Civilian Resident Credentials
+                  <User className="w-4 h-4 text-purple-400" />
+                  Philippine Civilian Resident Credentials
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   <div>
@@ -669,7 +695,8 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
             {formData.role === 'Responder' && formData.unit === 'RHU' && (
               <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-600/70 space-y-3 shadow-lg">
                 <div className="flex items-center gap-2 text-emerald-300 font-mono font-bold text-xs uppercase tracking-wider">
-                  <span>🚑</span> Rural Health Unit (RHU) Medical Credentials
+                  <HeartPulse className="w-4 h-4 text-emerald-400" />
+                  Rural Health Unit (RHU) Medical Credentials
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   <div>
@@ -733,7 +760,8 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
             {formData.role === 'Responder' && formData.unit === 'FIRE' && (
               <div className="p-4 rounded-xl bg-orange-950/20 border border-orange-600/70 space-y-3 shadow-lg">
                 <div className="flex items-center gap-2 text-orange-300 font-mono font-bold text-xs uppercase tracking-wider">
-                  <span>🚒</span> Bureau of Fire Protection (BFP) Credentials
+                  <Flame className="w-4 h-4 text-orange-400" />
+                  Bureau of Fire Protection (BFP) Credentials
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   <div>
@@ -805,7 +833,8 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
             {formData.role === 'Responder' && formData.unit === 'PNP' && (
               <div className="p-4 rounded-xl bg-sky-950/20 border border-sky-600/70 space-y-3 shadow-lg">
                 <div className="flex items-center gap-2 text-sky-300 font-mono font-bold text-xs uppercase tracking-wider">
-                  <span>👮</span> Philippine National Police (PNP) Credentials
+                  <ShieldAlert className="w-4 h-4 text-sky-400" />
+                  Philippine National Police (PNP) Credentials
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   <div>
@@ -874,7 +903,8 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
             {formData.role === 'LDRRMO_Admin' && (
               <div className="p-4 rounded-xl bg-rose-950/20 border border-amber-600/70 space-y-3 shadow-lg">
                 <div className="flex items-center gap-2 text-amber-300 font-mono font-bold text-xs uppercase tracking-wider">
-                  <span>🏛️</span> LDRRMO Administrative Governance Credentials
+                  <Building2 className="w-4 h-4 text-amber-400" />
+                  LDRRMO Administrative Governance Credentials
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   <div>
@@ -938,7 +968,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
               <input
                 type="password"
                 required
-                minLength={12}
+                minLength={MIN_PASSWORD_LENGTH}
                 value={formData.password}
                 onChange={(e) => handleChange('password', e.target.value)}
                 placeholder="••••••••••••"
@@ -947,10 +977,11 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
             </div>
             <div className="md:col-span-2 p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-[#1d3c5c] text-[11px] text-slate-300 space-y-1.5">
               <div className="font-bold text-sky-400 font-mono uppercase tracking-wider flex items-center gap-1.5">
-                <span>🛡️</span> Incident AI Security Governance Protocol:
+                <Lock className="w-3.5 h-3.5 text-sky-400" />
+                Incident AI Security Governance Protocol:
               </div>
               <div className="text-slate-400">
-                • Minimum 12 alphanumeric characters with uppercase, lowercase, numbers, and symbols required.
+                • Minimum {MIN_PASSWORD_LENGTH} alphanumeric characters with uppercase, lowercase, numbers, and symbols required.
               </div>
               <div className="text-slate-400">
                 • Real-time Laplacian anti-spoofing face verification will be requested on initial field logon.
@@ -969,10 +1000,11 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                 size="sm"
                 onClick={() => {
                   const idx = tabs.findIndex((t) => t.key === activeTab);
-                  if (idx > 0) setActiveTab(tabs[idx - 1].key);
+                  if (idx > STEP_ZERO) setActiveTab(tabs[idx - STEP_OFFSET].key);
                 }}
+                icon={<ChevronLeft className="w-3.5 h-3.5" />}
               >
-                ← Back
+                Back
               </Button>
             )}
           </div>
@@ -997,10 +1029,10 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                 size="sm"
                 onClick={() => {
                   const idx = tabs.findIndex((t) => t.key === activeTab);
-                  if (idx < tabs.length - 1) setActiveTab(tabs[idx + 1].key);
+                  if (idx < tabs.length - STEP_OFFSET) setActiveTab(tabs[idx + STEP_OFFSET].key);
                 }}
               >
-                Proceed Step →
+                Proceed Step <ChevronRight className="w-3.5 h-3.5 inline ml-1" />
               </Button>
             ) : (
               <button
@@ -1010,11 +1042,14 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
               >
                 {isSubmitting ? (
                   <>
-                    <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     Provisioning…
                   </>
                 ) : (
-                  <>✓ Finalize & Register</>
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    Finalize & Register
+                  </>
                 )}
               </button>
             )}

@@ -5,6 +5,24 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
+import {
+  User,
+  Mail,
+  Users,
+  ChevronDown,
+  Calendar,
+  CreditCard,
+  Shield,
+  MapPin,
+  ArrowRight,
+  Lock,
+  Eye,
+  EyeOff,
+  Camera,
+  RefreshCw,
+  Check,
+  CheckCircle2
+} from 'lucide-react';
 import { registerUser, RegisterPayload } from '@/Endpoints/authApi';
 
 export const RegisterPage: React.FC = () => {
@@ -392,14 +410,14 @@ export const RegisterPage: React.FC = () => {
                       <span className="font-mono text-[8.5px] text-rose-400/80">[CIVIL.NAME]</span>
                     </div>
                     <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                       style={{
                         background: 'rgba(46, 10, 22, 0.85)',
                         border: '1px solid rgba(255, 92, 116, 0.22)',
                         borderRadius: '6px'
                       }}
                     >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-user"/></svg>
+                      <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                       <input
                         className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                         id="fullname"
@@ -424,14 +442,14 @@ export const RegisterPage: React.FC = () => {
                       <span className="font-mono text-[8.5px] text-rose-400/80">[OFFICIAL.GOV]</span>
                     </div>
                     <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                       style={{
                         background: 'rgba(46, 10, 22, 0.85)',
                         border: '1px solid rgba(255, 92, 116, 0.22)',
                         borderRadius: '6px'
                       }}
                     >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-mail"/></svg>
+                      <Mail className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                       <input
                         className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                         id="email"
@@ -458,14 +476,14 @@ export const RegisterPage: React.FC = () => {
                           <span className="font-mono text-[8.5px] text-rose-400/80">[DEMO]</span>
                         </div>
                         <div
-                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                           style={{
                             background: 'rgba(46, 10, 22, 0.85)',
                             border: '1px solid rgba(255, 92, 116, 0.22)',
                             borderRadius: '6px'
                           }}
                         >
-                          <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-gender"/></svg>
+                          <Users className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                           <select
                             className="field__input select__input font-sans text-white text-[13px]"
                             id="sex"
@@ -476,7 +494,7 @@ export const RegisterPage: React.FC = () => {
                             <option value="female">Female</option>
                             <option value="other">Other</option>
                           </select>
-                          <svg className="select__chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
                         </div>
                       </div>
 
@@ -488,14 +506,14 @@ export const RegisterPage: React.FC = () => {
                           <span className="font-mono text-[8.5px] text-rose-400/80">[YEARS]</span>
                         </div>
                         <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                           style={{
                             background: 'rgba(46, 10, 22, 0.85)',
                             border: '1px solid rgba(255, 92, 116, 0.22)',
                             borderRadius: '6px'
                           }}
                         >
-                          <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-calendar"/></svg>
+                          <Calendar className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                           <input
                             className="field__input font-sans text-white text-[13px]"
                             id="age"
@@ -521,14 +539,14 @@ export const RegisterPage: React.FC = () => {
                       <span className="font-mono text-[8.5px] text-rose-400/80">[DOC.CLASS]</span>
                     </div>
                     <div
-                      className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                      className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                       style={{
                         background: 'rgba(46, 10, 22, 0.85)',
                         border: '1px solid rgba(255, 92, 116, 0.22)',
                         borderRadius: '6px'
                       }}
                     >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-badge"/></svg>
+                      <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                       <select
                         className="field__input select__input font-sans text-white text-[13px]"
                         id="id-type"
@@ -544,7 +562,7 @@ export const RegisterPage: React.FC = () => {
                         <option value="fire">BFP Service ID</option>
                         <option value="umid">Unified Multi-Purpose ID (UMID)</option>
                       </select>
-                      <svg className="select__chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
                     </div>
                   </div>
 
@@ -556,14 +574,14 @@ export const RegisterPage: React.FC = () => {
                       <span className="font-mono text-[8.5px] text-rose-400/80">[RBAC.TIER]</span>
                     </div>
                     <div
-                      className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                      className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                       style={{
                         background: 'rgba(46, 10, 22, 0.85)',
                         border: '1px solid rgba(255, 92, 116, 0.22)',
                         borderRadius: '6px'
                       }}
                     >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-shield"/></svg>
+                      <Shield className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                       <select
                         className="field__input select__input font-sans text-white text-[13px]"
                         id="unit"
@@ -573,7 +591,7 @@ export const RegisterPage: React.FC = () => {
                         <option value="responder">LDRRMO / RHU / BFP / PNP Responder</option>
                         <option value="security">Security Personnel / Civilian Guard</option>
                       </select>
-                      <svg className="select__chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
                     </div>
                   </div>
 
@@ -587,14 +605,14 @@ export const RegisterPage: React.FC = () => {
                           <span className="font-mono text-[8.5px] text-rose-400/80">[SYS.TAG]</span>
                         </div>
                         <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                           style={{
                             background: 'rgba(46, 10, 22, 0.85)',
                             border: '1px solid rgba(255, 92, 116, 0.22)',
                             borderRadius: '6px'
                           }}
                         >
-                          <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-badge"/></svg>
+                          <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                           <input
                             className="field__input font-sans text-white text-[13px]"
                             id="employee-id"
@@ -616,14 +634,14 @@ export const RegisterPage: React.FC = () => {
                           <span className="font-mono text-[8.5px] text-rose-400/80">[SECTOR]</span>
                         </div>
                         <div
-                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                           style={{
                             background: 'rgba(46, 10, 22, 0.85)',
                             border: '1px solid rgba(255, 92, 116, 0.22)',
                             borderRadius: '6px'
                           }}
                         >
-                          <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-pin"/></svg>
+                          <MapPin className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                           <select
                             className="field__input select__input font-sans text-white text-[13px]"
                             id="station"
@@ -634,7 +652,7 @@ export const RegisterPage: React.FC = () => {
                             <option value="Station 2 — Malasay Outpost">Station 2 — Malasay Outpost</option>
                             <option value="Station 3 — Uno Coastal Unit">Station 3 — Uno Coastal Unit</option>
                           </select>
-                          <svg className="select__chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
                         </div>
                       </div>
                     </>
@@ -643,13 +661,13 @@ export const RegisterPage: React.FC = () => {
 
                 <div className="step-actions mt-5">
                   <button
-                    className="btn w-full !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer"
+                    className="btn w-full !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2"
                     type="button"
                     data-next="2"
                     onClick={() => handleNextStep(2)}
                   >
                     <span className="btn__label">Continue to Security Credentials</span>
-                    <svg className="btn__arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+                    <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
                 </div>
               </div>
@@ -667,14 +685,14 @@ export const RegisterPage: React.FC = () => {
                       <span className="font-mono text-[8.5px] text-rose-400/80">[ARGON2.KEY]</span>
                     </div>
                     <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                       style={{
                         background: 'rgba(46, 10, 22, 0.85)',
                         border: '1px solid rgba(255, 92, 116, 0.22)',
                         borderRadius: '6px'
                       }}
                     >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-lock"/></svg>
+                      <Lock className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                       <input
                         className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                         id="password"
@@ -684,16 +702,16 @@ export const RegisterPage: React.FC = () => {
                         placeholder="••••••••••••"
                       />
                       <button
-                        className="field__toggle hover:text-rose-300"
+                        className="field__toggle hover:text-rose-300 ml-auto p-1"
                         type="button"
                         id="pw-toggle"
                         onClick={() => setShowPassword((p) => !p)}
                         aria-label="Toggle password view"
                       >
                         {!showPassword ? (
-                          <svg className="field__toggle-on" aria-hidden="true"><use href="#i-eye"/></svg>
+                          <Eye className="w-4 h-4 text-slate-400" />
                         ) : (
-                          <svg className="field__toggle-off" aria-hidden="true"><use href="#i-eye-off"/></svg>
+                          <EyeOff className="w-4 h-4 text-slate-400" />
                         )}
                       </button>
                     </div>
@@ -715,14 +733,14 @@ export const RegisterPage: React.FC = () => {
                       <span className="font-mono text-[8.5px] text-rose-400/80">[HASH.MATCH]</span>
                     </div>
                     <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                       style={{
                         background: 'rgba(46, 10, 22, 0.85)',
                         border: '1px solid rgba(255, 92, 116, 0.22)',
                         borderRadius: '6px'
                       }}
                     >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-lock"/></svg>
+                      <Lock className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                       <input
                         className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                         id="confirm"
@@ -748,13 +766,13 @@ export const RegisterPage: React.FC = () => {
                     <span className="btn__label">Back</span>
                   </button>
                   <button
-                    className="btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer"
+                    className="btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2"
                     type="button"
                     data-next="3"
                     onClick={() => handleNextStep(3)}
                   >
                     <span className="btn__label">Continue to Biometric Verification</span>
-                    <svg className="btn__arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+                    <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
                 </div>
               </div>
@@ -944,25 +962,25 @@ export const RegisterPage: React.FC = () => {
                   <div className="face-actions" style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                     {!faceShot ? (
                       <button
-                        className="btn btn--sm font-mono text-[11px] font-bold !h-[38px] rounded border border-rose-500/40 bg-gradient-to-r from-rose-900 to-rose-700 text-white hover:brightness-110 cursor-pointer"
+                        className="btn btn--sm font-mono text-[11px] font-bold !h-[38px] rounded border border-rose-500/40 bg-gradient-to-r from-rose-900 to-rose-700 text-white hover:brightness-110 cursor-pointer flex items-center justify-center gap-1.5"
                         type="button"
                         id="face-capture"
                         disabled={isFaceScanning}
                         onClick={captureFace}
                         style={{ flex: 1 }}
                       >
-                        <svg className="btn__arrow" aria-hidden="true"><use href="#i-camera"/></svg>
+                        <Camera className="w-4 h-4 text-white" />
                         <span className="btn__label">{isFaceScanning ? 'Scanning Biometrics…' : 'Capture & Verify Face'}</span>
                       </button>
                     ) : (
                       <button
-                        className="btn btn--sm btn--ghost font-mono text-[11px] font-bold !h-[38px] rounded border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 cursor-pointer"
+                        className="btn btn--sm btn--ghost font-mono text-[11px] font-bold !h-[38px] rounded border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-1.5"
                         type="button"
                         id="face-retake"
                         onClick={handleRetakeFace}
                         style={{ flex: 1 }}
                       >
-                        <svg className="btn__arrow" aria-hidden="true"><use href="#i-refresh"/></svg>
+                        <RefreshCw className="w-4 h-4 text-slate-300" />
                         <span className="btn__label">Retake Face Scan</span>
                       </button>
                     )}
@@ -971,27 +989,27 @@ export const RegisterPage: React.FC = () => {
 
                 {/* Legal Certifications */}
                 <div className="consents" style={{ marginTop: '16px' }}>
-                  <label className="check" style={{ marginBottom: '8px' }}>
+                  <label className="check flex items-start gap-2 cursor-pointer" style={{ marginBottom: '8px' }}>
                     <input
                       type="checkbox"
                       id="consent-1"
                       checked={consent1}
                       onChange={(e) => setConsent1(e.target.checked)}
+                      className="mt-0.5"
                     />
-                    <span className="check__box" aria-hidden="true"><svg><use href="#i-tick"/></svg></span>
                     <span className="check__text font-mono text-[11px] text-slate-300">
                       [AFFIDAVIT] I certify under penalty of perjury that the attached ID and face scan are genuine.
                     </span>
                   </label>
 
-                  <label className="check">
+                  <label className="check flex items-start gap-2 cursor-pointer">
                     <input
                       type="checkbox"
                       id="consent-2"
                       checked={consent2}
                       onChange={(e) => setConsent2(e.target.checked)}
+                      className="mt-0.5"
                     />
-                    <span className="check__box" aria-hidden="true"><svg><use href="#i-tick"/></svg></span>
                     <span className="check__text font-mono text-[11px] text-slate-300">
                       [PROTOCOL] I agree to the ResQTrack emergency dispatch and GPS tracking operational protocols.
                     </span>
@@ -1009,7 +1027,7 @@ export const RegisterPage: React.FC = () => {
                   </button>
 
                   <button
-                    className={`btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer ${isLoading ? 'is-loading' : ''} ${isSuccess ? 'is-ok' : ''}`}
+                    className={`btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2 ${isLoading ? 'is-loading' : ''} ${isSuccess ? 'is-ok' : ''}`}
                     type="submit"
                     id="submit"
                     disabled={isLoading}
@@ -1017,9 +1035,7 @@ export const RegisterPage: React.FC = () => {
                     <span className="btn__label">
                       {isLoading ? 'Creating account…' : isSuccess ? 'Account created' : 'Create Authorized Account'}
                     </span>
-                    <svg className="btn__arrow" aria-hidden="true">
-                      <use href={isSuccess ? '#i-check' : '#i-arrow'}/>
-                    </svg>
+                    {isSuccess ? <Check className="w-4 h-4 ml-1" /> : <ArrowRight className="w-4 h-4 ml-1" />}
                     <span className="btn__spinner" aria-hidden="true"></span>
                   </button>
                 </div>

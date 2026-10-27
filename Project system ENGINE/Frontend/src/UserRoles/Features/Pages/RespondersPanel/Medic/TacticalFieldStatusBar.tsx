@@ -1,8 +1,19 @@
 // [Layer: UserRoles/Features/Pages/RespondersPanel/Medic]
 // Responsibility: Tactical persistent field status bar for RHU emergency medical responders.
-// Katipuneros Architecture: Universal lambda expressions (=>).
+// Katipuneros Architecture: Strictly typed request/response contracts with ZERO 'any' usage.
+// Universal lambda expressions (=>).
 
 import React from 'react';
+import {
+  CheckCircle2,
+  AlertTriangle,
+  Stethoscope,
+  Ambulance,
+  RefreshCw,
+  Radio,
+  Activity
+} from 'lucide-react';
+import { requestJson } from '@/Endpoints/apiClient';
 
 export type TacticalFieldStatus =
   | 'AVAILABLE'
@@ -18,19 +29,21 @@ export interface TacticalFieldStatusBarProps {
   unitCallsign?: string;
 }
 
-const STATUS_ITEMS: {
+interface StatusItemConfig {
   status: TacticalFieldStatus;
   label: string;
   badge: string;
-  icon: string;
+  icon: React.ComponentType<{ className?: string }>;
   activeColor: string;
   borderGlow: string;
-}[] = [
+}
+
+const STATUS_ITEMS: StatusItemConfig[] = [
   {
     status: 'AVAILABLE',
     label: 'AVAILABLE',
     badge: 'STAGED',
-    icon: '🟢',
+    icon: CheckCircle2,
     activeColor: 'bg-emerald-600 text-white border-emerald-400',
     borderGlow: 'shadow-[0_0_15px_rgba(16,185,129,0.4)]'
   },
@@ -38,7 +51,7 @@ const STATUS_ITEMS: {
     status: 'EN ROUTE (SIRENS ON)',
     label: 'EN ROUTE (SIRENS ON)',
     badge: 'CODE 3',
-    icon: '🚨',
+    icon: AlertTriangle,
     activeColor: 'bg-red-600 text-white border-red-400 animate-pulse',
     borderGlow: 'shadow-[0_0_20px_rgba(239,68,68,0.5)]'
   },
@@ -46,7 +59,7 @@ const STATUS_ITEMS: {
     status: 'ON SCENE',
     label: 'ON SCENE',
     badge: 'TRIAGING',
-    icon: '🩺',
+    icon: Stethoscope,
     activeColor: 'bg-sky-600 text-white border-sky-400',
     borderGlow: 'shadow-[0_0_15px_rgba(56,189,248,0.4)]'
   },
@@ -54,7 +67,7 @@ const STATUS_ITEMS: {
     status: 'TRANSPORTING TO ER',
     label: 'TRANSPORTING TO ER',
     badge: 'ZNMC BOUND',
-    icon: '🚑',
+    icon: Ambulance,
     activeColor: 'bg-indigo-600 text-white border-indigo-400',
     borderGlow: 'shadow-[0_0_15px_rgba(99,102,241,0.4)]'
   },
@@ -62,7 +75,7 @@ const STATUS_ITEMS: {
     status: 'RETURNING',
     label: 'RETURNING',
     badge: 'QUARTERS',
-    icon: '🔄',
+    icon: RefreshCw,
     activeColor: 'bg-slate-700 text-white border-slate-500',
     borderGlow: 'shadow-[0_0_15px_rgba(148,163,184,0.3)]'
   }
@@ -74,11 +87,37 @@ export const TacticalFieldStatusBar: React.FC<TacticalFieldStatusBarProps> = ({
   isUpdating = false,
   unitCallsign = 'MEDIC-01'
 }) => {
+  const handleItemClick = async (status: TacticalFieldStatus) => {
+    // Notify parent immediately
+    onStatusChange(status);
+
+    // Map tactical field status to backend DutyStatus enum
+    let mappedDuty: 'OnDuty' | 'Dispatched' | 'Standby' | 'OffDuty' = 'OnDuty';
+    if (status === 'AVAILABLE') mappedDuty = 'OnDuty';
+    else if (status === 'EN ROUTE (SIRENS ON)' || status === 'ON SCENE' || status === 'TRANSPORTING TO ER') {
+      mappedDuty = 'Dispatched';
+    } else if (status === 'RETURNING') {
+      mappedDuty = 'Standby';
+    }
+
+    try {
+      await requestJson<{ message: string }>('/api/responder-ops/duty-status', {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: mappedDuty,
+          unitCode: unitCallsign
+        })
+      });
+    } catch (err: unknown) {
+      console.warn('Duty status API telemetry notice:', err);
+    }
+  };
+
   return (
     <div className="w-full p-3 rounded-xl bg-slate-900/95 border border-sky-600/30 shadow-lg backdrop-blur-md flex flex-col md:flex-row items-center justify-between gap-3">
       {/* Unit Callsign Chip */}
       <div className="flex items-center gap-2 self-start md:self-center">
-        <span className="w-3 h-3 rounded-full bg-sky-400 animate-ping" />
+        <Radio className="w-4 h-4 text-sky-400 animate-pulse" />
         <div className="flex flex-col">
           <span className="text-[10px] font-mono uppercase text-sky-400 font-bold tracking-wider">
             TACTICAL STATUS HUD
@@ -92,13 +131,14 @@ export const TacticalFieldStatusBar: React.FC<TacticalFieldStatusBarProps> = ({
       {/* 5-State Button Segment */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 w-full md:w-auto flex-1 max-w-4xl">
         {STATUS_ITEMS.map((item) => {
+          const IconComponent = item.icon;
           const isActive = currentStatus === item.status;
           return (
             <button
               key={item.status}
               type="button"
               disabled={isUpdating}
-              onClick={() => onStatusChange(item.status)}
+              onClick={() => handleItemClick(item.status)}
               className={`px-3 py-2 rounded-lg text-xs font-mono font-bold transition-all duration-150 flex flex-col items-center justify-center gap-0.5 border active:scale-95 select-none ${
                 isActive
                   ? `${item.activeColor} ${item.borderGlow} scale-[1.02]`
@@ -106,7 +146,7 @@ export const TacticalFieldStatusBar: React.FC<TacticalFieldStatusBarProps> = ({
               } ${isUpdating ? 'opacity-60 cursor-wait' : 'cursor-pointer'}`}
             >
               <div className="flex items-center gap-1.5">
-                <span>{item.icon}</span>
+                <IconComponent className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">{item.label}</span>
               </div>
               <span className={`text-[9px] uppercase tracking-wider ${isActive ? 'text-white/90' : 'text-slate-500'}`}>

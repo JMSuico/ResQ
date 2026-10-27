@@ -4,9 +4,28 @@
 // Universal lambda expressions (=>).
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  Stethoscope,
+  HeartPulse,
+  Activity,
+  AlertTriangle,
+  AlertCircle,
+  Navigation,
+  Clock,
+  Radio,
+  CheckCircle2,
+  ClipboardList,
+  Image as ImageIcon,
+  MapPin,
+  FileText,
+  ArrowUpRight,
+  RefreshCw,
+  Ambulance
+} from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
 import { getAgencyReports, getAllReports, ReportItem } from '@/Endpoints/reportsApi';
 import { getDutyRoster, updateUnitDutyStatus, DutyUnit } from '@/Endpoints/responderOpsApi';
+import { requestJson } from '@/Endpoints/apiClient';
 import { verifyReport } from '@/Endpoints/adminGovernanceApi';
 import { SatelliteCommandMap, MapMarker } from '@/Shared/SatelliteCommandMap';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
@@ -66,7 +85,7 @@ export const EmsTraumaDashboard: React.FC = () => {
         else if (myUnit.status === 'Dispatched') setFieldStatus('EN ROUTE (SIRENS ON)');
         else if (myUnit.status === 'Standby') setFieldStatus('RETURNING');
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to load RHU EMS trauma telemetry:', err);
     } finally {
       setLoading(false);
@@ -87,25 +106,34 @@ export const EmsTraumaDashboard: React.FC = () => {
     loadData();
   });
 
-  // Handle Field Status change
+  // Handle Field Status change connected to PUT /api/responder-ops/duty-status
   const handleStatusChange = async (nextStatus: TacticalFieldStatus) => {
     setFieldStatus(nextStatus);
     setIsUpdatingStatus(true);
 
     const myUnit = roster.find((u) => u.agency === 'RHU');
-    if (myUnit) {
-      let mappedDuty: 'OnDuty' | 'Dispatched' | 'Standby' | 'OffDuty' = 'OnDuty';
-      if (nextStatus === 'AVAILABLE') mappedDuty = 'OnDuty';
-      else if (nextStatus === 'EN ROUTE (SIRENS ON)' || nextStatus === 'ON SCENE' || nextStatus === 'TRANSPORTING TO ER') {
-        mappedDuty = 'Dispatched';
-      } else if (nextStatus === 'RETURNING') {
-        mappedDuty = 'Standby';
-      }
+    let mappedDuty: 'OnDuty' | 'Dispatched' | 'Standby' | 'OffDuty' = 'OnDuty';
+    if (nextStatus === 'AVAILABLE') mappedDuty = 'OnDuty';
+    else if (nextStatus === 'EN ROUTE (SIRENS ON)' || nextStatus === 'ON SCENE' || nextStatus === 'TRANSPORTING TO ER') {
+      mappedDuty = 'Dispatched';
+    } else if (nextStatus === 'RETURNING') {
+      mappedDuty = 'Standby';
+    }
 
-      try {
-        await updateUnitDutyStatus(myUnit.id, mappedDuty);
-      } catch (err) {
-        console.warn('Unit status sync fallback:', err);
+    try {
+      await requestJson<{ message: string }>('/api/responder-ops/duty-status', {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: mappedDuty,
+          unitId: myUnit?.id,
+          unitCode: myUnit?.unitCode || 'RHU-MEDIC-01'
+        })
+      });
+    } catch {
+      if (myUnit) {
+        await updateUnitDutyStatus(myUnit.id, mappedDuty).catch((err: unknown) => {
+          console.warn('Unit status sync fallback warning:', err);
+        });
       }
     }
 
@@ -123,12 +151,12 @@ export const EmsTraumaDashboard: React.FC = () => {
   const handleTriageTagChange = async (reportId: string, newSeverity: string) => {
     try {
       await verifyReport(reportId, 'Active', `START Triage classification updated to ${newSeverity.toUpperCase()} by RHU Medic`);
-      showToast(`✓ START TRIAGE TAG SET TO ${newSeverity.toUpperCase()}`);
+      showToast(`START TRIAGE TAG SET TO ${newSeverity.toUpperCase()}`);
       await loadData();
       if (selectedIncidentForModal && selectedIncidentForModal.id === reportId) {
         setSelectedIncidentForModal((prev) => prev ? { ...prev, severity: newSeverity } : null);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to update triage tag:', err);
       showToast('FAILED TO UPDATE TRIAGE TAG');
     }
@@ -240,9 +268,7 @@ export const EmsTraumaDashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-sky-950/80 via-[#0a1a2b] to-slate-950 border border-sky-600/30 shadow-lg">
         <div className="flex items-start gap-4">
           <div className="p-3 rounded-xl bg-sky-600/20 border border-sky-500/40 text-sky-400 shadow-[0_0_15px_rgba(56,189,248,0.3)]">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+            <Stethoscope className="w-8 h-8" />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -292,7 +318,7 @@ export const EmsTraumaDashboard: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold font-mono tracking-wider text-red-400 uppercase flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+              <AlertCircle className="w-3.5 h-3.5 text-red-400 animate-pulse" />
               Immediate (Red)
             </span>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40">
@@ -317,7 +343,7 @@ export const EmsTraumaDashboard: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold font-mono tracking-wider text-amber-400 uppercase flex items-center gap-1.5">
-              <span>🟡</span> Delayed (Yellow)
+              <Clock className="w-3.5 h-3.5 text-amber-400" /> Delayed (Yellow)
             </span>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
               PRIORITY 2
@@ -341,7 +367,7 @@ export const EmsTraumaDashboard: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold font-mono tracking-wider text-emerald-400 uppercase flex items-center gap-1.5">
-              <span>🟢</span> Minor (Green)
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Minor (Green)
             </span>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
               PRIORITY 3
@@ -365,7 +391,7 @@ export const EmsTraumaDashboard: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold font-mono tracking-wider text-slate-300 uppercase flex items-center gap-1.5">
-              <span>⚫</span> Expectant (Black)
+              <AlertTriangle className="w-3.5 h-3.5 text-slate-400" /> Expectant (Black)
             </span>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
               PRIORITY 0
@@ -388,7 +414,7 @@ export const EmsTraumaDashboard: React.FC = () => {
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold uppercase tracking-wider text-sky-400 flex items-center gap-2">
-                  <span>🛰️</span> Tactical Satellite Command Map
+                  <Radio className="w-4 h-4 text-sky-400" /> Tactical Satellite Command Map
                 </span>
                 <span className="text-[10px] font-mono bg-sky-950 text-sky-300 border border-sky-800 px-2 py-0.5 rounded">
                   Dipolog Metropolitan Grid
@@ -435,7 +461,7 @@ export const EmsTraumaDashboard: React.FC = () => {
             <div className="flex flex-col gap-2 border-b border-slate-800 pb-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-sky-400 flex items-center gap-2">
-                  <span>🚨</span> Priority Casualty Queue ({filteredReports.length})
+                  <AlertCircle className="w-4 h-4 text-sky-400" /> Priority Casualty Queue ({filteredReports.length})
                 </h2>
                 {triageFilter !== 'ALL' && (
                   <button
@@ -465,7 +491,7 @@ export const EmsTraumaDashboard: React.FC = () => {
               </div>
             ) : filteredReports.length === 0 ? (
               <div className="p-8 rounded-xl bg-slate-950/60 border border-slate-800/80 text-center flex flex-col items-center gap-2">
-                <span className="text-2xl">📋</span>
+                <ClipboardList className="w-8 h-8 text-slate-600" />
                 <span className="text-xs font-mono font-bold text-slate-300">
                   {triageFilter === 'ALL'
                     ? 'No Active Medical Dispatches'
@@ -534,7 +560,7 @@ export const EmsTraumaDashboard: React.FC = () => {
                               }}
                             />
                           ) : (
-                            <span className="text-xl">📷</span>
+                            <ImageIcon className="w-6 h-6 text-slate-600" />
                           )}
                           {report.isBlurry && (
                             <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-amber-400" title="Blurry Capture" />
@@ -551,8 +577,9 @@ export const EmsTraumaDashboard: React.FC = () => {
                               {report.note || 'No notes provided by civilian reporter.'}
                             </p>
                           </div>
-                          <span className="text-[10px] font-mono text-sky-400 truncate mt-1">
-                            📍 {report.locationLabel || formatGpsCoord(report.latitude, report.longitude)}
+                          <span className="text-[10px] font-mono text-sky-400 truncate mt-1 flex items-center gap-1">
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            {report.locationLabel || formatGpsCoord(report.latitude, report.longitude)}
                           </span>
                         </div>
                       </div>
@@ -563,9 +590,9 @@ export const EmsTraumaDashboard: React.FC = () => {
                           variant="ghost"
                           size="xs"
                           onClick={() => setSelectedIncidentForModal(report)}
-                          className="text-slate-300 hover:text-white"
+                          className="text-slate-300 hover:text-white flex items-center gap-1.5"
                         >
-                          🔍 Inspect Evidence
+                          <FileText className="w-3.5 h-3.5" /> Inspect Evidence
                         </Button>
 
                         <div className="flex items-center gap-2">
@@ -573,9 +600,9 @@ export const EmsTraumaDashboard: React.FC = () => {
                             variant="primary"
                             size="xs"
                             onClick={() => handleQuickNavigate(report.latitude, report.longitude)}
-                            className="bg-sky-600 hover:bg-sky-500 text-white font-mono active:scale-95"
+                            className="bg-sky-600 hover:bg-sky-500 text-white font-mono active:scale-95 flex items-center gap-1.5"
                           >
-                            Launch GPS Route ↗
+                            Launch GPS Route <ArrowUpRight className="w-3.5 h-3.5" />
                           </Button>
                         </div>
                       </div>

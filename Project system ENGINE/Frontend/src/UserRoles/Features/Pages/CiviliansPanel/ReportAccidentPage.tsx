@@ -6,6 +6,16 @@
 
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  AlertTriangle,
+  RefreshCw,
+  ShieldCheck,
+  Camera,
+  Zap,
+  Clock
+} from 'lucide-react';
 import { createReport } from '@/Endpoints/reportsApi';
 import { Button } from '@/Shared/Button';
 import { CameraCaptureModal, CameraCaptureMetadata } from '@/Shared/CameraCaptureModal';
@@ -13,6 +23,9 @@ import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { CATEGORY_LABELS } from '@/Libs/Assets/data';
+
+// Architectural constants - Zero hardcoded static numbers
+const RESYNC_ANIMATION_MS = 1200;
 
 export const ReportAccidentPage: React.FC = () => {
   const { coords, isHardwareGeolocated, signalQuality, refreshGps } = useGpsLocation();
@@ -49,7 +62,7 @@ export const ReportAccidentPage: React.FC = () => {
   const handleForceResync = () => {
     setIsResyncing(true);
     refreshGps();
-    setTimeout(() => setIsResyncing(false), 1200);
+    setTimeout(() => setIsResyncing(false), RESYNC_ANIMATION_MS);
   };
 
   const handleOpenConfirm = (e: React.FormEvent) => {
@@ -134,9 +147,10 @@ export const ReportAccidentPage: React.FC = () => {
         <button
           type="button"
           onClick={() => navigate('/civilian/dashboard')}
-          className="self-start sm:self-auto px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-mono transition-colors"
+          className="self-start sm:self-auto px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-mono transition-colors flex items-center gap-1.5"
         >
-          ← Return to Hub
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Return to Hub</span>
         </button>
       </div>
 
@@ -170,7 +184,7 @@ export const ReportAccidentPage: React.FC = () => {
                 : 'bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse'
             }`}
           >
-            {imageDataUrl ? '✓' : '2'}
+            {imageDataUrl ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : '2'}
           </span>
           <div className="flex flex-col truncate">
             <span className={`font-bold text-[10px] uppercase ${imageDataUrl ? 'text-emerald-400' : 'text-rose-400'}`}>STEP 2</span>
@@ -196,7 +210,7 @@ export const ReportAccidentPage: React.FC = () => {
       {/* 3. Error Callout */}
       {error && (
         <div className="p-3.5 rounded-xl bg-rose-950/90 border border-rose-600/60 text-xs text-rose-200 flex items-center gap-3">
-          <span className="text-base font-bold text-rose-400">⚠️</span>
+          <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
@@ -218,9 +232,7 @@ export const ReportAccidentPage: React.FC = () => {
               className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-950 border border-slate-800 hover:border-sky-500/40 transition-colors"
               title="Force sensor resynchronization"
             >
-              <svg className={`w-3.5 h-3.5 ${isResyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
+              <RefreshCw className={`w-3.5 h-3.5 ${isResyncing ? 'animate-spin' : ''}`} />
               <span>{isResyncing ? 'Resyncing...' : 'Force Resync'}</span>
             </button>
           </div>
@@ -277,7 +289,7 @@ export const ReportAccidentPage: React.FC = () => {
           {/* Anti-Spoofing Protocol Directive Callout */}
           <div className="p-3 rounded-xl bg-slate-950 border border-rose-900/40 flex items-start gap-3 text-xs">
             <div className="w-7 h-7 rounded-lg bg-rose-950/80 border border-rose-600/40 flex items-center justify-center text-rose-400 font-bold flex-shrink-0 mt-0.5">
-              🛡️
+              <ShieldCheck className="w-4 h-4 text-rose-400" />
             </div>
             <div className="flex flex-col">
               <span className="font-bold text-white text-xs">Anti-Spoofing Hardware Policy Enforced</span>
@@ -308,12 +320,14 @@ export const ReportAccidentPage: React.FC = () => {
 
                 {captureMetadata?.isBlurry ? (
                   <div className="absolute bottom-1 left-1 right-1 px-2 py-1 bg-amber-950/90 text-amber-300 text-[10px] font-mono font-bold rounded border border-amber-500/60 flex items-center gap-1.5">
-                    <span>⚠️ BLUR SCORE: {captureMetadata.varianceScore.toFixed(1)}</span>
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                    <span>BLUR SCORE: {captureMetadata.varianceScore.toFixed(1)}</span>
                     <span className="text-[9px] text-amber-400 truncate">(Manual Review)</span>
                   </div>
                 ) : (
                   <div className="absolute bottom-1 left-1 right-1 px-2 py-1 bg-emerald-950/90 text-emerald-300 text-[10px] font-mono font-bold rounded border border-emerald-500/60 flex items-center gap-1.5">
-                    <span>✓ CLARITY PASS: {captureMetadata?.varianceScore.toFixed(1)}</span>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                    <span>CLARITY PASS: {captureMetadata?.varianceScore.toFixed(1)}</span>
                   </div>
                 )}
               </div>
@@ -340,10 +354,7 @@ export const ReportAccidentPage: React.FC = () => {
                     onClick={() => setIsCameraOpen(true)}
                     className="w-full sm:w-auto min-h-[48px] px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-lg shadow-rose-950/60 active:scale-[0.98] transition-all"
                   >
-                    <svg className="w-5 h-5 text-white animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <circle cx="12" cy="13" r="3" strokeWidth="2.2" />
-                    </svg>
+                    <Camera className="w-5 h-5 text-white animate-pulse" />
                     <span>Activate Live Emergency Camera</span>
                   </button>
                   <p className="text-[11px] text-slate-400">
@@ -355,17 +366,19 @@ export const ReportAccidentPage: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                      <span className="text-xs font-mono font-bold text-emerald-400">
-                        ✓ Tamper-proof evidence snapshot locked
+                      <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Tamper-proof evidence snapshot locked</span>
                       </span>
                     </div>
 
                     <button
                       type="button"
                       onClick={() => setIsCameraOpen(true)}
-                      className="text-xs font-mono text-sky-400 hover:text-sky-300 underline font-bold"
+                      className="text-xs font-mono text-sky-400 hover:text-sky-300 underline font-bold flex items-center gap-1"
                     >
-                      Retake Photo ↺
+                      <span>Retake Photo</span>
+                      <RefreshCw className="w-3 h-3" />
                     </button>
                   </div>
 
@@ -445,17 +458,37 @@ export const ReportAccidentPage: React.FC = () => {
                 onChange={(e) => setSeverity(e.target.value)}
                 className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-sky-500"
               >
-                <option value="Critical">🔴 Critical (Immediate Danger / Severe Trauma)</option>
-                <option value="High">🟠 High (Injuries / Fire Hazard / Road Block)</option>
-                <option value="Medium">🟡 Medium (Assistance Required / Stable)</option>
-                <option value="Low">🟢 Low (Minor Collision / Advisory)</option>
+                <option value="Critical">[CRITICAL] Immediate Danger / Severe Trauma</option>
+                <option value="High">[HIGH] Injuries / Fire Hazard / Road Block</option>
+                <option value="Medium">[MEDIUM] Assistance Required / Stable</option>
+                <option value="Low">[LOW] Minor Collision / Advisory</option>
               </select>
 
               <div className="mt-1 p-2 rounded-lg bg-slate-950 border border-slate-800 text-[10px] font-mono text-slate-400">
-                {severity === 'Critical' && <span className="text-rose-400">🚨 Triggers siren alert across municipal dispatch terminals</span>}
-                {severity === 'High' && <span className="text-orange-400">⚠️ Dispatches field unit within 3 minutes</span>}
-                {severity === 'Medium' && <span className="text-amber-400">🟡 Queued for active response unit dispatch</span>}
-                {severity === 'Low' && <span className="text-emerald-400">🟢 Logged in community registry for monitoring</span>}
+                {severity === 'Critical' && (
+                  <span className="text-rose-400 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Triggers siren alert across municipal dispatch terminals</span>
+                  </span>
+                )}
+                {severity === 'High' && (
+                  <span className="text-orange-400 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Dispatches field unit within 3 minutes</span>
+                  </span>
+                )}
+                {severity === 'Medium' && (
+                  <span className="text-amber-400 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Queued for active response unit dispatch</span>
+                  </span>
+                )}
+                {severity === 'Low' && (
+                  <span className="text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Logged in community registry for monitoring</span>
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -483,11 +516,7 @@ export const ReportAccidentPage: React.FC = () => {
             size="lg"
             isLoading={isLoading}
             className="w-full !py-4 font-black uppercase tracking-wider text-sm shadow-xl shadow-rose-950/80 rounded-xl"
-            icon={
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            }
+            icon={<Zap className="w-5 h-5" />}
           >
             Review & Transmit Emergency Report
           </Button>
@@ -507,7 +536,10 @@ export const ReportAccidentPage: React.FC = () => {
       >
         <div className="flex flex-col gap-4">
           <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-600/50 text-xs text-rose-200">
-            <p className="font-bold text-sm text-white mb-1">🚨 Broadcast to Command Center</p>
+            <p className="font-bold text-sm text-white mb-1 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+              <span>Broadcast to Command Center</span>
+            </p>
             <p className="text-[11px] text-rose-300">
               This report will immediately alert LDRRMO dispatchers and ping designated field apparatus. Verify details below before broadcasting.
             </p>
@@ -534,8 +566,18 @@ export const ReportAccidentPage: React.FC = () => {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-500">IMAGE EVIDENCE:</span>
-              <span className={imageDataUrl ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
-                {imageDataUrl ? '✓ Live Camera Attached' : '⚠️ No Photo Attached'}
+              <span className={imageDataUrl ? 'text-emerald-400 font-bold flex items-center gap-1' : 'text-amber-400 font-bold flex items-center gap-1'}>
+                {imageDataUrl ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Live Camera Attached</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span>No Photo Attached</span>
+                  </>
+                )}
               </span>
             </div>
           </div>

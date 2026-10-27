@@ -4,7 +4,22 @@
 // Universal lambda expressions (=>).
 
 import React, { useState, useMemo } from 'react';
+import {
+  Award,
+  ShieldCheck,
+  CheckCircle2,
+  Clock,
+  PhoneCall,
+  FileText,
+  Stethoscope,
+  HeartPulse,
+  ArrowUpRight,
+  Activity,
+  User,
+  ClipboardList
+} from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
+import { requestJson } from '@/Endpoints/apiClient';
 import { Button } from '@/Shared/Button';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
 
@@ -77,19 +92,39 @@ export const MedicProfilePage: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleToggleOnCall = () => {
-    setIsOnCall((prev) => !prev);
-    showToast(`ON-CALL EMERGENCY STATUS: ${!isOnCall ? 'ACTIVE' : 'OFF-DUTY STANDBY'}`);
+  const handleToggleOnCall = async () => {
+    const nextState = !isOnCall;
+    setIsOnCall(nextState);
+
+    try {
+      await requestJson<{ message: string }>('/api/responder-ops/duty-status', {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: nextState ? 'OnDuty' : 'OffDuty',
+          unitCode: 'RHU-MEDIC-01'
+        })
+      });
+    } catch (err: unknown) {
+      console.warn('Duty status sync note:', err);
+    }
+
+    showToast(`ON-CALL EMERGENCY STATUS: ${nextState ? 'ACTIVE' : 'OFF-DUTY STANDBY'}`);
   };
 
   const handleSaveContact = () => {
     setEmergencyContactName(tempContactName);
     setEmergencyContactPhone(tempContactPhone);
     setIsEditContactModalOpen(false);
-    showToast('✓ EMERGENCY CONTACT INFORMATION UPDATED');
+    showToast('EMERGENCY CONTACT INFORMATION UPDATED');
   };
 
-  const totalRuns = shiftLogs.length + 142; // Historical baseline
+  const totalRuns = useMemo(() => shiftLogs.length, [shiftLogs]);
+
+  const averageDurationMins = useMemo(() => {
+    if (shiftLogs.length === 0) return 0;
+    const total = shiftLogs.reduce((acc, log) => acc + log.durationMins, 0);
+    return Math.round(total / shiftLogs.length);
+  }, [shiftLogs]);
 
   return (
     <div className="flex flex-col gap-6 w-full text-slate-100 font-sans pb-16">
@@ -107,10 +142,10 @@ export const MedicProfilePage: React.FC = () => {
           {/* Avatar with Verified Ring */}
           <div className="relative">
             <div className="w-20 h-20 rounded-2xl bg-sky-600/20 border-2 border-sky-400 flex items-center justify-center text-3xl shadow-[0_0_20px_rgba(56,189,248,0.3)]">
-              🧑‍⚕️
+              <ShieldCheck className="w-10 h-10 text-sky-400" />
             </div>
             <span className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-slate-950 flex items-center justify-center text-[10px] text-white font-bold" title="Face & PRC Biometrics Verified">
-              ✓
+              <CheckCircle2 className="w-3.5 h-3.5 text-white" />
             </span>
           </div>
 
@@ -119,7 +154,7 @@ export const MedicProfilePage: React.FC = () => {
               <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider bg-sky-500/20 text-sky-300 border border-sky-500/40">
                 VERIFIED RHU EMS RESPONDER
               </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+              <span className="px-2.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                 FACE VERIFIED (100% MATCH)
               </span>
             </div>
@@ -143,13 +178,21 @@ export const MedicProfilePage: React.FC = () => {
             variant="outline"
             size="sm"
             onClick={handleToggleOnCall}
-            className={`border font-mono text-xs active:scale-95 ${
+            className={`border font-mono text-xs active:scale-95 flex items-center gap-1.5 ${
               isOnCall
                 ? 'bg-emerald-950/60 border-emerald-500 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
                 : 'bg-slate-900 border-slate-700 text-slate-400'
             }`}
           >
-            {isOnCall ? '🟢 STATUS: ON-CALL ACTIVE' : '⚪ STATUS: OFF-DUTY'}
+            {isOnCall ? (
+              <>
+                <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" /> STATUS: ON-CALL ACTIVE
+              </>
+            ) : (
+              <>
+                <Clock className="w-3.5 h-3.5 text-slate-400" /> STATUS: OFF-DUTY
+              </>
+            )}
           </Button>
 
           <Button
@@ -160,9 +203,9 @@ export const MedicProfilePage: React.FC = () => {
               setTempContactPhone(emergencyContactPhone);
               setIsEditContactModalOpen(true);
             }}
-            className="bg-sky-600 hover:bg-sky-500 text-white shadow-md active:scale-95 text-xs"
+            className="bg-sky-600 hover:bg-sky-500 text-white shadow-md active:scale-95 text-xs flex items-center gap-1.5"
           >
-            ⚙️ Edit Emergency Contacts
+            <PhoneCall className="w-3.5 h-3.5" /> Edit Emergency Contacts
           </Button>
         </div>
       </div>
@@ -170,18 +213,20 @@ export const MedicProfilePage: React.FC = () => {
       {/* Performance KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 shadow-sm">
-          <span className="text-xs font-semibold text-slate-400">Total Pre-Hospital Runs</span>
+          <span className="text-xs font-semibold text-slate-400">Total Shift Pre-Hospital Runs</span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-3xl font-extrabold font-mono text-white">{totalRuns}</span>
-            <span className="text-xs text-slate-400">Dispatches</span>
+            <span className="text-xs text-slate-400">Active Logs</span>
           </div>
-          <span className="text-[11px] text-emerald-400 mt-1">✓ 100% PCR Submissions</span>
+          <span className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3" /> 100% PCR Submissions
+          </span>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 shadow-sm">
-          <span className="text-xs font-semibold text-slate-400">Avg ER Transit Time</span>
+          <span className="text-xs font-semibold text-slate-400">Avg Run Duration</span>
           <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-3xl font-extrabold font-mono text-sky-400">6.8</span>
+            <span className="text-3xl font-extrabold font-mono text-sky-400">{averageDurationMins}</span>
             <span className="text-xs text-slate-400">Minutes</span>
           </div>
           <span className="text-[11px] text-sky-300 mt-1">Code 3 Siren Navigation</span>
@@ -215,7 +260,7 @@ export const MedicProfilePage: React.FC = () => {
           <div className="p-5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-md flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h2 className="text-sm font-bold uppercase tracking-wider text-sky-400 flex items-center gap-2">
-                <span>🪪</span> PRC Statutory Medical License
+                <Award className="w-4 h-4 text-sky-400" /> PRC Statutory Medical License
               </h2>
               <span className="text-xs font-mono text-emerald-400">Valid &amp; Active</span>
             </div>
@@ -291,7 +336,7 @@ export const MedicProfilePage: React.FC = () => {
           {/* Personal Bio-Data & Emergency Medical Profile */}
           <div className="p-5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-md flex flex-col gap-3 font-mono text-xs">
             <h2 className="text-sm font-bold uppercase tracking-wider text-sky-400 flex items-center gap-2 border-b border-slate-800 pb-2">
-              <span>🩺</span> Medic Bio-Data &amp; Emergency Contacts
+              <Stethoscope className="w-4 h-4 text-sky-400" /> Medic Bio-Data &amp; Emergency Contacts
             </h2>
 
             <div className="space-y-2 pt-1">
@@ -325,7 +370,7 @@ export const MedicProfilePage: React.FC = () => {
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <h2 className="text-sm font-bold uppercase tracking-wider text-sky-400 flex items-center gap-2">
-                  <span>📋</span> Pre-Hospital Emergency Mission Audit Logs
+                  <ClipboardList className="w-4 h-4 text-sky-400" /> Pre-Hospital Emergency Mission Audit Logs
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Verifiable electronic care records logged under active medic session
@@ -366,9 +411,9 @@ export const MedicProfilePage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => showToast(`INSPECTING PCR TRANSCRIPT FOR ${log.incidentRef}`)}
-                      className="text-sky-400 hover:text-sky-300 hover:underline"
+                      className="text-sky-400 hover:text-sky-300 hover:underline flex items-center gap-1"
                     >
-                      View Digital PCR ↗
+                      View Digital PCR <ArrowUpRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>

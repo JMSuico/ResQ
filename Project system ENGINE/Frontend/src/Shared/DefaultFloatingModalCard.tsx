@@ -5,6 +5,7 @@
 // DO NOT put feature-specific or API business logic here.
 
 import React, { FC, ReactNode, useEffect, useCallback } from 'react';
+import { X } from 'lucide-react';
 
 export interface DefaultFloatingModalCardProps {
   isOpen: boolean;
@@ -69,7 +70,7 @@ export const DefaultFloatingModalCard: FC<DefaultFloatingModalCardProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
       <div
         className={`w-full ${maxWidthClass} bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${className}`}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
@@ -90,9 +91,7 @@ export const DefaultFloatingModalCard: FC<DefaultFloatingModalCardProps> = ({
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors flex-shrink-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-500"
             aria-label="Close modal"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-5 h-5" />
           </button>
         </div>
 

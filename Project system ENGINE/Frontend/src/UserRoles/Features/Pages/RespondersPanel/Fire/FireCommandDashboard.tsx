@@ -8,6 +8,25 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import {
+  Flame,
+  AlertTriangle,
+  Radio,
+  Navigation,
+  Wind,
+  Droplets,
+  Gauge,
+  CheckCircle2,
+  AlertCircle,
+  Truck,
+  FileText,
+  Users,
+  Search,
+  MapPin,
+  AlertOctagon,
+  X,
+  Compass
+} from 'lucide-react';
 
 import { useSession } from '@/Hooks/useSession';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
@@ -18,6 +37,7 @@ import {
   ReportItem
 } from '@/Endpoints/reportsApi';
 import { getDutyRoster, updateUnitDutyStatus, DutyUnit } from '@/Endpoints/responderOpsApi';
+import { requestJson } from '@/Endpoints/apiClient';
 import { formatGpsCoord, formatRelativeTime, formatIsoTimestamp } from '@/Libs/Assets/formatters';
 
 import { HydrantTacticalMapPage } from './HydrantTacticalMapPage';
@@ -284,11 +304,23 @@ export const FireCommandDashboard: React.FC = () => {
     const cfg = ALARM_CONFIGS[targetLevel];
 
     try {
-      await sendEmergencyBroadcast({
-        title: `BFP TACTICAL ALARM: ${targetLevel.toUpperCase()}`,
-        message: `${cfg.scope}. ${cfg.unitsDispatched}. Protocol: ${cfg.responseProtocol}`,
-        severity: targetLevel === '1st Alarm' ? 'moderate' : 'critical'
-      });
+      await Promise.allSettled([
+        sendEmergencyBroadcast({
+          title: `BFP TACTICAL ALARM: ${targetLevel.toUpperCase()}`,
+          message: `${cfg.scope}. ${cfg.unitsDispatched}. Protocol: ${cfg.responseProtocol}`,
+          severity: targetLevel === '1st Alarm' ? 'moderate' : 'critical'
+        }),
+        requestJson('/api/responder-ops/alarm-level', {
+          method: 'POST',
+          body: JSON.stringify({
+            alarmLevel: targetLevel,
+            scope: cfg.scope,
+            unitsDispatched: cfg.unitsDispatched,
+            commander: session?.fullName || 'BFP Fireground Commander',
+            timestamp: new Date().toISOString()
+          })
+        })
+      ]);
       setBroadcastNotification(
         `ALARM TRANSMITTED: ${targetLevel.toUpperCase()} broadcasted to Dipolog Central Dispatch & mutual aid network.`
       );
@@ -317,12 +349,22 @@ export const FireCommandDashboard: React.FC = () => {
         : 'Dispatched';
 
     const myFireUnit = dutyRoster.find((u) => u.agency === 'FIRE') || dutyRoster[0];
-    if (myFireUnit) {
-      try {
-        await updateUnitDutyStatus(myFireUnit.id, mappedBackendStatus);
-      } catch (err) {
-        console.warn('Tactical status sync warning:', err);
-      }
+    try {
+      await Promise.allSettled([
+        myFireUnit ? updateUnitDutyStatus(myFireUnit.id, mappedBackendStatus) : Promise.resolve(),
+        requestJson('/api/responder-ops/duty-status', {
+          method: 'PUT',
+          body: JSON.stringify({
+            unitId: myFireUnit?.id || 'ENGINE-01',
+            status: mappedBackendStatus,
+            tacticalStatus: newStatus,
+            agency: 'FIRE',
+            timestamp: new Date().toISOString()
+          })
+        })
+      ]);
+    } catch (err) {
+      console.warn('Tactical status sync warning:', err);
     }
   };
 
@@ -407,7 +449,7 @@ export const FireCommandDashboard: React.FC = () => {
         className: 'bfp-engine-marker',
         html: `
           <div class="relative flex items-center justify-center w-8 h-8 rounded-full bg-orange-600 border-2 border-white shadow-[0_0_15px_rgba(234,88,12,0.9)] animate-pulse">
-            <span class="text-white text-xs font-black">🚒</span>
+            <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-5l-4-4h-3v10"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>
           </div>
         `,
         iconSize: [32, 32],
@@ -442,7 +484,10 @@ export const FireCommandDashboard: React.FC = () => {
                 ? 'bg-orange-600 border-amber-300 shadow-[0_0_15px_rgba(234,88,12,0.8)]'
                 : 'bg-amber-600 border-amber-200'
             } transition-all">
-              <span class="text-base">${isCritical ? '🔥' : '💨'}</span>
+              ${isCritical
+                ? '<svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>'
+                : '<svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.7 7.7A7.1 7.1 0 0 0 5 10.8A7.3 7.3 0 0 0 8 21h10a5 5 0 0 0 1.5-9.8c-.1-.5-.4-.9-.8-1.2"/></svg>'
+              }
             </div>
             <span class="mt-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-slate-950/90 text-orange-300 border border-orange-500/40 whitespace-nowrap">
               ${rep.referenceCode || 'FIRE-BOX'}
@@ -493,9 +538,10 @@ export const FireCommandDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => setBroadcastNotification(null)}
-            className="text-orange-400 hover:text-white font-mono text-xs font-bold px-2 py-1 bg-orange-900/40 rounded border border-orange-700/50 cursor-pointer"
+            className="text-orange-400 hover:text-white font-mono text-xs font-bold px-2.5 py-1 bg-orange-900/40 rounded border border-orange-700/50 cursor-pointer flex items-center gap-1.5"
           >
-            DISMISS ✕
+            <span>DISMISS</span>
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
@@ -508,7 +554,7 @@ export const FireCommandDashboard: React.FC = () => {
 
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-600 to-red-700 border-2 border-orange-400 flex items-center justify-center text-3xl shadow-[0_0_20px_rgba(234,88,12,0.6)] flex-shrink-0">
-            🚒
+            <Truck className="w-8 h-8 text-white" />
           </div>
 
           <div>
@@ -566,15 +612,62 @@ export const FireCommandDashboard: React.FC = () => {
             disabled={isLocating}
             className="px-3.5 py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-mono text-xs font-black uppercase tracking-wider border border-orange-400 shadow-[0_0_15px_rgba(234,88,12,0.4)] active:scale-95 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
           >
-            <span>{isLocating ? '🛰️' : '📡'}</span>
+            {isLocating ? <Radio className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
             <span>{isLocating ? 'LOCKING...' : 'PING GPS'}</span>
           </button>
         </div>
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* 2. Alarm Level Escalation Selector (Barangay -> General Alarm) */}
+      {/* Tactical Sub-Navigation Ribbon (Command / Hydrants / Telemetry / Hazmat / AAR / Roster) */}
       {/* ------------------------------------------------------------------ */}
+      <div className="flex items-center gap-2 overflow-x-auto p-2 rounded-xl bg-slate-900/90 border border-orange-500/30">
+        {[
+          { id: 'COMMAND', label: 'FIRE COMMAND HUD', desc: 'Tactical Console', icon: Flame },
+          { id: 'HYDRANTS', label: 'HYDRANTS & RELAY', desc: 'NFPA 291 GIS', icon: Droplets },
+          { id: 'TELEMETRY', label: 'APPARATUS & PUMPS', desc: 'Telemetry & SCBA', icon: Gauge },
+          { id: 'HAZMAT', label: 'HAZMAT GUIDEBOOK', desc: 'ERG 2024 Triage', icon: AlertTriangle },
+          { id: 'AAR', label: 'AFTER-ACTION REPORTS', desc: 'FIR Generator', icon: FileText },
+          { id: 'ROSTER', label: 'ENGINE ROSTER', desc: 'Crew & Apparatus', icon: Users },
+        ].map((tab) => {
+          const IconComp = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                triggerTactileBeep(650, 0.04);
+                setActiveNavTab(tab.id as FireNavTab);
+              }}
+              className={`px-3 py-2 rounded-lg font-mono text-xs whitespace-nowrap flex flex-col items-start transition-all cursor-pointer border active:scale-95 ${
+                activeNavTab === tab.id
+                  ? 'bg-orange-600 text-white border-white shadow-md'
+                  : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-orange-500/40 hover:text-white'
+              }`}
+            >
+              <span className="font-bold flex items-center gap-1.5">
+                <IconComp className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+              </span>
+              <span className="text-[10px] text-slate-400">{tab.desc}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Sub-view Mounts */}
+      {activeNavTab === 'HYDRANTS' && <HydrantTacticalMapPage />}
+      {activeNavTab === 'TELEMETRY' && <ApparatusTelemetryPage />}
+      {activeNavTab === 'HAZMAT' && <HazmatGuidebookPage />}
+      {activeNavTab === 'AAR' && <FireAarReportsPage />}
+      {activeNavTab === 'ROSTER' && <FireApparatusRosterPage />}
+
+      {/* Active Tab: COMMAND Console */}
+      {activeNavTab === 'COMMAND' && (
+        <>
+          {/* ------------------------------------------------------------------ */}
+          {/* 2. Alarm Level Escalation Selector (Barangay -> General Alarm) */}
+          {/* ------------------------------------------------------------------ */}
       <div className="p-5 rounded-2xl bg-slate-900/90 border border-orange-500/30 flex flex-col gap-3 shadow-lg">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2">
@@ -753,7 +846,8 @@ export const FireCommandDashboard: React.FC = () => {
               {/* Wind Vector & Weather Overlay */}
               <div className="absolute top-3 left-3 z-[400] px-3 py-2 rounded-xl bg-slate-950/90 border border-orange-500/40 text-xs font-mono shadow-xl flex flex-col gap-1 pointer-events-none">
                 <div className="flex items-center gap-2 text-orange-400 font-bold text-[11px]">
-                  <span>🧭 WIND VECTOR: 16 KM/H NNE</span>
+                  <Wind className="w-3.5 h-3.5 text-orange-400" />
+                  <span>WIND VECTOR: 16 KM/H NNE</span>
                 </div>
                 <div className="text-[10px] text-slate-300">
                   SMOKE PLUME PROPAGATION: <strong className="text-amber-400">SECTOR BRAVO / CHARLIE</strong>
@@ -844,16 +938,17 @@ export const FireCommandDashboard: React.FC = () => {
             )}
 
             {errorMsg && (
-              <div className="p-4 rounded-xl bg-red-950/50 border border-red-500/40 text-red-300 font-mono text-xs">
-                ⚠️ {errorMsg}
+              <div className="p-4 rounded-xl bg-red-950/50 border border-red-500/40 text-red-300 font-mono text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                <span>{errorMsg}</span>
               </div>
             )}
 
             {/* Zero Hardcoded Numbers: Genuine N=0 Empty State */}
             {!isLoading && reports.length === 0 && (
               <div className="p-8 rounded-xl bg-slate-950/60 border border-dashed border-slate-800 text-center flex flex-col items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center text-2xl">
-                  🚒
+                <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center">
+                  <Truck className="w-6 h-6 text-orange-400" />
                 </div>
                 <div>
                   <h4 className="text-sm font-black text-slate-300 font-mono uppercase">
@@ -895,7 +990,7 @@ export const FireCommandDashboard: React.FC = () => {
                     {isTrapped && (
                       <div className="px-3 py-1.5 rounded-lg bg-red-600/90 text-white font-mono text-[11px] font-black tracking-wider flex items-center justify-between shadow-[0_0_12px_rgba(239,68,68,0.7)] animate-pulse">
                         <span className="flex items-center gap-1.5">
-                          <span>🚨</span>
+                          <AlertOctagon className="w-4 h-4 text-white animate-bounce" />
                           <span>CIVILIANS REPORTED TRAPPED INSIDE STRUCTURE</span>
                         </span>
                         <span>PRIORITY 1</span>
@@ -948,7 +1043,7 @@ export const FireCommandDashboard: React.FC = () => {
                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
                           />
                           <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span className="text-white text-xs">🔍</span>
+                            <Search className="w-4 h-4 text-white" />
                           </div>
                         </div>
                       )}
@@ -957,8 +1052,8 @@ export const FireCommandDashboard: React.FC = () => {
                     {/* Location & GPS Info */}
                     <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80 flex flex-col gap-1 font-mono text-[11px]">
                       <div className="flex items-center justify-between text-slate-300">
-                        <span className="flex items-center gap-1 truncate max-w-[240px]">
-                          <span>📍</span>
+                        <span className="flex items-center gap-1.5 truncate max-w-[240px]">
+                          <MapPin className="w-3.5 h-3.5 text-orange-400 flex-shrink-0" />
                           <span className="font-bold">{rep.locationLabel || 'Dipolog City Sector'}</span>
                         </span>
                         <span className="text-slate-400">
@@ -989,7 +1084,7 @@ export const FireCommandDashboard: React.FC = () => {
                         className="px-3 py-2 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-mono text-xs font-black uppercase tracking-wider border border-orange-400 shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
                       >
                         <span>LAUNCH WATER ROUTE</span>
-                        <span>↗</span>
+                        <Navigation className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
@@ -999,6 +1094,8 @@ export const FireCommandDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+    </>
+  )}
 
       {/* ------------------------------------------------------------------ */}
       {/* 5. Lightbox Modal for Civilian Evidence Photos */}
@@ -1019,9 +1116,10 @@ export const FireCommandDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setPreviewImageUrl(null)}
-                className="text-slate-400 hover:text-white font-black px-2 py-1 bg-slate-800 rounded cursor-pointer"
+                className="text-slate-400 hover:text-white font-bold px-2.5 py-1 bg-slate-800 rounded cursor-pointer flex items-center gap-1"
               >
-                CLOSE ✕
+                <span>CLOSE</span>
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
             <div className="p-4 bg-black flex items-center justify-center max-h-[75vh] overflow-hidden">

@@ -4,6 +4,18 @@
 // Universal lambda expressions (=>).
 
 import React from 'react';
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardList,
+  ArrowUpRight,
+  Image as ImageIcon,
+  MapPin,
+  ShieldCheck,
+  X,
+  Clock
+} from 'lucide-react';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
 import { Button } from '@/Shared/Button';
 import { ReportItem } from '@/Endpoints/reportsApi';
@@ -68,7 +80,19 @@ export const CivilianEvidenceModal: React.FC<CivilianEvidenceModalProps> = ({
                     : 'bg-slate-900 text-slate-400 border-slate-700 hover:border-slate-600'
                 }`}
               >
-                {sev === 'critical' ? '🔴 Immediate' : sev === 'moderate' ? '🟡 Delayed' : '🟢 Minor'}
+                {sev === 'critical' ? (
+                  <span className="flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 text-white" /> Immediate
+                  </span>
+                ) : sev === 'moderate' ? (
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-white" /> Delayed
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-white" /> Minor
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -78,17 +102,17 @@ export const CivilianEvidenceModal: React.FC<CivilianEvidenceModalProps> = ({
               variant="outline"
               size="sm"
               onClick={handleCopyGps}
-              className="border-slate-700 text-slate-300 hover:bg-slate-800"
+              className="border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1"
             >
-              📋 Copy GPS
+              <ClipboardList className="w-3.5 h-3.5" /> Copy GPS
             </Button>
             <Button
               variant="primary"
               size="sm"
               onClick={handleLaunchRoute}
-              className="bg-sky-600 hover:bg-sky-500 text-white shadow-md active:scale-95"
+              className="bg-sky-600 hover:bg-sky-500 text-white shadow-md active:scale-95 flex items-center gap-1"
             >
-              Launch GPS Route ↗
+              Launch GPS Route <ArrowUpRight className="w-3.5 h-3.5" />
             </Button>
             <Button variant="secondary" size="sm" onClick={onClose}>
               Close
@@ -113,10 +137,7 @@ export const CivilianEvidenceModal: React.FC<CivilianEvidenceModalProps> = ({
               />
             ) : (
               <div className="flex flex-col items-center gap-2 text-slate-600">
-                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+                <ImageIcon className="w-12 h-12" />
                 <span>No photographic snapshot attached</span>
               </div>
             )}
@@ -143,7 +164,11 @@ export const CivilianEvidenceModal: React.FC<CivilianEvidenceModalProps> = ({
             }`}
           >
             <div className="flex items-center gap-2">
-              <span>{report.isBlurry ? '⚠️' : '✓'}</span>
+              {report.isBlurry ? (
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              )}
               <span className="font-bold">
                 {report.isBlurry
                   ? 'Blurry Capture Detected (Laplacian Variance < 70)'
@@ -209,7 +234,9 @@ export const CivilianEvidenceModal: React.FC<CivilianEvidenceModalProps> = ({
             </div>
             <div className="flex justify-between border-b border-slate-800/60 pb-1">
               <span className="text-slate-400">Verification:</span>
-              <span className="text-emerald-400 font-bold">✓ Verified Phone &amp; ID</span>
+              <span className="text-emerald-400 font-bold flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Verified Phone &amp; ID
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Hardware GPS Lock:</span>

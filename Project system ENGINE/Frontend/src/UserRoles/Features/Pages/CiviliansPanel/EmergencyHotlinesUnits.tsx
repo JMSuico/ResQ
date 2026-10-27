@@ -4,8 +4,8 @@
 // DO NOT provide invalid or outdated municipal contact numbers.
 
 import React, { useState, useMemo } from 'react';
+import { PhoneCall, MapPin, ExternalLink } from 'lucide-react';
 import { SearchBar } from '@/Shared/SearchBar';
-import { AGENCY_METADATA } from '@/Libs/Assets/data';
 
 interface ExtendedStationHotline {
   id: string;
@@ -210,7 +210,7 @@ export const EmergencyHotlinesUnits: React.FC = () => {
                 <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">{meta.description}</p>
 
                 <div className="mt-3 flex items-start gap-1.5 text-[11px] text-slate-400">
-                  <span className="text-slate-500 font-mono">📍</span>
+                  <MapPin className="w-3.5 h-3.5 text-slate-500 inline-block mr-0.5 flex-shrink-0 mt-0.5" />
                   <span>{meta.address}</span>
                 </div>
               </div>
@@ -228,9 +228,7 @@ export const EmergencyHotlinesUnits: React.FC = () => {
                     className="min-h-[42px] px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold font-mono transition-all shadow-md shadow-sky-950/60 flex items-center justify-center gap-2 whitespace-nowrap active:scale-[0.98]"
                     aria-label={`Dial ${meta.name} hotline`}
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                    </svg>
+                    <PhoneCall className="w-3.5 h-3.5" />
                     <span>Instant Call</span>
                   </a>
                 </div>
@@ -243,7 +241,7 @@ export const EmergencyHotlinesUnits: React.FC = () => {
                     className="text-sky-400 hover:text-sky-300 font-bold underline flex items-center gap-1"
                   >
                     <span>Open Station in Maps</span>
-                    <span>↗</span>
+                    <ExternalLink className="w-3 h-3" />
                   </button>
                 </div>
               </div>

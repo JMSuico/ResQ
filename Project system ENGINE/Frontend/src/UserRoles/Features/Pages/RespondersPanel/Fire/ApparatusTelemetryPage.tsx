@@ -6,6 +6,19 @@
 // Katipuneros Architecture: Strict typing, universal lambda syntax (=>), ZERO 'any' usage.
 
 import React, { useState, useMemo } from 'react';
+import {
+  Gauge,
+  Droplets,
+  Fuel,
+  Users,
+  CheckCircle2,
+  AlertCircle,
+  Activity,
+  Flame,
+  Shield,
+  Sliders,
+  Wind
+} from 'lucide-react';
 
 // --------------------------------------------------------------------------
 // Types & Contracts

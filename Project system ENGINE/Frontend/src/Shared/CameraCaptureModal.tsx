@@ -1,8 +1,10 @@
 // [Layer: Shared]
 // Responsibility: WebRTC live camera modal with anti-spoofing single-snap, zero-retake enforcement,
 // zero file gallery upload bypass, burnt-in GPS HUD watermark, and dynamically adjusting Laplacian blurriness detection.
+// Universal lambda expressions (=>).
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { FC, useState, useRef, useEffect, useCallback } from 'react';
+import { Camera, AlertTriangle, CheckCircle2, Check } from 'lucide-react';
 import { DefaultFloatingModalCard } from './DefaultFloatingModalCard';
 import { Button } from './Button';
 import { useGpsLocation } from '../Hooks/useGpsLocation';
@@ -26,6 +28,15 @@ export interface CameraCaptureModalProps {
   title?: string;
   instructionText?: string;
 }
+
+const DEFAULT_THRESHOLD = 70.0;
+const SD_RESOLUTION_THRESHOLD = 640 * 480;
+const HD_RESOLUTION_THRESHOLD = 1920 * 1080;
+const LOW_LIGHT_LUMINANCE_CUTOFF = 45;
+const HIGH_GLARE_LUMINANCE_CUTOFF = 215;
+const LOW_FRAMERATE_CUTOFF = 20;
+const CANVAS_WIDTH = 1280;
+const CANVAS_HEIGHT = 720;
 
 // Client-side Laplacian edge variance calculation for blurriness detection
 const computeLaplacianVariance = (
@@ -93,32 +104,31 @@ const calculateDynamicClarityThreshold = (
   meanLuminance: number,
   trackSettings?: MediaTrackSettings
 ): { threshold: number; reasoning: string } => {
-  const DEFAULT_THRESHOLD = 70.0;
   let multiplier = 1.0;
-  const factors: string[] = ['Base: 70'];
+  const factors: string[] = [`Base: ${DEFAULT_THRESHOLD}`];
 
   // Resolution factor: higher pixel density naturally produces higher variance
   const totalPixels = width * height;
-  if (totalPixels >= 1920 * 1080) {
+  if (totalPixels >= HD_RESOLUTION_THRESHOLD) {
     multiplier *= 1.15;
     factors.push('1080p+ (+15%)');
-  } else if (totalPixels <= 640 * 480) {
+  } else if (totalPixels <= SD_RESOLUTION_THRESHOLD) {
     multiplier *= 0.85;
     factors.push('SD Sensor (-15%)');
   }
 
   // Low-light / night compensation: lower threshold if scene is dark to prevent false alarms
-  if (meanLuminance < 45) {
-    const lowLightScale = Math.max(0.65, meanLuminance / 45);
+  if (meanLuminance < LOW_LIGHT_LUMINANCE_CUTOFF) {
+    const lowLightScale = Math.max(0.65, meanLuminance / LOW_LIGHT_LUMINANCE_CUTOFF);
     multiplier *= lowLightScale;
     factors.push(`Low-Light/Night (${Math.round((lowLightScale - 1) * 100)}%)`);
-  } else if (meanLuminance > 215) {
+  } else if (meanLuminance > HIGH_GLARE_LUMINANCE_CUTOFF) {
     multiplier *= 0.90;
     factors.push('High Glare (-10%)');
   }
 
   // Camera capability check: lower framerate or high exposure time
-  if (trackSettings?.frameRate && trackSettings.frameRate < 20) {
+  if (trackSettings?.frameRate && trackSettings.frameRate < LOW_FRAMERATE_CUTOFF) {
     multiplier *= 0.90;
     factors.push('Low FPS (-10%)');
   }
@@ -130,7 +140,7 @@ const calculateDynamicClarityThreshold = (
   };
 };
 
-export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
+export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
   isOpen,
   onClose,
   onCapture,
@@ -147,8 +157,8 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isUsingFallback, setIsUsingFallback] = useState<boolean>(false);
   const [blurrinessScore, setBlurrinessScore] = useState<number | null>(null);
-  const [activeThreshold, setActiveThreshold] = useState<number>(70.0);
-  const [thresholdReasoning, setThresholdReasoning] = useState<string>('Default: 70');
+  const [activeThreshold, setActiveThreshold] = useState<number>(DEFAULT_THRESHOLD);
+  const [thresholdReasoning, setThresholdReasoning] = useState<string>(`Default: ${DEFAULT_THRESHOLD}`);
   const [isBlurry, setIsBlurry] = useState<boolean>(false);
 
   // Initialize WebRTC Camera Stream
@@ -162,7 +172,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
       setCameraError(null);
       setBlurrinessScore(null);
       setIsBlurry(false);
-      setActiveThreshold(70.0);
+      setActiveThreshold(DEFAULT_THRESHOLD);
       return;
     }
 
@@ -174,8 +184,8 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
         const mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: CANVAS_WIDTH },
+            height: { ideal: CANVAS_HEIGHT },
             facingMode: 'environment' // Back camera for incident capturing
           },
           audio: false
@@ -206,10 +216,8 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
   // Single-Snap Capture with Burn-in Watermark and Dynamic Laplacian Check
   const handleCaptureFrame = useCallback(() => {
     const canvas = canvasRef.current || document.createElement('canvas');
-    const width = 1280;
-    const height = 720;
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
     const ctx = canvas.getContext('2d');
 
     if (!ctx) return;
@@ -223,25 +231,25 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
     }
 
     if (videoRef.current && !isUsingFallback && stream) {
-      ctx.drawImage(videoRef.current, 0, 0, width, height);
+      ctx.drawImage(videoRef.current, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     } else {
       // Synthetic tactical frame when running in headless/mock camera environments
       ctx.fillStyle = '#071522';
-      ctx.fillRect(0, 0, width, height);
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
       // Grid
       ctx.strokeStyle = '#1e293b';
       ctx.lineWidth = 1;
-      for (let x = 0; x < width; x += 80) {
+      for (let x = 0; x < CANVAS_WIDTH; x += 80) {
         ctx.beginPath();
         ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
+        ctx.lineTo(x, CANVAS_HEIGHT);
         ctx.stroke();
       }
-      for (let y = 0; y < height; y += 80) {
+      for (let y = 0; y < CANVAS_HEIGHT; y += 80) {
         ctx.beginPath();
         ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
+        ctx.lineTo(CANVAS_WIDTH, y);
         ctx.stroke();
       }
 
@@ -249,20 +257,20 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
       ctx.strokeStyle = '#e8114c';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(width / 2, height / 2, 120, 0, Math.PI * 2);
+      ctx.arc(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 120, 0, Math.PI * 2);
       ctx.stroke();
 
       ctx.fillStyle = '#f43f5e';
       ctx.font = 'bold 24px monospace';
-      ctx.fillText('RESQTRACK SYNTHETIC SENSOR FRAME', width / 2 - 240, height / 2 - 20);
+      ctx.fillText('RESQTRACK SYNTHETIC SENSOR FRAME', CANVAS_WIDTH / 2 - 240, CANVAS_HEIGHT / 2 - 20);
       ctx.font = '16px monospace';
       ctx.fillStyle = '#94a3b8';
-      ctx.fillText('CAMERA ACCESS RESTRICTED / SYNTHETIC ACTIVE', width / 2 - 210, height / 2 + 30);
+      ctx.fillText('CAMERA ACCESS RESTRICTED / SYNTHETIC ACTIVE', CANVAS_WIDTH / 2 - 210, CANVAS_HEIGHT / 2 + 30);
     }
 
     // Run Laplacian blurriness variance test BEFORE watermark
-    const { variance, meanLuminance } = computeLaplacianVariance(ctx, width, height);
-    const dynamicCheck = calculateDynamicClarityThreshold(width, height, meanLuminance, trackSettings);
+    const { variance, meanLuminance } = computeLaplacianVariance(ctx, CANVAS_WIDTH, CANVAS_HEIGHT);
+    const dynamicCheck = calculateDynamicClarityThreshold(CANVAS_WIDTH, CANVAS_HEIGHT, meanLuminance, trackSettings);
     const blurry = variance < dynamicCheck.threshold;
 
     setBlurrinessScore(variance);
@@ -281,25 +289,25 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
 
     // Bottom Watermark Ribbon
     ctx.fillStyle = 'rgba(7, 21, 34, 0.88)';
-    ctx.fillRect(0, height - 90, width, 90);
+    ctx.fillRect(0, CANVAS_HEIGHT - 90, CANVAS_WIDTH, 90);
 
     ctx.fillStyle = '#e8114c';
-    ctx.fillRect(0, height - 90, width, 3); // Red accent border
+    ctx.fillRect(0, CANVAS_HEIGHT - 90, CANVAS_WIDTH, 3); // Red accent border
 
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 16px "Montserrat", sans-serif';
-    ctx.fillText('RESQTRACK RESCUE TELEMETRY // TAMPER-PROOF VERIFIED EVIDENCE', 24, height - 58);
+    ctx.fillText('RESQTRACK RESCUE TELEMETRY // TAMPER-PROOF VERIFIED EVIDENCE', 24, CANVAS_HEIGHT - 58);
 
     ctx.fillStyle = '#38bdf8';
     ctx.font = '13px "JetBrains Mono", monospace';
-    ctx.fillText(`COORDS: ${latFormatted}, ${lngFormatted}  |  STATUS: ${gpsStatusText}`, 24, height - 34);
+    ctx.fillText(`COORDS: ${latFormatted}, ${lngFormatted}  |  STATUS: ${gpsStatusText}`, 24, CANVAS_HEIGHT - 34);
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = '12px "JetBrains Mono", monospace';
     ctx.fillText(
       `TIME: ${nowIso}  |  CLARITY: ${variance} (TARGET: ${dynamicCheck.threshold}) [${blurry ? 'BLURRY - REQUIRES MANUAL REVIEW' : 'CRISP'}]`,
       24,
-      height - 12
+      CANVAS_HEIGHT - 12
     );
 
     const dataUrl = canvas.toDataURL('image/png');
@@ -353,9 +361,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
           ) : (
             <div className="flex flex-col items-center justify-center p-6 text-center text-slate-400 gap-2">
               <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-rose-500">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
+                <Camera className="w-6 h-6" />
               </div>
               <p className="text-xs font-semibold text-slate-200">Live Camera Standby</p>
               <p className="text-[11px] text-slate-400 max-w-xs">{cameraError || 'Hardware camera unavailable in this environment. Synthetic emergency capture active.'}</p>
@@ -381,7 +387,13 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
               : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
           }`}>
             <div className="flex items-center gap-2">
-              <span className="text-base">{isBlurry ? '⚠️' : '✓'}</span>
+              <span className="text-base">
+                {isBlurry ? (
+                  <AlertTriangle className="w-4 h-4 text-amber-400 inline-block" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 inline-block" />
+                )}
+              </span>
               <div>
                 <p className="font-semibold">
                   {isBlurry
@@ -418,12 +430,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
                 variant="danger"
                 size="md"
                 onClick={handleCaptureFrame}
-                icon={
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
-                    <circle cx="12" cy="12" r="4" fill="currentColor" />
-                  </svg>
-                }
+                icon={<Camera className="w-5 h-5" />}
               >
                 Snap Live Evidence (Single Shot)
               </Button>
@@ -432,11 +439,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
                 variant="success"
                 size="md"
                 onClick={handleConfirmAndSend}
-                icon={
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                  </svg>
-                }
+                icon={<Check className="w-5 h-5" />}
               >
                 Accept & Attach Evidence
               </Button>

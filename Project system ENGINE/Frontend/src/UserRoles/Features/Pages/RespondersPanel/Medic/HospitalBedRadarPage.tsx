@@ -4,6 +4,20 @@
 // Universal lambda expressions (=>).
 
 import React, { useState, useMemo } from 'react';
+import {
+  Building2,
+  Bed,
+  HeartPulse,
+  Activity,
+  PhoneCall,
+  ArrowUpRight,
+  Radio,
+  CheckCircle2,
+  AlertTriangle,
+  AlertCircle,
+  Navigation,
+  Clock
+} from 'lucide-react';
 import { Button } from '@/Shared/Button';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
@@ -178,9 +192,13 @@ export const HospitalBedRadarPage: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Aggregated KPIs
+  // Aggregated KPIs calculated dynamically
   const totalAvailableBays = useMemo(
     () => facilities.reduce((acc, f) => acc + f.traumaBaysAvailable, 0),
+    [facilities]
+  );
+  const totalGridBays = useMemo(
+    () => facilities.reduce((acc, f) => acc + f.traumaBaysTotal, 0),
     [facilities]
   );
   const totalVentilators = useMemo(
@@ -214,12 +232,12 @@ export const HospitalBedRadarPage: React.FC = () => {
 
     setBroadcastLog((prev) => [newLog, ...prev]);
     setIsNotifyModalOpen(false);
-    showToast(`🚨 INBOUND TELEMETRY TRANSMITTED TO ${selectedFacility.name.toUpperCase()} (ETA ${etaMins}m, GCS ${patientGcs})`);
+    showToast(`INBOUND TELEMETRY TRANSMITTED TO ${selectedFacility.name.toUpperCase()} (ETA ${etaMins}m, GCS ${patientGcs})`);
   };
 
   const handleCallHotline = (phone: string, hospitalName: string) => {
     navigator.clipboard?.writeText(phone);
-    showToast(`📞 COPIED & CALLING ${hospitalName} HOTLINE: ${phone}`);
+    showToast(`COPIED & CALLING ${hospitalName} HOTLINE: ${phone}`);
     window.open(`tel:${phone.replace(/[^0-9+]/g, '')}`, '_self');
   };
 
@@ -242,9 +260,7 @@ export const HospitalBedRadarPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-sky-950/80 via-[#0a1a2b] to-slate-950 border border-sky-600/30 shadow-lg">
         <div className="flex items-start gap-4">
           <div className="p-3 rounded-xl bg-sky-600/20 border border-sky-500/40 text-sky-400 shadow-[0_0_15px_rgba(56,189,248,0.3)]">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-            </svg>
+            <Building2 className="w-8 h-8" />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -257,7 +273,7 @@ export const HospitalBedRadarPage: React.FC = () => {
               </span>
             </div>
             <h1 className="text-xl md:text-2xl font-extrabold text-white tracking-wide mt-1">
-              Hospital ER Receiving Radar & Trauma Bay Capacity
+              Hospital ER Receiving Radar &amp; Trauma Bay Capacity
             </h1>
             <p className="text-xs text-sky-200/70 mt-0.5">
               Continuous monitoring of provincial emergency rooms, critical blood reserves, and pre-arrival alerts.
@@ -281,9 +297,11 @@ export const HospitalBedRadarPage: React.FC = () => {
           <span className="text-xs font-semibold text-slate-400">Total Trauma Bays Ready</span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-3xl font-extrabold font-mono text-sky-400">{totalAvailableBays}</span>
-            <span className="text-xs text-slate-400">/ 22 Grid Bays</span>
+            <span className="text-xs text-slate-400">/ {totalGridBays} Grid Bays</span>
           </div>
-          <span className="text-[11px] text-emerald-400 mt-1">✓ Immediate Resuscitation Ready</span>
+          <span className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Immediate Resuscitation Ready
+          </span>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 shadow-sm flex flex-col justify-between">
@@ -292,7 +310,7 @@ export const HospitalBedRadarPage: React.FC = () => {
             <span className="text-3xl font-extrabold font-mono text-emerald-400">{totalVentilators}</span>
             <span className="text-xs text-slate-400">Active Units</span>
           </div>
-          <span className="text-[11px] text-slate-400 mt-1">ZNMC & DMC Critical Care</span>
+          <span className="text-[11px] text-slate-400 mt-1">ZNMC &amp; DMC Critical Care</span>
         </div>
 
         <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 shadow-sm flex flex-col justify-between">
@@ -307,7 +325,7 @@ export const HospitalBedRadarPage: React.FC = () => {
         <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 shadow-sm flex flex-col justify-between">
           <span className="text-xs font-semibold text-slate-400">Active Receiving Facilities</span>
           <div className="flex items-baseline gap-2 mt-2">
-            <span className="text-3xl font-extrabold font-mono text-white">4</span>
+            <span className="text-3xl font-extrabold font-mono text-white">{facilities.length}</span>
             <span className="text-xs text-slate-400">Centers Online</span>
           </div>
           <span className="text-[11px] text-sky-300 mt-1">All hotlines verified 24/7</span>
@@ -319,7 +337,7 @@ export const HospitalBedRadarPage: React.FC = () => {
         {facilities.map((fac) => {
           const isDivert = fac.divertStatus === 'DIVERT';
           const isAdvisory = fac.divertStatus === 'ADVISORY';
-          const traumaBayPercent = Math.round((fac.traumaBaysAvailable / fac.traumaBaysTotal) * 100);
+          const traumaBayPercent = fac.traumaBaysTotal > 0 ? Math.round((fac.traumaBaysAvailable / fac.traumaBaysTotal) * 100) : 0;
 
           return (
             <div
@@ -349,7 +367,7 @@ export const HospitalBedRadarPage: React.FC = () => {
 
                   {/* Status Badge */}
                   <span
-                    className={`px-3 py-1 rounded-full text-xs font-mono font-extrabold tracking-wider border whitespace-nowrap ${
+                    className={`px-3 py-1 rounded-full text-xs font-mono font-extrabold tracking-wider border whitespace-nowrap flex items-center gap-1.5 ${
                       isDivert
                         ? 'bg-red-500/20 text-red-400 border-red-500/50 animate-pulse'
                         : isAdvisory
@@ -357,7 +375,19 @@ export const HospitalBedRadarPage: React.FC = () => {
                         : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
                     }`}
                   >
-                    {isDivert ? '⛔ ER DIVERT' : isAdvisory ? '⚠️ HIGH CENSUS' : '✓ ER OPEN'}
+                    {isDivert ? (
+                      <>
+                        <AlertCircle className="w-3.5 h-3.5" /> ER DIVERT
+                      </>
+                    ) : isAdvisory ? (
+                      <>
+                        <AlertTriangle className="w-3.5 h-3.5" /> HIGH CENSUS
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" /> ER OPEN
+                      </>
+                    )}
                   </span>
                 </div>
 
@@ -404,8 +434,8 @@ export const HospitalBedRadarPage: React.FC = () => {
                 {/* Blood Bank Reserves */}
                 <div className="mt-3 p-3 rounded-lg bg-slate-950/80 border border-slate-800">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                      <span>🩸</span> Blood Bank Reserves
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <HeartPulse className="w-3.5 h-3.5 text-red-400" /> Blood Bank Reserves
                     </span>
                     <span className="text-[10px] font-mono text-slate-500">Cold Chain Verified</span>
                   </div>
@@ -438,27 +468,27 @@ export const HospitalBedRadarPage: React.FC = () => {
                   variant="primary"
                   size="sm"
                   onClick={() => handleOpenNotifyModal(fac)}
-                  className="bg-sky-600 hover:bg-sky-500 text-white shadow-md active:scale-95 flex-1"
+                  className="bg-sky-600 hover:bg-sky-500 text-white shadow-md active:scale-95 flex-1 flex items-center justify-center gap-1.5"
                 >
-                  🚨 Pre-Notify Incoming Patient
+                  <Radio className="w-4 h-4" /> Pre-Notify Incoming Patient
                 </Button>
 
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => handleCallHotline(fac.hotline, fac.name)}
-                  className="border-slate-700 text-slate-300 hover:bg-slate-800 active:scale-95"
+                  className="border-slate-700 text-slate-300 hover:bg-slate-800 active:scale-95 flex items-center gap-1"
                 >
-                  📞 Hotline
+                  <PhoneCall className="w-3.5 h-3.5" /> Hotline
                 </Button>
 
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => handleNavigateToHospital(fac.latitude, fac.longitude)}
-                  className="text-sky-400 hover:text-sky-300 active:scale-95"
+                  className="text-sky-400 hover:text-sky-300 active:scale-95 flex items-center gap-1"
                 >
-                  Route ↗
+                  Route <ArrowUpRight className="w-3.5 h-3.5" />
                 </Button>
               </div>
             </div>
@@ -470,7 +500,7 @@ export const HospitalBedRadarPage: React.FC = () => {
       <div className="p-5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-sm flex flex-col gap-3">
         <div className="flex items-center justify-between border-b border-slate-800 pb-2">
           <h3 className="text-sm font-bold uppercase tracking-wider text-sky-400 flex items-center gap-2">
-            <span>📡</span> Inbound Pre-Arrival Broadcast Audit Log
+            <Radio className="w-4 h-4 text-sky-400" /> Inbound Pre-Arrival Broadcast Audit Log
           </h3>
           <span className="text-xs font-mono text-slate-500">{broadcastLog.length} Transmissions</span>
         </div>
@@ -512,9 +542,9 @@ export const HospitalBedRadarPage: React.FC = () => {
                 variant="primary"
                 size="sm"
                 onClick={handleSendPreNotification}
-                className="bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/40 active:scale-95"
+                className="bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/40 active:scale-95 flex items-center gap-1.5"
               >
-                🚨 Broadcast Inbound Trauma Alert
+                <Radio className="w-4 h-4" /> Broadcast Inbound Trauma Alert
               </Button>
             </div>
           }
@@ -562,7 +592,7 @@ export const HospitalBedRadarPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-[11px] font-semibold text-slate-400 block mb-1">Chief Injuries & Presentation</label>
+              <label className="text-[11px] font-semibold text-slate-400 block mb-1">Chief Injuries &amp; Presentation</label>
               <textarea
                 value={chiefInjuries}
                 onChange={(e) => setChiefInjuries(e.target.value)}
@@ -572,7 +602,7 @@ export const HospitalBedRadarPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-[11px] font-semibold text-slate-400 block mb-1">Airway & Oxygen Status</label>
+              <label className="text-[11px] font-semibold text-slate-400 block mb-1">Airway &amp; Oxygen Status</label>
               <input
                 type="text"
                 value={airwayStatus}

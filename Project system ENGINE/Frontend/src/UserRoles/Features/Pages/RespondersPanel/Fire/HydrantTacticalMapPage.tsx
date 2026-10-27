@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { Droplets, Truck, Search, Gauge, MapPin, Activity } from 'lucide-react';
 
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { formatGpsCoord } from '@/Libs/Assets/formatters';
@@ -419,7 +420,7 @@ export const HydrantTacticalMapPage: React.FC = () => {
             }" style="background-color: ${nfpa.color}; border-color: ${
           isSelected ? '#ffffff' : nfpa.color
         }">
-              <span class="text-white text-xs font-black">🚰</span>
+              <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A10.97 10.97 0 0 0 14 3.02c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a6.98 6.98 0 0 1-11.91 4.97"/></svg>
             </div>
             <span class="mt-0.5 px-1 py-0.2 rounded text-[8px] font-mono font-bold bg-slate-950/90 text-white border border-slate-700 whitespace-nowrap">
               ${hyd.code}
@@ -460,7 +461,7 @@ export const HydrantTacticalMapPage: React.FC = () => {
         className: 'bfp-relay-dest',
         html: `
           <div class="w-7 h-7 rounded-lg bg-orange-600 border-2 border-white flex items-center justify-center shadow-lg animate-pulse">
-            <span class="text-xs">🚒</span>
+            <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-5l-4-4h-3v10"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>
           </div>
         `,
         iconSize: [28, 28],
@@ -481,7 +482,7 @@ export const HydrantTacticalMapPage: React.FC = () => {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900/90 border border-orange-500/30 shadow-xl">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-600 to-blue-800 border-2 border-sky-400 flex items-center justify-center text-3xl shadow-[0_0_20px_rgba(56,189,248,0.5)] flex-shrink-0">
-            🚰
+            <Droplets className="w-8 h-8 text-white" />
           </div>
 
           <div>
@@ -536,7 +537,7 @@ export const HydrantTacticalMapPage: React.FC = () => {
       {/* ------------------------------------------------------------------ */}
       <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-wrap items-center justify-between gap-3 font-mono text-xs">
         <div className="flex items-center gap-3 flex-1 min-w-[260px]">
-          <span className="text-slate-400">🔍</span>
+          <Search className="w-4 h-4 text-slate-400" />
           <input
             type="text"
             value={searchQuery}

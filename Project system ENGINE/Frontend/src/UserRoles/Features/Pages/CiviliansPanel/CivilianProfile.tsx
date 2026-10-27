@@ -4,8 +4,18 @@
 // DO NOT expose raw biometric capture files to unauthorized observers.
 
 import React, { useState, useEffect } from 'react';
+import {
+  Edit2,
+  CheckCircle2,
+  Camera
+} from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
 import { Button } from '@/Shared/Button';
+
+// Architectural constants - Zero hardcoded static numbers
+const MAX_AVATAR_FILE_SIZE_BYTES = 2 * 1024 * 1024;
+const TOAST_NOTIFICATION_MS = 3500;
+const SAVE_PROFILE_TOAST_MS = 4000;
 
 interface EmergencyMedicalProfile {
   bloodType: string;
@@ -54,9 +64,9 @@ export const CivilianProfile: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
+    if (file.size > MAX_AVATAR_FILE_SIZE_BYTES) {
       setSaveSuccessToast('Avatar image exceeds 2MB limit.');
-      setTimeout(() => setSaveSuccessToast(null), 3500);
+      setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
       return;
     }
 
@@ -71,7 +81,7 @@ export const CivilianProfile: React.FC = () => {
           new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: dataUrl } })
         );
         setSaveSuccessToast('Identity photo uploaded and synchronized across portals.');
-        setTimeout(() => setSaveSuccessToast(null), 3500);
+        setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
       } catch (err) {
         console.error('Failed to save civilian avatar', err);
       }
@@ -88,7 +98,7 @@ export const CivilianProfile: React.FC = () => {
         new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } })
       );
       setSaveSuccessToast('Reverted to default resident photo avatar.');
-      setTimeout(() => setSaveSuccessToast(null), 3500);
+      setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
     } catch (err) {
       console.error('Failed to reset avatar', err);
     }
@@ -112,7 +122,7 @@ export const CivilianProfile: React.FC = () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
       setIsEditing(false);
       setSaveSuccessToast('Emergency medical & next-of-kin profile saved to encrypted local vault.');
-      setTimeout(() => setSaveSuccessToast(null), 4000);
+      setTimeout(() => setSaveSuccessToast(null), SAVE_PROFILE_TOAST_MS);
     } catch (err) {
       console.error('Failed to save profile:', err);
     }
@@ -138,14 +148,15 @@ export const CivilianProfile: React.FC = () => {
           onClick={() => setIsEditing((prev) => !prev)}
           className="self-start sm:self-auto px-4 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sky-400 hover:text-white text-xs font-mono font-bold flex items-center gap-1.5 transition-colors"
         >
-          <span>{isEditing ? 'Cancel Edit' : '✎ Edit Emergency Details'}</span>
+          <Edit2 className="w-3.5 h-3.5" />
+          <span>{isEditing ? 'Cancel Edit' : 'Edit Emergency Details'}</span>
         </button>
       </div>
 
       {/* 2. Success Toast */}
       {saveSuccessToast && (
         <div className="p-3.5 rounded-xl bg-emerald-950/95 border border-emerald-500 text-emerald-200 text-xs font-medium flex items-center gap-3 shadow-lg shadow-emerald-950/50">
-          <span className="text-base font-bold">✓</span>
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <span>{saveSuccessToast}</span>
         </div>
       )}
@@ -172,10 +183,7 @@ export const CivilianProfile: React.FC = () => {
                 className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white text-[10px] font-mono font-bold"
                 title="Upload Photo"
               >
-                <svg className="w-5 h-5 mb-0.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                  <circle cx="12" cy="13" r="4" />
-                </svg>
+                <Camera className="w-5 h-5 mb-0.5 text-emerald-400" />
                 <span>PHOTO</span>
                 <input
                   type="file"
@@ -191,7 +199,7 @@ export const CivilianProfile: React.FC = () => {
                 <h2 className="text-lg font-bold text-white">{session?.fullName || 'Registered Resident'}</h2>
                 {session?.faceVerified ? (
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-600/50 text-[10px] font-mono font-bold flex items-center gap-1">
-                    <span>✓</span>
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                     <span>BIOMETRICALLY VERIFIED</span>
                   </span>
                 ) : (
@@ -205,7 +213,8 @@ export const CivilianProfile: React.FC = () => {
               {/* Upload photo / Reset actions */}
               <div className="flex items-center gap-3 mt-1.5">
                 <label className="text-[11px] font-mono font-bold text-emerald-400 hover:text-emerald-300 cursor-pointer flex items-center gap-1">
-                  <span>📷 Upload Photo</span>
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Upload Photo</span>
                   <input
                     type="file"
                     accept="image/*"
