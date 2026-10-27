@@ -20,3 +20,6 @@ export * from './ResQTrackSvgSprite';
 export * from './Charts';
 export * from './TableCardToggle';
 export * from './ToggleDrawerSidebarMenu';
+export * from './PatientCareRecordModal';
+export * from './FireAlarmEscalationModal';
+export * from './PoliceBlotterModal';
