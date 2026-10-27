@@ -115,11 +115,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       category: 'MEDICAL TRIAGE'
     };
     menuItems = [
-      { to: '/responder/dashboard', label: 'EMS Trauma Hub', icon: HeartPulse },
+      { to: '/responder/dashboard', label: 'EMS Trauma Board', icon: HeartPulse },
       { to: '/responder/incidents', label: 'Casualty Dispatches', icon: AlertTriangle },
-      { to: '/responder/pcr', label: 'Patient Care Record (PCR)', icon: FileText },
-      { to: '/responder/hospital-radar', label: 'Hospital ER Radar', icon: Building2 },
       { to: '/responder/roster', label: 'Ambulance Crew', icon: Users },
+      { to: '/responder/my-reports', label: 'Patient Logs', icon: FileText },
       { to: '/responder/alerts', label: 'Hospital ER Alarms', icon: Bell },
       { to: '/responder/profile', label: 'Medic Credentials', icon: User }
     ];
@@ -134,13 +133,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
     menuItems = [
       { to: '/responder/dashboard', label: 'Fire Command Hub', icon: Flame },
-      { to: '/responder/incidents', label: 'Fire Ground Dispatches', icon: AlertTriangle },
-      { to: '/responder/hydrants', label: 'Hydrant Tactical Map', icon: MapPin },
-      { to: '/responder/apparatus', label: 'Apparatus Telemetry', icon: Truck },
-      { to: '/responder/hazmat', label: 'Hazmat Chemical Guide', icon: ShieldAlert },
-      { to: '/responder/aar', label: 'After-Action Reports', icon: Award },
-      { to: '/responder/roster', label: 'Engine Company Roster', icon: Users },
-      { to: '/responder/profile', label: 'Firefighter Credentials', icon: User }
+      { to: '/responder/incidents', label: 'Hazmat & 2-Alarm', icon: AlertTriangle },
+      { to: '/responder/roster', label: 'Engine Apparatus', icon: Truck },
+      { to: '/responder/my-reports', label: 'After-Action Logs', icon: FileText },
+      { to: '/responder/alerts', label: 'Station Alarms', icon: Bell },
+      { to: '/responder/profile', label: 'Officer Profile', icon: User }
     ];
   } else if (isResponder && (normUnit === 'PNP' || normUnit === 'SECURITY')) {
     agencyInfo = {
@@ -153,13 +150,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
     menuItems = [
       { to: '/responder/dashboard', label: 'Sector Patrol Hub', icon: Shield },
-      { to: '/responder/incidents', label: 'Crime & Disturbance Feed', icon: AlertTriangle },
-      { to: '/responder/blotter', label: 'Digital Police Blotter', icon: FileText },
-      { to: '/responder/perimeter', label: 'Tactical Perimeter & Beats', icon: Compass },
-      { to: '/responder/evidence', label: 'Evidence & Chain of Custody', icon: Lock },
+      { to: '/responder/incidents', label: 'Blotter & Dispatches', icon: AlertTriangle },
       { to: '/responder/roster', label: 'Patrol Beat Roster', icon: Users },
-      { to: '/responder/alerts', label: 'Tactical Alarms', icon: Bell },
-      { to: '/responder/profile', label: 'Officer Credentials & Armory', icon: User }
+      { to: '/responder/my-reports', label: 'Police Action Logs', icon: FileText },
+      { to: '/responder/alerts', label: 'Distress Alarms', icon: Bell },
+      { to: '/responder/profile', label: 'Officer Credentials', icon: User }
     ];
   } else if (isResponder) {
     agencyInfo = {

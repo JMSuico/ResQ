@@ -258,8 +258,9 @@ export const ResponderProfile: React.FC = () => {
 
             {/* Upload photo / Reset actions */}
             <div className="flex items-center gap-3 mt-1.5">
-              <label className="text-[11px] font-mono font-bold text-sky-400 hover:text-sky-300 cursor-pointer flex items-center gap-1">
-                <span>📷 Upload Photo</span>
+              <label className="text-[11px] font-mono font-bold text-sky-400 hover:text-sky-300 cursor-pointer flex items-center gap-1.5">
+                <Camera className="w-3.5 h-3.5" />
+                <span>Upload Photo</span>
                 <input
                   type="file"
                   accept="image/*"

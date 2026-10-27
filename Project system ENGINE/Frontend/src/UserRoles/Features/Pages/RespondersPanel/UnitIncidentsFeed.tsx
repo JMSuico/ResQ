@@ -14,6 +14,27 @@ import { SearchBar } from '@/Shared/SearchBar';
 import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
 import { formatIsoTimestamp, formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
+import {
+  Ambulance,
+  Flame,
+  Shield,
+  AlertTriangle,
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  MapPin,
+  Building,
+  User,
+  Navigation,
+  Camera,
+  Radio,
+  Search,
+  Check,
+  Zap,
+  Eye,
+  Lock,
+  ArrowUpRight
+} from 'lucide-react';
 
 export const UnitIncidentsFeed: React.FC = () => {
   const { session } = useSession();
@@ -86,7 +107,7 @@ export const UnitIncidentsFeed: React.FC = () => {
           label: 'RHU EMERGENCY MEDICAL SERVICES',
           code: 'RHU-EMS',
           badgeClass: 'bg-sky-500/20 text-sky-300 border-sky-500/50',
-          icon: '🚑',
+          icon: Ambulance,
           accent: 'border-l-sky-500'
         };
       case 'FIRE':
@@ -94,7 +115,7 @@ export const UnitIncidentsFeed: React.FC = () => {
           label: 'BFP BUREAU OF FIRE PROTECTION',
           code: 'BFP-FIRE',
           badgeClass: 'bg-orange-500/20 text-orange-300 border-orange-500/50',
-          icon: '🚒',
+          icon: Flame,
           accent: 'border-l-orange-500'
         };
       case 'PNP':
@@ -102,7 +123,7 @@ export const UnitIncidentsFeed: React.FC = () => {
           label: 'PNP POLICE TACTICAL DISPATCH',
           code: 'PNP-POL',
           badgeClass: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50',
-          icon: '🚓',
+          icon: Shield,
           accent: 'border-l-indigo-500'
         };
       default:
@@ -110,7 +131,7 @@ export const UnitIncidentsFeed: React.FC = () => {
           label: 'MUNICIPAL TACTICAL DISPATCH FORCE',
           code: 'LDRRMO',
           badgeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/50',
-          icon: '🚨',
+          icon: AlertTriangle,
           accent: 'border-l-rose-500'
         };
     }
@@ -167,8 +188,9 @@ export const UnitIncidentsFeed: React.FC = () => {
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className={`px-2.5 py-0.5 rounded text-[11px] font-mono font-black border uppercase tracking-wider ${agencyBadge.badgeClass}`}>
-                {agencyBadge.icon} {agencyBadge.label}
+              <span className={`px-2.5 py-0.5 rounded text-[11px] font-mono font-black border uppercase tracking-wider inline-flex items-center gap-1.5 ${agencyBadge.badgeClass}`}>
+                <agencyBadge.icon className="w-3.5 h-3.5" />
+                <span>{agencyBadge.label}</span>
               </span>
               <span className="text-slate-600 font-mono">|</span>
               <span className="text-xs font-mono font-bold text-sky-400">UNIT INCIDENTS FEED</span>
@@ -217,33 +239,36 @@ export const UnitIncidentsFeed: React.FC = () => {
             </button>
             <button
               onClick={() => setFilterMode('CRITICAL')}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg border font-bold transition-all inline-flex items-center gap-1.5 ${
                 filterMode === 'CRITICAL'
                   ? 'bg-rose-600 text-white border-rose-400 shadow-[0_0_10px_rgba(239,68,68,0.5)]'
                   : 'bg-slate-950 text-rose-400 border-rose-900/50 hover:border-rose-800'
               }`}
             >
-              🚨 CRITICAL / SEVERE ({criticalCount})
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>CRITICAL / SEVERE ({criticalCount})</span>
             </button>
             <button
               onClick={() => setFilterMode('ACTIVE')}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg border font-bold transition-all inline-flex items-center gap-1.5 ${
                 filterMode === 'ACTIVE'
                   ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
                   : 'bg-slate-950 text-amber-400 border-amber-900/50 hover:border-amber-800'
               }`}
             >
-              ⚡ ACTIVE QUEUE ({activeCount})
+              <Zap className="w-3.5 h-3.5" />
+              <span>ACTIVE QUEUE ({activeCount})</span>
             </button>
             <button
               onClick={() => setFilterMode('RESOLVED')}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg border font-bold transition-all inline-flex items-center gap-1.5 ${
                 filterMode === 'RESOLVED'
                   ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.5)]'
                   : 'bg-slate-950 text-emerald-400 border-emerald-900/50 hover:border-emerald-800'
               }`}
             >
-              ✓ RESOLVED ({resolvedCount})
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>RESOLVED ({resolvedCount})</span>
             </button>
           </div>
 
@@ -267,7 +292,7 @@ export const UnitIncidentsFeed: React.FC = () => {
           </div>
         ) : filteredIncidents.length === 0 ? (
           <div className="tactical-card p-12 text-center bg-slate-900/60 border border-slate-800 rounded-xl">
-            <div className="text-3xl mb-2">📡</div>
+            <Radio className="w-8 h-8 mx-auto mb-2 text-slate-500" />
             <h3 className="text-base font-bold text-white font-mono">ALL ASSIGNED QUEUES CLEAR</h3>
             <p className="text-xs text-slate-400 font-mono mt-1">
               No emergency incidents found matching filter [{filterMode}]. Standing by on frequency.
@@ -366,19 +391,21 @@ export const UnitIncidentsFeed: React.FC = () => {
                         />
                         <div
                           onClick={() => setLightboxImageUrl(inc.imageUrl || null)}
-                          className="absolute inset-0 bg-slate-950/40 group-hover:bg-transparent rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs font-mono font-bold text-sky-300"
+                          className="absolute inset-0 bg-slate-950/40 group-hover:bg-transparent rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs font-mono font-bold text-sky-300 gap-1"
                         >
-                          🔍 ZOOM
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>ZOOM</span>
                         </div>
                         {inc.isHardwareGeolocated && (
-                          <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-slate-950/90 border border-emerald-500 text-[9px] font-mono text-emerald-400 font-bold">
-                            🛰️ LOCKED
+                          <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-slate-950/90 border border-emerald-500 text-[9px] font-mono text-emerald-400 font-bold inline-flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" />
+                            <span>LOCKED</span>
                           </span>
                         )}
                       </div>
                     ) : (
                       <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-lg bg-slate-950 border-2 border-slate-800 flex flex-col items-center justify-center text-slate-500">
-                        <span className="text-2xl mb-1">{agencyBadge.icon}</span>
+                        <agencyBadge.icon className="w-7 h-7 mb-1 text-slate-400" />
                         <span className="text-[10px] font-mono text-slate-400 font-bold">NO PHOTO</span>
                       </div>
                     )}
@@ -393,8 +420,9 @@ export const UnitIncidentsFeed: React.FC = () => {
                       </span>
 
                       {/* Agency Badge */}
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black border uppercase tracking-wider ${agencyBadge.badgeClass}`}>
-                        {agencyBadge.icon} {session?.unit || 'RHU'}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black border uppercase tracking-wider inline-flex items-center gap-1 ${agencyBadge.badgeClass}`}>
+                        <agencyBadge.icon className="w-3 h-3" />
+                        <span>{session?.unit || 'RHU'}</span>
                       </span>
 
                       {/* Severity Chip (CRITICAL, SEVERE, MODERATE) */}
@@ -407,8 +435,9 @@ export const UnitIncidentsFeed: React.FC = () => {
                       </span>
 
                       {inc.isBlurry && (
-                        <span className="px-2 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-500 text-[10px] font-mono font-bold">
-                          ⚠️ VERIFY IMAGE
+                        <span className="px-2 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-500 text-[10px] font-mono font-bold inline-flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-amber-400" />
+                          <span>VERIFY IMAGE</span>
                         </span>
                       )}
                     </div>
@@ -427,7 +456,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-y-1.5 gap-x-4 mt-3 text-xs font-mono text-slate-400 pt-2 border-t border-slate-800/80">
                       {/* Interactive Map Coordinates */}
                       <div className="flex items-center gap-1 text-sky-300 font-bold">
-                        <span>📍</span>
+                        <MapPin className="w-3.5 h-3.5 text-sky-400" />
                         <span
                           onClick={() => copyCoordinates(inc.latitude, inc.longitude)}
                           className="hover:underline cursor-pointer tracking-wider"
@@ -438,13 +467,20 @@ export const UnitIncidentsFeed: React.FC = () => {
                       </div>
 
                       {inc.locationLabel && (
-                        <span className="text-slate-300 truncate max-w-xs">
-                          🏢 {inc.locationLabel}
+                        <span className="text-slate-300 truncate max-w-xs inline-flex items-center gap-1">
+                          <Building className="w-3 h-3 text-slate-500" />
+                          <span>{inc.locationLabel}</span>
                         </span>
                       )}
 
-                      <span>👤 {inc.reporterName || 'Civilian Resident'}</span>
-                      <span className="text-slate-400">🕒 {formatRelativeTime(inc.createdAt)}</span>
+                      <span className="inline-flex items-center gap-1">
+                        <User className="w-3 h-3 text-slate-500" />
+                        <span>{inc.reporterName || 'Civilian Resident'}</span>
+                      </span>
+                      <span className="text-slate-400 inline-flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-slate-500" />
+                        <span>{formatRelativeTime(inc.createdAt)}</span>
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -452,14 +488,13 @@ export const UnitIncidentsFeed: React.FC = () => {
                 {/* Right: Quick Action Progression Triggers */}
                 <div className="flex flex-wrap items-center gap-2.5 w-full xl:w-auto justify-end pt-3 xl:pt-0 border-t xl:border-t-0 border-slate-800">
                   {/* Quick Navigation Trigger */}
-                  {/* Quick Navigation Trigger */}
                   <button
                     type="button"
                     onClick={() => handleQuickNavigate(inc.latitude, inc.longitude)}
                     className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-500/40 text-xs font-mono font-bold uppercase tracking-wider active:scale-95 transition-all shadow-md"
                     title="Launch external GPS navigation route"
                   >
-                    <span>🧭</span>
+                    <Navigation className="w-3.5 h-3.5" />
                     <span>NAVIGATE GPS</span>
                   </button>
 
@@ -473,7 +508,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                     className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-500/50 text-xs font-mono font-bold uppercase tracking-wider active:scale-95 transition-all shadow-md"
                     title="Request cross-agency backup"
                   >
-                    <span>🛡️</span>
+                    <Shield className="w-3.5 h-3.5" />
                     <span>CALL BACKUP</span>
                   </button>
 
@@ -484,7 +519,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       onClick={() => setLightboxImageUrl(inc.imageUrl || null)}
                       className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-mono font-bold uppercase tracking-wider active:scale-95 transition-all"
                     >
-                      <span>📸</span>
+                      <Camera className="w-3.5 h-3.5" />
                       <span>EVIDENCE</span>
                     </button>
                   )}
@@ -496,7 +531,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       onClick={() => handleStatusProgression(inc.id, 'EnRoute')}
                       className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono text-xs font-black uppercase tracking-wider border border-white shadow-[0_0_15px_rgba(245,158,11,0.5)] active:scale-95 transition-all"
                     >
-                      <span>🚨</span>
+                      <AlertTriangle className="w-4 h-4" />
                       <span>DEPLOY EN ROUTE</span>
                     </button>
                   )}
@@ -507,7 +542,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       onClick={() => handleStatusProgression(inc.id, 'OnScene')}
                       className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono text-xs font-black uppercase tracking-wider border border-white shadow-[0_0_15px_rgba(34,211,238,0.5)] active:scale-95 transition-all"
                     >
-                      <span>📍</span>
+                      <MapPin className="w-4 h-4" />
                       <span>ARRIVED ON SCENE</span>
                     </button>
                   )}
@@ -518,14 +553,14 @@ export const UnitIncidentsFeed: React.FC = () => {
                       onClick={() => handleStatusProgression(inc.id, 'Resolved')}
                       className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono text-xs font-black uppercase tracking-wider border border-white shadow-[0_0_15px_rgba(16,185,129,0.5)] active:scale-95 transition-all"
                     >
-                      <span>✓</span>
+                      <CheckCircle2 className="w-4 h-4" />
                       <span>COMPLETE &amp; RESOLVED</span>
                     </button>
                   )}
 
                   {inc.status === 'Resolved' && (
                     <div className="px-3 py-2 rounded-lg bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 font-mono text-xs font-bold flex items-center gap-1.5">
-                      <span>✓</span>
+                      <CheckCircle2 className="w-4 h-4" />
                       <span>MISSION COMPLETE</span>
                     </div>
                   )}
@@ -581,9 +616,10 @@ export const UnitIncidentsFeed: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleQuickNavigate(inc.latitude, inc.longitude)}
-                        className="px-2 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px]"
+                        className="px-2 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] inline-flex items-center gap-1"
                       >
-                        Navigate ↗
+                        <span>Navigate</span>
+                        <ArrowUpRight className="w-3 h-3" />
                       </button>
                       <button
                         type="button"
@@ -591,9 +627,10 @@ export const UnitIncidentsFeed: React.FC = () => {
                           setBackupModalIncident(inc);
                           setBackupNote(`Requesting immediate backup support at ${inc.locationLabel || 'Incident Location'}`);
                         }}
-                        className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px]"
+                        className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] inline-flex items-center gap-1"
                       >
-                        Backup 🛡️
+                        <span>Backup</span>
+                        <Shield className="w-3 h-3" />
                       </button>
                     </div>
                   </td>
@@ -637,13 +674,16 @@ export const UnitIncidentsFeed: React.FC = () => {
                     key={ag}
                     type="button"
                     onClick={() => setBackupAgency(ag)}
-                    className={`py-2 px-3 rounded-lg font-mono text-xs font-bold border transition-all ${
+                    className={`py-2 px-3 rounded-lg font-mono text-xs font-bold border transition-all inline-flex items-center justify-center gap-1.5 ${
                       backupAgency === ag
                         ? 'bg-indigo-600 text-white border-white shadow-lg'
                         : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    {ag === 'RHU' ? '🚑 RHU Medics' : ag === 'FIRE' ? '🚒 BFP Fire' : '🚓 PNP Police'}
+                    {ag === 'RHU' && <Ambulance className="w-3.5 h-3.5" />}
+                    {ag === 'FIRE' && <Flame className="w-3.5 h-3.5" />}
+                    {ag === 'PNP' && <Shield className="w-3.5 h-3.5" />}
+                    <span>{ag === 'RHU' ? 'RHU Medics' : ag === 'FIRE' ? 'BFP Fire' : 'PNP Police'}</span>
                   </button>
                 ))}
               </div>
@@ -676,7 +716,8 @@ export const UnitIncidentsFeed: React.FC = () => {
                   setBackupModalIncident(null);
                 }}
               >
-                Transmit Backup Request 📡
+                <Radio className="w-3.5 h-3.5 inline mr-1" />
+                <span>Transmit Backup Request</span>
               </Button>
             </div>
           </div>

@@ -13,6 +13,18 @@ import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
 import { Button } from '@/Shared/Button';
 import { formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
+import {
+  Ambulance,
+  Flame,
+  Shield,
+  AlertTriangle,
+  ClipboardList,
+  Phone,
+  Users,
+  MapPin,
+  Navigation,
+  ArrowUpRight
+} from 'lucide-react';
 
 export const DutyRosterView: React.FC = () => {
   const { session } = useSession();
@@ -121,25 +133,25 @@ export const DutyRosterView: React.FC = () => {
         return {
           label: 'RHU MEDICAL',
           color: 'bg-sky-500/20 text-sky-300 border-sky-500/50',
-          icon: '🚑'
+          icon: Ambulance
         };
       case 'FIRE':
         return {
           label: 'BFP FIRE',
           color: 'bg-orange-500/20 text-orange-300 border-orange-500/50',
-          icon: '🚒'
+          icon: Flame
         };
       case 'PNP':
         return {
           label: 'PNP POLICE',
           color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50',
-          icon: '🚓'
+          icon: Shield
         };
       default:
         return {
           label: 'LDRRMO COMMAND',
           color: 'bg-rose-500/20 text-rose-300 border-rose-500/50',
-          icon: '🚨'
+          icon: AlertTriangle
         };
     }
   };
@@ -373,7 +385,8 @@ export const DutyRosterView: React.FC = () => {
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pt-2 border-b border-slate-800 pb-3">
           <div className="flex items-center gap-3">
             <h2 className="text-base font-black font-sans text-white tracking-wide uppercase flex items-center gap-2">
-              <span>🛡️ MUNICIPAL RESPONSE AGENCY FLEET</span>
+              <Shield className="w-4 h-4 text-sky-400" />
+              <span>MUNICIPAL RESPONSE AGENCY FLEET</span>
               <span className="px-2 py-0.5 rounded bg-slate-800 text-sky-400 font-mono text-[11px]">
                 {searchedRoster.length} UNITS
               </span>
@@ -382,9 +395,10 @@ export const DutyRosterView: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsHandoverOpen(true)}
-              className="px-3 py-1 rounded-lg bg-emerald-950 border border-emerald-500/60 text-emerald-300 font-mono text-xs font-bold hover:bg-emerald-900 transition-colors"
+              className="px-3 py-1 rounded-lg bg-emerald-950 border border-emerald-500/60 text-emerald-300 font-mono text-xs font-bold hover:bg-emerald-900 transition-colors inline-flex items-center gap-1.5"
             >
-              📋 LOG SHIFT HANDOVER
+              <ClipboardList className="w-3.5 h-3.5" />
+              <span>LOG SHIFT HANDOVER</span>
             </button>
           </div>
 
@@ -403,33 +417,36 @@ export const DutyRosterView: React.FC = () => {
               </button>
               <button
                 onClick={() => setAgencyFilter('RHU')}
-                className={`px-3 py-1 rounded border transition-colors ${
+                className={`px-3 py-1 rounded border transition-colors inline-flex items-center gap-1 ${
                   agencyFilter === 'RHU'
                     ? 'bg-sky-600 text-white border-sky-400 font-bold'
                     : 'bg-slate-900 text-sky-400 border-slate-700 hover:bg-slate-800'
                 }`}
               >
-                🚑 RHU
+                <Ambulance className="w-3 h-3" />
+                <span>RHU</span>
               </button>
               <button
                 onClick={() => setAgencyFilter('FIRE')}
-                className={`px-3 py-1 rounded border transition-colors ${
+                className={`px-3 py-1 rounded border transition-colors inline-flex items-center gap-1 ${
                   agencyFilter === 'FIRE'
                     ? 'bg-orange-600 text-white border-orange-400 font-bold'
                     : 'bg-slate-900 text-orange-400 border-slate-700 hover:bg-slate-800'
                 }`}
               >
-                🚒 FIRE
+                <Flame className="w-3 h-3" />
+                <span>FIRE</span>
               </button>
               <button
                 onClick={() => setAgencyFilter('PNP')}
-                className={`px-3 py-1 rounded border transition-colors ${
+                className={`px-3 py-1 rounded border transition-colors inline-flex items-center gap-1 ${
                   agencyFilter === 'PNP'
                     ? 'bg-indigo-600 text-white border-indigo-400 font-bold'
                     : 'bg-slate-900 text-indigo-400 border-slate-700 hover:bg-slate-800'
                 }`}
               >
-                🚓 PNP
+                <Shield className="w-3 h-3" />
+                <span>PNP</span>
               </button>
             </div>
 
@@ -475,8 +492,9 @@ export const DutyRosterView: React.FC = () => {
                     {/* Header Row */}
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black border uppercase tracking-wider ${badge.color}`}>
-                          {badge.icon} {badge.label}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black border uppercase tracking-wider inline-flex items-center gap-1 ${badge.color}`}>
+                          <badge.icon className="w-3 h-3" />
+                          <span>{badge.label}</span>
                         </span>
                         <span className="font-mono text-xs font-bold text-sky-400">[{u.unitName || u.unitCode}]</span>
                       </div>
@@ -513,15 +531,17 @@ export const DutyRosterView: React.FC = () => {
                         <span className="text-slate-500 block text-[10px]">HOTLINE</span>
                         <a
                           href={`tel:${u.contactHotline}`}
-                          className="text-sky-400 hover:underline font-bold"
+                          className="text-sky-400 hover:underline font-bold inline-flex items-center gap-1"
                         >
-                          📞 {u.contactHotline}
+                          <Phone className="w-3 h-3 text-sky-400" />
+                          <span>{u.contactHotline}</span>
                         </a>
                       </div>
                       <div>
                         <span className="text-slate-500 block text-[10px]">CREW STRENGTH</span>
-                        <span className="text-emerald-400 font-bold">
-                          🛡️ {u.activePersonnelCount} PERSONNEL
+                        <span className="text-emerald-400 font-bold inline-flex items-center gap-1">
+                          <Users className="w-3 h-3 text-emerald-400" />
+                          <span>{u.activePersonnelCount} PERSONNEL</span>
                         </span>
                       </div>
                     </div>
@@ -531,18 +551,19 @@ export const DutyRosterView: React.FC = () => {
                   <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between font-mono text-xs">
                     <span
                       onClick={() => copyCoordinates(u.baseLatitude, u.baseLongitude)}
-                      className="text-slate-400 hover:text-sky-300 cursor-pointer truncate max-w-[200px]"
+                      className="text-slate-400 hover:text-sky-300 cursor-pointer truncate max-w-[200px] inline-flex items-center gap-1"
                       title="Click to copy base coordinates"
                     >
-                      📍 {formatGpsCoord(u.baseLatitude, u.baseLongitude)}
+                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{formatGpsCoord(u.baseLatitude, u.baseLongitude)}</span>
                     </span>
 
                     <button
                       type="button"
                       onClick={() => handleQuickNavigate(u.baseLatitude, u.baseLongitude)}
-                      className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-500/40 text-[11px] font-mono font-bold tracking-wider active:scale-95 transition-all"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-500/40 text-[11px] font-mono font-bold tracking-wider active:scale-95 transition-all"
                     >
-                      <span>🧭</span>
+                      <Navigation className="w-3 h-3" />
                       <span>NAVIGATE</span>
                     </button>
                   </div>
@@ -571,8 +592,9 @@ export const DutyRosterView: React.FC = () => {
                     <tr key={u.id} className="hover:bg-slate-900/60 transition-colors">
                       <td className="p-3.5 text-sky-400 font-bold whitespace-nowrap">{u.unitName || u.unitCode}</td>
                       <td className="p-3.5 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${badge.color}`}>
-                          {badge.icon} {badge.label}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border inline-flex items-center gap-1 ${badge.color}`}>
+                          <badge.icon className="w-3 h-3" />
+                          <span>{badge.label}</span>
                         </span>
                       </td>
                       <td className="p-3.5 whitespace-nowrap">
@@ -590,18 +612,23 @@ export const DutyRosterView: React.FC = () => {
                       </td>
                       <td className="p-3.5 text-white font-sans font-medium">{u.commanderName}</td>
                       <td className="p-3.5 text-sky-400">
-                        <a href={`tel:${u.contactHotline}`} className="hover:underline">
-                          {u.contactHotline}
+                        <a href={`tel:${u.contactHotline}`} className="hover:underline inline-flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-sky-400" />
+                          <span>{u.contactHotline}</span>
                         </a>
                       </td>
-                      <td className="p-3.5 text-emerald-400 font-bold">{u.activePersonnelCount} Officers</td>
+                      <td className="p-3.5 text-emerald-400 font-bold inline-flex items-center gap-1">
+                        <Users className="w-3 h-3 text-emerald-400" />
+                        <span>{u.activePersonnelCount} Officers</span>
+                      </td>
                       <td className="p-3.5 text-right whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => handleQuickNavigate(u.baseLatitude, u.baseLongitude)}
-                          className="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] transition-colors"
+                          className="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] transition-colors inline-flex items-center gap-1"
                         >
-                          Navigate 🧭
+                          <span>Navigate</span>
+                          <Navigation className="w-3 h-3" />
                         </button>
                       </td>
                     </tr>
