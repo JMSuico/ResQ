@@ -34,6 +34,7 @@ import { requestJson } from '@/Endpoints/apiClient';
 import { SatelliteCommandMap, MapMarker } from '@/Shared/SatelliteCommandMap';
 import { Button, Dropdown } from '@/Shared';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
+import { useReportEventBus } from '@/Hooks/useReportEventBus';
 
 export interface NearestUnitResult {
   unit: DutyUnit;
@@ -146,6 +147,10 @@ export const StrategicMapPage: FC = () => {
   }, [loadData]);
 
   const { isRefreshing, refreshNow } = useValueRefreshAuto(loadData, { intervalMs: 7000 });
+
+  useReportEventBus(() => {
+    void loadData();
+  });
 
   // Map markers: combines fixtures, incident pins, and active responder unit locations
   const markers: MapMarker[] = useMemo(() => [

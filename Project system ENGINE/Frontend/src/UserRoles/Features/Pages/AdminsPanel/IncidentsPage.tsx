@@ -182,6 +182,9 @@ export const IncidentsPage: FC = () => {
     try {
       await verifyReport(incident.id, status, `Verified by LDRRMO Admin at ${new Date().toLocaleTimeString()}`);
       showToast(`Incident "${incident.referenceCode || incident.title}" status updated to ${status}.`);
+      try {
+        window.dispatchEvent(new CustomEvent('resqtrack:report'));
+      } catch {}
       await loadData();
     } catch (err) {
       console.error('[IncidentsPage] Verification error:', err);
@@ -208,6 +211,9 @@ export const IncidentsPage: FC = () => {
     try {
       await allocateReportUnit(activeDispatchIncident.id, unitTargetId);
       showToast(`Tactical Unit "${chosen?.unitName || chosen?.unitCode || unitTargetId}" allocated to ${activeDispatchIncident.title}.`);
+      try {
+        window.dispatchEvent(new CustomEvent('resqtrack:report'));
+      } catch {}
       setActiveDispatchIncident(null);
       setSelectedResponderId('');
       await loadData();

@@ -116,6 +116,9 @@ export const RespondersRosterPage: FC = () => {
       setRoster((prev) =>
         prev.map((u) => (u.id === unitId ? { ...u, status: newStatus, updatedAt: new Date().toISOString() } : u))
       );
+      try {
+        window.dispatchEvent(new CustomEvent('resqtrack:report'));
+      } catch {}
       showToast(`Unit duty status updated to ${newStatus}.`);
     } catch (err) {
       console.error('[RespondersRosterPage] Failed to update unit duty status:', err);
