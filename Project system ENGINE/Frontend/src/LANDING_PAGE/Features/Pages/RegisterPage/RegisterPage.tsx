@@ -814,12 +814,7 @@ export const RegisterPage: React.FC = () => {
                           <img src={idFrontShot} alt="Front ID" style={{ maxHeight: '90px', borderRadius: '4px' }} />
                         ) : (
                           <div className="text-center font-mono text-[10px] text-slate-400">
-                            <svg className="w-5 h-5 mx-auto mb-1 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                              <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth="2" />
-                              <circle cx="9" cy="10" r="2" strokeWidth="2" />
-                              <line x1="15" y1="8" x2="17" y2="8" strokeWidth="2" />
-                              <line x1="15" y1="12" x2="17" y2="12" strokeWidth="2" />
-                            </svg>
+                            <CreditCard className="w-5 h-5 mx-auto mb-1 text-slate-500" />
                             <span>Front capture pending</span>
                           </div>
                         )}
@@ -858,11 +853,7 @@ export const RegisterPage: React.FC = () => {
                           <img src={idBackShot} alt="Back ID" style={{ maxHeight: '90px', borderRadius: '4px' }} />
                         ) : (
                           <div className="text-center font-mono text-[10px] text-slate-400">
-                            <svg className="w-5 h-5 mx-auto mb-1 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                              <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth="2" />
-                              <line x1="6" y1="8" x2="18" y2="8" strokeWidth="2" />
-                              <line x1="6" y1="12" x2="18" y2="12" strokeWidth="2" />
-                            </svg>
+                            <CreditCard className="w-5 h-5 mx-auto mb-1 text-slate-500" />
                             <span>Back capture pending</span>
                           </div>
                         )}
@@ -951,9 +942,7 @@ export const RegisterPage: React.FC = () => {
                       <div
                         className="absolute bottom-3 right-3 z-20 font-mono text-[10px] font-bold px-2.5 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
                       >
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
+                        <Check className="w-3.5 h-3.5" />
                         BIOMETRIC VERIFIED // 98.4%
                       </div>
                     )}

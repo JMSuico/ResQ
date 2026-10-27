@@ -4,6 +4,7 @@
 // and Philippine National Police Evidence Custody Standards (PNP-IDMS).
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { Lock, Plus, Search, Shield, Filter, Eye, Download, CheckCircle2 } from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
 import { SearchBar } from '@/Shared/SearchBar';
 import { formatIsoTimestamp } from '@/Libs/Assets/formatters';
@@ -288,10 +289,7 @@ export const EvidenceVaultPage: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-600/20 border-2 border-blue-500/50 shadow-inner shadow-blue-500/40">
-              <svg className="h-8 w-8 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
+              <Lock className="h-8 w-8 text-blue-400" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
@@ -315,11 +313,9 @@ export const EvidenceVaultPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsTagModalOpen(true)}
-              className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-extrabold text-xs uppercase tracking-wider shadow-xl shadow-blue-900/60 border border-blue-400/60 transition-all"
+              className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-extrabold text-xs uppercase tracking-wider shadow-xl shadow-blue-900/60 border border-blue-400/60 transition-all cursor-pointer"
             >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
+              <Plus className="h-4 w-4" />
               <span>TAG NEW EVIDENCE</span>
             </button>
           </div>

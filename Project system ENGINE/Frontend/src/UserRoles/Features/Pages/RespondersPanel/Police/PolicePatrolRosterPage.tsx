@@ -4,6 +4,7 @@
 // and tactical duty readiness.
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { Users, Shield, Radio, Phone, Car, Battery, MapPin } from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
 import { getDutyRoster, updateUnitDutyStatus, DutyUnit } from '@/Endpoints/responderOpsApi';
 import { SearchBar } from '@/Shared/SearchBar';
@@ -244,12 +245,7 @@ export const PolicePatrolRosterPage: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-600/20 border-2 border-blue-500/50 shadow-inner shadow-blue-500/40">
-              <svg className="h-8 w-8 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
+              <Users className="h-8 w-8 text-blue-400" />
             </div>
             <div>
               <div className="flex items-center space-x-2">

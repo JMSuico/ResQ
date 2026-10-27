@@ -4,6 +4,7 @@
 // and Body-Worn Camera Operational Protocols (PNP-BWC-2021).
 
 import React, { useState, useEffect } from 'react';
+import { Award, Check, Shield, Key, Phone, Mail, Clock } from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
 import { formatIsoTimestamp } from '@/Libs/Assets/formatters';
 
@@ -50,9 +51,7 @@ export const OfficerArmoryProfilePage: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-600/20 border-2 border-blue-500/50 shadow-inner shadow-blue-500/40">
-              <svg className="h-8 w-8 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 2l3 3h5v5l3 3-3 3v5h-5l-3 3-3-3H4v-5l-3-3 3-3V5h5l3-3z" />
-              </svg>
+              <Award className="h-8 w-8 text-blue-400" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
@@ -76,11 +75,9 @@ export const OfficerArmoryProfilePage: React.FC = () => {
             <button
               type="button"
               onClick={handleVerifyEquipment}
-              className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold text-xs uppercase tracking-wider shadow-xl shadow-emerald-900/60 border border-emerald-400/60 transition-all"
+              className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold text-xs uppercase tracking-wider shadow-xl shadow-emerald-900/60 border border-emerald-400/60 transition-all cursor-pointer"
             >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
+              <Check className="h-4 w-4" />
               <span>VERIFY GEAR & SIGN MUSTER</span>
             </button>
           </div>

@@ -4,6 +4,7 @@
 // Immutable entry seals (BLOTTER-2026-XXXX) with official certifiable extract print layout.
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { BookOpen, Plus, Printer, Shield, Search, Filter, Calendar, FileText } from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
 import { SearchBar } from '@/Shared/SearchBar';
 import { formatIsoTimestamp, formatGpsCoord } from '@/Libs/Assets/formatters';
@@ -242,12 +243,7 @@ export const PoliceBlotterPage: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-600/20 border-2 border-blue-500/50 shadow-inner shadow-blue-500/40">
-              <svg className="h-8 w-8 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" />
-                <path d="M6 6h10" />
-                <path d="M6 10h10" />
-                <path d="M6 14h6" />
-              </svg>
+              <BookOpen className="h-8 w-8 text-blue-400" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
@@ -271,11 +267,9 @@ export const PoliceBlotterPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsEntryModalOpen(true)}
-              className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-extrabold text-xs uppercase tracking-wider shadow-xl shadow-blue-900/60 border border-blue-400/60 transition-all"
+              className="flex items-center space-x-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-extrabold text-xs uppercase tracking-wider shadow-xl shadow-blue-900/60 border border-blue-400/60 transition-all cursor-pointer"
             >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
+              <Plus className="h-4 w-4" />
               <span>FILE NEW BLOTTER ENTRY</span>
             </button>
           </div>
@@ -722,13 +716,9 @@ export const PoliceBlotterPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handlePrintExtract}
-                  className="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs uppercase tracking-wider shadow-md transition-all flex items-center space-x-2"
+                  className="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs uppercase tracking-wider shadow-md transition-all flex items-center space-x-2 cursor-pointer"
                 >
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="6 9 6 2 18 2 18 9" />
-                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                    <rect width="12" height="8" x="6" y="14" />
-                  </svg>
+                  <Printer className="h-4 w-4" />
                   <span>PRINT / EXPORT CERTIFIED PDF</span>
                 </button>
                 <button
