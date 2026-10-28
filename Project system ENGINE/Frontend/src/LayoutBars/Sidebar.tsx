@@ -30,7 +30,8 @@ import {
   PhoneCall,
   User,
   Shield,
-  Bell
+  Bell,
+  Send
 } from 'lucide-react';
 import { useDrawerSidebar, ToggleDrawerSidebarMenu } from '@/Shared/ToggleDrawerSidebarMenu';
 
@@ -105,7 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { to: '/admin/alerts', label: 'Emergency Broadcasts', icon: Bell },
       { to: '/admin/settings', label: 'System Settings', icon: Settings }
     ];
-  } else if (isResponder && normUnit === 'RHU') {
+  } else if (isResponder && (normUnit === 'RHU' || normUnit === 'MEDIC')) {
     agencyInfo = {
       badge: 'RHU // MEDIC CORPS',
       name: 'EMS & Trauma Unit',
@@ -115,12 +116,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       category: 'MEDICAL TRIAGE'
     };
     menuItems = [
-      { to: '/responder/dashboard', label: 'EMS Trauma Board', icon: HeartPulse },
-      { to: '/responder/incidents', label: 'Casualty Dispatches', icon: AlertTriangle },
-      { to: '/responder/roster', label: 'Ambulance Crew', icon: Users },
-      { to: '/responder/my-reports', label: 'Patient Logs', icon: FileText },
-      { to: '/responder/alerts', label: 'Hospital ER Alarms', icon: Bell },
-      { to: '/responder/profile', label: 'Medic Credentials', icon: User }
+      { to: '/responder', label: 'EMS TRAUMA BOARD', icon: HeartPulse },
+      { to: '/responder/incidents', label: 'CASUALTY DISPATCHES', icon: AlertTriangle },
+      { to: '/responder/request-deploy', label: 'REQUEST & DEPLOY', icon: Send },
+      { to: '/responder/roster', label: 'AMBULANCE CREW', icon: Users },
+      { to: '/responder/reports', label: 'INCIDENT LOGS', icon: FileText },
+      { to: '/responder/profile', label: 'PROFILE SETTINGS', icon: User }
     ];
   } else if (isResponder && normUnit === 'FIRE') {
     agencyInfo = {
@@ -248,11 +249,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <NavLink
               key={item.to}
               to={item.to}
-              className={({ isActive }) =>
-                `nav__item group flex items-center transition-all rounded-md ${
+              end={item.to === '/responder'}
+              className={({ isActive }) => {
+                const activeMatch =
+                  isActive ||
+                  (item.to === '/responder' &&
+                    typeof window !== 'undefined' &&
+                    window.location.pathname === '/responder/dashboard');
+                return `nav__item group flex items-center transition-all rounded-md ${
                   isCollapsed ? 'justify-center px-0 h-10 w-full' : 'gap-3 px-3 h-10'
-                } ${isActive ? 'is-active' : ''}`
-              }
+                } ${activeMatch ? 'is-active' : ''}`;
+              }}
               title={item.label}
             >
               <IconComponent

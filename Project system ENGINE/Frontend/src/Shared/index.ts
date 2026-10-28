@@ -23,3 +23,6 @@ export * from './ToggleDrawerSidebarMenu';
 export * from './PatientCareRecordModal';
 export * from './FireAlarmEscalationModal';
 export * from './PoliceBlotterModal';
+export * from './StatusConfirmModal';
+export * from './BackupOptionsModal';
+export * from './radarPointerCategories';

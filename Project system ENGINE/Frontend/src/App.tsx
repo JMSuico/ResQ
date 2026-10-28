@@ -26,6 +26,7 @@ import { CivilianDashboard } from '@/UserRoles/Features/Pages/CiviliansPanel/Civ
 import { AlertsCenter } from '@/UserRoles/Features/Pages/AdminsPanel/AlertsCenter';
 import { ResponderDashboard } from '@/UserRoles/Features/Pages/RespondersPanel/ResponderDashboard';
 import { UnitIncidentsFeed } from '@/UserRoles/Features/Pages/RespondersPanel/UnitIncidentsFeed';
+import { RequestDeployPage } from '@/UserRoles/Features/Pages/RespondersPanel/RequestDeployPage';
 import { DutyRosterView } from '@/UserRoles/Features/Pages/RespondersPanel/DutyRosterView';
 import { MyReportsPage } from '@/UserRoles/Features/Pages/RespondersPanel/MyReportsPage';
 import { ResponderAlerts } from '@/UserRoles/Features/Pages/RespondersPanel/ResponderAlerts';
@@ -126,7 +127,10 @@ export const App: React.FC = () => {
           <Route index element={<ResponderDashboard />} />
           <Route path="dashboard" element={<ResponderDashboard />} />
           <Route path="incidents" element={<UnitIncidentsFeed />} />
+          <Route path="request-deploy" element={<RequestDeployPage />} />
           <Route path="roster" element={<DutyRosterView />} />
+          <Route path="reports" element={<MyReportsPage />} />
+          <Route path="incident-logs" element={<MyReportsPage />} />
           <Route path="my-reports" element={<MyReportsPage />} />
           <Route path="alerts" element={<ResponderAlerts />} />
           <Route path="profile" element={<ResponderProfile />} />
