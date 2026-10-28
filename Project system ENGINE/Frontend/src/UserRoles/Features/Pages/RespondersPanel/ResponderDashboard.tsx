@@ -1332,17 +1332,20 @@ export const ResponderDashboard: React.FC = () => {
 
         {/* Map & Tactical 16-Pointer Interactive HUD Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12">
-          {/* Interactive Map Canvas (Clicking map canvas or expand badge expands full map) */}
+          {/* Interactive Map Canvas */}
           <div className="lg:col-span-8 h-[440px] w-full relative border-b lg:border-b-0 lg:border-r border-slate-800">
-            <div
-              className="h-full w-full relative group cursor-pointer"
-              onClick={() => setIsExpandMapOpen(true)}
-              title="Click anywhere on the map display to expand full tactical radar"
-            >
+            <div className="h-full w-full relative group">
               <SatelliteCommandMap
                 markers={markers}
                 centerLat={effectiveMapCenterLat}
                 centerLng={effectiveMapCenterLng}
+                selectedIncidentId={selectedPointer?.id || null}
+                onSelectIncident={(inc) => {
+                  const ptr = allRadarPointers.find((p) => p.id === inc.id);
+                  if (ptr) setSelectedPointer(ptr);
+                }}
+                isExpanded={isExpandMapOpen}
+                onToggleExpand={() => setIsExpandMapOpen((prev) => !prev)}
                 className="h-full w-full"
               />
 
@@ -1359,7 +1362,7 @@ export const ResponderDashboard: React.FC = () => {
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setIsExpandMapOpen(true);
+                  setIsExpandMapOpen((prev) => !prev);
                 }}
                 className="absolute top-3 right-3 z-[400] px-3 py-1.5 rounded-lg bg-emerald-600/95 hover:bg-emerald-500 text-white border border-emerald-400 font-mono text-xs font-bold flex items-center gap-1.5 shadow-xl shadow-black/70 transition-all hover:scale-105 cursor-pointer backdrop-blur-md"
                 title="Click to Expand Full Tactical Map"
@@ -1739,199 +1742,6 @@ export const ResponderDashboard: React.FC = () => {
               >
                 EXIT
               </Button>
-            </div>
-          </div>
-        </DefaultFloatingModalCard>
-      )}
-
-      {/* =====================================================================
-          TASKS 6 & 7: DYNAMIC CENTERED POINTER SUMMARY MODAL (WITH 5-MIN TIMER)
-         ===================================================================== */}
-      {selectedPointer && (
-        <DefaultFloatingModalCard
-          isOpen={selectedPointer !== null}
-          onClose={() => setSelectedPointer(null)}
-          title={`RADAR POINTER SUMMARY // ${selectedPointer.referenceCode}`}
-          subtitle={`${selectedPointer.category} • ${
-            selectedPointer.isMedicAllowed ? 'MEDIC-ALLOWED DISPATCH' : 'NON-MEDIC VIEW-ONLY'
-          }`}
-          size="2xl"
-        >
-          <div className="flex flex-col gap-4 text-slate-200">
-            {/* 5-Minute Auto-Closing Countdown Banner */}
-            <div className="px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between font-mono text-xs">
-              <span className="flex items-center gap-2 text-amber-400 font-bold">
-                <Clock className="w-4 h-4 animate-pulse" />
-                <span>5-MINUTE CLOSING TIMER ACTIVE</span>
-              </span>
-              <span className="px-2.5 py-0.5 rounded bg-rose-950 border border-rose-600 text-rose-300 font-black">
-                AUTO-CLOSE IN {formatCountdownTimer(pointerModalSecondsLeft)}
-              </span>
-            </div>
-
-            {/* Evidence Picture */}
-            <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-950 relative">
-              <img
-                src={selectedPointer.imageUrl}
-                alt={selectedPointer.title}
-                className="w-full h-52 object-cover"
-              />
-              <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded bg-slate-950/90 border border-slate-700 font-mono text-[10px] text-sky-300 flex items-center gap-1.5">
-                <Camera className="w-3.5 h-3.5" />
-                <span>VERIFIED FIELD EVIDENCE PICTURE</span>
-              </div>
-              <div className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded bg-slate-950/90 border border-slate-700 font-mono text-[10px] font-bold text-white">
-                {selectedPointer.severity.toUpperCase()}
-              </div>
-            </div>
-
-            {/* Metadata Grid: IP Address, GPS Coordinates, Physical Address */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
-              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                <span className="text-slate-500 block text-[10px] flex items-center gap-1">
-                  <Globe className="w-3 h-3 text-sky-400" />
-                  <span>REPORTER TERMINAL IP ADDRESS</span>
-                </span>
-                <span className="text-sky-400 font-extrabold text-sm mt-0.5 block">
-                  {selectedPointer.ipAddress}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                <span className="text-slate-500 block text-[10px] flex items-center gap-1">
-                  <Navigation className="w-3 h-3 text-emerald-400" />
-                  <span>GPS COORDINATES</span>
-                </span>
-                <span className="text-emerald-400 font-extrabold text-sm mt-0.5 block">
-                  {formatGpsCoord(selectedPointer.latitude, selectedPointer.longitude)}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 sm:col-span-2">
-                <span className="text-slate-500 block text-[10px] flex items-center gap-1">
-                  <MapPin className="w-3 h-3 text-rose-400" />
-                  <span>PHYSICAL STREET ADDRESS</span>
-                </span>
-                <span className="text-white font-bold text-xs mt-0.5 block">
-                  {selectedPointer.physicalAddress}
-                </span>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-              <span className="text-slate-500 block font-mono text-[10px] mb-1">
-                INCIDENT TELEMETRY BRIEF
-              </span>
-              <p className="text-white font-bold mb-1">{selectedPointer.title}</p>
-              <p className="text-slate-300 leading-relaxed">{selectedPointer.note}</p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
-              <Button variant="outline" size="sm" onClick={() => setSelectedPointer(null)}>
-                EXIT SUMMARY
-              </Button>
-
-              <Button
-                variant="action-green"
-                size="md"
-                isLoading={isTransitioningDeploy}
-                onClick={() =>
-                  handleRequestDeployRedirect(selectedPointer.id, selectedPointer.referenceCode)
-                }
-                icon={<Send className="w-4 h-4" />}
-              >
-                REQUEST TO DISPATCH OR DEPLOY
-              </Button>
-            </div>
-          </div>
-        </DefaultFloatingModalCard>
-      )}
-
-      {/* =====================================================================
-          TASK 7.1: EXPAND MAP FULL-SCREEN FLOATING MODAL
-         ===================================================================== */}
-      {isExpandMapOpen && (
-        <DefaultFloatingModalCard
-          isOpen={isExpandMapOpen}
-          onClose={() => setIsExpandMapOpen(false)}
-          title="EXPANDED SATELLITE COMMAND RADAR FLOW MAP"
-          subtitle="Full-spectrum interactive tactical map with 16 incident categories & live unit telemetry"
-          className="max-w-6xl w-full"
-        >
-          <div className="flex flex-col gap-4 text-slate-200">
-            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono text-xs">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRadarSortMode('ALL')}
-                  className={`px-3 py-1 rounded border cursor-pointer ${
-                    radarSortMode === 'ALL'
-                      ? 'bg-sky-500 text-slate-950 border-sky-300 font-bold'
-                      : 'bg-slate-900 text-slate-300 border-slate-700'
-                  }`}
-                >
-                  SORT / ALL ({allRadarPointers.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRadarSortMode('FOR_MEDICS')}
-                  className={`px-3 py-1 rounded border cursor-pointer ${
-                    radarSortMode === 'FOR_MEDICS'
-                      ? 'bg-rose-600 text-white border-rose-400 font-bold'
-                      : 'bg-slate-900 text-rose-300 border-rose-800'
-                  }`}
-                >
-                  SORT / FOR MEDICS ({allRadarPointers.filter((p) => p.isMedicAllowed).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPalePointerEnabled((prev) => !prev)}
-                  className="px-3 py-1 rounded border bg-slate-900 text-amber-300 border-amber-600/50 cursor-pointer"
-                >
-                  PALE POINTERS: {palePointerEnabled ? 'ON' : 'OFF'}
-                </button>
-              </div>
-
-              <Button
-                variant="danger"
-                size="xs"
-                onClick={() => setIsExpandMapOpen(false)}
-                icon={<LogOut className="w-3.5 h-3.5" />}
-              >
-                EXIT
-              </Button>
-            </div>
-
-            <div className="h-[500px] w-full rounded-xl overflow-hidden border border-slate-700 relative">
-              <SatelliteCommandMap
-                markers={markers}
-                centerLat={effectiveMapCenterLat}
-                centerLng={effectiveMapCenterLng}
-                className="h-full w-full"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-44 overflow-y-auto p-1">
-              {visibleRadarPointers.map((ptr) => (
-                <button
-                  key={`exp-${ptr.id}`}
-                  type="button"
-                  onClick={() => {
-                    setMapCenterOverride({ lat: ptr.latitude, lng: ptr.longitude });
-                    setSelectedPointer(ptr);
-                  }}
-                  className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-sky-400 text-left font-mono text-[11px] flex flex-col gap-0.5 cursor-pointer"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sky-400 font-bold">{ptr.referenceCode}</span>
-                    <span className={ptr.isMedicAllowed ? 'text-rose-400 font-bold' : 'text-slate-500'}>
-                      {ptr.category}
-                    </span>
-                  </div>
-                  <span className="text-white font-sans font-bold truncate">{ptr.title}</span>
-                  <span className="text-slate-400 text-[10px] truncate">{ptr.physicalAddress}</span>
-                </button>
-              ))}
             </div>
           </div>
         </DefaultFloatingModalCard>

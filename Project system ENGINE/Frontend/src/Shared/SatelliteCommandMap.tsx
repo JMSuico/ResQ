@@ -4,7 +4,7 @@
 // IP Address + GPS + Street Address + Picture Evidence display, and 5-Minute Verification Loading Timer.
 // Universal lambda expressions (=>). 100% pure Lucide icons (zero emojis).
 
-import React, { FC, useEffect, useRef, useState, useMemo } from 'react';
+import React, { FC, useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
@@ -99,6 +99,8 @@ export interface SatelliteCommandMapProps {
   onSelectIncident?: (incident: IncidentPinData) => void;
   onRequestDeploy?: (incident: IncidentPinData) => void;
   onExpandMap?: () => void;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
   centerLat?: number;
   centerLng?: number;
   height?: string | number;
@@ -140,6 +142,8 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   onSelectIncident,
   onRequestDeploy,
   onExpandMap,
+  isExpanded,
+  onToggleExpand,
   centerLat,
   centerLng,
   height,
@@ -161,6 +165,47 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   const [verifiedTimestamps, setVerifiedTimestamps] = useState<Record<string, number>>({});
   const [tickNow, setTickNow] = useState<number>(() => Date.now());
   const [lightboxOpen, setLightboxOpen] = useState<boolean>(false);
+  const [calloutPoint, setCalloutPoint] = useState<{ x: number; y: number } | null>(null);
+
+  const effectiveExpanded = isExpanded !== undefined ? isExpanded : isExpandedFullscreen;
+
+  // Real-time calculation of callout pixel position anchored to active pointer
+  const updateCalloutPosition = useCallback(() => {
+    if (!mapInstanceRef.current || !activePointer) {
+      setCalloutPoint(null);
+      return;
+    }
+    try {
+      const pt = mapInstanceRef.current.latLngToContainerPoint([activePointer.lat, activePointer.lng]);
+      setCalloutPoint({ x: pt.x, y: pt.y });
+    } catch {
+      setCalloutPoint(null);
+    }
+  }, [activePointer]);
+
+  useEffect(() => {
+    updateCalloutPosition();
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    map.on('move', updateCalloutPosition);
+    map.on('moveend', updateCalloutPosition);
+    map.on('zoom', updateCalloutPosition);
+    map.on('zoomend', updateCalloutPosition);
+    return () => {
+      map.off('move', updateCalloutPosition);
+      map.off('moveend', updateCalloutPosition);
+      map.off('zoom', updateCalloutPosition);
+      map.off('zoomend', updateCalloutPosition);
+    };
+  }, [updateCalloutPosition]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      mapInstanceRef.current?.invalidateSize();
+      updateCalloutPosition();
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [effectiveExpanded, updateCalloutPosition]);
 
   // Sync medic pointer settings from localStorage / custom event
   useEffect(() => {
@@ -431,7 +476,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   };
 
   const handleExpandMap = () => {
-    if (onExpandMap) {
+    if (onToggleExpand) {
+      onToggleExpand();
+    } else if (onExpandMap) {
       onExpandMap();
     } else {
       setIsExpandedFullscreen((prev) => !prev);
@@ -515,11 +562,13 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
   return (
     <div
-      className={`relative w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-950 ${
-        isExpandedFullscreen ? 'fixed inset-3 z-50 h-[calc(100vh-1.5rem)]' : ''
+      className={`relative w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-950 transition-all duration-300 ${
+        effectiveExpanded
+          ? 'fixed inset-2 md:inset-4 z-[9999] h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] border-2 border-emerald-500/80 shadow-[0_0_60px_rgba(0,0,0,0.95)]'
+          : ''
       }`}
       style={
-        !isExpandedFullscreen && height
+        !effectiveExpanded && height
           ? { height: typeof height === 'number' ? `${height}px` : height }
           : undefined
       }
@@ -590,12 +639,12 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
               onClick={handleExpandMap}
               className="px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold bg-sky-950/90 hover:bg-sky-900 text-sky-200 border border-sky-700/70 flex items-center gap-1.5 cursor-pointer"
             >
-              {isExpandedFullscreen ? (
+              {effectiveExpanded ? (
                 <Minimize2 className="w-3 h-3" />
               ) : (
                 <Maximize2 className="w-3 h-3" />
               )}
-              <span>{isExpandedFullscreen ? 'EXIT FULL MAP' : 'EXPAND MAP'}</span>
+              <span>{effectiveExpanded ? 'EXIT FULL MAP' : 'EXPAND MAP'}</span>
             </button>
           </div>
         </div>
@@ -683,215 +732,240 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         </div>
       )}
 
-      {/* Dynamic Centered Pointer Summary Modal (Tasks 6 & 7) */}
-      {activePointer && activeCategoryMeta && (
-        <div className="absolute inset-0 z-[410] flex items-center justify-center p-4 pointer-events-none">
-          <div className="w-full max-w-md bg-slate-950/95 border-2 border-slate-700/90 rounded-2xl shadow-2xl backdrop-blur-md overflow-hidden pointer-events-auto animate-fadeIn">
-            {/* Modal Top Header */}
-            <div
-              className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2"
-              style={{
-                background: `linear-gradient(90deg, ${
-                  activeIsResponded ? RESPONDED_GREEN_COLOR : activeCategoryMeta.color
-                }26 0%, rgba(15,23,42,0.95) 100%)`
-              }}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-white border border-white/80 flex-shrink-0 shadow"
-                  style={{
-                    backgroundColor: activeIsResponded
-                      ? RESPONDED_GREEN_COLOR
-                      : activeCategoryMeta.color
-                  }}
-                >
-                  {React.createElement(activeCategoryMeta.icon, { className: 'w-4 h-4' })}
+      {/* Tactical Cloud Message Box Callout (Speech bubble pointing directly at the UI pointer icon) */}
+      {activePointer && activeCategoryMeta && calloutPoint && (() => {
+        const containerW = mapContainerRef.current?.clientWidth || 700;
+        const cardW = 340;
+        const halfW = cardW / 2;
+
+        const isAbove = calloutPoint.y > 270;
+        const rawX = calloutPoint.x;
+        const rawY = calloutPoint.y;
+
+        const clampX = Math.max(halfW + 12, Math.min(containerW - halfW - 12, rawX));
+        const arrowOffset = Math.max(-halfW + 28, Math.min(halfW - 28, rawX - clampX));
+
+        return (
+          <div
+            className="absolute z-[450] pointer-events-auto transition-transform duration-75"
+            style={{
+              left: `${clampX}px`,
+              top: `${isAbove ? rawY - 20 : rawY + 20}px`,
+              transform: isAbove ? 'translate(-50%, -100%)' : 'translate(-50%, 0)'
+            }}
+          >
+            <div className="relative w-[320px] sm:w-[350px] max-h-[460px] overflow-y-auto bg-slate-950/95 border-2 border-sky-400/80 rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.95)] backdrop-blur-md overflow-hidden text-slate-100 flex flex-col animate-fadeIn">
+              {/* Cloud Message Box Header */}
+              <div
+                className="px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between gap-2"
+                style={{
+                  background: `linear-gradient(90deg, ${
+                    activeIsResponded ? RESPONDED_GREEN_COLOR : activeCategoryMeta.color
+                  }28 0%, rgba(15,23,42,0.98) 100%)`
+                }}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-white border border-white/80 flex-shrink-0 shadow"
+                    style={{
+                      backgroundColor: activeIsResponded
+                        ? RESPONDED_GREEN_COLOR
+                        : activeCategoryMeta.color
+                    }}
+                  >
+                    {React.createElement(activeCategoryMeta.icon, { className: 'w-3.5 h-3.5' })}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.2 rounded bg-slate-900 border border-slate-700 text-sky-300">
+                        {activePointer.id}
+                      </span>
+                      <span
+                        className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.2 rounded border ${
+                          activeCategoryMeta.isMedicAllowed
+                            ? 'bg-emerald-950/90 border-emerald-500/60 text-emerald-300'
+                            : 'bg-amber-950/90 border-amber-500/60 text-amber-300'
+                        }`}
+                      >
+                        {activeCategoryMeta.isMedicAllowed
+                          ? 'MEDIC ALLOWED'
+                          : 'VIEW-ONLY (NON-MEDIC)'}
+                      </span>
+                    </div>
+                    <h4 className="text-xs font-extrabold text-white truncate mt-0.5">
+                      {activeCategoryMeta.label}
+                    </h4>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-sky-300">
-                      {activePointer.id}
-                    </span>
-                    <span
-                      className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${
-                        activeCategoryMeta.isMedicAllowed
-                          ? 'bg-emerald-950/90 border-emerald-500/60 text-emerald-300'
-                          : 'bg-amber-950/90 border-amber-500/60 text-amber-300'
-                      }`}
-                    >
-                      {activeCategoryMeta.isMedicAllowed
-                        ? 'MEDIC ALLOWED'
-                        : 'VIEW-ONLY (NON-MEDIC)'}
+                <button
+                  type="button"
+                  onClick={() => setActivePointer(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                  title="Close Callout"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Cloud Message Box Body */}
+              <div className="p-3 space-y-2.5 text-xs">
+                {/* Picture Evidence Preview */}
+                <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black group">
+                  <img
+                    src={activePointer.evidenceUrl || DEFAULT_EVIDENCE_PHOTO}
+                    alt={activeCategoryMeta.label}
+                    className="w-full h-28 object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-between p-2">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="px-1.5 py-0.5 rounded bg-black/80 border border-slate-700 text-[9px] font-mono text-emerald-300">
+                        {activePointer.reportedAt || formatDateTimeWithSecondsAmPm(new Date())}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setLightboxOpen(true)}
+                        className="px-2 py-0.5 rounded bg-sky-600/90 hover:bg-sky-500 text-white text-[9px] font-mono font-bold flex items-center gap-1 cursor-pointer shadow"
+                      >
+                        <Camera className="w-3 h-3" />
+                        <span>INSPECT</span>
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-200">
+                      <span className="truncate font-semibold">{activePointer.type}</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                          activeIsResponded
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-rose-600 text-white'
+                        }`}
+                      >
+                        {activeIsResponded ? 'RESPONDED' : activeCategoryMeta.severityLevel}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Telemetry Grid */}
+                <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                  <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800">
+                    <div className="flex items-center gap-1 text-[9px] font-mono uppercase text-slate-400">
+                      <Cpu className="w-3 h-3 text-sky-400" />
+                      <span>IP ADDRESS</span>
+                    </div>
+                    <div className="font-mono font-bold text-sky-300 mt-0.5 truncate text-[11px]">
+                      {activePointer.ipAddress || '192.168.42.118'}
+                    </div>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800">
+                    <div className="flex items-center gap-1 text-[9px] font-mono uppercase text-slate-400">
+                      <Navigation className="w-3 h-3 text-emerald-400" />
+                      <span>GPS TELEMETRY</span>
+                    </div>
+                    <div className="font-mono font-bold text-emerald-300 mt-0.5 truncate text-[11px]">
+                      {activePointer.lat.toFixed(4)}°, {activePointer.lng.toFixed(4)}°
+                    </div>
+                  </div>
+
+                  <div className="col-span-2 p-2 rounded-lg bg-slate-900/90 border border-slate-800 flex items-start justify-between gap-1.5">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1 text-[9px] font-mono uppercase text-slate-400">
+                        <MapPin className="w-3 h-3 text-rose-400" />
+                        <span>STREET ADDRESS</span>
+                      </div>
+                      <div className="font-semibold text-slate-100 mt-0.5 truncate text-[11px]">
+                        {activePointer.place || 'Katipunan National Highway, ZN'}
+                      </div>
+                    </div>
+                    <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-[9px] font-mono text-slate-300 flex-shrink-0">
+                      {activeCategoryMeta.agency}
                     </span>
                   </div>
-                  <h4 className="text-xs sm:text-sm font-extrabold text-white truncate mt-0.5">
-                    {activeCategoryMeta.label}
-                  </h4>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActivePointer(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            {/* Modal Body: Picture Evidence + IP Address + GPS + Physical Street Address */}
-            <div className="p-4 space-y-3">
-              {/* Picture Evidence Preview */}
-              <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black group">
-                <img
-                  src={activePointer.evidenceUrl || DEFAULT_EVIDENCE_PHOTO}
-                  alt={activeCategoryMeta.label}
-                  className="w-full h-36 object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-between p-2.5">
+                {/* 5-Minute Verification Loading Timer (05:00 -> 00:00 Case Closed) */}
+                <div className="p-2.5 rounded-xl bg-slate-900/95 border border-slate-800 space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="px-2 py-0.5 rounded bg-black/75 border border-slate-700 text-[10px] font-mono text-emerald-300">
-                      {activePointer.reportedAt || formatDateTimeWithSecondsAmPm(new Date())}
-                    </span>
+                    <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-300">
+                      <Clock className="w-3 h-3 text-amber-400" />
+                      <span>
+                        {activeVerifiedTimestamp
+                          ? activeRemainingSeconds > 0
+                            ? `TIMER: ${formatCountdownMmSs(activeRemainingSeconds)}`
+                            : 'CASE CLOSED (SOLVED)'
+                          : '5-MIN VERIFY TIMER (05:00)'}
+                      </span>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => setLightboxOpen(true)}
-                      className="px-2 py-1 rounded bg-sky-600/90 hover:bg-sky-500 text-white text-[10px] font-mono font-bold flex items-center gap-1 cursor-pointer shadow"
+                      onClick={() => handleTriggerVerificationTimer(activePointer.id)}
+                      className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-950/90 hover:bg-amber-900 text-amber-300 border border-amber-600/60 cursor-pointer"
                     >
-                      <Camera className="w-3 h-3" />
-                      <span>INSPECT (UP TO 40 MEDIA)</span>
+                      {activeVerifiedTimestamp ? 'Reset' : 'Simulate Verify'}
                     </button>
                   </div>
-                  <div className="flex items-center justify-between text-[11px] font-mono text-slate-200">
-                    <span className="truncate font-semibold">{activePointer.type}</span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                        activeIsResponded
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-rose-600 text-white'
-                      }`}
-                    >
-                      {activeIsResponded ? 'RESPONDED (GREEN)' : activeCategoryMeta.severityLevel}
-                    </span>
-                  </div>
-                </div>
-              </div>
 
-              {/* Telemetry Grid: IP Address, GPS Coordinates, Physical Street Address */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800">
-                  <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase text-slate-400">
-                    <Cpu className="w-3.5 h-3.5 text-sky-400" />
-                    <span>REPORTER IP ADDRESS</span>
-                  </div>
-                  <div className="font-mono font-bold text-sky-300 mt-0.5">
-                    {activePointer.ipAddress || '192.168.42.118'}
+                  <div className="w-full h-1.5 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
+                    <div
+                      className="h-full bg-gradient-to-r from-amber-500 via-sky-500 to-emerald-500 transition-all duration-500"
+                      style={{
+                        width: `${activeVerifiedTimestamp ? activeProgressPercent : 12}%`
+                      }}
+                    />
                   </div>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800">
-                  <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase text-slate-400">
-                    <Navigation className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>EXACT GPS TELEMETRY</span>
-                  </div>
-                  <div className="font-mono font-bold text-emerald-300 mt-0.5">
-                    {activePointer.lat.toFixed(5)}° N, {activePointer.lng.toFixed(5)}° E
-                  </div>
-                </div>
-
-                <div className="sm:col-span-2 p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase text-slate-400">
-                      <MapPin className="w-3.5 h-3.5 text-rose-400" />
-                      <span>PHYSICAL STREET ADDRESS & POINTER LINK</span>
-                    </div>
-                    <div className="font-semibold text-slate-100 mt-0.5 truncate">
-                      {activePointer.place || 'Katipunan National Highway, Zamboanga del Norte'}
-                    </div>
-                  </div>
-                  <span className="px-2 py-1 rounded bg-slate-950 border border-slate-700 text-[10px] font-mono text-slate-300 flex-shrink-0">
-                    {activeCategoryMeta.agency}
-                  </span>
-                </div>
-              </div>
-
-              {/* 5-Minute Verification Loading Timer (05:00 -> 00:00 Case Closed) */}
-              <div className="p-3 rounded-xl bg-slate-900/95 border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-amber-300">
-                    <Clock className="w-3.5 h-3.5 text-amber-400" />
-                    <span>
-                      {activeVerifiedTimestamp
-                        ? activeRemainingSeconds > 0
-                          ? `VERIFICATION LOADING TIMER: ${formatCountdownMmSs(activeRemainingSeconds)}`
-                          : 'CASE CLOSED (100% SOLVED)'
-                        : '5-MINUTE VERIFICATION TIMER (05:00)'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleTriggerVerificationTimer(activePointer.id)}
-                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950/90 hover:bg-amber-900 text-amber-300 border border-amber-600/60 cursor-pointer"
-                  >
-                    {activeVerifiedTimestamp ? 'Reset Timer' : 'Simulate AI/Admin Verify'}
-                  </button>
-                </div>
-
-                <div className="w-full h-2 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
-                  <div
-                    className="h-full bg-gradient-to-r from-amber-500 via-sky-500 to-emerald-500 transition-all duration-500"
-                    style={{
-                      width: `${activeVerifiedTimestamp ? activeProgressPercent : 12}%`
-                    }}
-                  />
-                </div>
-                <p className="text-[10px] text-slate-400 font-mono">
-                  {activeVerifiedTimestamp
-                    ? 'Verified by Admin/AI — Pointer auto-closes and clears from radar when 05:00 reaches 00:00.'
-                    : 'Waiting for Admin/AI Verification to start 05:00 case-closure countdown.'}
-                </p>
-              </div>
-
-              {/* Action Footer: Role-Gated "REQUEST TO DISPATCH OR DEPLOY" */}
-              <div className="pt-1 flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-2">
+                {/* Action Footer: Role-Gated "REQUEST TO DISPATCH OR DEPLOY" */}
+                <div className="pt-0.5 flex flex-col gap-1.5">
                   <button
                     type="button"
                     onClick={() => handleMarkResponded(activePointer.id)}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-mono font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`w-full py-1.5 px-2.5 rounded-lg text-[11px] font-mono font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                       activeIsResponded
                         ? 'bg-emerald-950/90 border-emerald-500 text-emerald-300'
                         : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
                     }`}
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <CheckCircle2 className="w-3 h-3" />
                     <span>
                       {activeIsResponded ? 'RESPONDED (GREEN PIN)' : 'MARK RESPONDED (GREEN)'}
                     </span>
                   </button>
-                </div>
 
-                {activeCategoryMeta.isMedicAllowed ? (
-                  <button
-                    type="button"
-                    onClick={() => handleRequestDeployClick(activePointer)}
-                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-emerald-950/70 border border-emerald-400/50 flex items-center justify-center gap-2 cursor-pointer transition-all"
-                  >
-                    <Send className="w-4 h-4" />
-                    <span>REQUEST TO DISPATCH OR DEPLOY</span>
-                  </button>
-                ) : (
-                  <div className="w-full py-2 px-3 rounded-xl bg-slate-900/90 border border-amber-700/50 text-amber-300 text-[11px] font-mono flex items-center justify-center gap-2 text-center">
-                    <Lock className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />
-                    <span>
-                      VIEW-ONLY NON-MEDIC CATEGORY — ASSIGNED TO {activeCategoryMeta.agency}
-                    </span>
-                  </div>
-                )}
+                  {activeCategoryMeta.isMedicAllowed ? (
+                    <button
+                      type="button"
+                      onClick={() => handleRequestDeployClick(activePointer)}
+                      className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[11px] uppercase tracking-wider shadow-lg shadow-emerald-950/70 border border-emerald-400/50 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>REQUEST TO DISPATCH OR DEPLOY</span>
+                    </button>
+                  ) : (
+                    <div className="w-full py-1.5 px-2 rounded-xl bg-slate-900/90 border border-amber-700/50 text-amber-300 text-[10px] font-mono flex items-center justify-center gap-1.5 text-center">
+                      <Lock className="w-3 h-3 flex-shrink-0 text-amber-400" />
+                      <span>NON-MEDIC // ASSIGNED TO {activeCategoryMeta.agency}</span>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Cloud Message Box Caret / Tail pointing directly to the UI Pointer Icon */}
+              <div
+                className={`absolute w-3.5 h-3.5 bg-slate-950 ${
+                  isAbove
+                    ? '-bottom-1.5 border-r-2 border-b-2 border-sky-400/80'
+                    : '-top-1.5 border-l-2 border-t-2 border-sky-400/80'
+                }`}
+                style={{
+                  left: `calc(50% + ${arrowOffset}px)`,
+                  transform: 'translateX(-50%) rotate(45deg)'
+                }}
+              />
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Underlying Leaflet Map Canvas */}
       <div

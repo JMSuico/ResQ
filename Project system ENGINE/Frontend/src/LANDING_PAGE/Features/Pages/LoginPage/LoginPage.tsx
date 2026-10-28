@@ -542,6 +542,17 @@ export const LoginPage: FC = () => {
                 {isLoading ? 'Authenticating...' : isSuccess ? 'Access Granted' : 'AUTHENTICATE & ENTER'}
               </Button>
             </div>
+
+            {/* Civilian & Responder Registration Redirection */}
+            <div className="mt-4 text-center">
+              <span className="text-xs text-slate-400 font-mono">Don't have an account? </span>
+              <Link
+                to="/register"
+                className="text-xs font-mono font-bold text-rose-400 hover:text-rose-300 underline underline-offset-4 transition-colors"
+              >
+                Sign up here
+              </Link>
+            </div>
           </form>
         </section>
       </div>
