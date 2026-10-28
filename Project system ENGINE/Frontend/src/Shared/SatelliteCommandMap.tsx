@@ -307,14 +307,19 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     markersLayerRef.current = markersLayer;
     mapInstanceRef.current = map;
 
-    map.fitBounds(homeBounds, { padding: BOUNDS_PADDING });
+    map.fitBounds(homeBounds, { padding: BOUNDS_PADDING, animate: false });
 
     if (onMapReady) {
       onMapReady(map);
     }
 
     return () => {
-      map.remove();
+      try {
+        map.stop();
+        map.remove();
+      } catch {
+        // Safe disposal
+      }
       mapInstanceRef.current = null;
     };
   }, []);

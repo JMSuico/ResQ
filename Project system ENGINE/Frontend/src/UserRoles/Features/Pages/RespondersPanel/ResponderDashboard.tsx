@@ -1332,25 +1332,45 @@ export const ResponderDashboard: React.FC = () => {
 
         {/* Map & Tactical 16-Pointer Interactive HUD Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12">
-          {/* Interactive Map Canvas */}
+          {/* Interactive Map Canvas (Clicking map canvas or expand badge expands full map) */}
           <div className="lg:col-span-8 h-[440px] w-full relative border-b lg:border-b-0 lg:border-r border-slate-800">
-            <SatelliteCommandMap
-              markers={markers}
-              centerLat={effectiveMapCenterLat}
-              centerLng={effectiveMapCenterLng}
-              className="h-full w-full"
-            />
+            <div
+              className="h-full w-full relative group cursor-pointer"
+              onClick={() => setIsExpandMapOpen(true)}
+              title="Click anywhere on the map display to expand full tactical radar"
+            >
+              <SatelliteCommandMap
+                markers={markers}
+                centerLat={effectiveMapCenterLat}
+                centerLng={effectiveMapCenterLng}
+                className="h-full w-full"
+              />
 
-            {/* HUD Reticle Overlay Accents */}
-            <div className="absolute top-3 left-3 z-[400] pointer-events-none px-3 py-1.5 rounded bg-slate-950/85 border border-slate-700 backdrop-blur font-mono text-[11px] text-slate-300 flex items-center gap-2">
-              <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
-              <span>
-                RADAR: <strong className="text-emerald-400">16-CATEGORY TELEMETRY LOCKED</strong>
-              </span>
-            </div>
+              {/* HUD Reticle Overlay Accents */}
+              <div className="absolute top-3 left-3 z-[400] pointer-events-none px-3 py-1.5 rounded bg-slate-950/85 border border-slate-700 backdrop-blur font-mono text-[11px] text-slate-300 flex items-center gap-2">
+                <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
+                <span>
+                  RADAR: <strong className="text-emerald-400">16-CATEGORY TELEMETRY LOCKED</strong>
+                </span>
+              </div>
 
-            <div className="absolute bottom-3 right-3 z-[400] pointer-events-none px-3 py-1.5 rounded bg-slate-950/85 border border-slate-700 backdrop-blur font-mono text-[11px] text-sky-400">
-              FOCUS: {formatGpsCoord(effectiveMapCenterLat, effectiveMapCenterLng)}
+              {/* Prominent Click-to-Expand Tactical Badge */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsExpandMapOpen(true);
+                }}
+                className="absolute top-3 right-3 z-[400] px-3 py-1.5 rounded-lg bg-emerald-600/95 hover:bg-emerald-500 text-white border border-emerald-400 font-mono text-xs font-bold flex items-center gap-1.5 shadow-xl shadow-black/70 transition-all hover:scale-105 cursor-pointer backdrop-blur-md"
+                title="Click to Expand Full Tactical Map"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>CLICK TO EXPAND MAP</span>
+              </button>
+
+              <div className="absolute bottom-3 right-3 z-[400] pointer-events-none px-3 py-1.5 rounded bg-slate-950/85 border border-slate-700 backdrop-blur font-mono text-[11px] text-sky-400">
+                FOCUS: {formatGpsCoord(effectiveMapCenterLat, effectiveMapCenterLng)}
+              </div>
             </div>
           </div>
 
@@ -1836,7 +1856,7 @@ export const ResponderDashboard: React.FC = () => {
           onClose={() => setIsExpandMapOpen(false)}
           title="EXPANDED SATELLITE COMMAND RADAR FLOW MAP"
           subtitle="Full-spectrum interactive tactical map with 16 incident categories & live unit telemetry"
-          size="4xl"
+          className="max-w-6xl w-full"
         >
           <div className="flex flex-col gap-4 text-slate-200">
             <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono text-xs">
