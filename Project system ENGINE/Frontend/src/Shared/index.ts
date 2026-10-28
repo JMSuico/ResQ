@@ -26,3 +26,4 @@ export * from './PoliceBlotterModal';
 export * from './StatusConfirmModal';
 export * from './BackupOptionsModal';
 export * from './radarPointerCategories';
+export * from './PageErrorBoundary';

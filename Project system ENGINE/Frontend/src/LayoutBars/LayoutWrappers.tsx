@@ -7,6 +7,7 @@ import { Outlet } from 'react-router-dom';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { ResQTrackSvgSprite } from '../Shared/ResQTrackSvgSprite';
+import { PageErrorBoundary } from '../Shared/PageErrorBoundary';
 import { useSession } from '../Hooks/useSession';
 
 import { DrawerSidebarProvider } from '../Shared/ToggleDrawerSidebarMenu';
@@ -46,7 +47,11 @@ export const LayoutWrappers: React.FC<LayoutWrappersProps> = ({
           <Sidebar userRole={activeRole} userUnit={activeUnit} />
           <main className="dash__main flex-1 w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-6 sm:px-8 sm:py-8 md:px-10 md:py-8 lg:px-12 bg-slate-950/95 transition-all">
             <div className="w-full flex-1 min-h-0 flex flex-col max-w-[1720px] mx-auto">
-              {children || <Outlet context={{ user, session }} />}
+              {children || (
+                <PageErrorBoundary>
+                  <Outlet context={{ user, session }} />
+                </PageErrorBoundary>
+              )}
             </div>
           </main>
         </div>

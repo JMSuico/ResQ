@@ -141,7 +141,7 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
   };
 
   const activePoint = activePointIndex !== null ? points[activePointIndex] : null;
-  const activeData = activePointIndex !== null ? data[activePointIndex] : null;
+  const activeData = activePointIndex !== null ? safeData[activePointIndex] : null;
   const activeSurge = activeData ? computeSurgeStatus(activeData.value, maxValue) : null;
   const percentageOfTotal =
     activeData && totalVolume > 0 ? ((activeData.value / totalVolume) * 100).toFixed(1) : '0.0';
@@ -290,7 +290,7 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
                   fontWeight={isActive ? 'bold' : 'normal'}
                   className="transition-colors duration-150"
                 >
-                  {data[i].label}
+                  {safeData[i]?.label || ''}
                 </text>
               </g>
             );
