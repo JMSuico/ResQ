@@ -114,37 +114,40 @@ export const AnalyticsReportsPage: FC = () => {
   useValueRefreshAuto(loadData, { intervalMs: 10000 });
 
   // Dynamically computed mathematical modeling values (Zero Hardcoded Static Numbers)
+  const validReports = useMemo(() => (Array.isArray(reports) ? reports.filter(Boolean) : []), [reports]);
+
   const tivaVelocity = useMemo(() => {
-    if (reports.length === 0) return '0.00';
-    const totalScore = reports.reduce((acc, r) => {
-      const w = r.severity === 'Critical' ? 4 : r.severity === 'High' ? 3 : r.severity === 'Medium' ? 2 : 1;
+    if (validReports.length === 0) return '0.00';
+    const totalScore = validReports.reduce((acc, r) => {
+      const w = r?.severity === 'Critical' ? 4 : r?.severity === 'High' ? 3 : r?.severity === 'Medium' ? 2 : 1;
       return acc + w;
     }, 0);
-    return (totalScore / reports.length).toFixed(2);
-  }, [reports]);
+    return (totalScore / validReports.length).toFixed(2);
+  }, [validReports]);
 
   const sharpnessPercent = useMemo(() => {
-    if (reports.length === 0) return '100.0%';
-    const sharpCount = reports.filter((r) => !r.isBlurry).length;
-    return `${((sharpCount / reports.length) * 100).toFixed(1)}%`;
-  }, [reports]);
+    if (validReports.length === 0) return '100.0%';
+    const sharpCount = validReports.filter((r) => r && !r.isBlurry).length;
+    return `${((sharpCount / validReports.length) * 100).toFixed(1)}%`;
+  }, [validReports]);
 
   const avgLaplacianVar = useMemo(() => {
-    if (reports.length === 0) return '98.5';
-    const sharpCount = reports.filter((r) => !r.isBlurry).length;
-    const computedVar = 70.0 + (sharpCount / reports.length) * 28.5;
+    if (validReports.length === 0) return '98.5';
+    const sharpCount = validReports.filter((r) => r && !r.isBlurry).length;
+    const computedVar = 70.0 + (sharpCount / validReports.length) * 28.5;
     return computedVar.toFixed(1);
-  }, [reports]);
+  }, [validReports]);
 
   const dispatchRatioPercent = useMemo(() => {
-    if (summary.totalResponders === 0) return '0.0%';
-    const ratio = (summary.activeDispatches / summary.totalResponders) * 100;
+    const total = summary?.totalResponders ?? 0;
+    if (total === 0) return '0.0%';
+    const ratio = ((summary?.activeDispatches ?? 0) / total) * 100;
     return `${ratio.toFixed(1)}%`;
-  }, [summary.activeDispatches, summary.totalResponders]);
+  }, [summary]);
 
   const activeReportsCount = useMemo(() => {
-    return Math.max(0, summary.totalIncidents - summary.resolvedCount);
-  }, [summary.totalIncidents, summary.resolvedCount]);
+    return Math.max(0, (summary?.totalIncidents ?? 0) - (summary?.resolvedCount ?? 0));
+  }, [summary]);
 
   // Mathematical formula progress tracker bound to real live database telemetry
   const analysisItems = useMemo(
@@ -152,7 +155,7 @@ export const AnalyticsReportsPage: FC = () => {
       {
         title: 'Triage Ingestion Velocity Algorithm (TIVA)',
         formula: 'V(t) = \\sum_{i=1}^{n} (w_i \\cdot S_i) / \\Delta t',
-        status: `LIVE (${summary.totalIncidents} Ingested, ${summary.criticalIncidents} SOS, Index: ${tivaVelocity})`,
+        status: `LIVE (${summary?.totalIncidents ?? 0} Ingested, ${summary?.criticalIncidents ?? 0} SOS, Index: ${tivaVelocity})`,
         description: 'Calculates continuous weight-adjusted report density per square kilometer.'
       },
       {
@@ -165,8 +168,8 @@ export const AnalyticsReportsPage: FC = () => {
         title: 'Multi-Agency Dispatch Optimization Ratio',
         formula: 'D_{ratio} = \\frac{Units_{Dispatched}}{Units_{Available}} \\times 100\\%',
         status:
-          summary.totalResponders > 0
-            ? `${dispatchRatioPercent} Fleet Allocation (${summary.activeDispatches}/${summary.totalResponders} Units Dispatched)`
+          (summary?.totalResponders ?? 0) > 0
+            ? `${dispatchRatioPercent} Fleet Allocation (${summary?.activeDispatches ?? 0}/${summary?.totalResponders ?? 0} Units Dispatched)`
             : '0.0% Fleet Allocation',
         description: 'Ensures equitable distribution of emergency responders across municipal sectors.'
       }
@@ -177,12 +180,14 @@ export const AnalyticsReportsPage: FC = () => {
   // Dynamic Milestone Progress computed from actual live database telemetry
   const progressItems = useMemo(() => {
     const gpsRate =
-      reports.length > 0
-        ? Math.min(100, Math.round((reports.filter((r) => r.isHardwareGeolocated).length / reports.length) * 100))
+      validReports.length > 0
+        ? Math.min(100, Math.round((validReports.filter((r) => r && r.isHardwareGeolocated).length / validReports.length) * 100))
         : 100;
+    const totalIncs = summary?.totalIncidents ?? 0;
+    const critIncs = summary?.criticalIncidents ?? 0;
     const triageAutoRate =
-      summary.totalIncidents > 0
-        ? Math.min(100, Math.round(((summary.totalIncidents - summary.criticalIncidents) / summary.totalIncidents) * 100))
+      totalIncs > 0
+        ? Math.min(100, Math.round(((totalIncs - critIncs) / totalIncs) * 100))
         : 100;
 
     return [
@@ -191,18 +196,18 @@ export const AnalyticsReportsPage: FC = () => {
       { milestone: 'Automated triage severity auto-dispatch matrix', progress: triageAutoRate, date: 'In Production' },
       { milestone: 'Automated Excel/PDF intelligence digest engine', progress: 100, date: 'Active' }
     ];
-  }, [reports, summary]);
+  }, [validReports, summary]);
 
   // Export functions
   const handleExportCSV = (): void => {
     const headers = 'ID,ReferenceCode,Title,Category,Severity,Status,Location,CreatedAt,VerifiedAt\n';
-    const rows = reports
+    const rows = validReports
       .map(
         (r, i) =>
-          `"${r.id || i + 1}","${r.referenceCode || ''}","${r.title || 'Incident'}","${r.category || 'General'}","${
-            r.severity || 'Medium'
-          }","${r.status || 'Active'}","${r.locationLabel || r.location || 'Dipolog'}","${r.createdAt || ''}","${
-            r.verifiedAt || ''
+          `"${r?.id || i + 1}","${r?.referenceCode || ''}","${r?.title || 'Incident'}","${r?.category || 'General'}","${
+            r?.severity || 'Medium'
+          }","${r?.status || 'Active'}","${r?.locationLabel || r?.location || 'Dipolog'}","${r?.createdAt || ''}","${
+            r?.verifiedAt || ''
           }"`
       )
       .join('\n');

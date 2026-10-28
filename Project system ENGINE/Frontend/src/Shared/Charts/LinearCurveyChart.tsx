@@ -75,16 +75,23 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
 }) => {
   const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
 
-  if (!data || data.length === 0) return null;
+  const safeData = data && data.length > 0 ? data : [
+    { label: '00:00', value: 0 },
+    { label: '04:00', value: 0 },
+    { label: '08:00', value: 0 },
+    { label: '12:00', value: 0 },
+    { label: '16:00', value: 0 },
+    { label: '20:00', value: 0 }
+  ];
 
-  const totalVolume = data.reduce((acc, d) => acc + d.value, 0);
-  const maxValue = Math.max(...data.map((d) => d.value), MIN_SCALE_MAX);
+  const totalVolume = safeData.reduce((acc, d) => acc + d.value, 0);
+  const maxValue = Math.max(...safeData.map((d) => d.value), MIN_SCALE_MAX);
   const width = DEFAULT_WIDTH;
   const padding = CHART_PADDING;
 
   // Compute SVG curve points
-  const points = data.map((d, i) => {
-    const x = data.length > 1 ? padding + (i / (data.length - 1)) * (width - padding * 2) : width / 2;
+  const points = safeData.map((d, i) => {
+    const x = safeData.length > 1 ? padding + (i / (safeData.length - 1)) * (width - padding * 2) : width / 2;
     const y = height - padding - (d.value / maxValue) * (height - padding * 2);
     return { x, y };
   });

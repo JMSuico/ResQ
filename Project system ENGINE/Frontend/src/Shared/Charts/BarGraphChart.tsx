@@ -117,15 +117,20 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
 }) => {
   const [hoveredBarIndex, setHoveredBarIndex] = useState<number | null>(null);
 
-  if (!data || data.length === 0) return null;
+  const safeData = data && data.length > 0 ? data : [
+    { label: 'Low', value: 0, color: '#10b981' },
+    { label: 'Medium', value: 0, color: '#f59e0b' },
+    { label: 'High', value: 0, color: '#ea580c' },
+    { label: 'Critical', value: 0, color: '#ef4444' }
+  ];
 
-  const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
-  const max = Math.max(...data.map((d) => d.value), MIN_SCALE_MAX);
+  const total = safeData.reduce((sum, d) => sum + d.value, 0) || 1;
+  const max = Math.max(...safeData.map((d) => d.value), MIN_SCALE_MAX);
   const width = DEFAULT_WIDTH;
   const barWidth = BAR_WIDTH;
-  const gap = (width - data.length * barWidth) / (data.length + 1);
+  const gap = (width - safeData.length * barWidth) / (safeData.length + 1);
 
-  const hoveredBar = hoveredBarIndex !== null ? data[hoveredBarIndex] : null;
+  const hoveredBar = hoveredBarIndex !== null ? safeData[hoveredBarIndex] : null;
   const hoveredSeverity = hoveredBar ? computeSeverityBadge(hoveredBar.color, hoveredBar.label) : null;
   const hoveredBarCenter =
     hoveredBarIndex !== null ? gap + hoveredBarIndex * (barWidth + gap) + barWidth / 2 : 0;
@@ -180,7 +185,7 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
 
       <div className="relative w-full">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible">
-          {data.map((d, i) => {
+          {safeData.map((d, i) => {
             const barHeight = Math.max((d.value / max) * (height - 55), 4);
             const x = gap + i * (barWidth + gap);
             const y = height - 25 - barHeight;

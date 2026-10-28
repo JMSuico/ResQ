@@ -17,6 +17,7 @@ import { AdminDashboard } from '@/UserRoles/Features/Pages/AdminsPanel/AdminDash
 import { StrategicMapPage } from '@/UserRoles/Features/Pages/AdminsPanel/StrategicMapPage';
 import { AnalyticsReportsPage } from '@/UserRoles/Features/Pages/AdminsPanel/AnalyticsReportsPage';
 import { IncidentsPage } from '@/UserRoles/Features/Pages/AdminsPanel/IncidentsPage';
+import { SubmittedReportsPage } from '@/UserRoles/Features/Pages/AdminsPanel/SubmittedReportsPage';
 import { RespondersRosterPage } from '@/UserRoles/Features/Pages/AdminsPanel/RespondersRosterPage';
 import { UserManagementPage } from '@/UserRoles/Features/Pages/AdminsPanel/UserManagementPage';
 import { SettingsPage } from '@/UserRoles/Features/Pages/AdminsPanel/SettingsPage';
@@ -108,6 +109,8 @@ export const App: React.FC = () => {
         <Route path="/incidents" element={<SmartIncidentsRouter />} />
         <Route path="/responders" element={<SmartRosterRouter />} />
         <Route path="/settings" element={<Navigate to="/admin/settings" replace />} />
+        <Route path="/analytics" element={<Navigate to="/admin/analytics" replace />} />
+        <Route path="/submitted-reports" element={<Navigate to="/admin/submitted-reports" replace />} />
 
         {/* LDRRMO Admin Executive Command Portal (/admin/*) */}
         <Route path="/admin" element={<AdminLayout />}>
@@ -115,6 +118,8 @@ export const App: React.FC = () => {
           <Route path="dashboard" element={<AdminDashboard />} />
           <Route path="strategic-map" element={<StrategicMapPage />} />
           <Route path="incidents" element={<IncidentsPage />} />
+          <Route path="submitted-reports" element={<SubmittedReportsPage />} />
+          <Route path="reports" element={<Navigate to="/admin/submitted-reports" replace />} />
           <Route path="roster" element={<RespondersRosterPage />} />
           <Route path="analytics" element={<AnalyticsReportsPage />} />
           <Route path="users" element={<UserManagementPage />} />

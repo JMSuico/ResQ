@@ -31,7 +31,8 @@ import {
   User,
   Shield,
   Bell,
-  Send
+  Send,
+  FileCheck
 } from 'lucide-react';
 import { useDrawerSidebar, ToggleDrawerSidebarMenu } from '@/Shared/ToggleDrawerSidebarMenu';
 
@@ -100,6 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/admin/strategic-map', label: 'Strategic Map', icon: Map },
       { to: '/admin/incidents', label: 'Incident Operations & Triage Dispatch', icon: AlertTriangle },
+      { to: '/admin/submitted-reports', label: 'Submitted Reports', icon: FileCheck },
       { to: '/admin/roster', label: 'Agency Fleet Roster', icon: Users },
       { to: '/admin/analytics', label: 'Analytics & Reports', icon: BarChart3 },
       { to: '/admin/users', label: 'User Governance', icon: ShieldCheck },

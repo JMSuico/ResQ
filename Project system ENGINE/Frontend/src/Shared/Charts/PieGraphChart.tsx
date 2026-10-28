@@ -70,11 +70,18 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
+  const safeData = data && data.length > 0 ? data : [
+    { label: 'RHU Medical', value: 0, color: '#0284c7' },
+    { label: 'BFP Fire Rescue', value: 0, color: '#ea580c' },
+    { label: 'PNP Police Force', value: 0, color: '#3b82f6' }
+  ];
+
+  const total = safeData.reduce((sum, d) => sum + d.value, 0) || 1;
+  const realTotal = safeData.reduce((sum, d) => sum + d.value, 0);
   let accumulatedAngle = 0;
 
-  const slices = data.map((d) => {
-    const angle = (d.value / total) * FULL_CIRCLE_DEGREES;
+  const slices = safeData.map((d) => {
+    const angle = realTotal > 0 ? (d.value / total) * FULL_CIRCLE_DEGREES : 0;
     const startAngle = accumulatedAngle;
     accumulatedAngle += angle;
 
@@ -98,7 +105,7 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
     const dx = Math.cos(rad) * SLICE_EXPANSION_OFFSET;
     const dy = Math.sin(rad) * SLICE_EXPANSION_OFFSET;
 
-    const percentage = ((d.value / total) * 100).toFixed(1);
+    const percentage = realTotal > 0 ? ((d.value / total) * 100).toFixed(1) : '0.0';
 
     return {
       pathD,
@@ -162,8 +169,21 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
             viewBox={`0 0 ${CENTER_X * 2} ${CENTER_Y * 2}`}
             className="w-40 h-40 overflow-visible drop-shadow-md"
           >
+            {/* Empty state donut ring when zero calls */}
+            {realTotal === 0 && (
+              <circle
+                cx={CENTER_X}
+                cy={CENTER_Y}
+                r={(DONUT_RADIUS + INNER_HOLE_RADIUS) / 2}
+                fill="none"
+                stroke="#1e293b"
+                strokeWidth={DONUT_RADIUS - INNER_HOLE_RADIUS}
+                className="opacity-70"
+              />
+            )}
+
             {/* Pie Slices */}
-            {slices.map((s, i) => {
+            {realTotal > 0 && slices.map((s, i) => {
               const isHovered = hoveredSliceIndex === i;
               const isDimmed = hoveredSliceIndex !== null && !isHovered;
 

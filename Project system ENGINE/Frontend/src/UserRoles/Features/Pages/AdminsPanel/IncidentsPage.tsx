@@ -45,8 +45,16 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
-import { getDutyRoster, DutyUnit } from '@/Endpoints/responderOpsApi';
+import {
+  getDutyRoster,
+  DutyUnit,
+  getDispatchRequests,
+  approveMedicRequestByAdmin,
+  respondToAdminDeployOrder,
+  DispatchRequestRecord
+} from '@/Endpoints/responderOpsApi';
 import { verifyReport, allocateReportUnit } from '@/Endpoints/adminGovernanceApi';
+import { formatDateTimeWithSecondsAmPm } from '@/Shared/radarPointerCategories';
 import {
   SearchBar,
   Dropdown,
@@ -101,6 +109,15 @@ export const IncidentsPage: FC = () => {
   const [activeDetailIncident, setActiveDetailIncident] = useState<ExtendedReportItem | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Responder Dispatch Requests Queue state
+  const [dispatchRequests, setDispatchRequests] = useState<DispatchRequestRecord[]>([]);
+  const [isDispatchRequestsModalOpen, setIsDispatchRequestsModalOpen] = useState<boolean>(false);
+  const [requestSearch, setRequestSearch] = useState<string>('');
+  const debouncedRequestSearch = useDebounce(requestSearch, 250);
+  const [requestSortOrder, setRequestSortOrder] = useState<string>('pending_first');
+  const [requestStatusFilter, setRequestStatusFilter] = useState<'ALL' | 'PENDING' | 'DEPLOY'>('ALL');
+  const [isProcessingRequestId, setIsProcessingRequestId] = useState<string | null>(null);
+
   const showToast = (msg: string): void => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
@@ -108,12 +125,14 @@ export const IncidentsPage: FC = () => {
 
   const loadData = async (): Promise<void> => {
     try {
-      const [r, u] = await Promise.all([
+      const [r, u, reqs] = await Promise.all([
         getAllReports().catch(() => [] as ExtendedReportItem[]),
-        getDutyRoster().catch(() => [] as ExtendedDutyUnit[])
+        getDutyRoster().catch(() => [] as ExtendedDutyUnit[]),
+        getDispatchRequests().catch(() => [] as DispatchRequestRecord[])
       ]);
       setReports((r as ExtendedReportItem[]) || []);
       setRoster((u as ExtendedDutyUnit[]) || []);
+      setDispatchRequests(reqs || []);
     } catch (err) {
       console.error('[IncidentsPage] Data sync error:', err);
     }
@@ -121,6 +140,21 @@ export const IncidentsPage: FC = () => {
 
   useEffect(() => {
     void loadData();
+
+    const handleNotification = (e: Event) => {
+      const custom = e as CustomEvent;
+      if (custom.detail?.type === 'REQUEST_DISPATCH_DEPLOY' || custom.detail?.category === 'REQUEST_DISPATCH_DEPLOY') {
+        void getDispatchRequests().then((res) => setDispatchRequests(res || []));
+        showToast('New Responder Dispatch Request Received!');
+      }
+    };
+    window.addEventListener('resqtrack:notification', handleNotification);
+    window.addEventListener('resqtrack:report', () => {
+      void getDispatchRequests().then((res) => setDispatchRequests(res || []));
+    });
+    return () => {
+      window.removeEventListener('resqtrack:notification', handleNotification);
+    };
   }, []);
 
   useValueRefreshAuto(loadData, { intervalMs: 8000 });
@@ -296,6 +330,87 @@ export const IncidentsPage: FC = () => {
     return `${((validCount / reports.length) * 100).toFixed(1)}% AI Match`;
   }, [reports]);
 
+  // Pending dispatch requests count for badge
+  const pendingDispatchRequestsCount = useMemo(
+    () => dispatchRequests.filter((r) => r.status === 'PENDING').length,
+    [dispatchRequests]
+  );
+
+  const handleApproveDispatchRequest = async (req: DispatchRequestRecord): Promise<void> => {
+    try {
+      setIsProcessingRequestId(req.id);
+      const updated = await approveMedicRequestByAdmin(req.id);
+      if (updated) {
+        setDispatchRequests((prev) => prev.map((item) => (item.id === req.id ? updated : item)));
+        showToast(`Approved dispatch request for ${req.responderName}. Target: ${req.incidentCode}.`);
+      }
+    } catch (err) {
+      console.error('[IncidentsPage] Failed to approve request:', err);
+      showToast('Error approving dispatch request.');
+    } finally {
+      setIsProcessingRequestId(null);
+    }
+  };
+
+  const handleDeclineDispatchRequest = async (req: DispatchRequestRecord): Promise<void> => {
+    try {
+      setIsProcessingRequestId(req.id);
+      const updated = await respondToAdminDeployOrder(req.id, 'DECLINE');
+      if (updated) {
+        setDispatchRequests((prev) => prev.map((item) => (item.id === req.id ? updated : item)));
+        showToast(`Declined dispatch request from ${req.responderName}.`);
+      }
+    } catch (err) {
+      console.error('[IncidentsPage] Failed to decline request:', err);
+      showToast('Error declining dispatch request.');
+    } finally {
+      setIsProcessingRequestId(null);
+    }
+  };
+
+  const filteredDispatchRequests = useMemo(() => {
+    let list = [...dispatchRequests];
+
+    if (requestStatusFilter === 'PENDING') {
+      list = list.filter((r) => r.status === 'PENDING');
+    } else if (requestStatusFilter === 'DEPLOY') {
+      list = list.filter((r) => r.status === 'DEPLOY' || r.status === 'TO BE DEPLOYED');
+    }
+
+    if (debouncedRequestSearch.trim()) {
+      const q = debouncedRequestSearch.toLowerCase();
+      list = list.filter(
+        (r) =>
+          r.responderName.toLowerCase().includes(q) ||
+          r.responderId.toLowerCase().includes(q) ||
+          r.incidentCode.toLowerCase().includes(q) ||
+          r.incidentTitle.toLowerCase().includes(q) ||
+          r.category.toLowerCase().includes(q) ||
+          r.location.toLowerCase().includes(q)
+      );
+    }
+
+    list.sort((a, b) => {
+      if (requestSortOrder === 'az') {
+        return a.responderName.localeCompare(b.responderName);
+      }
+      if (requestSortOrder === 'za') {
+        return b.responderName.localeCompare(a.responderName);
+      }
+      if (requestSortOrder === 'newest') {
+        return new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime();
+      }
+      if (requestSortOrder === 'oldest') {
+        return new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime();
+      }
+      if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
+      if (b.status === 'PENDING' && a.status !== 'PENDING') return 1;
+      return new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime();
+    });
+
+    return list;
+  }, [dispatchRequests, requestStatusFilter, debouncedRequestSearch, requestSortOrder]);
+
   return (
     <div className="flex flex-col gap-6 w-full">
       {/* Toast Notification */}
@@ -318,8 +433,30 @@ export const IncidentsPage: FC = () => {
           </p>
         </div>
 
-        {/* Task 19: Auto-Dispatch Toggle */}
-        <div className="flex items-center gap-3 p-2 rounded-xl bg-slate-950/80 border border-slate-700/80">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Responder Dispatch Requests Queue Button with Badge Number */}
+          <Button
+            variant={pendingDispatchRequestsCount > 0 ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => setIsDispatchRequestsModalOpen(true)}
+            className="relative text-xs font-mono font-bold flex items-center gap-2 border-rose-500/50 shadow-sm"
+            title="Inspect active responder dispatch requests awaiting authorization"
+          >
+            <Send className="w-3.5 h-3.5 text-rose-400" />
+            <span>REQUESTS TO DISPATCH</span>
+            {pendingDispatchRequestsCount > 0 ? (
+              <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black animate-pulse">
+                {pendingDispatchRequestsCount}
+              </span>
+            ) : (
+              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-mono">
+                {dispatchRequests.length}
+              </span>
+            )}
+          </Button>
+
+          {/* Task 19: Auto-Dispatch Toggle */}
+          <div className="flex items-center gap-3 p-2 rounded-xl bg-slate-950/80 border border-slate-700/80">
           <Sparkles className="w-4 h-4 text-emerald-400" />
           <span className="text-xs font-mono font-bold text-slate-300">AUTO-DISPATCH AI</span>
           <button
@@ -341,6 +478,7 @@ export const IncidentsPage: FC = () => {
           </button>
         </div>
       </div>
+    </div>
 
       {/* Task 12: 5 KPI Status / Modal Cards (Zero Hardcoded Static Numbers) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
@@ -876,6 +1014,210 @@ export const IncidentsPage: FC = () => {
               >
                 <Send className="w-3.5 h-3.5" />
                 {isSubmittingDispatch ? 'ALLOCATING...' : 'CONFIRM DISPATCH'}
+              </Button>
+            </div>
+          </div>
+        </DefaultFloatingModalCard>
+      )}
+
+      {/* Responder Dispatch Requests Queue Modal */}
+      {isDispatchRequestsModalOpen && (
+        <DefaultFloatingModalCard
+          isOpen={isDispatchRequestsModalOpen}
+          onClose={() => setIsDispatchRequestsModalOpen(false)}
+          title={`Responder Dispatch Requests Queue (${pendingDispatchRequestsCount} Pending)`}
+          subtitle="Field responders requesting mission dispatch authorization or administrative deployment approval"
+          className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        >
+          <div className="space-y-4 text-xs text-slate-200">
+            {/* Modal Controls: SearchBar + Sort Dropdown + Filter Tabs */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-slate-950/80 border border-slate-800">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setRequestStatusFilter('ALL')}
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-bold transition-all ${
+                    requestStatusFilter === 'ALL'
+                      ? 'bg-rose-600 text-white'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  ALL ({dispatchRequests.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRequestStatusFilter('PENDING')}
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-bold transition-all ${
+                    requestStatusFilter === 'PENDING'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  PENDING ({pendingDispatchRequestsCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRequestStatusFilter('DEPLOY')}
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-bold transition-all ${
+                    requestStatusFilter === 'DEPLOY'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  DEPLOYED ({dispatchRequests.filter((r) => r.status === 'DEPLOY' || r.status === 'TO BE DEPLOYED').length})
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <SearchBar
+                  value={requestSearch}
+                  onChange={setRequestSearch}
+                  placeholder="Search responder, unit, incident..."
+                  className="w-full sm:w-60"
+                />
+                <Dropdown
+                  value={requestSortOrder}
+                  onChange={(v) => setRequestSortOrder(v as string)}
+                  options={[
+                    { value: 'pending_first', label: 'Pending Requests First' },
+                    { value: 'az', label: 'Alphabetical: A to Z' },
+                    { value: 'za', label: 'Alphabetical: Z to A' },
+                    { value: 'newest', label: 'Timestamp: Newest First' },
+                    { value: 'oldest', label: 'Timestamp: Oldest First' }
+                  ]}
+                  className="min-w-[170px]"
+                />
+              </div>
+            </div>
+
+            {/* Requests List */}
+            {filteredDispatchRequests.length === 0 ? (
+              <div className="p-8 text-center rounded-xl bg-slate-900/40 border border-slate-800 text-slate-500 font-mono">
+                No dispatch requests match your search or filter.
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                {filteredDispatchRequests.map((req) => {
+                  const isProcessing = isProcessingRequestId === req.id;
+                  const isPending = req.status === 'PENDING';
+                  const isDeployed = req.status === 'DEPLOY';
+
+                  return (
+                    <div
+                      key={req.id}
+                      className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition-all space-y-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-sky-400">
+                            <Send className="w-4 h-4" />
+                          </span>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-bold text-white text-xs">{req.responderName}</h4>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-sky-950 text-sky-300 border border-sky-600/40">
+                                {req.responderId}
+                              </span>
+                            </div>
+                            <p className="text-[10px] font-mono text-slate-400 mt-0.5">
+                              Request Timestamp: <span className="text-slate-300 font-bold">{formatDateTimeWithSecondsAmPm(req.requestedAt)}</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                              isPending
+                                ? 'bg-amber-950 text-amber-300 border border-amber-500/40 animate-pulse'
+                                : isDeployed
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                                : 'bg-slate-800 text-slate-400 border border-slate-700'
+                            }`}
+                          >
+                            {req.status}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-500 uppercase">
+                            Direction: {req.direction === 'MEDIC_REQUEST' ? 'Medic Request' : 'Admin Order'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Incident Target Details */}
+                      <div className="p-3 rounded-lg bg-slate-950/70 border border-slate-800/80 text-[11px] font-mono grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-slate-500 block">Target Incident:</span>
+                          <span className="font-bold text-white font-sans">{req.incidentTitle}</span>
+                          <span className="text-rose-400 ml-1.5 font-mono">({req.incidentCode})</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Category & Severity:</span>
+                          <span className="text-sky-300 font-sans">{req.category}</span> &bull;{' '}
+                          <span className="text-amber-400 font-bold">{req.severity}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Location:</span>
+                          <span className="text-slate-300">{req.location}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block">Terminal IP & GPS:</span>
+                          <span className="text-slate-400">{req.ipAddress} &bull; {req.coordinates}</span>
+                        </div>
+                      </div>
+
+                      {req.notes && (
+                        <p className="text-[11px] text-slate-400 italic">
+                          <strong className="text-slate-500 not-italic">Notes:</strong> {req.notes}
+                        </p>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
+                        <span className="text-[10px] font-mono text-slate-500">
+                          {isPending ? 'Approval will update responder status to DEPLOY' : 'Request already actioned'}
+                        </span>
+
+                        <div className="flex items-center gap-2">
+                          {isPending && (
+                            <>
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                disabled={isProcessing}
+                                onClick={() => void handleApproveDispatchRequest(req)}
+                                className="text-xs font-mono font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                {isProcessing ? 'PROCESSING...' : 'APPROVE & DISPATCH'}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={isProcessing}
+                                onClick={() => void handleDeclineDispatchRequest(req)}
+                                className="text-xs font-mono font-bold border-slate-700 hover:border-rose-400 text-slate-300"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                DECLINE
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-3 border-t border-slate-800">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsDispatchRequestsModalOpen(false)}
+                className="text-xs font-mono"
+              >
+                CLOSE
               </Button>
             </div>
           </div>
