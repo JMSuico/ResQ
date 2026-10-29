@@ -45,7 +45,7 @@ import { biometricFrameCache } from '@/Libs/Cache/biometricFrameCache';
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isMobile } = useFluidResposiveness();
+  const { isMobile, isTablet, isUltraWide, width, getFluidClamp } = useFluidResposiveness();
 
   // Wizard Step: 0 = Role, 1 = Identity (Personal & ID Capture), 2 = Biometrics, 3 = Security
   const [step, setStep] = useState<number>(0);
@@ -665,26 +665,44 @@ export const RegisterPage: React.FC = () => {
   };
 
   return (
-    <main className="scene page-register min-h-screen flex items-center justify-center p-3 sm:p-6 w-full">
-      <div className="stage w-full max-w-4xl mx-auto flex flex-col items-center justify-center">
+    <main className="scene page-register min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 w-full overflow-y-auto">
+      <div
+        className="stage w-full max-w-4xl mx-auto flex flex-col items-center justify-center my-auto"
+        style={{
+          maxWidth: 'min(940px, 96vw)',
+          width: '100%',
+          height: 'auto',
+          position: 'relative',
+          margin: '0 auto',
+          left: 'auto',
+          top: 'auto',
+          transform: 'none'
+        }}
+      >
         <div className="bg" aria-hidden="true">
           <span className="bg__strip"></span>
           <span className="bg__disc"></span>
           <span className="bg__wedge"></span>
         </div>
 
-        <header className="brand text-center mb-4">
+        <header className="brand text-center mb-4 w-full" style={{ position: 'relative', margin: '0 auto 16px', left: 'auto', top: 'auto' }}>
           <h1 className="brand__mark">RESQTRACK</h1>
           <p className="brand__lead">Smart Emergency Response</p>
           <p className="brand__sub">System with Image Processing and Real-Time Tracking</p>
         </header>
 
         <section
-          className="panel panel--register relative w-full"
+          className="panel panel--register w-full"
           aria-labelledby="panel-title"
           style={{
-            maxWidth: isMobile ? '100%' : '900px',
+            position: 'relative',
+            left: 'auto',
+            top: 'auto',
+            width: '100%',
+            maxWidth: isMobile ? '100%' : '920px',
             margin: '0 auto',
+            transform: 'none',
+            height: 'auto',
             border: '1px solid rgba(255, 92, 116, 0.22)',
             boxShadow: '0 24px 60px rgba(0,0,0,0.65), 0 0 20px rgba(232,17,76,0.15)',
             paddingBottom: '20px'

@@ -14,45 +14,52 @@
 
 .scene.page-register,
 .page-register {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(16px, 2.5vw, 36px) 16px;
-  box-sizing: border-box;
-  overflow-y: auto;
-  overflow-x: hidden;
+  min-height: 100vh !important;
+  width: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: clamp(16px, 3vw, 40px) clamp(12px, 2.5vw, 32px) !important;
+  box-sizing: border-box !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  place-items: center !important;
 }
 
 /* ---------- 2. Stage Container ---------- */
 
-.page-register .stage {
-  position: relative;
-  width: 100%;
-  max-width: min(940px, 96vw);
-  height: auto;
-  min-height: 0;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  flex: none;
+.page-register .stage,
+.scene.page-register .stage {
+  position: relative !important;
+  width: 100% !important;
+  max-width: min(940px, 96vw) !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 1 1 auto !important;
+  transform: none !important;
+  top: auto !important;
+  left: auto !important;
 }
 
 /* Hide background deco art on registration so stage stays cleanly centered */
 .page-register .bg,
 .page-register .responders {
-  display: none;
+  display: none !important;
 }
 
 /* Center brand header neatly above the registration panel */
 .page-register .brand {
-  position: static;
-  width: 100%;
-  max-width: min(900px, 94vw);
-  margin: 0 auto clamp(12px, 2vw, 20px);
-  text-align: center;
+  position: static !important;
+  width: 100% !important;
+  max-width: min(900px, 94vw) !important;
+  margin: 0 auto clamp(12px, 2vw, 20px) !important;
+  text-align: center !important;
 }
 
 .page-register .brand__mark,
@@ -88,22 +95,23 @@
 .page-register .panel,
 .page-register .panel--register,
 .panel--register {
-  position: relative;
-  left: auto;
-  top: auto;
-  right: auto;
-  bottom: auto;
-  margin: 0 auto;
-  width: 100%;
-  max-width: min(900px, 94vw);
-  min-width: 0;
-  height: auto;
-  box-sizing: border-box;
-  border-radius: 14px;
-  background: linear-gradient(155deg, var(--card-a, #542330) 0%, var(--card-b, #44212c) 100%);
+  position: relative !important;
+  left: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  margin: 0 auto !important;
+  width: 100% !important;
+  max-width: min(920px, 94vw) !important;
+  min-width: 0 !important;
+  height: auto !important;
+  box-sizing: border-box !important;
+  border-radius: 14px !important;
+  transform: none !important;
+  background: linear-gradient(155deg, var(--card-a, #542330) 0%, var(--card-b, #44212c) 100%) !important;
   box-shadow:
     0 24px 60px rgba(0, 0, 0, 0.65),
-    0 0 20px rgba(232, 17, 76, 0.15);
+    0 0 20px rgba(232, 17, 76, 0.15) !important;
 }
 
 .page-register .panel__body {
