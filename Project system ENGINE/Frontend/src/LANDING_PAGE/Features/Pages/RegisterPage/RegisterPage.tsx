@@ -40,6 +40,7 @@ import {
 import { registerUser, RegisterPayload, ResponderUnit } from '@/Endpoints/authApi';
 import { MultiAngleBiometricEngine } from './MultiAngleBiometricEngine';
 import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
+import { biometricFrameCache } from '@/Libs/Cache/biometricFrameCache';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -218,12 +219,22 @@ export const RegisterPage: React.FC = () => {
   };
 
   // Helper to generate a clean dual composite canvas merging front and back ID cards
-  const generateDualIdComposite = (frontUrl: string, backUrl: string): string => {
+  const generateDualIdComposite = async (frontUrl: string, backUrl: string): Promise<string> => {
     const canvas = document.createElement('canvas');
     canvas.width = 856;
     canvas.height = 320;
     const ctx = canvas.getContext('2d');
     if (!ctx) return frontUrl;
+
+    const loadImage = (url: string): Promise<HTMLImageElement> =>
+      new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(img);
+        img.src = url;
+      });
+
+    const [imgFront, imgBack] = await Promise.all([loadImage(frontUrl), loadImage(backUrl)]);
 
     // Military HUD card background
     ctx.fillStyle = '#060a12';
@@ -241,8 +252,6 @@ export const RegisterPage: React.FC = () => {
     );
 
     // Front ID Snapshot
-    const imgFront = new Image();
-    imgFront.src = frontUrl;
     try {
       ctx.drawImage(imgFront, 16, 48, 400, 252);
     } catch {
@@ -251,8 +260,6 @@ export const RegisterPage: React.FC = () => {
     }
 
     // Back ID Snapshot
-    const imgBack = new Image();
-    imgBack.src = backUrl;
     try {
       ctx.drawImage(imgBack, 440, 48, 400, 252);
     } catch {
@@ -615,7 +622,7 @@ export const RegisterPage: React.FC = () => {
 
     try {
       const isCivilian = selectedRole === 'Civilian';
-      const dualCompositeUrl = idFrontShot && idBackShot ? generateDualIdComposite(idFrontShot, idBackShot) : undefined;
+      const dualCompositeUrl = idFrontShot && idBackShot ? await generateDualIdComposite(idFrontShot, idBackShot) : undefined;
 
       const payload: RegisterPayload = {
         fullName: fullname.trim(),
@@ -635,6 +642,7 @@ export const RegisterPage: React.FC = () => {
       const res = await registerUser(payload);
       setIsLoading(false);
       setIsSuccess(true);
+      biometricFrameCache.clear();
 
       const msg =
         (payload.employeeOrResidentId ? payload.employeeOrResidentId.toUpperCase() : payload.fullName) +
@@ -1723,6 +1731,7 @@ export const RegisterPage: React.FC = () => {
                       onRetake={handleFaceRetake}
                       initialVerified={faceVerified}
                       initialDataUrl={faceShot}
+                      userIdOrEmail={email || employeeId}
                     />
                   </div>
                 </div>

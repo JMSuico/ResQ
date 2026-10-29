@@ -196,6 +196,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
   const animationFrameId = useRef<number | null>(null);
   const lastFrameTime = useRef<number>(performance.now());
   const stepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Stop camera media stream
   const stopCamera = useCallback(() => {
@@ -205,12 +206,14 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     }
   }, []);
 
-  // Clear timers and camera on unmount
+  // Clear timers, intervals, and camera on unmount
   useEffect(() => {
     return () => {
       stopCamera();
       if (stepTimerRef.current) clearTimeout(stepTimerRef.current);
+      if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+      biometricFrameCache.clear();
     };
   }, [stopCamera]);
 
@@ -617,12 +620,14 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
 
     // Step A: Distance Calibration (takes ~1000ms)
     let p = 0;
-    const distInterval = setInterval(() => {
+    if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+    activeIntervalRef.current = setInterval(() => {
       p += 10;
       setDistanceProgress(Math.min(p, 100));
 
       if (p >= 100) {
-        clearInterval(distInterval);
+        if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+        activeIntervalRef.current = null;
         runPose1Center();
       }
     }, 100);
@@ -635,12 +640,14 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     setPoseProgress(0);
 
     let progress = 0;
-    const interval = setInterval(() => {
+    if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+    activeIntervalRef.current = setInterval(() => {
       progress += 5;
       setPoseProgress(Math.min(progress, 100));
 
       if (progress >= 100) {
-        clearInterval(interval);
+        if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+        activeIntervalRef.current = null;
         const centerSnap = captureCurrentFrame();
         snapshotsRef.current.center = centerSnap;
         setSnapshots((prev) => ({ ...prev, center: centerSnap }));
@@ -659,12 +666,14 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     setPoseProgress(0);
 
     let progress = 0;
-    const interval = setInterval(() => {
+    if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+    activeIntervalRef.current = setInterval(() => {
       progress += 5;
       setPoseProgress(Math.min(progress, 100));
 
       if (progress >= 100) {
-        clearInterval(interval);
+        if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+        activeIntervalRef.current = null;
         const leftSnap = captureCurrentFrame();
         snapshotsRef.current.left = leftSnap;
         setSnapshots((prev) => ({ ...prev, left: leftSnap }));
@@ -683,12 +692,14 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     setPoseProgress(0);
 
     let progress = 0;
-    const interval = setInterval(() => {
+    if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+    activeIntervalRef.current = setInterval(() => {
       progress += 5;
       setPoseProgress(Math.min(progress, 100));
 
       if (progress >= 100) {
-        clearInterval(interval);
+        if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+        activeIntervalRef.current = null;
         const rightSnap = captureCurrentFrame();
         snapshotsRef.current.right = rightSnap;
         setSnapshots((prev) => ({ ...prev, right: rightSnap }));
@@ -707,12 +718,14 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     setPoseProgress(0);
 
     let progress = 0;
-    const interval = setInterval(() => {
+    if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+    activeIntervalRef.current = setInterval(() => {
       progress += 5;
       setPoseProgress(Math.min(progress, 100));
 
       if (progress >= 100) {
-        clearInterval(interval);
+        if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
+        activeIntervalRef.current = null;
         const upSnap = captureCurrentFrame();
         snapshotsRef.current.up = upSnap;
         setSnapshots((prev) => ({ ...prev, up: upSnap }));
@@ -775,6 +788,10 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
 
   // Retake Scan and reset memory cache
   const handleRetake = () => {
+    if (activeIntervalRef.current) {
+      clearInterval(activeIntervalRef.current);
+      activeIntervalRef.current = null;
+    }
     biometricFrameCache.clear();
     setCachedCount(0);
     setVerifiedPayload(null);
@@ -920,7 +937,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           <svg
             className="absolute inset-0 w-full h-full pointer-events-none z-10"
             viewBox="0 0 400 270"
-            preserveAspectRatio="none"
+            preserveAspectRatio="xMidYMid meet"
           >
             <defs>
               <mask id="face-oval-mask">
