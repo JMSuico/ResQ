@@ -11,15 +11,15 @@ public record RegisterRequest(
     [Required, EmailAddress] string Email,
     [Required, MinLength(12)] string Password,
     [Required] string FullName,
-    string? PhoneNumber,
-    string? EmployeeOrResidentId,
-    string? ValidIdType,
-    UserRole Role,
-    ResponderUnitType Unit,
-    string? DepartmentOrBarangay,
-    string? RankOrTitle,
-    string? IdCaptureDataUrl,
-    string? FaceCaptureDataUrl
+    string? PhoneNumber = null,
+    string? EmployeeOrResidentId = null,
+    string? ValidIdType = null,
+    UserRole Role = UserRole.Civilian,
+    ResponderUnitType Unit = ResponderUnitType.None,
+    string? DepartmentOrBarangay = null,
+    string? RankOrTitle = null,
+    string? IdCaptureDataUrl = null,
+    string? FaceCaptureDataUrl = null
 );
 
 public record LoginRequest(

@@ -259,6 +259,38 @@ export const SubmittedReportsPage: FC = () => {
           ],
           notes: 'Both riders stabilized. Transport not required, cleared by Medical Officer III.'
         });
+
+        const seedId2 = 'seed-sub-rep-02';
+        const seedVerifiedTime = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+        mergedMap.set(seedId2, {
+          id: seedId2,
+          referenceCode: 'RESQ-20261028-002',
+          title: 'Commercial Storefront Electrical Wire Sparking & Arcing',
+          category: 'StructuralFire',
+          severity: 'High',
+          status: 'Verified',
+          locationLabel: 'Public Market Perimeter, Barangay Uno, Katipunan, ZN',
+          latitude: 8.5138,
+          longitude: 123.2904,
+          ipAddress: '192.168.42.119',
+          responderName: 'SINSP Ricardo Dalisay BFP',
+          responderUnit: 'FIRE-ENG-01',
+          submittedAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+          isVerified: true,
+          verifiedAt: seedVerifiedTime,
+          verifiedBy: 'LDRRMO Admin Command',
+          isClosed: false,
+          closedAt: null,
+          evidencePhotos: [
+            {
+              url: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?auto=format&fit=crop&w=800&q=80',
+              timestamp: formatDateTimeWithSecondsAmPm(new Date(Date.now() - 20 * 60 * 1000).toISOString()),
+              caption: 'Electrical conduit isolated and perimeter cordoned'
+            }
+          ],
+          casualties: [],
+          notes: 'Feeder line de-energized by utility team. Perimeter secured.'
+        });
       }
 
       setReports(Array.from(mergedMap.values()));

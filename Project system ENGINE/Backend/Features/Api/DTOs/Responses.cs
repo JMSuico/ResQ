@@ -31,7 +31,7 @@ public record UserResponse(
     bool FaceVerified,
     bool HasIdCapture,
     bool HasFaceCapture,
-    string DepartmentOrBarangay,
+    string? DepartmentOrBarangay,
     string RankOrTitle,
     DateTime CreatedAt,
     string? FullAddress = null,

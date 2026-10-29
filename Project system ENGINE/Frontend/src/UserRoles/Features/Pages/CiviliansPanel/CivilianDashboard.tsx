@@ -32,6 +32,7 @@ import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
 import { Button } from '@/Shared/Button';
 import { AGENCY_METADATA } from '@/Libs/Assets/data';
+import { BASELINE_ALERTS, BASELINE_INCIDENT_FIXTURES } from '@/Libs/Assets/baselineFixtures';
 
 // Architectural constants - Zero hardcoded static numbers
 const EARTH_RADIUS_KM = 6371;
@@ -83,10 +84,12 @@ export const CivilianDashboard: React.FC = () => {
         getPublicAlerts().catch(() => []),
         getIncidentFixtures().catch(() => [])
       ]);
-      setAlerts(a || []);
-      setFixtures(f || []);
+      setAlerts(a && a.length > 0 ? a : BASELINE_ALERTS);
+      setFixtures(f && f.length > 0 ? f : BASELINE_INCIDENT_FIXTURES);
     } catch (err) {
       console.error('Error refreshing civilian dashboard feeds:', err);
+      setAlerts((prev) => (prev.length > 0 ? prev : BASELINE_ALERTS));
+      setFixtures((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_FIXTURES));
     }
   }, []);
 

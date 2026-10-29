@@ -48,7 +48,7 @@ public class User
     public string? FaceCapturePath { get; set; }
 
     [MaxLength(150)]
-    public string DepartmentOrBarangay { get; set; } = string.Empty;
+    public string? DepartmentOrBarangay { get; set; }
 
     [MaxLength(100)]
     public string RankOrTitle { get; set; } = string.Empty;

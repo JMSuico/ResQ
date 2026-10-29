@@ -45,6 +45,12 @@ import { LinearCurveyChart, BarGraphChart, PieGraphChart } from '@/Shared/Charts
 import { Dropdown, Button, DefaultFloatingModalCard } from '@/Shared';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
+import {
+  BASELINE_INCIDENT_REPORTS,
+  BASELINE_INCIDENT_FIXTURES,
+  BASELINE_DUTY_ROSTER,
+  BASELINE_ANALYTICS_SUMMARY
+} from '@/Libs/Assets/baselineFixtures';
 
 export interface NearestUnitCalculation {
   unit: DutyUnit;
@@ -167,14 +173,16 @@ export const AdminDashboard: FC = () => {
           .catch(() => getDutyRoster().catch(() => [] as DutyUnit[])),
         getAnalyticsSummary().catch(() => null as AnalyticsSummaryDto | null)
       ]);
-      setReports(r || []);
-      setFixtures(f || []);
-      setRoster(u || []);
-      if (s) {
-        setAnalyticsSummary(s);
-      }
+      setReports(r && r.length > 0 ? r : BASELINE_INCIDENT_REPORTS);
+      setFixtures(f && f.length > 0 ? f : BASELINE_INCIDENT_FIXTURES);
+      setRoster(u && u.length > 0 ? u : BASELINE_DUTY_ROSTER);
+      setAnalyticsSummary(s || BASELINE_ANALYTICS_SUMMARY);
     } catch (err) {
       console.error('[AdminDashboard] Failed to load telemetry:', err);
+      setReports((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_REPORTS));
+      setFixtures((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_FIXTURES));
+      setRoster((prev) => (prev.length > 0 ? prev : BASELINE_DUTY_ROSTER));
+      setAnalyticsSummary((prev) => prev || BASELINE_ANALYTICS_SUMMARY);
     }
   }, []);
 

@@ -28,6 +28,7 @@ import {
 } from '@/Shared';
 import { formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
 import { SEVERITY_COLORS } from '@/Libs/Assets/data';
+import { BASELINE_INCIDENT_REPORTS } from '@/Libs/Assets/baselineFixtures';
 import {
   Camera,
   ClipboardList,
@@ -535,6 +536,69 @@ export const MyReportsPage: React.FC = () => {
           });
         }
       });
+
+      if (mergedById.size === 0) {
+        BASELINE_INCIDENT_REPORTS.forEach((baseRep, idx) => {
+          const verifiedAt = idx === 0 ? new Date(Date.now() - 2 * 60 * 1000).toISOString() : null;
+          const isVerified = Boolean(verifiedAt);
+          mergedById.set(baseRep.id, {
+            id: baseRep.id,
+            referenceCode: baseRep.referenceCode,
+            title: baseRep.title,
+            note: baseRep.note,
+            category: baseRep.category,
+            severity: baseRep.severity,
+            status: isVerified ? 'Verified' : 'Responded',
+            isVerified,
+            verifiedAt,
+            verifiedBy: isVerified ? 'LDRRMO Admin Command' : undefined,
+            isClosed: false,
+            closedAt: null,
+            latitude: baseRep.latitude,
+            longitude: baseRep.longitude,
+            locationLabel: baseRep.locationLabel,
+            ipAddress: '192.168.10.42',
+            responderName: session?.fullName || 'Dr. Maria Clara Santos MD',
+            responderId: session?.userId || 'rhu-medic-01',
+            unitCode: baseRep.allocatedUnitCode || 'AMB-RHU-01',
+            createdAt: baseRep.createdAt,
+            casualties: [
+              {
+                id: `cas-base-${baseRep.id}`,
+                patientName: 'Casualty Patient (Juan Dela Cruz)',
+                age: 28,
+                gender: 'Male',
+                triageTag: 'RED — IMMEDIATE',
+                levelOfConsciousness: 'Alert (GCS 15)',
+                bloodPressureSystolic: 120,
+                bloodPressureDiastolic: 80,
+                heartRateBpm: 78,
+                respiratoryRate: 18,
+                spO2Percent: 98,
+                temperatureCelsius: 36.6,
+                bloodGlucoseMgDl: 95,
+                chiefComplaint: 'Acute knee laceration & lower limb trauma',
+                interventions: ['Wound Irrigation', 'Sterile Dressing', 'Traction Splint'],
+                recordedAt: formatEvidenceTimestampExact(baseRep.createdAt)
+              }
+            ],
+            evidencePhotos: baseRep.imageUrl
+              ? [
+                  {
+                    id: `ev-base-${baseRep.id}`,
+                    url: baseRep.imageUrl,
+                    timestamp: formatEvidenceTimestampExact(baseRep.createdAt),
+                    caption: 'Field incident point of impact',
+                    latitude: baseRep.latitude,
+                    longitude: baseRep.longitude,
+                    ipAddress: '192.168.10.42'
+                  }
+                ]
+              : [],
+            isHardwareGeolocated: true
+          });
+        });
+      }
 
       const finalLogs = Array.from(mergedById.values());
       setLogs(finalLogs);

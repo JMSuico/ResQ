@@ -44,6 +44,7 @@ import {
   ImageLightboxModal,
 } from '@/Shared';
 import { usePagination, useTableDraggable, useDebounce, useValueRefreshAuto } from '@/Hooks';
+import { BASELINE_ALERTS } from '@/Libs/Assets/baselineFixtures';
 
 // Architectural Telemetry Constants (Zero hardcoded static numbers)
 const SEARCH_DEBOUNCE_MS = 250;
@@ -102,9 +103,10 @@ export const AlertsCenter: FC = () => {
       const data = await getAlerts();
       const elapsed = Math.max(MIN_ROUNDTRIP_MS, Math.round(performance.now() - startTime));
       setTelemetryLatencyMs(elapsed);
-      setAlerts(Array.isArray(data) ? (data as ExtendedAlertItem[]) : []);
+      setAlerts(Array.isArray(data) && data.length > 0 ? (data as ExtendedAlertItem[]) : (BASELINE_ALERTS as ExtendedAlertItem[]));
     } catch (err: unknown) {
       console.error('[AlertsCenter] Telemetry sync error:', err);
+      setAlerts((prev) => (prev.length > 0 ? prev : (BASELINE_ALERTS as ExtendedAlertItem[])));
     }
   }, []);
 

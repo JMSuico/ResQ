@@ -47,7 +47,7 @@ public class AuthService(
             PasswordSalt = salt,
             Role = request.Role,
             Unit = request.Unit,
-            DepartmentOrBarangay = InputSanitizer.Sanitize(request.DepartmentOrBarangay),
+            DepartmentOrBarangay = string.IsNullOrWhiteSpace(request.DepartmentOrBarangay) ? null : InputSanitizer.Sanitize(request.DepartmentOrBarangay),
             RankOrTitle = InputSanitizer.Sanitize(request.RankOrTitle),
             Status = initialStatus,
             FaceVerified = faceVerified,
@@ -705,7 +705,7 @@ public class UserGovernanceService(
             Unit = request.Unit,
             Status = AccountStatus.Verified,
             FaceVerified = false,
-            DepartmentOrBarangay = InputSanitizer.Sanitize(request.DepartmentOrBarangay ?? string.Empty),
+            DepartmentOrBarangay = string.IsNullOrWhiteSpace(request.DepartmentOrBarangay) ? null : InputSanitizer.Sanitize(request.DepartmentOrBarangay),
             RankOrTitle = InputSanitizer.Sanitize(request.RankOrTitle ?? string.Empty),
             EmployeeOrResidentId = InputSanitizer.Sanitize(request.EmployeeOrResidentId ?? string.Empty),
             PasswordHash = hash,
@@ -789,7 +789,7 @@ public class UserGovernanceService(
         var previousStatus = user.Status;
         user.Status = request.Status;
 
-        if (request.DepartmentOrBarangay != null) user.DepartmentOrBarangay = InputSanitizer.Sanitize(request.DepartmentOrBarangay);
+        if (request.DepartmentOrBarangay != null) user.DepartmentOrBarangay = string.IsNullOrWhiteSpace(request.DepartmentOrBarangay) ? null : InputSanitizer.Sanitize(request.DepartmentOrBarangay);
         if (request.RankOrTitle != null) user.RankOrTitle = InputSanitizer.Sanitize(request.RankOrTitle);
         if (request.EmployeeOrResidentId != null) user.EmployeeOrResidentId = InputSanitizer.Sanitize(request.EmployeeOrResidentId);
 

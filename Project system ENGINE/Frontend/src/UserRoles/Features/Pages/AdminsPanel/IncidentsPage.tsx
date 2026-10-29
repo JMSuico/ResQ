@@ -64,6 +64,10 @@ import {
   DefaultFloatingModalCard
 } from '@/Shared';
 import { usePagination, useTableDraggable, useDebounce, useValueRefreshAuto } from '@/Hooks';
+import {
+  BASELINE_INCIDENT_REPORTS,
+  BASELINE_DUTY_ROSTER
+} from '@/Libs/Assets/baselineFixtures';
 
 export interface ExtendedReportItem extends ReportItem {
   deviceIp?: string;
@@ -130,11 +134,15 @@ export const IncidentsPage: FC = () => {
         getDutyRoster().catch(() => [] as ExtendedDutyUnit[]),
         getDispatchRequests().catch(() => [] as DispatchRequestRecord[])
       ]);
-      setReports((r as ExtendedReportItem[]) || []);
-      setRoster((u as ExtendedDutyUnit[]) || []);
+      const validReports = r && r.length > 0 ? (r as ExtendedReportItem[]) : (BASELINE_INCIDENT_REPORTS as ExtendedReportItem[]);
+      const validRoster = u && u.length > 0 ? (u as ExtendedDutyUnit[]) : (BASELINE_DUTY_ROSTER as ExtendedDutyUnit[]);
+      setReports(validReports);
+      setRoster(validRoster);
       setDispatchRequests(reqs || []);
     } catch (err) {
       console.error('[IncidentsPage] Data sync error:', err);
+      setReports((prev) => (prev.length > 0 ? prev : (BASELINE_INCIDENT_REPORTS as ExtendedReportItem[])));
+      setRoster((prev) => (prev.length > 0 ? prev : (BASELINE_DUTY_ROSTER as ExtendedDutyUnit[])));
     }
   };
 

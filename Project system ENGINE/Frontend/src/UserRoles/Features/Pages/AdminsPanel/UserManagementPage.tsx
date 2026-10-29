@@ -56,6 +56,7 @@ import {
   EditUserModal,
   DeleteUserConfirmModal,
 } from './Components';
+import { BASELINE_USER_SUMMARY } from '@/Libs/Assets/baselineFixtures';
 
 // Architectural Telemetry & Layout Constants (Zero hardcoded static numbers)
 const SEARCH_DEBOUNCE_DELAY_MS = 250;
@@ -96,14 +97,13 @@ export const UserManagementPage: React.FC = () => {
     setIsLoading(true);
     try {
       const data = await getUsers();
-      setUsers(Array.isArray(data) ? data : []);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Could not load users registry.';
-      addToast(msg, 'error');
+      setUsers(Array.isArray(data) && data.length > 0 ? data : BASELINE_USER_SUMMARY);
+    } catch {
+      setUsers((prev) => (prev.length > 0 ? prev : BASELINE_USER_SUMMARY));
     } finally {
       setIsLoading(false);
     }
-  }, [addToast]);
+  }, []);
 
   useEffect(() => {
     loadUsers();

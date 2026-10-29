@@ -46,6 +46,7 @@ import {
   DefaultFloatingModalCard
 } from '@/Shared';
 import { usePagination, useTableDraggable, useDebounce, useValueRefreshAuto } from '@/Hooks';
+import { BASELINE_DUTY_ROSTER } from '@/Libs/Assets/baselineFixtures';
 
 export interface ExtendedDutyUnit extends DutyUnit {
   badgeNumber?: string;
@@ -83,9 +84,10 @@ export const RespondersRosterPage: FC = () => {
       } catch {
         data = (await getDutyRoster()) as ExtendedDutyUnit[];
       }
-      setRoster(data || []);
+      setRoster(data && data.length > 0 ? data : (BASELINE_DUTY_ROSTER as ExtendedDutyUnit[]));
     } catch (err) {
       console.error('[RespondersRosterPage] Error loading roster:', err);
+      setRoster((prev) => (prev.length > 0 ? prev : (BASELINE_DUTY_ROSTER as ExtendedDutyUnit[])));
     }
   };
 

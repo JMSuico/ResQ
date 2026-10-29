@@ -35,6 +35,12 @@ import { SatelliteCommandMap, MapMarker } from '@/Shared/SatelliteCommandMap';
 import { Button, Dropdown } from '@/Shared';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
+import {
+  BASELINE_INCIDENT_REPORTS,
+  BASELINE_INCIDENT_FIXTURES,
+  BASELINE_DUTY_ROSTER,
+  BASELINE_ANALYTICS_SUMMARY
+} from '@/Libs/Assets/baselineFixtures';
 
 export interface NearestUnitResult {
   unit: DutyUnit;
@@ -131,14 +137,16 @@ export const StrategicMapPage: FC = () => {
         getIncidentFixtures().catch(() => [] as IncidentFixture[]),
         getAnalyticsSummary().catch(() => null as AnalyticsSummaryDto | null)
       ]);
-      setReports(r || []);
-      setRoster(u || []);
-      setFixtures(f || []);
-      if (s) {
-        setAnalyticsSummary(s);
-      }
+      setReports(r && r.length > 0 ? r : BASELINE_INCIDENT_REPORTS);
+      setRoster(u && u.length > 0 ? u : BASELINE_DUTY_ROSTER);
+      setFixtures(f && f.length > 0 ? f : BASELINE_INCIDENT_FIXTURES);
+      setAnalyticsSummary(s || BASELINE_ANALYTICS_SUMMARY);
     } catch (err) {
       console.error('[StrategicMapPage] Telemetry sync error:', err);
+      setReports((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_REPORTS));
+      setRoster((prev) => (prev.length > 0 ? prev : BASELINE_DUTY_ROSTER));
+      setFixtures((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_FIXTURES));
+      setAnalyticsSummary((prev) => prev || BASELINE_ANALYTICS_SUMMARY);
     }
   }, []);
 

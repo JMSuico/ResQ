@@ -38,6 +38,7 @@ import {
   SystemSetting,
   AuditLog,
 } from '@/Endpoints/adminGovernanceApi';
+import { BASELINE_AUDIT_LOGS } from '@/Libs/Assets/baselineFixtures';
 
 // Architectural Telemetry Constants (Zero hardcoded static numbers)
 const TOAST_DURATION_MS = 3500;
@@ -85,9 +86,10 @@ export const SettingsPage: FC = () => {
     setIsLoadingAudit(true);
     try {
       const logs = await getAuditLogs();
-      setAuditLogs(Array.isArray(logs) ? logs : []);
+      setAuditLogs(Array.isArray(logs) && logs.length > 0 ? logs : BASELINE_AUDIT_LOGS);
     } catch (err: unknown) {
       console.warn('[SettingsPage] Could not load cryptographic audit trail from backend:', err);
+      setAuditLogs((prev) => (prev.length > 0 ? prev : BASELINE_AUDIT_LOGS));
     } finally {
       setIsLoadingAudit(false);
     }

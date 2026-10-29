@@ -129,7 +129,7 @@ public record UserDetailResponse(
     bool HasFaceCapture,
     string? IdCapturePath,
     string? FaceCapturePath,
-    string DepartmentOrBarangay,
+    string? DepartmentOrBarangay,
     string RankOrTitle,
     string EmployeeOrResidentId,
     string? GovernmentIdType,
