@@ -1,5 +1,5 @@
 // [Layer: Backend/Api/Controllers]
-// Responsibility: Exposes system configuration settings and tamper-evident audit logs.
+// Responsibility: Exposes system configuration settings and tamper-evident audit logs using Universal Lambdas (=>).
 // DO NOT allow non-admins to modify core system settings or audit trails.
 
 using Microsoft.AspNetCore.Mvc;
@@ -19,22 +19,16 @@ public class SettingsController(ISettingsService settingsService, IAuditLogRepos
         Ok(await settingsService.GetAllSettingsAsync(ct));
 
     [HttpPut("{key}")]
-    public async Task<IActionResult> UpdateSettingAsync(string key, [FromBody] UpdateSettingRequest request, CancellationToken ct)
-    {
-        if (HttpContext.Items["UserRole"] is not UserRole role || role != UserRole.LDRRMO_Admin)
-            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Only LDRRMO Administrators may update system settings." });
-
-        Guid adminId = HttpContext.Items["UserId"] is Guid uid ? uid : Guid.Empty;
-        bool success = await settingsService.UpdateSettingAsync(key, request.Value, adminId, ct);
-        return success ? Ok(new { message = "Setting updated." }) : NotFound(new { message = "Setting key not found." });
-    }
+    public async Task<IActionResult> UpdateSettingAsync(string key, [FromBody] UpdateSettingRequest request, CancellationToken ct) =>
+        HttpContext.Items["UserRole"] is not UserRole role || role != UserRole.LDRRMO_Admin
+            ? StatusCode(StatusCodes.Status403Forbidden, new { message = "Only LDRRMO Administrators may update system settings." })
+            : await settingsService.UpdateSettingAsync(key, request.Value, HttpContext.Items["UserId"] is Guid uid ? uid : Guid.Empty, ct)
+                ? Ok(new { message = "Setting updated." })
+                : NotFound(new { message = "Setting key not found." });
 
     [HttpGet("audit")]
-    public async Task<IActionResult> GetAuditLogsAsync(CancellationToken ct)
-    {
-        if (HttpContext.Items["UserRole"] is not UserRole role || role != UserRole.LDRRMO_Admin)
-            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Only LDRRMO Administrators may view audit trails." });
-
-        return Ok(await auditRepo.GetRecentAsync(50, ct));
-    }
+    public async Task<IActionResult> GetAuditLogsAsync(CancellationToken ct) =>
+        HttpContext.Items["UserRole"] is not UserRole role || role != UserRole.LDRRMO_Admin
+            ? StatusCode(StatusCodes.Status403Forbidden, new { message = "Only LDRRMO Administrators may view audit trails." })
+            : Ok(await auditRepo.GetRecentAsync(50, ct));
 }

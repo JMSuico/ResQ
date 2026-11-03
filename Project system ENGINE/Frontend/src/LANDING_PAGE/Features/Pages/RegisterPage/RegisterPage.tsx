@@ -35,12 +35,24 @@ import {
   AlertCircle,
   X,
   Scan,
-  Maximize2
+  Maximize2,
+  Target,
+  Cpu,
+  Sparkles,
+  Activity
 } from 'lucide-react';
 import { registerUser, RegisterPayload, ResponderUnit } from '@/Endpoints/authApi';
 import { MultiAngleBiometricEngine } from './MultiAngleBiometricEngine';
 import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
 import { biometricFrameCache } from '@/Libs/Cache/biometricFrameCache';
+import {
+  idScanEngine,
+  FrameAnalysisResult,
+  IdScanResult,
+  GovernmentIdCategory,
+  isPlausibleHumanName,
+  parseNameComponents
+} from '@/Libs/Vision/idScanner';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -53,26 +65,41 @@ export const RegisterPage: React.FC = () => {
   // Step 0 - Role Classification Selection
   const [selectedRole, setSelectedRole] = useState<'Responder' | 'Civilian'>('Responder');
 
-  // Form Fields - Step 1 (Personal Info)
-  const [fullname, setFullname] = useState<string>('Insp. Eduardo M. Reyes');
-  const [email, setEmail] = useState<string>('e.reyes@bfp.gov.ph');
+  // Form Fields - Step 1 (Personal Info) - Initialized clean for OCR autofill
+  const [firstName, setFirstName] = useState<string>('');
+  const [middleName, setMiddleName] = useState<string>('');
+  const [lastName, setLastName] = useState<string>('');
+  const fullname = [firstName, middleName, lastName].filter(Boolean).join(' ');
+  const [email, setEmail] = useState<string>('');
   const [sex, setSex] = useState<string>('male');
-  const [age, setAge] = useState<string>('32');
-  const [idType, setIdType] = useState<string>('prc');
+  const [age, setAge] = useState<string>('');
+  const [idType, setIdType] = useState<string>('drivers');
 
   // Form Fields - Step 1 (Agency Info for Responders)
   const [agencyUnit, setAgencyUnit] = useState<ResponderUnit>('FIRE');
-  const [employeeId, setEmployeeId] = useState<string>('BFP-ZN-2024-089');
-  const [rankOrTitle, setRankOrTitle] = useState<string>('Senior Inspector');
+  const [employeeId, setEmployeeId] = useState<string>('');
+  const [rankOrTitle, setRankOrTitle] = useState<string>('');
 
   // ID Capture State - Step 1
   const [idCaptureMode, setIdCaptureMode] = useState<'camera' | 'upload'>('camera');
   const [idFrontShot, setIdFrontShot] = useState<string | null>(null);
   const [idBackShot, setIdBackShot] = useState<string | null>(null);
+  const [isFlippingCard, setIsFlippingCard] = useState<boolean>(false);
+  const flipCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isDraggingFront, setIsDraggingFront] = useState<boolean>(false);
   const [isDraggingBack, setIsDraggingBack] = useState<boolean>(false);
+
+  // Real-Time Deterministic Vision Scanner State
+  const [scannerAnalysis, setScannerAnalysis] = useState<FrameAnalysisResult | null>(null);
+  const [autofillBadge, setAutofillBadge] = useState<{
+    visible: boolean;
+    method: 'DETERMINISTIC_CV' | 'AI_STANDBY_FALLBACK';
+    confidence: number;
+    tier: string;
+    provider?: string;
+  } | null>(null);
 
   // Refs for camera video and file inputs
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -100,18 +127,33 @@ export const RegisterPage: React.FC = () => {
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+  // Cleanup flip cooldown timer on unmount
+  useEffect(() => {
+    return () => {
+      if (flipCooldownTimerRef.current) {
+        clearTimeout(flipCooldownTimerRef.current);
+      }
+    };
+  }, []);
+
   // Handle URL query parameters for role & unit pre-selection
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const unitParam = (params.get('unit') || '').toLowerCase();
     const roleParam = (params.get('role') || '').toLowerCase();
+    const stepParam = params.get('step');
+    if (stepParam && !isNaN(Number(stepParam))) {
+      setStep(Number(stepParam));
+    }
 
     if (unitParam === 'security' || roleParam === 'civilian' || roleParam === 'resident') {
       setSelectedRole('Civilian');
       setAgencyUnit('Security');
       setRankOrTitle('Resident');
       setEmployeeId('RES-ZN-2024');
-      setFullname('Juan Dela Cruz');
+      setFirstName('Juan');
+      setMiddleName('');
+      setLastName('Dela Cruz');
       setEmail('juan.delacruz@gmail.com');
     } else if (unitParam === 'rhu') {
       setSelectedRole('Responder');
@@ -213,7 +255,7 @@ export const RegisterPage: React.FC = () => {
       // Bottom Status Seal
       ctx.fillStyle = '#34d399';
       ctx.font = 'bold 16px monospace';
-      ctx.fillText(`[${side.toUpperCase()} ID SECURED ✓ // 300 DPI OPTICAL]`, 30, canvas.height - 30);
+      ctx.fillText(`[${side.toUpperCase()} ID SECURED // 300 DPI OPTICAL]`, 30, canvas.height - 30);
     }
     return canvas.toDataURL('image/png');
   };
@@ -286,8 +328,8 @@ export const RegisterPage: React.FC = () => {
     // HUD Text Badges
     ctx.font = 'bold 11px monospace';
     ctx.fillStyle = '#34d399';
-    ctx.fillText('FRONT ID CARD [SECURED ✓]', 24, 68);
-    ctx.fillText('BACK ID CARD [SECURED ✓]', 448, 68);
+    ctx.fillText('FRONT ID CARD [SECURED]', 24, 68);
+    ctx.fillText('BACK ID CARD [SECURED]', 448, 68);
 
     return canvas.toDataURL('image/png');
   };
@@ -332,18 +374,146 @@ export const RegisterPage: React.FC = () => {
     setIsCameraActive(false);
   }, []);
 
-  // Manage camera streaming based on active step and capture state
+  // Helper to convert extracted date of birth (DOB) into integer age
+  const computeAgeFromDob = (dob?: string): string | null => {
+    if (!dob) return null;
+    const parts = dob.split(/[-/.]/);
+    if (parts.length === 3) {
+      const yr = parts[0].length === 4 ? parseInt(parts[0], 10) : parseInt(parts[2], 10);
+      const currentYear = new Date().getFullYear();
+      if (yr > 1900 && yr < currentYear) {
+        const calculatedAge = currentYear - yr;
+        if (calculatedAge >= 18 && calculatedAge <= 100) return String(calculatedAge);
+      }
+    }
+    const parsed = new Date(dob);
+    if (!isNaN(parsed.getTime())) {
+      const diffMs = Date.now() - parsed.getTime();
+      const calculatedAge = Math.floor(diffMs / (365.25 * 24 * 60 * 60 * 1000));
+      if (calculatedAge >= 18 && calculatedAge <= 100) return String(calculatedAge);
+    }
+    return null;
+  };
+
+  // Handler for automatic card detection, temporal stability lock, and field autofill
+  const handleLockedCardScan = useCallback((result: IdScanResult) => {
+    if (!idFrontShot) {
+      const shotUrl = result.rectifiedImageUrl || captureFromVideoOrSynthetic('front');
+      setIdFrontShot(shotUrl);
+
+      // Deterministic CV & AI Standby Field Autofill
+      if (result.fields.fullname && isPlausibleHumanName(result.fields.fullname)) {
+        const parsed = parseNameComponents(result.fields.fullname);
+        if (parsed.firstName) setFirstName(parsed.firstName);
+        if (parsed.middleName) setMiddleName(parsed.middleName);
+        if (parsed.lastName) setLastName(parsed.lastName);
+      }
+      if (result.fields.sex) {
+        const s = result.fields.sex.toLowerCase();
+        if (s.startsWith('m')) setSex('male');
+        else if (s.startsWith('f')) setSex('female');
+      }
+      const resolvedAge = result.fields.age || computeAgeFromDob(result.fields.dateOfBirth);
+      if (resolvedAge && !isNaN(Number(resolvedAge))) {
+        setAge(resolvedAge);
+      }
+      if (result.fields.employeeId) {
+        setEmployeeId(result.fields.employeeId);
+      } else if (result.fields.idNumber) {
+        setEmployeeId(result.fields.idNumber);
+      }
+      if (result.fields.rankOrTitle) {
+        setRankOrTitle(result.fields.rankOrTitle);
+      }
+
+      setAutofillBadge({
+        visible: true,
+        method: result.method,
+        confidence: Math.round(result.confidence * 100),
+        tier: result.confidenceTier,
+        provider: result.aiProviderUsed
+      });
+
+      setStatusMessage(
+        `ID Scanned via ${result.method === 'DETERMINISTIC_CV' ? 'Deterministic CV' : 'AI Standby'} (${Math.round(result.confidence * 100)}% confidence). Front secured. Now flip card to capture back side.`
+      );
+      setStatusTone('ok');
+
+      // 2.0-second cooldown transition before restarting live stream for the back side
+      setIsFlippingCard(true);
+      if (flipCooldownTimerRef.current) {
+        clearTimeout(flipCooldownTimerRef.current);
+      }
+      flipCooldownTimerRef.current = setTimeout(() => {
+        setIsFlippingCard(false);
+      }, 2000);
+    } else if (!idBackShot) {
+      const shotUrl = result.rectifiedImageUrl || captureFromVideoOrSynthetic('back');
+      setIdBackShot(shotUrl);
+      setStatusMessage('Both front and back ID cards secured successfully.');
+      setStatusTone('ok');
+    }
+
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.idCard;
+      return next;
+    });
+  }, [idFrontShot, idBackShot]);
+
+  // Manage camera streaming and connect live viewfinder video stream to idScanEngine
   useEffect(() => {
     const isCapturing = step === 1 && idCaptureMode === 'camera' && (!idFrontShot || !idBackShot);
     if (isCapturing) {
       startCamera();
     } else {
       stopCamera();
+      idScanEngine.stop();
+      setScannerAnalysis(null);
     }
     return () => {
       stopCamera();
+      idScanEngine.stop();
     };
   }, [step, idCaptureMode, idFrontShot, idBackShot, startCamera, stopCamera]);
+
+  // Connect video feed to idScanEngine when camera becomes active
+  useEffect(() => {
+    const isCapturing =
+      step === 1 &&
+      idCaptureMode === 'camera' &&
+      (!idFrontShot || !idBackShot) &&
+      !isFlippingCard;
+
+    if (isCapturing && isCameraActive && videoRef.current) {
+      idScanEngine.startLiveStream(videoRef.current, {
+        targetCategory: idType as GovernmentIdCategory,
+        userRole: selectedRole,
+        onFrame: (analysis: FrameAnalysisResult) => {
+          setScannerAnalysis(analysis);
+        },
+        onLockedScan: (result: IdScanResult) => {
+          handleLockedCardScan(result);
+        }
+      });
+    } else {
+      idScanEngine.stop();
+      setScannerAnalysis(null);
+    }
+    return () => {
+      idScanEngine.stop();
+    };
+  }, [
+    step,
+    idCaptureMode,
+    isCameraActive,
+    idFrontShot,
+    idBackShot,
+    isFlippingCard,
+    idType,
+    selectedRole,
+    handleLockedCardScan
+  ]);
 
   // Capture current stage from video feed or synthetic fallback
   const captureFromVideoOrSynthetic = (side: 'front' | 'back'): string => {
@@ -371,10 +541,39 @@ export const RegisterPage: React.FC = () => {
     const side = isFrontStage ? 'front' : 'back';
     const shotUrl = captureFromVideoOrSynthetic(side);
 
+    // Also trigger full card scan asynchronously if live camera is running
+    if (videoRef.current && videoRef.current.videoWidth > 0) {
+      const v = videoRef.current;
+      const c = document.createElement('canvas');
+      c.width = v.videoWidth;
+      c.height = v.videoHeight;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      if (ctx) {
+        ctx.drawImage(v, 0, 0, c.width, c.height);
+        const imgData = ctx.getImageData(0, 0, c.width, c.height);
+        idScanEngine
+          .scanCard(imgData, idType as GovernmentIdCategory, selectedRole)
+          .then((res) => {
+            if (res.success && res.confidence >= 0.65) {
+              handleLockedCardScan(res);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
     if (isFrontStage) {
       setIdFrontShot(shotUrl);
       setStatusMessage('Front of ID card secured. Now flip card to capture back side.');
       setStatusTone('ok');
+
+      setIsFlippingCard(true);
+      if (flipCooldownTimerRef.current) {
+        clearTimeout(flipCooldownTimerRef.current);
+      }
+      flipCooldownTimerRef.current = setTimeout(() => {
+        setIsFlippingCard(false);
+      }, 2000);
     } else {
       setIdBackShot(shotUrl);
       setStatusMessage('Both front and back ID cards secured successfully.');
@@ -389,13 +588,19 @@ export const RegisterPage: React.FC = () => {
   };
 
   const handleRetakeAllId = () => {
+    if (flipCooldownTimerRef.current) {
+      clearTimeout(flipCooldownTimerRef.current);
+    }
+    setIsFlippingCard(false);
     setIdFrontShot(null);
     setIdBackShot(null);
+    setAutofillBadge(null);
+    idScanEngine.resetStability();
     setStatusMessage('ID card snapshots cleared. Align front of card to restart capture.');
     setStatusTone('');
   };
 
-  // Upload Handling (File Picker & Drag-and-Drop)
+  // Upload Handling (File Picker & Drag-and-Drop) with Automatic Deterministic CV Scan
   const handleFileUpload = (side: 'front' | 'back', file: File) => {
     if (!file.type.startsWith('image/')) {
       setErrors((prev) => ({ ...prev, idCard: 'Please upload a valid image file (PNG, JPG, or WebP).' }));
@@ -406,6 +611,31 @@ export const RegisterPage: React.FC = () => {
       const result = reader.result as string;
       if (side === 'front') {
         setIdFrontShot(result);
+        // Automatically execute OCR scan on uploaded front image
+        const img = new Image();
+        img.onload = async () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || 640;
+            canvas.height = img.naturalHeight || 480;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const scanRes = await idScanEngine.scanCard(
+                imgData,
+                idType as GovernmentIdCategory,
+                selectedRole
+              );
+              if (scanRes && scanRes.success) {
+                handleLockedCardScan(scanRes);
+              }
+            }
+          } catch (err) {
+            console.warn('[RegisterPage] Upload CV scan error:', err);
+          }
+        };
+        img.src = result;
       } else {
         setIdBackShot(result);
       }
@@ -462,6 +692,16 @@ export const RegisterPage: React.FC = () => {
   const strengthLabel = score >= 5 ? 'STRONG' : score >= 3 ? 'FAIR' : score >= 1 ? 'WEAK' : 'VERY WEAK';
   const strengthTone = score >= 5 ? 'ok' : score >= 3 ? 'warn' : 'bad';
 
+  // Vision Scanner Telemetry Calculations
+  const clarity = scannerAnalysis?.quality.details.laplacian ?? 0;
+  const isSharp = clarity >= 100;
+  const glareRatio = (scannerAnalysis?.quality.details.glare ?? 0) * 100;
+  const hasGlare = glareRatio >= 3.0;
+  const exposureVal = scannerAnalysis?.quality.details.exposure ?? 128;
+  const exposureStatus = exposureVal < 60 ? 'UNDEREXPOSED' : exposureVal > 200 ? 'OVEREXPOSED' : 'OPTIMAL';
+  const lockProgress = scannerAnalysis?.stability.lockProgress ?? 0;
+  const isLocked = scannerAnalysis?.stability.isLocked ?? false;
+
   // Role Selection Logic for Step 0
   const handleSelectRole = (role: 'Responder' | 'Civilian') => {
     setSelectedRole(role);
@@ -475,8 +715,10 @@ export const RegisterPage: React.FC = () => {
       if (rankOrTitle === 'Resident' || !rankOrTitle) {
         setRankOrTitle('Senior Inspector');
       }
-      if (fullname === 'Juan Dela Cruz') {
-        setFullname('Insp. Eduardo M. Reyes');
+      if (firstName === 'Juan' && lastName === 'Dela Cruz') {
+        setFirstName('Eduardo');
+        setMiddleName('M.');
+        setLastName('Reyes');
       }
       if (email === 'juan.delacruz@gmail.com') {
         setEmail('e.reyes@bfp.gov.ph');
@@ -485,8 +727,10 @@ export const RegisterPage: React.FC = () => {
       setAgencyUnit('Security');
       setRankOrTitle('Resident');
       setEmployeeId('RES-ZN-2024');
-      if (fullname === 'Insp. Eduardo M. Reyes') {
-        setFullname('Juan Dela Cruz');
+      if (firstName === 'Eduardo' && lastName === 'Reyes') {
+        setFirstName('Juan');
+        setMiddleName('');
+        setLastName('Dela Cruz');
       }
       if (email === 'e.reyes@bfp.gov.ph') {
         setEmail('juan.delacruz@gmail.com');
@@ -517,7 +761,8 @@ export const RegisterPage: React.FC = () => {
   // Validation routines
   const validateStep1 = (): boolean => {
     const newErrors: { [key: string]: string } = {};
-    if (!fullname.trim()) newErrors.fullname = 'Enter your full legal name.';
+    if (!firstName.trim()) newErrors.firstName = 'Enter your first name.';
+    if (!lastName.trim()) newErrors.lastName = 'Enter your surname / last name.';
     if (!EMAIL_RE.test(email.trim())) newErrors.email = 'Enter a valid email address.';
     const parsedAge = parseInt(age, 10);
     if (isNaN(parsedAge) || parsedAge < 18 || parsedAge > 100) {
@@ -624,19 +869,21 @@ export const RegisterPage: React.FC = () => {
       const isCivilian = selectedRole === 'Civilian';
       const dualCompositeUrl = idFrontShot && idBackShot ? await generateDualIdComposite(idFrontShot, idBackShot) : undefined;
 
-      const payload: RegisterPayload = {
+      const payload: RegisterPayload & { sex?: string; age?: number | string } = {
         fullName: fullname.trim(),
         email: email.trim(),
         password,
         phoneNumber: '0917-000-0000',
-        employeeOrResidentId: !isCivilian ? employeeId.trim() : 'RES-ZN-2024',
+        employeeOrResidentId: employeeId.trim() || (isCivilian ? 'RES-ZN-2024' : 'RESP-2024'),
         validIdType: idType,
         role: isCivilian ? 'Civilian' : 'Responder',
         unit: isCivilian ? 'Security' : (agencyUnit as ResponderUnit),
         departmentOrBarangay: isCivilian ? 'Community Resident Sector' : `${agencyUnit} Tactical Command`,
         rankOrTitle: !isCivilian ? rankOrTitle.trim() || 'Emergency Officer' : 'Resident',
         idCaptureDataUrl: dualCompositeUrl,
-        faceCaptureDataUrl: faceShot || undefined
+        faceCaptureDataUrl: faceShot || undefined,
+        sex: sex.trim(),
+        age: parseInt(age, 10) || age
       };
 
       const res = await registerUser(payload);
@@ -1020,286 +1267,96 @@ export const RegisterPage: React.FC = () => {
                   </button>
                 </div>
 
-                <div className="form-grid">
-                  <div className={`field ${errors.fullname ? 'is-invalid' : ''}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="fullname">
-                        Full Legal Name <span className="req">*</span>
-                      </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/80">[CIVIL.NAME]</span>
-                    </div>
-                    <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
-                      <input
-                        className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
-                        id="fullname"
-                        name="fullname"
-                        type="text"
-                        value={fullname}
-                        onChange={(e) => setFullname(e.target.value)}
-                        autoComplete="name"
-                        spellCheck={false}
-                      />
-                    </div>
-                    {errors.fullname && (
-                      <p className="field__error font-mono text-[10px]" id="fullname-error" role="alert">
-                        {errors.fullname}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className={`field ${errors.email ? 'is-invalid' : ''}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="email">
-                        Email Address <span className="req">*</span>
-                      </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/80">
-                        {selectedRole === 'Responder' ? '[OFFICIAL.GOV]' : '[CITIZEN.EMAIL]'}
-                      </span>
-                    </div>
-                    <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <Mail className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
-                      <input
-                        className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
-                        id="email"
-                        name="email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        autoComplete="email"
-                        spellCheck={false}
-                      />
-                    </div>
-                    {errors.email && (
-                      <p className="field__error font-mono text-[10px]" id="email-error" role="alert">
-                        {errors.email}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="field" id="sex-field">
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="sex">
-                        Sex <span className="req">*</span>
-                      </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/80">[DEMO]</span>
-                    </div>
-                    <div
-                      className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <Users className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
-                      <select
-                        className="field__input select__input font-sans text-white text-[13px]"
-                        id="sex"
-                        value={sex}
-                        onChange={(e) => setSex(e.target.value)}
+                {/* ============ TOP CONTROL BAR: ID SELECTION & CAPTURE METHOD ============ */}
+                <div className="p-4 rounded-xl bg-black/50 border border-rose-500/30 mb-5">
+                  <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    {/* ID Document Selection */}
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="id-type">
+                          Government ID Document Type <span className="req text-[#ff5c74]">*</span>
+                        </label>
+                        <span className="font-mono text-[8.5px] text-rose-400/80">[DOC.CLASS]</span>
+                      </div>
+                      <div
+                        className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                        style={{
+                          background: 'rgba(46, 10, 22, 0.85)',
+                          border: '1px solid rgba(255, 92, 116, 0.22)',
+                          borderRadius: '6px'
+                        }}
                       >
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
-                        <option value="other">Other</option>
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+                        <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <select
+                          className="field__input select__input font-sans text-white text-[13px]"
+                          id="id-type"
+                          value={idType}
+                          onChange={(e) => setIdType(e.target.value)}
+                        >
+                          <option value="philsys">PhilSys National ID</option>
+                          <option value="passport">Philippine Passport</option>
+                          <option value="postal">Postal ID</option>
+                          <option value="drivers">LTO Driver's License</option>
+                          <option value="prc">PRC Professional License</option>
+                          {selectedRole === 'Responder' && (
+                            <>
+                              <option value="fire">BFP Service ID</option>
+                              <option value="police">PNP Official ID</option>
+                            </>
+                          )}
+                          <option value="umid">Unified Multi-Purpose ID (UMID)</option>
+                        </select>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+                      </div>
+                    </div>
+
+                    {/* Capture Mode Switcher (Live Camera vs Upload) */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold">
+                          Capture Method
+                        </span>
+                        <span className="font-mono text-[8.5px] text-cyan-400/80">[INPUT.MODE]</span>
+                      </div>
+                      <div className="inline-flex p-1 rounded-lg bg-black/80 border border-rose-500/30 font-mono text-[10px] w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => setIdCaptureMode('camera')}
+                          className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-bold transition-all cursor-pointer ${
+                            idCaptureMode === 'camera'
+                              ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-[0_0_12px_rgba(232,17,76,0.5)]'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>Live Camera Capture</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIdCaptureMode('upload')}
+                          className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-bold transition-all cursor-pointer ${
+                            idCaptureMode === 'upload'
+                              ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-[0_0_12px_rgba(232,17,76,0.5)]'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Picture File</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  <div className={`field ${errors.age ? 'is-invalid' : ''}`} id="age-field">
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="age">
-                        Age <span className="req">*</span>
-                      </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/80">[YEARS]</span>
-                    </div>
-                    <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <Calendar className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
-                      <input
-                        className="field__input font-sans text-white text-[13px]"
-                        id="age"
-                        type="number"
-                        min="18"
-                        max="100"
-                        value={age}
-                        onChange={(e) => setAge(e.target.value)}
-                      />
-                    </div>
-                    {errors.age && (
-                      <p className="field__error font-mono text-[10px]" id="age-error" role="alert">
-                        {errors.age}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="field">
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="id-type">
-                        ID Document Type <span className="req">*</span>
-                      </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/80">[DOC.CLASS]</span>
-                    </div>
-                    <div
-                      className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
-                      <select
-                        className="field__input select__input font-sans text-white text-[13px]"
-                        id="id-type"
-                        value={idType}
-                        onChange={(e) => setIdType(e.target.value)}
-                      >
-                        <option value="philsys">PhilSys National ID</option>
-                        <option value="passport">Philippine Passport</option>
-                        <option value="postal">Postal ID</option>
-                        <option value="drivers">LTO Driver's License</option>
-                        <option value="prc">PRC Professional License</option>
-                        {selectedRole === 'Responder' && (
-                          <>
-                            <option value="fire">BFP Service ID</option>
-                            <option value="police">PNP Official ID</option>
-                          </>
-                        )}
-                        <option value="umid">Unified Multi-Purpose ID (UMID)</option>
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
-                    </div>
-                  </div>
-
-                  {/* RESPONDER SPECIFIC FIELDS */}
-                  {selectedRole === 'Responder' ? (
-                    <>
-                      <div className="field">
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="agency-unit">
-                            Agency Unit <span className="req">*</span>
-                          </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">[AGENCY.UNIT]</span>
-                        </div>
-                        <div
-                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <Shield className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
-                          <select
-                            className="field__input select__input font-sans text-white text-[13px]"
-                            id="agency-unit"
-                            value={agencyUnit}
-                            onChange={(e) => handleAgencyUnitChange(e.target.value as 'RHU' | 'FIRE' | 'PNP')}
-                          >
-                            <option value="RHU">RHU Medical (Rural Health Unit)</option>
-                            <option value="FIRE">BFP Fire (Bureau of Fire Protection)</option>
-                            <option value="PNP">PNP Police (Philippine National Police)</option>
-                          </select>
-                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
-                        </div>
-                      </div>
-
-                      <div className={`field ${errors.employeeId ? 'is-invalid' : ''}`} id="employee-field">
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="employee-id">
-                            Badge / Employee ID <span className="req">*</span>
-                          </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">[BADGE.TAG]</span>
-                        </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
-                          <input
-                            className="field__input font-sans text-white text-[13px]"
-                            id="employee-id"
-                            type="text"
-                            value={employeeId}
-                            onChange={(e) => setEmployeeId(e.target.value)}
-                            placeholder="e.g. BFP-ZN-2024-089"
-                          />
-                        </div>
-                        {errors.employeeId && (
-                          <p className="field__error font-mono text-[10px]" id="employee-error" role="alert">
-                            {errors.employeeId}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className={`field ${errors.rankOrTitle ? 'is-invalid' : ''}`} id="rank-field">
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="rank-title">
-                            Rank / Official Title <span className="req">*</span>
-                          </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">[RANK.POS]</span>
-                        </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <Award className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
-                          <input
-                            className="field__input font-sans text-white text-[13px]"
-                            id="rank-title"
-                            type="text"
-                            value={rankOrTitle}
-                            onChange={(e) => setRankOrTitle(e.target.value)}
-                            placeholder="e.g. Senior Inspector, Officer 1, Medic"
-                          />
-                        </div>
-                        {errors.rankOrTitle && (
-                          <p className="field__error font-mono text-[10px]" id="rank-error" role="alert">
-                            {errors.rankOrTitle}
-                          </p>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    /* CIVILIAN AUTOMATED PROFILE SUMMARY */
-                    <div className="col-span-full p-3.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 flex items-start gap-3 mt-1">
-                      <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                  {/* Fast track banner for civilians */}
+                  {selectedRole === 'Civilian' && (
+                    <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-500/30 flex items-start gap-3 mt-3">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                       <div className="font-mono text-xs">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="font-bold uppercase tracking-wider text-emerald-300">
+                          <span className="font-bold uppercase tracking-wider text-emerald-300 text-[11px]">
                             Resident Fast-Track Clearance
                           </span>
-                          <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-900/80 text-emerald-200 border border-emerald-500/40">
+                          <span className="px-1.5 py-0.2 rounded text-[8.5px] bg-emerald-900/80 text-emerald-200 border border-emerald-500/40">
                             AUTO-CONFIG
                           </span>
                         </div>
@@ -1312,46 +1369,16 @@ export const RegisterPage: React.FC = () => {
                 </div>
 
                 {/* ============ ID CARD FRONT & BACK CAPTURE SECTION ============ */}
-                <div className="mt-6 pt-5 border-t border-rose-500/20">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3.5">
+                <div className="mt-2 pt-1 border-t border-rose-500/20">
+                  <div className="flex items-center gap-2 mb-3.5 pt-3">
+                    <Scan className="w-4 h-4 text-[#ff5c74]" />
                     <div>
-                      <div className="flex items-center gap-2">
-                        <Scan className="w-4 h-4 text-[#ff5c74]" />
-                        <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">
-                          Government ID Dual Optical Capture <span className="text-[#ff5c74]">*</span>
-                        </h4>
-                      </div>
+                      <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                        Government ID Dual Optical Capture <span className="text-[#ff5c74]">*</span>
+                      </h4>
                       <p className="font-mono text-[9px] text-rose-300/80 mt-0.5">
                         Both front &amp; back sides of your {idType.toUpperCase()} are required for identity induction.
                       </p>
-                    </div>
-
-                    {/* Mode Switcher: Live Camera vs Upload */}
-                    <div className="inline-flex p-1 rounded-lg bg-black/60 border border-rose-500/30 font-mono text-[10px] self-start sm:self-auto">
-                      <button
-                        type="button"
-                        onClick={() => setIdCaptureMode('camera')}
-                        className={`px-3 py-1 rounded-md flex items-center gap-1.5 font-bold transition-all cursor-pointer ${
-                          idCaptureMode === 'camera'
-                            ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-[0_0_12px_rgba(232,17,76,0.5)]'
-                            : 'text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        <Camera className="w-3.5 h-3.5" />
-                        <span>Live Camera Capture</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIdCaptureMode('upload')}
-                        className={`px-3 py-1 rounded-md flex items-center gap-1.5 font-bold transition-all cursor-pointer ${
-                          idCaptureMode === 'upload'
-                            ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-[0_0_12px_rgba(232,17,76,0.5)]'
-                            : 'text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Upload Picture File</span>
-                      </button>
                     </div>
                   </div>
 
@@ -1389,7 +1416,7 @@ export const RegisterPage: React.FC = () => {
                               />
                               <div className="mt-2 w-full flex items-center justify-between font-mono text-[9.5px]">
                                 <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
-                                  <Check className="w-3 h-3 stroke-[3]" /> FRONT ID SECURED ✓
+                                  <Check className="w-3 h-3 stroke-[3]" /> FRONT ID SECURED
                                 </span>
                                 <span className="text-slate-400">300 DPI // ISO-1</span>
                               </div>
@@ -1407,7 +1434,7 @@ export const RegisterPage: React.FC = () => {
                               />
                               <div className="mt-2 w-full flex items-center justify-between font-mono text-[9.5px]">
                                 <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
-                                  <Check className="w-3 h-3 stroke-[3]" /> BACK ID SECURED ✓
+                                  <Check className="w-3 h-3 stroke-[3]" /> BACK ID SECURED
                                 </span>
                                 <span className="text-slate-400">OPTICAL ENCRYPTION</span>
                               </div>
@@ -1420,16 +1447,22 @@ export const RegisterPage: React.FC = () => {
                           <div className="flex items-center justify-between font-mono text-[10px] mb-2.5 pb-2 border-b border-rose-500/20">
                             <span className="font-bold text-rose-300 flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-                              {!idFrontShot
+                              {isFlippingCard
+                                ? 'TRANSITIONING: FLIP CARD TO BACK SIDE'
+                                : !idFrontShot
                                 ? 'STAGE 1: CAPTURE FRONT OF ID CARD'
                                 : 'STAGE 2: NOW CAPTURE BACK OF ID CARD'}
                             </span>
                             <span className="text-slate-400">
-                              {!idFrontShot ? 'STEP [1/2] FRONT' : 'STEP [2/2] BACK'}
+                              {isFlippingCard
+                                ? 'COOLDOWN [2.0s]'
+                                : !idFrontShot
+                                ? 'STEP [1/2] FRONT'
+                                : 'STEP [2/2] BACK'}
                             </span>
                           </div>
 
-                          {/* Viewfinder Aspect Ratio Window */}
+                          {/* Viewfinder Aspect Ratio Window with Deterministic CV Tactical HUD */}
                           <div className="relative w-full max-w-lg mx-auto bg-[#070c14] rounded-lg overflow-hidden border border-rose-500/40 aspect-[16/10] flex items-center justify-center">
                             {/* Live Video Feed */}
                             <video
@@ -1439,6 +1472,78 @@ export const RegisterPage: React.FC = () => {
                               muted
                               className="absolute inset-0 w-full h-full object-cover"
                             />
+
+                            {/* HUD Top Status Pills Bar */}
+                            <div className="absolute top-2 inset-x-2 z-20 flex flex-wrap items-center justify-between gap-1 pointer-events-none font-mono text-[8.5px]">
+                              <div className="flex items-center gap-1">
+                                <span
+                                  className={`px-2 py-0.5 rounded backdrop-blur-md border flex items-center gap-1 ${
+                                    isSharp
+                                      ? 'bg-emerald-950/85 border-emerald-500/60 text-emerald-300'
+                                      : 'bg-rose-950/85 border-rose-500/60 text-rose-300'
+                                  }`}
+                                >
+                                  <Activity className="w-2.5 h-2.5" />
+                                  CLARITY: {clarity > 0 ? clarity.toFixed(1) : '--'} [{isSharp ? 'SHARP' : 'BLUR'}]
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded backdrop-blur-md border flex items-center gap-1 ${
+                                    !hasGlare
+                                      ? 'bg-slate-900/85 border-cyan-500/50 text-cyan-300'
+                                      : 'bg-amber-950/85 border-amber-500/60 text-amber-300'
+                                  }`}
+                                >
+                                  <Sparkles className="w-2.5 h-2.5" />
+                                  GLARE: {glareRatio > 0 ? `${glareRatio.toFixed(1)}%` : '0%'} [{hasGlare ? 'HOTSPOT' : 'NOMINAL'}]
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span
+                                  className={`px-2 py-0.5 rounded backdrop-blur-md border ${
+                                    exposureStatus === 'OPTIMAL'
+                                      ? 'bg-slate-900/85 border-emerald-500/50 text-emerald-300'
+                                      : 'bg-amber-950/85 border-amber-500/60 text-amber-300'
+                                  }`}
+                                >
+                                  EXP: {exposureStatus}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded backdrop-blur-md border font-bold flex items-center gap-1 ${
+                                    isLocked
+                                      ? 'bg-emerald-900/90 border-emerald-400 text-emerald-200 shadow-[0_0_12px_rgba(52,211,153,0.6)]'
+                                      : 'bg-black/85 border-rose-500/60 text-rose-300'
+                                  }`}
+                                >
+                                  <Target className="w-2.5 h-2.5" />
+                                  LOCK: {lockProgress}% {isLocked ? '[LOCKED]' : '[ALIGNING]'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Real-time Dynamic 4-Corner Quadrilateral Tracking Vector */}
+                            {scannerAnalysis?.corners && scannerAnalysis.corners.length === 4 && (
+                              <svg
+                                className="absolute inset-0 w-full h-full pointer-events-none z-10"
+                                viewBox={`0 0 ${videoRef.current?.videoWidth || 640} ${videoRef.current?.videoHeight || 360}`}
+                                preserveAspectRatio="none"
+                              >
+                                <polygon
+                                  points={scannerAnalysis.corners.map((p) => `${p.x},${p.y}`).join(' ')}
+                                  fill={isLocked ? 'rgba(52, 211, 153, 0.14)' : 'rgba(255, 92, 116, 0.08)'}
+                                  stroke={isLocked ? '#34d399' : '#ff5c74'}
+                                  strokeWidth="2.5"
+                                  strokeDasharray={isLocked ? 'none' : '6 4'}
+                                />
+                                {scannerAnalysis.corners.map((p, idx) => (
+                                  <g key={idx} transform={`translate(${p.x}, ${p.y})`}>
+                                    <circle r="7" fill={isLocked ? '#34d399' : '#ff5c74'} fillOpacity="0.4" />
+                                    <circle r="3" fill="#ffffff" />
+                                    <line x1="-12" y1="0" x2="12" y2="0" stroke={isLocked ? '#34d399' : '#ff5c74'} strokeWidth="2" />
+                                    <line x1="0" y1="-12" x2="0" y2="12" stroke={isLocked ? '#34d399' : '#ff5c74'} strokeWidth="2" />
+                                  </g>
+                                ))}
+                              </svg>
+                            )}
 
                             {/* Fallback Simulation Notice if Camera Not Found */}
                             {cameraError && (
@@ -1451,35 +1556,101 @@ export const RegisterPage: React.FC = () => {
                               </div>
                             )}
 
-                            {/* ID-1 Card Guide Overlay (85.6mm x 53.98mm Aspect Ratio) */}
-                            <div
-                              className="relative z-10 w-[84%] max-w-[380px] border-2 border-dashed border-[#ff5c74] rounded-lg shadow-[0_0_24px_rgba(255,92,116,0.35)] flex flex-col items-center justify-between p-3 pointer-events-none"
-                              style={{ aspectRatio: '85.6 / 53.98' }}
-                            >
-                              {/* 4 Corner Targeting Brackets */}
-                              <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-[#ff5c74]" />
-                              <div className="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-[#ff5c74]" />
-                              <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-[#ff5c74]" />
-                              <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-[#ff5c74]" />
+                            {/* Flip Card Cooldown Transition Overlay (Prevents front card re-locking race condition) */}
+                            {isFlippingCard && (
+                              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/92 backdrop-blur-sm p-4 text-center">
+                                <div className="w-12 h-12 rounded-full bg-cyan-950/80 border border-cyan-400/50 flex items-center justify-center mb-3">
+                                  <RefreshCw className="w-6 h-6 text-cyan-400 animate-spin" />
+                                </div>
+                                <p className="font-mono text-xs font-bold text-cyan-300 tracking-wider uppercase mb-1">
+                                  FRONT ID SECURED // FLIP CARD
+                                </p>
+                                <p className="font-mono text-[11px] text-amber-300 font-medium max-w-xs">
+                                  Please turn your physical ID card to the BACK side. Optical auto-lock calibrating in 2.0s...
+                                </p>
+                                <div className="flex items-center gap-1.5 mt-3 px-2.5 py-1 rounded bg-slate-900/90 border border-cyan-500/30 text-[9px] font-mono text-slate-300">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                                  <span>SENSOR STABILIZATION COOLDOWN (2.0s)</span>
+                                </div>
+                              </div>
+                            )}
 
-                              {/* Live scan line */}
-                              <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 h-0.5 bg-gradient-to-r from-transparent via-[#ff5c74]/70 to-transparent animate-pulse" />
-
-                              <div className="w-full flex items-center justify-between font-mono text-[9px] text-rose-300 font-bold">
-                                <span>ISO/IEC 7810 ID-1 (85.6×53.98mm)</span>
-                                <span>{idType.toUpperCase()}</span>
+                            {/* Full-Frame Unconstrained ID Detection HUD Overlay */}
+                            <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 z-15">
+                              {/* 4 Viewport Corner Targeting Reticles */}
+                              <div className="flex justify-between w-full">
+                                <div className={`w-5 h-5 border-t-2 border-l-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
+                                <div className={`w-5 h-5 border-t-2 border-r-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
                               </div>
 
-                              <div className="px-3 py-1 rounded bg-black/75 border border-rose-500/50 font-mono text-[10.5px] font-bold text-white uppercase tracking-wider shadow">
-                                {!idFrontShot ? 'ALIGN FRONT OF ID CARD' : 'FLIP CARD & ALIGN BACK'}
+                              {/* Center auto-tracking status badge */}
+                              <div className="self-center flex flex-col items-center gap-1.5">
+                                <div className="px-3.5 py-1 rounded bg-black/85 border border-rose-500/50 font-mono text-[10.5px] font-bold text-white uppercase tracking-wider shadow backdrop-blur-sm">
+                                  {!idFrontShot ? 'SHOW FRONT OF ID CARD' : 'FLIP CARD & SHOW BACK'}
+                                </div>
+                                <span className="font-mono text-[8.5px] text-cyan-300 bg-black/75 px-2.5 py-0.5 rounded border border-cyan-500/30 backdrop-blur-sm">
+                                  FULL-FRAME OPTICAL TRACKING ACTIVE // PLACE ANYWHERE IN VIEW
+                                </span>
                               </div>
 
-                              <div className="w-full flex items-center justify-between font-mono text-[8.5px] text-slate-400">
-                                <span>OPTICAL 300 DPI</span>
-                                <span className="text-emerald-400 font-bold">TARGET LOCKED</span>
+                              {/* Bottom Status & Target Lock Progress Bar */}
+                              <div className="flex flex-col gap-1 w-full max-w-sm mx-auto">
+                                <div className="flex justify-between items-center font-mono text-[8.5px]">
+                                  <span className="text-slate-400">DIP FULL-FRAME MATRIX</span>
+                                  <span className={`font-bold flex items-center gap-1 ${isLocked ? 'text-emerald-400' : 'text-rose-300'}`}>
+                                    <Target className="w-3 h-3" />
+                                    {isLocked ? 'TARGET ACQUIRED [LOCKED]' : `ACQUIRING ${lockProgress}%`}
+                                  </span>
+                                </div>
+                                <div className="w-full bg-slate-900/90 rounded-full h-1.5 overflow-hidden border border-slate-700/60">
+                                  <div
+                                    className={`h-full transition-all duration-150 ${
+                                      isLocked
+                                        ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_8px_#34d399]'
+                                        : 'bg-gradient-to-r from-rose-600 via-amber-500 to-emerald-400'
+                                    }`}
+                                    style={{ width: `${lockProgress}%` }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Bottom Corner Reticles */}
+                              <div className="flex justify-between w-full">
+                                <div className={`w-5 h-5 border-b-2 border-l-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
+                                <div className={`w-5 h-5 border-b-2 border-r-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
                               </div>
                             </div>
                           </div>
+
+                          {/* Autofill Verified HUD Badge */}
+                          {autofillBadge && autofillBadge.visible && (
+                            <div className="mt-3 p-3 rounded-lg bg-[#041a12] border border-emerald-500/60 shadow-[0_0_16px_rgba(16,185,129,0.2)] flex items-center justify-between font-mono text-[10.5px]">
+                              <div className="flex items-center gap-2.5 text-emerald-300">
+                                <Cpu className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
+                                <div>
+                                  <span className="font-bold tracking-wide">
+                                    ID SCANNED VIA {autofillBadge.method === 'DETERMINISTIC_CV' ? 'DETERMINISTIC CV' : `AI STANDBY (${autofillBadge.provider?.toUpperCase()})`} // CONFIDENCE: {autofillBadge.confidence}% [{autofillBadge.tier}]
+                                  </span>
+                                  <p className="text-[9px] text-emerald-400/80 font-sans mt-0.5">
+                                    Holder credentials autofilled below. Fields remain fully editable; click Retake anytime to re-scan.
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/50 text-emerald-300 font-bold text-[9px]">
+                                  AUTOFILL VERIFIED
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setAutofillBadge(null)}
+                                  className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800/60 transition-all cursor-pointer"
+                                  title="Dismiss notification"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
 
                           {/* Capture Controls */}
                           <div className="mt-3.5 flex flex-col sm:flex-row items-center gap-2">
@@ -1497,11 +1668,18 @@ export const RegisterPage: React.FC = () => {
                             <button
                               type="button"
                               onClick={handleCaptureCurrentStage}
-                              className="w-full flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2"
+                              disabled={isFlippingCard}
+                              className={`w-full flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2 ${
+                                isFlippingCard ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
                             >
                               <Camera className="w-4 h-4" />
                               <span>
-                                {!idFrontShot ? 'CAPTURE FRONT ID' : 'CAPTURE BACK ID'}
+                                {isFlippingCard
+                                  ? 'FLIPPING CARD (2.0s)...'
+                                  : !idFrontShot
+                                  ? 'CAPTURE FRONT ID'
+                                  : 'CAPTURE BACK ID'}
                               </span>
                             </button>
                           </div>
@@ -1515,7 +1693,7 @@ export const RegisterPage: React.FC = () => {
                                 className="w-16 h-10 object-cover rounded border border-emerald-500/60"
                               />
                               <div className="font-mono text-[10px]">
-                                <span className="text-emerald-400 font-bold">[FRONT ID SECURED ✓]</span>
+                                <span className="text-emerald-400 font-bold">[FRONT ID SECURED]</span>
                                 <p className="text-slate-400 text-[9px]">Card front frozen in memory. Flip card to capture reverse side.</p>
                               </div>
                             </div>
@@ -1533,7 +1711,7 @@ export const RegisterPage: React.FC = () => {
                         <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
                           <span className="font-bold uppercase tracking-wider text-slate-200">Front ID Card</span>
                           <span className={idFrontShot ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
-                            {idFrontShot ? 'SECURED ✓' : 'REQUIRED'}
+                            {idFrontShot ? 'SECURED' : 'REQUIRED'}
                           </span>
                         </div>
 
@@ -1547,7 +1725,7 @@ export const RegisterPage: React.FC = () => {
                             />
                             <div className="mt-2.5 w-full flex items-center justify-between font-mono text-[10px]">
                               <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
-                                <Check className="w-3 h-3 stroke-[3]" /> FRONT ID SECURED ✓
+                                <Check className="w-3 h-3 stroke-[3]" /> FRONT ID SECURED
                               </span>
                               <div className="flex items-center gap-1.5">
                                 <button
@@ -1615,7 +1793,7 @@ export const RegisterPage: React.FC = () => {
                         <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
                           <span className="font-bold uppercase tracking-wider text-slate-200">Back ID Card</span>
                           <span className={idBackShot ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
-                            {idBackShot ? 'SECURED ✓' : 'REQUIRED'}
+                            {idBackShot ? 'SECURED' : 'REQUIRED'}
                           </span>
                         </div>
 
@@ -1629,7 +1807,7 @@ export const RegisterPage: React.FC = () => {
                             />
                             <div className="mt-2.5 w-full flex items-center justify-between font-mono text-[10px]">
                               <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
-                                <Check className="w-3 h-3 stroke-[3]" /> BACK ID SECURED ✓
+                                <Check className="w-3 h-3 stroke-[3]" /> BACK ID SECURED
                               </span>
                               <div className="flex items-center gap-1.5">
                                 <button
@@ -1701,6 +1879,336 @@ export const RegisterPage: React.FC = () => {
                     </p>
                   )}
                 </div>
+
+                {/* ============ PHASE 1 BOTTOM: PERSONAL DETAILS EDITABLE INPUTS ============ */}
+                {!idFrontShot ? (
+                  <div className="p-5 rounded-xl bg-black/40 border border-slate-800 text-center font-mono space-y-2 mt-4 backdrop-blur-sm">
+                    <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center mx-auto text-slate-400">
+                      <Lock className="w-5 h-5 text-rose-400/90" />
+                    </div>
+                    <p className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                      Personal Details Locked Until Government ID Scanned
+                    </p>
+                    <p className="text-[11px] text-slate-400 max-w-md mx-auto leading-relaxed">
+                      Select your Government ID type above and scan or upload your card. Once validated by the deterministic computer vision engine, your First Name, Middle Name, Surname, Sex, and Age fields will unlock and autofill below for your review.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-6 pt-5 border-t border-rose-500/20 animate-in fade-in zoom-in-95 duration-300">
+                    <div className="flex items-center gap-2 mb-3">
+                      <User className="w-4 h-4 text-[#ff5c74]" />
+                      <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                        Authenticated Personal Details <span className="text-emerald-400 font-normal">[EDITABLE REVIEW]</span>
+                      </h4>
+                    </div>
+
+                    <div className="form-grid">
+                      {/* First Name Input */}
+                      <div className={`field ${errors.firstName ? 'is-invalid' : ''}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="first-name">
+                            First Name <span className="req">*</span>
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[FIRST.NAME]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="first-name"
+                            name="firstName"
+                            type="text"
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value)}
+                            placeholder="e.g. Juan"
+                            autoComplete="given-name"
+                            spellCheck={false}
+                          />
+                        </div>
+                        {errors.firstName && (
+                          <p className="field__error font-mono text-[10px]" id="first-name-error" role="alert">
+                            {errors.firstName}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Middle Name Input */}
+                      <div className="field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="middle-name">
+                            Middle Name <span className="text-slate-400 text-[9px]">(Optional)</span>
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[MIDDLE.NAME]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="middle-name"
+                            name="middleName"
+                            type="text"
+                            value={middleName}
+                            onChange={(e) => setMiddleName(e.target.value)}
+                            placeholder="e.g. Santos or M."
+                            autoComplete="additional-name"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Last Name / Surname Input */}
+                      <div className={`field ${errors.lastName ? 'is-invalid' : ''}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="last-name">
+                            Surname / Last Name <span className="req">*</span>
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[SURNAME]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="last-name"
+                            name="lastName"
+                            type="text"
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value)}
+                            placeholder="e.g. Dela Cruz"
+                            autoComplete="family-name"
+                            spellCheck={false}
+                          />
+                        </div>
+                        {errors.lastName && (
+                          <p className="field__error font-mono text-[10px]" id="last-name-error" role="alert">
+                            {errors.lastName}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Email Address */}
+                      <div className={`field ${errors.email ? 'is-invalid' : ''}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="email">
+                            Email Address <span className="req">*</span>
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">
+                            {selectedRole === 'Responder' ? '[OFFICIAL.GOV]' : '[CITIZEN.EMAIL]'}
+                          </span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <Mail className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="email"
+                            name="email"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            autoComplete="email"
+                            spellCheck={false}
+                          />
+                        </div>
+                        {errors.email && (
+                          <p className="field__error font-mono text-[10px]" id="email-error" role="alert">
+                            {errors.email}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Sex */}
+                      <div className="field" id="sex-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="sex">
+                            Sex <span className="req">*</span>
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[DEMO]</span>
+                        </div>
+                        <div
+                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <Users className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <select
+                            className="field__input select__input font-sans text-white text-[13px]"
+                            id="sex"
+                            value={sex}
+                            onChange={(e) => setSex(e.target.value)}
+                          >
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                            <option value="other">Other</option>
+                          </select>
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+                        </div>
+                      </div>
+
+                      {/* Age */}
+                      <div className={`field ${errors.age ? 'is-invalid' : ''}`} id="age-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="age">
+                            Age <span className="req">*</span>
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[YEARS]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <Calendar className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px]"
+                            id="age"
+                            type="number"
+                            min="18"
+                            max="100"
+                            value={age}
+                            onChange={(e) => setAge(e.target.value)}
+                          />
+                        </div>
+                        {errors.age && (
+                          <p className="field__error font-mono text-[10px]" id="age-error" role="alert">
+                            {errors.age}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* RESPONDER SPECIFIC FIELDS */}
+                      {selectedRole === 'Responder' && (
+                        <>
+                          <div className="field">
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="agency-unit">
+                                Agency Unit <span className="req">*</span>
+                              </label>
+                              <span className="font-mono text-[8.5px] text-rose-400/80">[AGENCY.UNIT]</span>
+                            </div>
+                            <div
+                              className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                              style={{
+                                background: 'rgba(46, 10, 22, 0.85)',
+                                border: '1px solid rgba(255, 92, 116, 0.22)',
+                                borderRadius: '6px'
+                              }}
+                            >
+                              <Shield className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                              <select
+                                className="field__input select__input font-sans text-white text-[13px]"
+                                id="agency-unit"
+                                value={agencyUnit}
+                                onChange={(e) => handleAgencyUnitChange(e.target.value as 'RHU' | 'FIRE' | 'PNP')}
+                              >
+                                <option value="RHU">RHU Medical (Rural Health Unit)</option>
+                                <option value="FIRE">BFP Fire (Bureau of Fire Protection)</option>
+                                <option value="PNP">PNP Police (Philippine National Police)</option>
+                              </select>
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+                            </div>
+                          </div>
+
+                          <div className={`field ${errors.employeeId ? 'is-invalid' : ''}`} id="employee-field">
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="employee-id">
+                                Badge / Employee ID <span className="req">*</span>
+                              </label>
+                              <span className="font-mono text-[8.5px] text-rose-400/80">[BADGE.TAG]</span>
+                            </div>
+                            <div
+                              className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                              style={{
+                                background: 'rgba(46, 10, 22, 0.85)',
+                                border: '1px solid rgba(255, 92, 116, 0.22)',
+                                borderRadius: '6px'
+                              }}
+                            >
+                              <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                              <input
+                                className="field__input font-sans text-white text-[13px]"
+                                id="employee-id"
+                                type="text"
+                                value={employeeId}
+                                onChange={(e) => setEmployeeId(e.target.value)}
+                                placeholder="e.g. BFP-ZN-2024-089"
+                              />
+                            </div>
+                            {errors.employeeId && (
+                              <p className="field__error font-mono text-[10px]" id="employee-error" role="alert">
+                                {errors.employeeId}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className={`field ${errors.rankOrTitle ? 'is-invalid' : ''}`} id="rank-field">
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="rank-title">
+                                Rank / Official Title <span className="req">*</span>
+                              </label>
+                              <span className="font-mono text-[8.5px] text-rose-400/80">[RANK.POS]</span>
+                            </div>
+                            <div
+                              className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                              style={{
+                                background: 'rgba(46, 10, 22, 0.85)',
+                                border: '1px solid rgba(255, 92, 116, 0.22)',
+                                borderRadius: '6px'
+                              }}
+                            >
+                              <Award className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                              <input
+                                className="field__input font-sans text-white text-[13px]"
+                                id="rank-title"
+                                type="text"
+                                value={rankOrTitle}
+                                onChange={(e) => setRankOrTitle(e.target.value)}
+                                placeholder="e.g. Senior Inspector, Officer 1, Medic"
+                              />
+                            </div>
+                            {errors.rankOrTitle && (
+                              <p className="field__error font-mono text-[10px]" id="rank-error" role="alert">
+                                {errors.rankOrTitle}
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Step 1 Actions */}
                 <div className="step-actions flex gap-2.5 mt-6">

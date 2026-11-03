@@ -27,6 +27,8 @@ Project system ENGINE/Backend/bin/
 Project system ENGINE/Backend/bin/**
 Project system ENGINE/Backend/obj/
 Project system ENGINE/Backend/obj/**
+Project system ENGINE/Backend/publish/
+Project system ENGINE/Backend/publish/**
 
 # -----------------------------------------------------------------------------
 # 2. Node.js, Frontend Libraries & Modules (React + Vite)

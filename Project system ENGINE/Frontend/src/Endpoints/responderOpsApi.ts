@@ -266,6 +266,7 @@ export interface ResponderNotificationRecord extends ResponderNotificationPayloa
 
 const DISPATCH_STORAGE_KEY = 'resqtrack_dispatch_requests';
 const NOTIFICATION_STORAGE_KEY = 'resqtrack_responder_notifications';
+const SETTING_LEDGER_KEY = 'DISPATCH_REQUESTS_LEDGER';
 
 const buildInitialSeedRequests = (): DispatchRequestRecord[] => {
   const now = Date.now();
@@ -345,6 +346,37 @@ const writeStoredDispatchRequests = (records: DispatchRequestRecord[]): void => 
   }
 };
 
+const syncLedgerFromBackend = async (): Promise<DispatchRequestRecord[] | null> => {
+  try {
+    const settings = await requestJson<Array<{ key: string; value: string }>>('/api/settings', {
+      method: 'GET'
+    });
+    if (Array.isArray(settings)) {
+      const match = settings.find((s) => s.key === SETTING_LEDGER_KEY);
+      if (match?.value) {
+        const parsed = JSON.parse(match.value) as DispatchRequestRecord[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    }
+  } catch {
+    // Fall back gracefully to localStorage
+  }
+  return null;
+};
+
+const syncLedgerToBackend = async (records: DispatchRequestRecord[]): Promise<void> => {
+  try {
+    await requestJson<{ message: string }>(`/api/settings/${SETTING_LEDGER_KEY}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value: JSON.stringify(records) })
+    });
+  } catch {
+    // If backend rejects (e.g., non-admin or key unseeded), local state is still persisted in localStorage
+  }
+};
+
 export const pushResponderNotification = (
   notification: ResponderNotificationPayload
 ): ResponderNotificationRecord => {
@@ -394,8 +426,26 @@ export const getResponderNotifications = (): ResponderNotificationRecord[] => {
 };
 
 export const getDispatchRequests = async (): Promise<DispatchRequestRecord[]> => {
-  const localRecords = readStoredDispatchRequests();
+  let records = readStoredDispatchRequests();
 
+  // 1. Attempt to sync with backend ledger
+  const remoteLedger = await syncLedgerFromBackend();
+  if (remoteLedger && remoteLedger.length > 0) {
+    const map = new Map<string, DispatchRequestRecord>();
+    for (const r of records) {
+      map.set(r.id, r);
+    }
+    for (const r of remoteLedger) {
+      const existing = map.get(r.id);
+      if (!existing || new Date(r.updatedAt).getTime() >= new Date(existing.updatedAt).getTime()) {
+        map.set(r.id, r);
+      }
+    }
+    records = Array.from(map.values());
+    writeStoredDispatchRequests(records);
+  }
+
+  // 2. Fetch live reports and synchronize newly reported medical incidents
   try {
     const reports = await requestJson<
       Array<{
@@ -415,8 +465,9 @@ export const getDispatchRequests = async (): Promise<DispatchRequestRecord[]> =>
     >('/api/reports', { method: 'GET' });
 
     if (Array.isArray(reports) && reports.length > 0) {
-      const existingIncidentIds = new Set(localRecords.map((r) => r.incidentId));
-      const merged = [...localRecords];
+      const existingIncidentIds = new Set(records.map((r) => r.incidentId));
+      const merged = [...records];
+      let hasNewReport = false;
 
       reports.slice(0, 8).forEach((rep, idx) => {
         if (!rep.id || existingIncidentIds.has(rep.id)) return;
@@ -460,18 +511,20 @@ export const getDispatchRequests = async (): Promise<DispatchRequestRecord[]> =>
           updatedAt: rep.createdAt || new Date().toISOString(),
           notes: 'Synchronized from live ResQTrack incident telemetry feed.',
         });
+        hasNewReport = true;
       });
 
-      writeStoredDispatchRequests(merged);
-      return merged.sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      );
+      if (hasNewReport) {
+        writeStoredDispatchRequests(merged);
+        syncLedgerToBackend(merged).catch(() => {});
+        records = merged;
+      }
     }
   } catch {
-    // Offline / local fallback uses localRecords seamlessly
+    // Offline / local fallback uses records seamlessly
   }
 
-  return [...localRecords].sort(
+  return [...records].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   );
 };
@@ -509,6 +562,7 @@ export const createMedicDispatchRequest = async (
 
   const updated = [newRecord, ...current];
   writeStoredDispatchRequests(updated);
+  await syncLedgerToBackend(updated);
 
   pushResponderNotification({
     title: `Dispatch Request Submitted (${newRecord.incidentCode})`,
@@ -538,18 +592,63 @@ export const approveMedicRequestByAdmin = async (
   const targetIndex = current.findIndex((item) => item.id === id);
   if (targetIndex === -1) return null;
 
+  const target = current[targetIndex];
   const updatedRecord: DispatchRequestRecord = {
-    ...current[targetIndex],
+    ...target,
     status: 'DEPLOY',
     updatedAt: new Date().toISOString(),
     notes: `${
-      current[targetIndex].notes ? `${current[targetIndex].notes} | ` : ''
+      target.notes ? `${target.notes} | ` : ''
     }Approved by LDRRMO Command Admin — Unit cleared for active DEPLOY.`,
   };
 
   const nextList = [...current];
   nextList[targetIndex] = updatedRecord;
   writeStoredDispatchRequests(nextList);
+  await syncLedgerToBackend(nextList);
+
+  // Cross-service backend sync: allocate report and update unit status
+  if (updatedRecord.incidentId) {
+    try {
+      const isGuid = (val: string): boolean =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+      let targetUnitId = updatedRecord.responderId;
+
+      if (!isGuid(targetUnitId)) {
+        try {
+          const roster = await getDutyRoster();
+          const matched = roster.find(
+            (u) =>
+              u.id === targetUnitId ||
+              u.unitCode === targetUnitId ||
+              u.unitName === targetUnitId
+          );
+          if (matched) {
+            targetUnitId = matched.id;
+          }
+        } catch {
+          // Fall back to targetUnitId
+        }
+      }
+
+      if (isGuid(updatedRecord.incidentId) && isGuid(targetUnitId)) {
+        await requestJson<{ message: string }>(`/api/reports/${updatedRecord.incidentId}/allocate`, {
+          method: 'POST',
+          body: JSON.stringify({ unitId: targetUnitId })
+        }).catch(() => {});
+      }
+
+      if (isGuid(targetUnitId)) {
+        await requestJson<{ message: string }>(`/api/responder-ops/units/${targetUnitId}/status`, {
+          method: 'PUT',
+          body: JSON.stringify({ status: 'Dispatched' })
+        }).catch(() => {});
+      }
+    } catch {
+      // Backend allocation/status call failure is non-fatal to optimistic client transition
+    }
+  }
 
   pushResponderNotification({
     title: `Admin Approved Deployment (${updatedRecord.incidentCode})`,
@@ -594,6 +693,37 @@ export const respondToAdminDeployOrder = async (
   const nextList = [...current];
   nextList[targetIndex] = updatedRecord;
   writeStoredDispatchRequests(nextList);
+  await syncLedgerToBackend(nextList);
+
+  if (decision === 'ACCEPT' && updatedRecord.responderId) {
+    const isGuid = (val: string): boolean =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+    let targetUnitId = updatedRecord.responderId;
+    if (!isGuid(targetUnitId)) {
+      try {
+        const roster = await getDutyRoster();
+        const matched = roster.find(
+          (u) =>
+            u.id === targetUnitId ||
+            u.unitCode === targetUnitId ||
+            u.unitName === targetUnitId
+        );
+        if (matched) {
+          targetUnitId = matched.id;
+        }
+      } catch {
+        // Fall back
+      }
+    }
+
+    if (isGuid(targetUnitId)) {
+      requestJson<{ message: string }>(`/api/responder-ops/units/${targetUnitId}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: 'Dispatched' })
+      }).catch(() => {});
+    }
+  }
 
   pushResponderNotification({
     title:
@@ -643,6 +773,7 @@ export const updateDispatchRequestStatus = async (
   const nextList = [...current];
   nextList[targetIndex] = updatedRecord;
   writeStoredDispatchRequests(nextList);
+  await syncLedgerToBackend(nextList);
 
   const categoryMap: Record<DispatchRequestStatus, ResponderNotificationCategory> = {
     PENDING: 'REQUEST_DISPATCH_DEPLOY',
@@ -673,4 +804,3 @@ export const updateDispatchRequestStatus = async (
 
   return updatedRecord;
 };
-

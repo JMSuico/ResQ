@@ -7,7 +7,10 @@ using System.Text.Json;
 
 namespace Backend.Features.Api.Middleware;
 
-public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExceptionMiddleware> logger)
+public class GlobalExceptionMiddleware(
+    RequestDelegate next,
+    ILogger<GlobalExceptionMiddleware> logger,
+    IWebHostEnvironment _env)
 {
     public async Task InvokeAsync(HttpContext context)
     {
@@ -17,24 +20,36 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Unhandled exception occurred during request processing.");
+            logger.LogError(ex, "Unhandled exception occurred during request processing. Incident ID: {IncidentId}", context.TraceIdentifier);
             await HandleExceptionAsync(context, ex);
         }
     }
 
-    private static Task HandleExceptionAsync(HttpContext context, Exception exception)
+    private Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
 
+        string incidentId = context.TraceIdentifier;
         var response = new
         {
             statusCode = context.Response.StatusCode,
             message = "An error occurred while processing your emergency request.",
-            error = exception.InnerException?.Message ?? exception.Message,
-            details = exception.ToString()
+            error = ResolveErrorMessage(exception),
+            details = ResolveDetails(exception, incidentId),
+            incidentId
         };
 
         return context.Response.WriteAsync(JsonSerializer.Serialize(response));
     }
+
+    private string ResolveErrorMessage(Exception exception) =>
+        _env.IsDevelopment()
+            ? (exception.InnerException?.Message ?? exception.Message)
+            : "Internal Server Error";
+
+    private string ResolveDetails(Exception exception, string incidentId) =>
+        _env.IsDevelopment()
+            ? exception.ToString()
+            : $"An internal server error occurred. Please contact system administrator. (Incident ID: {incidentId})";
 }

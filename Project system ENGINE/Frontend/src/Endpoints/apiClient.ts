@@ -21,12 +21,62 @@ export const getApiBaseUrl = (): string => {
   return '';
 };
 
+export const getAuthToken = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    // 1. Tab-isolated session storage (100% Highest Priority)
+    const sessionToken = sessionStorage.getItem('resqtrack_token');
+    if (sessionToken && sessionToken.trim() !== '') {
+      return sessionToken;
+    }
+
+    // 2. Active tab unit-specific token (RHU Medic, BFP Fire, PNP Police)
+    const tabUnit = (sessionStorage.getItem('resqtrack_unit') || '').toLowerCase().trim();
+    if (tabUnit && tabUnit !== 'none') {
+      const unitToken = localStorage.getItem(`resqtrack_token_${tabUnit}`);
+      if (unitToken && unitToken.trim() !== '') {
+        return unitToken;
+      }
+    }
+
+    // 3. Port-scoped local storage
+    const port = window.location.port;
+    if (port === '5174') {
+      const adminToken = localStorage.getItem('resqtrack_token_5174');
+      if (adminToken && adminToken.trim() !== '') {
+        return adminToken;
+      }
+    }
+
+    // 4. General fallback local storage
+    if (port) {
+      const portToken = localStorage.getItem(`resqtrack_token_${port}`);
+      if (portToken && portToken.trim() !== '') {
+        return portToken;
+      }
+    }
+
+    const localToken = localStorage.getItem('resqtrack_token');
+    if (localToken && localToken.trim() !== '') {
+      return localToken;
+    }
+  } catch {
+    // Storage access safeguard
+  }
+  return null;
+};
+
 export const requestJson = async <T>(url: string, options: RequestInit = {}): Promise<T> => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('resqtrack_token') : null;
+  const token = getAuthToken();
   const defaultHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    ...(token
+      ? {
+          'Authorization': `Bearer ${token}`,
+          'X-Session-Token': token
+        }
+      : {})
   };
 
   const baseUrl = getApiBaseUrl();

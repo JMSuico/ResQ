@@ -35,7 +35,7 @@ import {
   Layers,
   ArrowRight
 } from 'lucide-react';
-import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
+import { getAllReports, verifyReport, ReportItem } from '@/Endpoints/reportsApi';
 import { getDutyRoster, DutyUnit } from '@/Endpoints/responderOpsApi';
 import {
   SearchBar,
@@ -69,6 +69,84 @@ export interface PcrCasualtyItem {
   interventions: string[];
   recordedAt: string;
 }
+
+export interface RawEvidenceObject {
+  url?: string;
+  timestamp?: string;
+  caption?: string;
+}
+
+export interface RawIncidentLog {
+  id?: string;
+  referenceCode?: string;
+  title?: string;
+  category?: string;
+  severity?: string;
+  status?: string;
+  locationLabel?: string;
+  location?: string;
+  latitude?: number;
+  longitude?: number;
+  ipAddress?: string;
+  responderName?: string;
+  responderUnit?: string;
+  unitCode?: string;
+  createdAt?: string;
+  submittedAt?: string;
+  isVerified?: boolean;
+  verifiedAt?: string | null;
+  verifiedBy?: string;
+  isClosed?: boolean;
+  closedAt?: string | null;
+  evidencePhotos?: Array<RawEvidenceObject | string>;
+  evidences?: Array<RawEvidenceObject | string>;
+  casualties?: Partial<PcrCasualtyItem>[];
+  pcrRecords?: Array<Record<string, unknown>>;
+  notes?: string;
+  note?: string;
+}
+
+const normalizeEvidence = (item: RawIncidentLog): Array<{ url: string; timestamp?: string; caption?: string }> => {
+  const rawList = item.evidencePhotos || item.evidences || [];
+  if (!Array.isArray(rawList)) return [];
+  return rawList
+    .map((e, idx) => {
+      if (typeof e === 'string') {
+        return { url: e, caption: `Attached Evidence #${idx + 1}` };
+      }
+      return {
+        url: typeof e?.url === 'string' ? e.url : '',
+        timestamp: typeof e?.timestamp === 'string' ? e.timestamp : undefined,
+        caption: typeof e?.caption === 'string' ? e.caption : `Attached Evidence #${idx + 1}`
+      };
+    })
+    .filter((e) => Boolean(e.url));
+};
+
+const normalizeCasualties = (item: RawIncidentLog): PcrCasualtyItem[] => {
+  const rawList = (item.casualties as Array<Record<string, unknown>> | undefined) ||
+    (item.pcrRecords as Array<Record<string, unknown>> | undefined) || [];
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map((c, idx) => ({
+    id: typeof c.id === 'string' ? c.id : `cas-${idx + 1}`,
+    patientName: typeof c.patientName === 'string' ? c.patientName : 'Unidentified Patient',
+    age: typeof c.age === 'number' ? c.age : 0,
+    gender: typeof c.gender === 'string' ? c.gender : 'Unspecified',
+    levelOfConsciousness: typeof c.levelOfConsciousness === 'string' ? c.levelOfConsciousness : 'Alert',
+    bpSystolic: typeof c.bpSystolic === 'number' ? c.bpSystolic : typeof c.bloodPressureSystolic === 'number' ? c.bloodPressureSystolic : 120,
+    bpDiastolic: typeof c.bpDiastolic === 'number' ? c.bpDiastolic : typeof c.bloodPressureDiastolic === 'number' ? c.bloodPressureDiastolic : 80,
+    heartRate: typeof c.heartRate === 'number' ? c.heartRate : typeof c.heartRateBpm === 'number' ? c.heartRateBpm : 75,
+    respiratoryRate: typeof c.respiratoryRate === 'number' ? c.respiratoryRate : 16,
+    spO2: typeof c.spO2 === 'number' ? c.spO2 : typeof c.spO2Percent === 'number' ? c.spO2Percent : 98,
+    glucose: typeof c.glucose === 'number' ? c.glucose : typeof c.bloodGlucoseMgDl === 'number' ? c.bloodGlucoseMgDl : 90,
+    temp: typeof c.temp === 'number' ? c.temp : typeof c.temperatureCelsius === 'number' ? c.temperatureCelsius : 36.5,
+    receivingHospital: typeof c.receivingHospital === 'string' ? c.receivingHospital : 'Dipolog City Medical Center',
+    chiefComplaint: typeof c.chiefComplaint === 'string' ? c.chiefComplaint : 'Trauma & Triage Evaluation',
+    narrative: typeof c.narrative === 'string' ? c.narrative : '',
+    interventions: Array.isArray(c.interventions) ? c.interventions.filter((i): i is string => typeof i === 'string') : [],
+    recordedAt: typeof c.recordedAt === 'string' ? c.recordedAt : typeof c.createdAt === 'string' ? c.createdAt : new Date().toISOString()
+  }));
+};
 
 export interface SubmittedReportRecord {
   id: string;
@@ -122,10 +200,10 @@ export const SubmittedReportsPage: FC = () => {
   const loadSubmittedReports = useCallback(async (): Promise<void> => {
     try {
       // 1. Read from localStorage 'resqtrack_incident_logs'
-      let localLogs: any[] = [];
+      let localLogs: RawIncidentLog[] = [];
       try {
         const raw = localStorage.getItem(STORAGE_INCIDENT_LOGS_KEY);
-        if (raw) localLogs = JSON.parse(raw);
+        if (raw) localLogs = JSON.parse(raw) as RawIncidentLog[];
       } catch {
         localLogs = [];
       }
@@ -138,7 +216,7 @@ export const SubmittedReportsPage: FC = () => {
 
       // Local logs take precedence for rich field telemetry (multi-PCR & evidence gallery)
       if (Array.isArray(localLogs)) {
-        localLogs.forEach((item: any) => {
+        localLogs.forEach((item: RawIncidentLog) => {
           if (!item || !item.id) return;
           const isVerified = Boolean(item.isVerified || item.verifiedAt);
           const isClosed = Boolean(item.isClosed || item.closedAt || item.status === 'Closed');
@@ -162,8 +240,8 @@ export const SubmittedReportsPage: FC = () => {
             verifiedBy: item.verifiedBy,
             isClosed,
             closedAt: item.closedAt || (isClosed ? new Date().toISOString() : null),
-            evidencePhotos: Array.isArray(item.evidencePhotos) ? item.evidencePhotos : [],
-            casualties: Array.isArray(item.casualties) ? item.casualties : [],
+            evidencePhotos: normalizeEvidence(item),
+            casualties: normalizeCasualties(item),
             notes: item.note || item.notes || ''
           });
         });
@@ -311,10 +389,17 @@ export const SubmittedReportsPage: FC = () => {
   const verifiedCount = reports.filter((r) => r.isVerified && !r.isClosed).length;
   const closedCount = reports.filter((r) => r.isClosed).length;
 
-  // Verify Action (Starts 5-minute countdown timer)
+  // Verify Action (Starts 5-minute countdown timer and persists to backend)
   const handleVerifyReport = useCallback(
-    (reportId: string) => {
+    async (reportId: string) => {
       const verifiedTimestamp = new Date().toISOString();
+
+      // Persist verification to relational backend
+      try {
+        await verifyReport(reportId, 'Verified', 'Verified by LDRRMO Administration.');
+      } catch (err: unknown) {
+        console.warn('[SubmittedReportsPage] Failed to persist report verification to backend:', err);
+      }
 
       setReports((prev) => {
         const next = prev.map((r) => {
@@ -331,7 +416,7 @@ export const SubmittedReportsPage: FC = () => {
         // Sync with localStorage
         try {
           const raw = localStorage.getItem(STORAGE_INCIDENT_LOGS_KEY);
-          let localArr: any[] = raw ? JSON.parse(raw) : [];
+          let localArr: RawIncidentLog[] = raw ? (JSON.parse(raw) as RawIncidentLog[]) : [];
           localArr = localArr.map((item) => {
             if (item.id === reportId) {
               return {
@@ -345,7 +430,7 @@ export const SubmittedReportsPage: FC = () => {
             return item;
           });
           localStorage.setItem(STORAGE_INCIDENT_LOGS_KEY, JSON.stringify(localArr));
-        } catch (err) {
+        } catch (err: unknown) {
           console.error('[SubmittedReportsPage] Failed to persist verification:', err);
         }
 
@@ -375,10 +460,17 @@ export const SubmittedReportsPage: FC = () => {
     []
   );
 
-  // Manual Close Action
+  // Manual Close Action (Persists resolution to backend)
   const handleManualClose = useCallback(
-    (reportId: string) => {
+    async (reportId: string) => {
       const closedTimestamp = new Date().toISOString();
+
+      // Persist case resolution to relational backend
+      try {
+        await verifyReport(reportId, 'Resolved', 'Incident closed by LDRRMO Administration.');
+      } catch (err: unknown) {
+        console.warn('[SubmittedReportsPage] Failed to persist close to backend:', err);
+      }
 
       setReports((prev) => {
         const next = prev.map((r) => {
@@ -393,7 +485,7 @@ export const SubmittedReportsPage: FC = () => {
 
         try {
           const raw = localStorage.getItem(STORAGE_INCIDENT_LOGS_KEY);
-          let localArr: any[] = raw ? JSON.parse(raw) : [];
+          let localArr: RawIncidentLog[] = raw ? (JSON.parse(raw) as RawIncidentLog[]) : [];
           localArr = localArr.map((item) => {
             if (item.id === reportId) {
               return {
@@ -406,7 +498,7 @@ export const SubmittedReportsPage: FC = () => {
             return item;
           });
           localStorage.setItem(STORAGE_INCIDENT_LOGS_KEY, JSON.stringify(localArr));
-        } catch (err) {
+        } catch (err: unknown) {
           console.error('[SubmittedReportsPage] Failed to persist close:', err);
         }
 
@@ -511,6 +603,18 @@ export const SubmittedReportsPage: FC = () => {
     const remaining = Math.max(0, FIVE_MINUTES_MS - elapsed);
     return Math.floor(remaining / 1000);
   };
+
+  // Wire automatic case resolution when 5-minute countdown reaches 0 to eliminate stuck CLOSING IN 00:00
+  useEffect(() => {
+    reports.forEach((r) => {
+      if (r.isVerified && !r.isClosed && r.verifiedAt) {
+        const rem = getRemainingSeconds(r.verifiedAt);
+        if (rem <= 0) {
+          void handleManualClose(r.id);
+        }
+      }
+    });
+  }, [currentTime, reports, handleManualClose]);
 
   const openLightbox = (images: Array<{ url: string; timestamp?: string; caption?: string }>, idx: number) => {
     setLightboxImages(images.map((img) => ({ url: img.url, timestamp: img.timestamp, caption: img.caption })));
@@ -788,18 +892,25 @@ export const SubmittedReportsPage: FC = () => {
                           CLOSED / SOLVED
                         </span>
                       ) : r.isVerified ? (
-                        <div className="space-y-1">
-                          <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-500/40 font-bold text-[10px] flex items-center gap-1 w-fit">
-                            <Clock className="w-3 h-3 text-sky-400 animate-spin" />
-                            CLOSING IN {mm}:{ss}
-                          </span>
-                          <div className="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-sky-400 rounded-full transition-all duration-1000"
-                              style={{ width: `${Math.max(0, (remSec / 300) * 100)}%` }}
-                            />
+                        remSec > 0 ? (
+                          <div className="space-y-1">
+                            <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-500/40 font-bold text-[10px] flex items-center gap-1 w-fit">
+                              <Clock className="w-3 h-3 text-sky-400 animate-spin" />
+                              CLOSING IN {mm}:{ss}
+                            </span>
+                            <div className="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-sky-400 rounded-full transition-all duration-1000"
+                                style={{ width: `${Math.max(0, (remSec / 300) * 100)}%` }}
+                              />
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-bold text-[10px] flex items-center gap-1 w-fit">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            AUTO-RESOLVING…
+                          </span>
+                        )
                       ) : (
                         <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500/40 font-bold text-[10px]">
                           AWAITING REVIEW
@@ -914,7 +1025,7 @@ export const SubmittedReportsPage: FC = () => {
                       <div className="flex items-center justify-between text-[10px] font-mono text-sky-300">
                         <span>Auto-Close Countdown:</span>
                         <span className="font-bold">
-                          {mm}:{ss}
+                          {remSec > 0 ? `${mm}:${ss}` : 'AUTO-RESOLVING…'}
                         </span>
                       </div>
                       <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">

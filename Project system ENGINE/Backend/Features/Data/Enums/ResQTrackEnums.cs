@@ -54,7 +54,9 @@ public enum ReportStatus
     EnRoute = 4,
     OnScene = 5,
     Resolved = 6,
-    Rejected = 7
+    Rejected = 7,
+    Responded = 8,
+    Closed = 9
 }
 
 public enum DutyStatus

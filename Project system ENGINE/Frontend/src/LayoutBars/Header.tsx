@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { UserSessionChip, UserSessionChipProps } from './UserSessionChip';
 import { useDrawerSidebar } from '@/Shared/ToggleDrawerSidebarMenu';
+import { requestJson } from '@/Endpoints/apiClient';
 
 export interface HeaderProps {
   user?: UserSessionChipProps['user'];
@@ -362,31 +363,28 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
     const readIds = getLocallyReadIds();
 
     try {
-      const response = await fetch('/api/alerts', { credentials: 'include' });
-      if (response.ok) {
-        const apiAlerts = (await response.json()) as RawNotificationPayload[];
-        if (Array.isArray(apiAlerts) && apiAlerts.length > 0) {
-          const existingIds = new Set(localItems.map((i) => i.id));
-          const mergedFromApi: ResponderNotificationItem[] = [];
+      const apiAlerts = await requestJson<RawNotificationPayload[]>('/api/alerts', { method: 'GET' });
+      if (Array.isArray(apiAlerts) && apiAlerts.length > 0) {
+        const existingIds = new Set(localItems.map((i) => i.id));
+        const mergedFromApi: ResponderNotificationItem[] = [];
 
-          apiAlerts.slice(0, 15).forEach((alertItem, idx) => {
-            const normalized = normalizeRawNotification(
-              {
-                ...alertItem,
-                category: alertItem.category || 'INCIDENT HAPPENS ON'
-              },
-              idx + 200,
-              readIds
-            );
-            if (!existingIds.has(normalized.id)) {
-              existingIds.add(normalized.id);
-              mergedFromApi.push(normalized);
-            }
-          });
+        apiAlerts.slice(0, 15).forEach((alertItem, idx) => {
+          const normalized = normalizeRawNotification(
+            {
+              ...alertItem,
+              category: alertItem.category || 'INCIDENT HAPPENS ON'
+            },
+            idx + 200,
+            readIds
+          );
+          if (!existingIds.has(normalized.id)) {
+            existingIds.add(normalized.id);
+            mergedFromApi.push(normalized);
+          }
+        });
 
-          setNotifications([...localItems, ...mergedFromApi]);
-          return;
-        }
+        setNotifications([...localItems, ...mergedFromApi]);
+        return;
       }
     } catch {
       // Ignore network jitter and use local responder notifications
@@ -534,9 +532,8 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
     persistNotificationsState(updated);
 
     try {
-      await fetch(`/api/alerts/${encodeURIComponent(item.id)}/read`, {
-        method: 'POST',
-        credentials: 'include'
+      await requestJson<{ message?: string }>(`/api/alerts/${encodeURIComponent(item.id)}/read`, {
+        method: 'POST'
       });
     } catch {
       // Non-blocking backend acknowledge
@@ -632,9 +629,18 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+      await requestJson<{ message?: string }>('/api/logout', { method: 'POST' });
     } catch (err) {
       console.error('Logout error encountered:', err);
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem('resqtrack_token');
+        window.sessionStorage.removeItem('resqtrack_session');
+        window.sessionStorage.removeItem('resqtrack_user');
+        window.localStorage.removeItem('resqtrack_token');
+        window.localStorage.removeItem('resqtrack_session');
+        window.localStorage.removeItem('resqtrack_user');
+      }
     }
     navigate('/login');
   };

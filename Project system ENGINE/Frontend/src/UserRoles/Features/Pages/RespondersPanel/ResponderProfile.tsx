@@ -7,6 +7,23 @@ import React, { useState, useEffect } from 'react';
 import { Camera, Radar, Eye, Palette, Check, Shield, Radio } from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
 import { Button, RadioButton } from '@/Shared';
+import { requestJson } from '@/Endpoints/apiClient';
+import { updateDutyStatus } from '@/Endpoints/responderOpsApi';
+
+export interface UpdateProfilePayload {
+  radioFreq?: string;
+  apparatusPlate?: string;
+  emergencyPhone?: string;
+  avatarUrl?: string | null;
+  paleNonMedicEnabled?: boolean;
+  hideNonMedicWhenSorted?: boolean;
+}
+
+export const updateOwnProfile = (payload: UpdateProfilePayload): Promise<{ message: string }> =>
+  requestJson<{ message: string }>('/api/profile', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
 
 export interface MedicPointerSettings {
   paleNonMedicPointers: boolean;
@@ -111,6 +128,14 @@ export const ResponderProfile: React.FC = () => {
     } catch (err) {
       console.error('Failed to persist medic pointer settings:', err);
     }
+
+    // Persist pointer preferences to backend profile
+    void updateOwnProfile({
+      paleNonMedicEnabled: nextPaleEnabled,
+      hideNonMedicWhenSorted: nextHideNonMedic
+    }).catch((err: unknown) => {
+      console.warn('[ResponderProfile] Failed to update backend profile pointer settings:', err);
+    });
   };
 
   // Ensure initial pointer settings exist in localStorage for SatelliteCommandMap
@@ -146,6 +171,11 @@ export const ResponderProfile: React.FC = () => {
           new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: dataUrl } })
         );
         showToast('Officer identity photo updated & synchronized.');
+
+        // Persist avatar to backend profile
+        void updateOwnProfile({ avatarUrl: dataUrl }).catch((err: unknown) => {
+          console.warn('[ResponderProfile] Failed to persist avatar to backend:', err);
+        });
       } catch (err) {
         console.error('Failed to save responder avatar', err);
       }
@@ -162,6 +192,11 @@ export const ResponderProfile: React.FC = () => {
         new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } })
       );
       showToast('Reverted to default responder photo avatar.');
+
+      // Persist avatar reset to backend profile
+      void updateOwnProfile({ avatarUrl: null }).catch((err: unknown) => {
+        console.warn('[ResponderProfile] Failed to reset avatar on backend:', err);
+      });
     } catch (err) {
       console.error('Failed to reset avatar', err);
     }
@@ -196,8 +231,17 @@ export const ResponderProfile: React.FC = () => {
     }
   }, [session]);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const profilePayload: UpdateProfilePayload = {
+      radioFreq,
+      apparatusPlate,
+      emergencyPhone,
+      avatarUrl,
+      paleNonMedicEnabled,
+      hideNonMedicWhenSorted
+    };
+
     try {
       localStorage.setItem(
         'resqtrack_responder_profile',
@@ -208,6 +252,20 @@ export const ResponderProfile: React.FC = () => {
       setTimeout(() => setIsSaved(false), 3000);
     } catch {
       // Ignore storage error
+    }
+
+    // Call updateOwnProfile(payload) (PUT /api/profile)
+    try {
+      await updateOwnProfile(profilePayload);
+    } catch (err: unknown) {
+      console.warn('[ResponderProfile] updateOwnProfile backend fallback:', err);
+    }
+
+    // Call updateDutyStatus (PUT /api/responder-ops/duty-status)
+    try {
+      await updateDutyStatus('OnDuty', session?.userId, apparatusPlate || session?.unit || 'RHU');
+    } catch (err: unknown) {
+      console.warn('[ResponderProfile] updateDutyStatus backend fallback:', err);
     }
   };
 
@@ -329,7 +387,12 @@ export const ResponderProfile: React.FC = () => {
               <Radio className="w-3.5 h-3.5 text-sky-400" />
               <span>FIELD APPARATUS &amp; RADIO TELEMETRY CONFIG</span>
             </span>
-            {isSaved && <span className="text-emerald-400 font-bold">✓ SETTINGS PERSISTED</span>}
+            {isSaved && (
+              <span className="text-emerald-400 font-bold inline-flex items-center gap-1">
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span>SETTINGS PERSISTED</span>
+              </span>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

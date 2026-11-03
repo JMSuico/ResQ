@@ -123,7 +123,17 @@ public class ReportRepository(AppDbContext db) : IReportRepository
         db.Reports.Include(r => r.AllocatedUnit).Where(r => r.ReporterId == reporterId).OrderByDescending(r => r.CreatedAt).ToListAsync(ct);
 
     public Task<List<Report>> GetByUnitAgencyAsync(ResponderUnitType agency, CancellationToken ct = default) =>
-        db.Reports.Include(r => r.AllocatedUnit).Where(r => r.AllocatedUnit != null && r.AllocatedUnit.Agency == agency).OrderByDescending(r => r.CreatedAt).ToListAsync(ct);
+        db.Reports
+            .Include(r => r.AllocatedUnit)
+            .Where(r => (r.AllocatedUnit != null && r.AllocatedUnit.Agency == agency) ||
+                        (r.AllocatedUnitId == null && r.RecommendedAgencyUnit != null &&
+                         (r.RecommendedAgencyUnit.Contains(agency.ToString()) ||
+                          (agency == ResponderUnitType.RHU && r.RecommendedAgencyUnit.Contains("Medical")) ||
+                          (agency == ResponderUnitType.FIRE && r.RecommendedAgencyUnit.Contains("FIRE")) ||
+                          (agency == ResponderUnitType.PNP && r.RecommendedAgencyUnit.Contains("Police")) ||
+                          r.RecommendedAgencyUnit.Contains("Joint Dispatch"))))
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(ct);
 
     public async Task AddAsync(Report report, CancellationToken ct = default)
     {
@@ -202,7 +212,19 @@ public class SettingsRepository(AppDbContext db) : ISettingsRepository
 
     public async Task UpdateAsync(Settings setting, CancellationToken ct = default)
     {
-        db.Settings.Update(setting);
+        var existing = await db.Settings.FirstOrDefaultAsync(s => s.Id == setting.Id || s.Key.ToLower() == setting.Key.ToLower(), ct);
+        if (existing != null)
+        {
+            existing.Value = setting.Value;
+            if (!string.IsNullOrWhiteSpace(setting.Category)) existing.Category = setting.Category;
+            if (!string.IsNullOrWhiteSpace(setting.Description)) existing.Description = setting.Description;
+            existing.UpdatedByUserId = setting.UpdatedByUserId;
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            await db.Settings.AddAsync(setting, ct);
+        }
         await db.SaveChangesAsync(ct);
     }
 }

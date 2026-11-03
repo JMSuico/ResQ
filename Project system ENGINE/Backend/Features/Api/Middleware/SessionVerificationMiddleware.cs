@@ -13,17 +13,44 @@ public class SessionVerificationMiddleware(RequestDelegate next)
     private static readonly HashSet<string> PublicPaths = new(StringComparer.OrdinalIgnoreCase)
     {
         "/api/login",
+        "/api/logout",
         "/api/register",
         "/api/openapi/v1.json",
-        "/scalar/v1"
+        "/scalar/v1",
+        "/api/identity/ai-extract",
+        "/api/identity/ai-status"
     };
+
+    private static bool IsAdminPortRequest(HttpRequest request)
+    {
+        if (request.Headers.TryGetValue("Origin", out var originVal) && !string.IsNullOrWhiteSpace(originVal))
+        {
+            var str = originVal.ToString();
+            if (Uri.TryCreate(str, UriKind.Absolute, out var uri) && uri.Port == 5174) return true;
+            if (str.Contains(":5174")) return true;
+        }
+
+        if (request.Headers.TryGetValue("Referer", out var refererVal) && !string.IsNullOrWhiteSpace(refererVal))
+        {
+            var str = refererVal.ToString();
+            if (Uri.TryCreate(str, UriKind.Absolute, out var uri) && uri.Port == 5174) return true;
+            if (str.Contains(":5174")) return true;
+        }
+
+        if (request.Headers.TryGetValue("X-Client-Port", out var portVal) && portVal.ToString().Trim() == "5174")
+        {
+            return true;
+        }
+
+        return false;
+    }
 
     public async Task InvokeAsync(HttpContext context, ISessionRepository sessionRepo, IUserRepository userRepo)
     {
         string path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
 
-        // Skip public routes or non-API static requests
-        if (!path.StartsWith("/api") || PublicPaths.Contains(path) || path.Contains("/image"))
+        // Skip public routes, identity extraction endpoints, or non-API static requests
+        if (!path.StartsWith("/api") || PublicPaths.Contains(path) || path.StartsWith("/api/identity") || path.Contains("/image"))
         {
             await next(context);
             return;
@@ -64,6 +91,14 @@ public class SessionVerificationMiddleware(RequestDelegate next)
                     ? "Account has been suspended by LDRRMO Administration." 
                     : "Account is pending verification." 
             });
+            return;
+        }
+
+        // Enforce Port 5174 Restriction: Only LDRRMO_Admin is permitted on port 5174
+        if (IsAdminPortRequest(context.Request) && user.Role != UserRole.LDRRMO_Admin)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new { message = "Port 5174 is restricted to LDRRMO Admin personnel." });
             return;
         }
 

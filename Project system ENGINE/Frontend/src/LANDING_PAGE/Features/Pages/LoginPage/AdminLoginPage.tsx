@@ -85,8 +85,22 @@ export const AdminLoginPage: FC = () => {
       });
 
       if (res?.token) {
+        const currentPort = typeof window !== 'undefined' ? (window.location.port || '5174') : '5174';
+        sessionStorage.setItem('resqtrack_token', res.token);
+        if (res.session) {
+          sessionStorage.setItem('resqtrack_user', JSON.stringify(res.session));
+          sessionStorage.setItem('resqtrack_session', JSON.stringify(res.session));
+        }
+        localStorage.setItem(`resqtrack_token_${currentPort}`, res.token);
+        if (res.session) {
+          localStorage.setItem(`resqtrack_user_${currentPort}`, JSON.stringify(res.session));
+          localStorage.setItem(`resqtrack_session_${currentPort}`, JSON.stringify(res.session));
+        }
         localStorage.setItem('resqtrack_token', res.token);
-        if (res.session) localStorage.setItem('resqtrack_user', JSON.stringify(res.session));
+        if (res.session) {
+          localStorage.setItem('resqtrack_user', JSON.stringify(res.session));
+          localStorage.setItem('resqtrack_session', JSON.stringify(res.session));
+        }
       }
 
       setIsLoading(false);

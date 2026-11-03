@@ -82,8 +82,42 @@ export const LoginPage: FC = () => {
       });
 
       if (res?.token) {
-        localStorage.setItem('resqtrack_token', res.token);
-        if (res.session) localStorage.setItem('resqtrack_user', JSON.stringify(res.session));
+        const portKey = currentPort || '5173';
+        const normUnit = (res.session?.unit || 'none').toLowerCase().trim();
+        const normRole = (res.session?.role || '').toLowerCase().trim();
+        const isAdminUser = normRole.includes('admin') || normRole.includes('ldrrmo');
+
+        // 1. Tab-isolated session storage (Guarantees Tab 1 Medic never turns into Tab 2 Fire)
+        sessionStorage.setItem('resqtrack_token', res.token);
+        sessionStorage.setItem('resqtrack_unit', normUnit);
+        if (res.session) {
+          sessionStorage.setItem('resqtrack_user', JSON.stringify(res.session));
+          sessionStorage.setItem('resqtrack_session', JSON.stringify(res.session));
+        }
+
+        // 2. Unit-scoped local storage (Guarantees RHU, FIRE, and PNP co-exist without collision)
+        if (normUnit && normUnit !== 'none') {
+          localStorage.setItem(`resqtrack_token_${normUnit}`, res.token);
+          if (res.session) {
+            localStorage.setItem(`resqtrack_user_${normUnit}`, JSON.stringify(res.session));
+            localStorage.setItem(`resqtrack_session_${normUnit}`, JSON.stringify(res.session));
+          }
+        }
+
+        // 3. Port-scoped storage
+        if (isAdminUser || portKey === '5174') {
+          localStorage.setItem('resqtrack_token_5174', res.token);
+          if (res.session) {
+            localStorage.setItem('resqtrack_user_5174', JSON.stringify(res.session));
+            localStorage.setItem('resqtrack_session_5174', JSON.stringify(res.session));
+          }
+        } else {
+          localStorage.setItem(`resqtrack_token_${portKey}`, res.token);
+          if (res.session) {
+            localStorage.setItem(`resqtrack_user_${portKey}`, JSON.stringify(res.session));
+            localStorage.setItem(`resqtrack_session_${portKey}`, JSON.stringify(res.session));
+          }
+        }
       }
 
       setIsLoading(false);
@@ -110,7 +144,7 @@ export const LoginPage: FC = () => {
         if (isLdrrmo) {
           const host = window.location.hostname || '127.0.0.1';
           if (currentPort === '5173') {
-            window.location.href = `http://${host}:5174/admin/dashboard`;
+            window.location.href = `http://${host}:5174/admin/dashboard?session_token=${encodeURIComponent(res.token)}`;
           } else {
             navigate('/admin/dashboard');
           }

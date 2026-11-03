@@ -1,27 +1,33 @@
 // [Layer: Shared]
-// Responsibility: Capture viewer modal displaying the 3 biometric images for a selected user: Face Capture, ID Front Card, ID Back Card.
+// Responsibility: Capture viewer modal displaying biometric images for a selected user: Face Capture, Government ID, ID Front Card, ID Back Card.
+// Prefixes URLs with getApiBaseUrl() for cross-port / cross-origin stability.
 // DO NOT lose zoom or aspect ratio.
 // Universal lambda expressions (=>).
 
 import React, { FC, useState } from 'react';
 import { User, CreditCard, ShieldCheck, ImageOff } from 'lucide-react';
 import { DefaultFloatingModalCard } from './DefaultFloatingModalCard';
+import { getApiBaseUrl } from '@/Endpoints/apiClient';
+
+export type CaptureKind = 'face' | 'id' | 'front' | 'back';
 
 export interface CaptureViewerModalProps {
   isOpen: boolean;
   onClose: () => void;
   userId?: string | null;
   userName?: string;
+  kinds?: CaptureKind[];
 }
 
 interface BiometricKind {
-  key: string;
+  key: CaptureKind;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
 }
 
-const BIOMETRIC_KINDS: BiometricKind[] = [
+const ALL_BIOMETRIC_KINDS: BiometricKind[] = [
   { key: 'face', label: 'Face Capture', icon: User },
+  { key: 'id', label: 'Government ID', icon: CreditCard },
   { key: 'front', label: 'ID Front Card', icon: CreditCard },
   { key: 'back', label: 'ID Back Card', icon: ShieldCheck }
 ];
@@ -30,7 +36,8 @@ export const CaptureViewerModal: FC<CaptureViewerModalProps> = ({
   isOpen,
   onClose,
   userId,
-  userName = 'User'
+  userName = 'User',
+  kinds
 }) => {
   const [loadErrors, setLoadErrors] = useState<Record<string, boolean>>({});
 
@@ -39,6 +46,12 @@ export const CaptureViewerModal: FC<CaptureViewerModalProps> = ({
   const handleImageError = (key: string) => {
     setLoadErrors((prev) => ({ ...prev, [key]: true }));
   };
+
+  const activeKinds = kinds && kinds.length > 0
+    ? ALL_BIOMETRIC_KINDS.filter((item) => kinds.includes(item.key))
+    : ALL_BIOMETRIC_KINDS;
+
+  const baseUrl = getApiBaseUrl();
 
   return (
     <DefaultFloatingModalCard
@@ -50,10 +63,20 @@ export const CaptureViewerModal: FC<CaptureViewerModalProps> = ({
       title={`Biometric Captures: ${userName}`}
       maxWidth="4xl"
     >
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {BIOMETRIC_KINDS.map(({ key, label, icon: IconComponent }) => {
+      <div
+        className={`grid grid-cols-1 ${
+          activeKinds.length === 1
+            ? 'max-w-md mx-auto'
+            : activeKinds.length === 2
+            ? 'md:grid-cols-2'
+            : activeKinds.length === 3
+            ? 'md:grid-cols-3'
+            : 'sm:grid-cols-2 lg:grid-cols-4'
+        } gap-4`}
+      >
+        {activeKinds.map(({ key, label, icon: IconComponent }) => {
           const hasError = !!loadErrors[key];
-          const imageSrc = `/api/users/${encodeURIComponent(userId)}/captures/${key}`;
+          const imageSrc = `${baseUrl}/api/users/${encodeURIComponent(userId)}/captures/${key}`;
 
           return (
             <div key={key} className="flex flex-col items-center bg-slate-950 p-3 rounded-lg border border-slate-800">

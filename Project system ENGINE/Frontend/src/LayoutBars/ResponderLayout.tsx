@@ -4,7 +4,7 @@
 // ResQTrack Incident AI System Detection -- Universal Lucide icon standard with strict typing (ZERO any).
 
 import React from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, Navigate } from 'react-router-dom';
 import { Shield, Activity, Radio, PhoneCall } from 'lucide-react';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
@@ -22,21 +22,62 @@ const DEFAULT_RESPONDER_NAME = 'Active Duty Responder';
 const DEFAULT_EMPLOYEE_ID = 'RES-773-009';
 const DEFAULT_VERIFIED_STATUS = 'Verified';
 
+const getTabSession = (): { unit?: string; fullName?: string; employeeOrResidentId?: string; employeeId?: string; role?: string; status?: string; faceVerified?: boolean } | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    // 1. Tab-isolated session storage (Guarantees Tab 1 Medic never reads Fire)
+    const tabRaw = sessionStorage.getItem('resqtrack_session') || sessionStorage.getItem('resqtrack_user');
+    if (tabRaw) return JSON.parse(tabRaw);
+
+    // 2. Active tab unit-specific local storage
+    const tabUnit = (sessionStorage.getItem('resqtrack_unit') || '').toLowerCase().trim();
+    if (tabUnit && tabUnit !== 'none') {
+      const unitRaw = localStorage.getItem(`resqtrack_session_${tabUnit}`) || localStorage.getItem(`resqtrack_user_${tabUnit}`);
+      if (unitRaw) return JSON.parse(unitRaw);
+    }
+
+    const port = window.location.port || '5173';
+    const portRaw = localStorage.getItem(`resqtrack_session_${port}`) || localStorage.getItem(`resqtrack_user_${port}`);
+    if (portRaw) {
+      const parsed = JSON.parse(portRaw);
+      if (!(parsed.role || '').toLowerCase().includes('admin')) {
+        return parsed;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
 export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) => {
   const { session } = useSession();
+  const currentPort = typeof window !== 'undefined' ? window.location.port : '';
 
-  // Authoritative role and unit from active authenticated backend session
-  const activeRole = session?.role || DEFAULT_RESPONDER_ROLE;
-  const rawUnit = session?.unit && session.unit !== 'None' ? session.unit : DEFAULT_RESPONDER_UNIT;
+  // Strict Port Guard: Port 5174 will NEVER display Responder or Civilian views
+  if (currentPort === '5174') {
+    return <Navigate to="/admin/login" replace />;
+  }
+
+  const tabSession = getTabSession();
+
+  // Authoritative role and unit from tab sessionStorage first, then active session
+  const activeRole = tabSession?.role || session?.role || DEFAULT_RESPONDER_ROLE;
+  const rawUnit =
+    tabSession?.unit && tabSession.unit !== 'None'
+      ? tabSession.unit
+      : session?.unit && session.unit !== 'None'
+      ? session.unit
+      : DEFAULT_RESPONDER_UNIT;
   const normUnit = rawUnit.toUpperCase();
 
   const user = {
-    name: session?.fullName || DEFAULT_RESPONDER_NAME,
-    id: session?.employeeOrResidentId || session?.employeeId || DEFAULT_EMPLOYEE_ID,
+    name: tabSession?.fullName || session?.fullName || DEFAULT_RESPONDER_NAME,
+    id: tabSession?.employeeOrResidentId || tabSession?.employeeId || session?.employeeOrResidentId || session?.employeeId || DEFAULT_EMPLOYEE_ID,
     role: activeRole,
     unit: normUnit,
-    status: session?.status || DEFAULT_VERIFIED_STATUS,
-    faceVerified: session?.faceVerified ?? true
+    status: tabSession?.status || session?.status || DEFAULT_VERIFIED_STATUS,
+    faceVerified: tabSession?.faceVerified ?? session?.faceVerified ?? true
   };
 
   const getBranchTelemetry = (unit: string) => {

@@ -16,9 +16,9 @@ import {
 import {
   getAgencyReports,
   ReportItem,
-  sendEmergencyBroadcast
+  sendEmergencyBroadcast,
+  verifyReport
 } from '@/Endpoints/reportsApi';
-import { verifyReport } from '@/Endpoints/adminGovernanceApi';
 import {
   submitPcrRecord,
   getPcrRecords,
@@ -124,6 +124,44 @@ export interface IncidentLogSubmission {
   submittedAtFormatted: string;
   adminAiVerified: boolean;
   countdownSecondsRemaining: number;
+  evidencePhotos?: Array<{
+    id?: string;
+    url: string;
+    timestamp?: string;
+    caption?: string;
+    latitude?: number;
+    longitude?: number;
+  }>;
+  casualties?: Array<{
+    id?: string;
+    patientName: string;
+    age?: number | string;
+    gender?: string;
+    triageColor?: 'Red' | 'Yellow' | 'Green' | 'Black';
+    triageTag?: string;
+    consciousness?: string;
+    levelOfConsciousness?: string;
+    bloodPressure?: string;
+    bloodPressureSystolic?: number;
+    bloodPressureDiastolic?: number;
+    heartRate?: number | string;
+    heartRateBpm?: number;
+    respiratoryRate?: number | string;
+    oxygenSaturation?: number | string;
+    spO2Percent?: number;
+    glucose?: number;
+    bloodGlucoseMgDl?: number;
+    temperature?: number | string;
+    temperatureCelsius?: number;
+    chiefComplaint?: string;
+    treatmentNotes?: string;
+    narrative?: string;
+    interventions?: string[];
+    recordedAt?: string;
+    pcrReference?: string;
+  }>;
+  isVerified?: boolean;
+  verifiedAt?: string;
 }
 
 type FilterTabMode = 'ALL' | 'CRITICAL' | 'ACTIVE' | 'RESOLVED';
@@ -209,6 +247,12 @@ export const UnitIncidentsFeed: React.FC = () => {
   const { session } = useSession();
   const navigate = useNavigate();
   const { dispatchReportEvent } = useReportEventBus();
+
+  const activeAgencyUnit = (
+    session?.unit && session.unit !== 'None'
+      ? session.unit
+      : (typeof window !== 'undefined' ? sessionStorage.getItem('resqtrack_unit') : null) || 'RHU'
+  ).toUpperCase();
 
   const [incidents, setIncidents] = useState<ReportItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -301,20 +345,16 @@ export const UnitIncidentsFeed: React.FC = () => {
   }, []);
 
   const loadIncidents = useCallback(async () => {
-    if (!session || session.unit === 'None') {
-      setLoading(false);
-      return;
-    }
+    const targetUnit = activeAgencyUnit;
     try {
-      const data = await getAgencyReports(session.unit);
+      const data = await getAgencyReports(targetUnit);
       if (Array.isArray(data) && data.length > 0) {
         setIncidents(data);
       } else {
-        const agencyUnit = session.unit.toUpperCase();
         const agencyFiltered = BASELINE_INCIDENT_REPORTS.filter((r) => {
           const rec = (r.recommendedAgencyUnit || '').toUpperCase();
           const alloc = (r.allocatedUnitCode || '').toUpperCase();
-          return rec.includes(agencyUnit) || alloc.includes(agencyUnit);
+          return rec.includes(targetUnit) || alloc.includes(targetUnit);
         });
         setIncidents(agencyFiltered.length > 0 ? agencyFiltered : BASELINE_INCIDENT_REPORTS);
       }
@@ -324,7 +364,7 @@ export const UnitIncidentsFeed: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [session]);
+  }, [activeAgencyUnit]);
 
   useValueRefreshAuto(loadIncidents, {
     intervalMs: 6000,
@@ -1033,6 +1073,29 @@ export const UnitIncidentsFeed: React.FC = () => {
     showToast(`DISPATCH [${inc.referenceCode}] MARKED RESPONDED — MAP POINTER GREEN (#10B981)`);
   };
 
+  const handleStatusTransition = async (
+    incId: string,
+    status: 'EnRoute' | 'OnScene' | 'Responded' | 'Resolved' | 'Closed',
+    note?: string
+  ) => {
+    const responderName = session?.fullName || 'RHU Field Responder';
+    const nowFormatted = formatExactTimestampWithSeconds(new Date());
+
+    setIncidents((prev) =>
+      prev.map((item) => (item.id === incId ? { ...item, status } : item))
+    );
+
+    try {
+      await verifyReport(
+        incId,
+        status,
+        note || `Incident status updated to ${status} by ${responderName} at ${nowFormatted}.`
+      );
+    } catch (err: unknown) {
+      console.warn('[UnitIncidentsFeed] verifyReport status transition fallback:', err);
+    }
+  };
+
   // Task 5: "SUBMIT REPORT" Button -> Submits evidences & multi-casualty PCRs to Admin and saves into "INCIDENT LOGS"
   const handleSubmitReportToIncidentLogs = async (inc: ReportItem, e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -1065,7 +1128,45 @@ export const UnitIncidentsFeed: React.FC = () => {
       submittedAt: now.toISOString(),
       submittedAtFormatted: nowFormatted,
       adminAiVerified: true,
-      countdownSecondsRemaining: COUNTDOWN_TOTAL_SECONDS
+      countdownSecondsRemaining: COUNTDOWN_TOTAL_SECONDS,
+      evidencePhotos: incEvidences.map((e, idx) => ({
+        id: e.id || `photo-${inc.id}-${idx}`,
+        url: e.url,
+        timestamp: e.capturedAtFormatted || nowFormatted,
+        caption: e.caption || `Field Evidence #${idx + 1}`,
+        latitude: inc.latitude,
+        longitude: inc.longitude
+      })),
+      casualties: incPcrs.map((pcr) => ({
+        id: pcr.id,
+        patientName: pcr.patientName,
+        age: pcr.age,
+        gender: pcr.gender,
+        triageColor: (pcr.spO2 < 92 || pcr.heartRate > 120 ? 'Red' : 'Yellow') as 'Red' | 'Yellow' | 'Green' | 'Black',
+        triageTag: pcr.spO2 < 92 || pcr.heartRate > 120 ? 'RED — IMMEDIATE' : 'YELLOW — DELAYED',
+        consciousness: pcr.levelOfConsciousness,
+        levelOfConsciousness: pcr.levelOfConsciousness,
+        bloodPressure: `${pcr.bpSystolic}/${pcr.bpDiastolic}`,
+        bloodPressureSystolic: pcr.bpSystolic,
+        bloodPressureDiastolic: pcr.bpDiastolic,
+        heartRate: pcr.heartRate,
+        heartRateBpm: pcr.heartRate,
+        respiratoryRate: pcr.respiratoryRate,
+        oxygenSaturation: pcr.spO2,
+        spO2Percent: pcr.spO2,
+        glucose: pcr.glucose,
+        bloodGlucoseMgDl: pcr.glucose,
+        temperature: pcr.temp,
+        temperatureCelsius: pcr.temp,
+        chiefComplaint: pcr.chiefComplaint,
+        treatmentNotes: pcr.narrative,
+        narrative: pcr.narrative,
+        interventions: pcr.interventions,
+        recordedAt: pcr.recordedAt || nowFormatted,
+        pcrReference: pcr.pcrReference
+      })),
+      isVerified: true,
+      verifiedAt: now.toISOString()
     };
 
     try {
@@ -1445,7 +1546,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                         className={`px-2 py-0.5 rounded text-[10px] font-mono font-black border uppercase tracking-wider inline-flex items-center gap-1 ${agencyBadge.badgeClass}`}
                       >
                         <agencyBadge.icon className="w-3 h-3" />
-                        <span>{session?.unit || 'RHU'}</span>
+                        <span>{activeAgencyUnit}</span>
                       </span>
 
                       {severityBadge}
@@ -1557,7 +1658,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   </button>
 
                   {/* TASK 5: Specialized Agency Operation Trigger (RHU Multi-Casualty PCR Vitals + Fire/PNP compatibility) */}
-                  {(session?.unit === 'RHU' || !session?.unit) && (
+                  {activeAgencyUnit === 'RHU' && (
                     <button
                       type="button"
                       onClick={(e) => openPcrModalForIncident(inc, e)}
@@ -1569,7 +1670,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                     </button>
                   )}
 
-                  {session?.unit === 'FIRE' && (
+                  {activeAgencyUnit === 'FIRE' && (
                     <button
                       type="button"
                       onClick={() => setActiveAlarmIncident(inc)}
@@ -1581,7 +1682,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                     </button>
                   )}
 
-                  {session?.unit === 'PNP' && (
+                  {activeAgencyUnit === 'PNP' && (
                     <button
                       type="button"
                       onClick={() => setActiveBlotterIncident(inc)}
@@ -1722,13 +1823,31 @@ export const UnitIncidentsFeed: React.FC = () => {
                         >
                           EVIDENCE
                         </button>
-                        {(session?.unit === 'RHU' || !session?.unit) && (
+                        {activeAgencyUnit === 'RHU' && (
                           <button
                             type="button"
                             onClick={(e) => openPcrModalForIncident(inc, e)}
                             className="px-2 py-1 rounded bg-rose-900 hover:bg-rose-800 text-rose-200 font-bold text-[10px] cursor-pointer"
                           >
                             PCR VITALS
+                          </button>
+                        )}
+                        {activeAgencyUnit === 'FIRE' && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveAlarmIncident(inc)}
+                            className="px-2 py-1 rounded bg-amber-900 hover:bg-amber-800 text-amber-200 font-bold text-[10px] cursor-pointer"
+                          >
+                            FIRE ALARM
+                          </button>
+                        )}
+                        {activeAgencyUnit === 'PNP' && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveBlotterIncident(inc)}
+                            className="px-2 py-1 rounded bg-blue-900 hover:bg-blue-800 text-blue-200 font-bold text-[10px] cursor-pointer"
+                          >
+                            BLOTTER
                           </button>
                         )}
                         <button

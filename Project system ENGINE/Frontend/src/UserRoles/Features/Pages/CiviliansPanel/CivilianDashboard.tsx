@@ -24,7 +24,8 @@ import { getPublicAlerts } from '@/Endpoints/civilianPortalApi';
 import { getIncidentFixtures, IncidentFixture } from '@/Endpoints/adminGovernanceApi';
 import { SatelliteCommandMap, MapMarker } from '@/Shared/SatelliteCommandMap';
 import { CameraCaptureModal, CameraCaptureMetadata } from '@/Shared/CameraCaptureModal';
-import { createReport, AlertItem } from '@/Endpoints/reportsApi';
+import { createReport, getAllReports, getMyReports, AlertItem, ReportItem } from '@/Endpoints/reportsApi';
+import { useSession } from '@/Hooks/useSession';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
@@ -65,10 +66,37 @@ const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: num
   return EARTH_RADIUS_KM * c;
 };
 
+const getLocalReporterId = (): string | null => {
+  try {
+    const directId = localStorage.getItem('resqtrack_reporter_id');
+    if (directId) return directId;
+    const rawUser = localStorage.getItem('resqtrack_user') || localStorage.getItem('resqtrack_session');
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser) as { userId?: string; id?: string };
+      return parsed.userId || parsed.id || null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const getLocalSubmittedReportIds = (): string[] => {
+  try {
+    const raw = localStorage.getItem('resqtrack_submitted_report_ids');
+    if (raw) return JSON.parse(raw) as string[];
+  } catch {
+    return [];
+  }
+  return [];
+};
+
 export const CivilianDashboard: React.FC = () => {
+  const { session } = useSession();
   const { coords, isHardwareGeolocated, signalQuality, refreshGps } = useGpsLocation();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [fixtures, setFixtures] = useState<IncidentFixture[]>([]);
+  const [reports, setReports] = useState<ReportItem[]>([]);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [reportSuccess, setReportSuccess] = useState<string | null>(null);
@@ -80,12 +108,23 @@ export const CivilianDashboard: React.FC = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const [a, f] = await Promise.all([
+      const [a, f, repList, myRepList] = await Promise.all([
         getPublicAlerts().catch(() => []),
-        getIncidentFixtures().catch(() => [])
+        getIncidentFixtures().catch(() => []),
+        getAllReports().catch(() => []),
+        getMyReports().catch(() => [])
       ]);
       setAlerts(a && a.length > 0 ? a : BASELINE_ALERTS);
       setFixtures(f && f.length > 0 ? f : BASELINE_INCIDENT_FIXTURES);
+
+      const merged = [...(Array.isArray(myRepList) ? myRepList : []), ...(Array.isArray(repList) ? repList : [])];
+      const dedup = new Map<string, ReportItem>();
+      for (const r of merged) {
+        if (r && r.id && !dedup.has(r.id)) {
+          dedup.set(r.id, r);
+        }
+      }
+      setReports(Array.from(dedup.values()));
     } catch (err) {
       console.error('Error refreshing civilian dashboard feeds:', err);
       setAlerts((prev) => (prev.length > 0 ? prev : BASELINE_ALERTS));
@@ -107,6 +146,26 @@ export const CivilianDashboard: React.FC = () => {
     loadData();
   });
 
+  const myReports = useMemo(() => {
+    const localReporterId = getLocalReporterId();
+    const localSubmittedIds = getLocalSubmittedReportIds();
+
+    return reports.filter((r) => {
+      // 1. Match session?.userId === r.reporterId first
+      if (session?.userId && r.reporterId && session.userId === r.reporterId) {
+        return true;
+      }
+      // 2. Fall back to local storage ID matching
+      if (localReporterId && r.reporterId && localReporterId === r.reporterId) {
+        return true;
+      }
+      if (localSubmittedIds.includes(r.id) || (r.referenceCode && localSubmittedIds.includes(r.referenceCode))) {
+        return true;
+      }
+      return false;
+    });
+  }, [reports, session?.userId]);
+
   const handleQuickReport = async (dataUrl: string, meta?: CameraCaptureMetadata) => {
     try {
       const res = await createReport({
@@ -124,6 +183,21 @@ export const CivilianDashboard: React.FC = () => {
         imageDataUrl: dataUrl
       });
       dispatchReportEvent(res.report);
+
+      try {
+        const existing = JSON.parse(localStorage.getItem('resqtrack_submitted_report_ids') || '[]') as string[];
+        if (!existing.includes(res.report.id)) {
+          existing.unshift(res.report.id);
+        }
+        localStorage.setItem('resqtrack_submitted_report_ids', JSON.stringify(existing));
+        if (res.report.reporterId) {
+          localStorage.setItem('resqtrack_reporter_id', res.report.reporterId);
+        }
+      } catch {
+        // Storage access safeguard
+      }
+
+      setReports((prev) => [res.report, ...prev]);
       setReportSuccess(`Incident logged with reference: ${res.report.referenceCode}. Emergency responders notified.`);
       setTimeout(() => setReportSuccess(null), SUCCESS_TOAST_TIMEOUT_MS);
     } catch (err: unknown) {
@@ -147,8 +221,17 @@ export const CivilianDashboard: React.FC = () => {
       type: 'fixture' as const,
       category: f.category,
       agency: f.assignedUnitType
+    })),
+    ...myReports.map((r) => ({
+      id: `my-report-${r.id}`,
+      lat: r.latitude,
+      lng: r.longitude,
+      title: `Your SOS: ${r.title} (${r.status || 'Active'})`,
+      type: 'incident' as const,
+      category: r.category,
+      agency: r.recommendedAgencyUnit || undefined
     }))
-  ], [coords.latitude, coords.longitude, fixtures]);
+  ], [coords.latitude, coords.longitude, fixtures, myReports]);
 
   // Clean phone dialer parser for click-to-call
   const getDialNumber = (hotline: string): string => {
@@ -397,6 +480,55 @@ export const CivilianDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* 3.1 ACTIVE CITIZEN SUBMITTED REPORTS LIVE DISPATCH TRACKER */}
+      {myReports.length > 0 && (
+        <div className="p-4 rounded-xl bg-slate-900/90 border border-sky-600/40 flex flex-col gap-3 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-ping" />
+              <span className="text-xs font-mono font-bold uppercase text-white tracking-wider">
+                My Active Emergency Submissions ({myReports.length})
+              </span>
+            </div>
+            <Link
+              to="/civilian/my-reports"
+              className="text-xs font-mono font-bold text-sky-400 hover:text-sky-300 underline flex items-center gap-1"
+            >
+              <span>View Full Response Progression</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {myReports.slice(0, 3).map((r) => (
+              <div
+                key={r.id}
+                className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex flex-col justify-between gap-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-mono font-black text-sky-400">#{r.referenceCode}</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase border bg-sky-950/80 text-sky-300 border-sky-600/40">
+                    {r.status || 'REPORTED'}
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white truncate">{r.title}</h4>
+                  <span className="text-[10px] font-mono text-slate-400 block mt-0.5 truncate">
+                    {r.locationLabel || 'Katipunan Sector'}
+                  </span>
+                </div>
+                {r.allocatedUnitCode && (
+                  <div className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+                    <span>Dispatched:</span>
+                    <strong className="text-white">{r.allocatedUnitCode}</strong>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 4. NEAREST EMERGENCY STATIONS & PROXIMITY MATRIX */}
       <div className="tactical-card p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col gap-3">

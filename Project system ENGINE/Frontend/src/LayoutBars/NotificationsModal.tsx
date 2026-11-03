@@ -16,6 +16,7 @@ import {
   Shield,
   Clock
 } from 'lucide-react';
+import { requestJson } from '@/Endpoints/apiClient';
 
 export interface AlertNotificationItem {
   reportId?: string;
@@ -63,24 +64,26 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
     setIsLoading(true);
     try {
       // Primary: sync with backend AlertsController /api/alerts
-      const response = await fetch('/api/alerts', { credentials: 'include' });
-      if (response.ok) {
-        const data = (await response.json()) as AlertNotificationItem[];
-        if (Array.isArray(data)) {
+      try {
+        const data = await requestJson<AlertNotificationItem[]>('/api/alerts', { method: 'GET' });
+        if (Array.isArray(data) && data.length > 0) {
           setAlerts(data.slice(0, MAX_ALERT_ITEMS_DISPLAY));
           return;
         }
+      } catch {
+        // Fallback to reports endpoint below
       }
 
       // Secondary fallback if /api/reports envelope is present
-      const reportsRes = await fetch('/api/reports', { credentials: 'include' });
-      if (reportsRes.ok) {
-        const repData = (await reportsRes.json()) as { reports?: AlertNotificationItem[] } | AlertNotificationItem[];
+      try {
+        const repData = await requestJson<{ reports?: AlertNotificationItem[] } | AlertNotificationItem[]>('/api/reports', { method: 'GET' });
         if (Array.isArray(repData)) {
           setAlerts(repData.slice(0, MAX_ALERT_ITEMS_DISPLAY));
         } else if (repData && Array.isArray(repData.reports)) {
           setAlerts(repData.reports.slice(0, MAX_ALERT_ITEMS_DISPLAY));
         }
+      } catch {
+        // Fallback exhausted
       }
     } catch (err) {
       console.warn('Alerts fetch deferred due to network state:', err);
@@ -117,9 +120,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
 
       // Backend sync
       try {
-        await fetch(`/api/alerts/${encodeURIComponent(alertKey)}/read`, {
-          method: 'POST',
-          credentials: 'include'
+        await requestJson<{ message?: string }>(`/api/alerts/${encodeURIComponent(alertKey)}/read`, {
+          method: 'POST'
         });
       } catch (err) {
         console.warn('Alert read acknowledgment deferred:', err);
@@ -146,9 +148,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
     // Asynchronously acknowledge on backend
     for (const key of allKeys) {
       try {
-        await fetch(`/api/alerts/${encodeURIComponent(key)}/read`, {
-          method: 'POST',
-          credentials: 'include'
+        await requestJson<{ message?: string }>(`/api/alerts/${encodeURIComponent(key)}/read`, {
+          method: 'POST'
         });
       } catch {
         // Individual failure tolerated

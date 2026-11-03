@@ -5,9 +5,15 @@
 // SearchBar with useDebounce, Sort & Filter tabs, TableCardToggle, Pagination, and DefaultFloatingModalCard drill-down.
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { getMyReports, getAgencyReports, createReport, ReportItem } from '@/Endpoints/reportsApi';
+import {
+  getAllReports,
+  getMyReports,
+  getAgencyReports,
+  createReport,
+  verifyReport,
+  ReportItem
+} from '@/Endpoints/reportsApi';
 import { getPcrRecords, PatientCareRecord } from '@/Endpoints/responderOpsApi';
-import { verifyReport } from '@/Endpoints/adminGovernanceApi';
 import { requestJson } from '@/Endpoints/apiClient';
 import {
   useSession,
@@ -167,10 +173,24 @@ const readStoredLogs = (): Record<string, Partial<IncidentLogEntry>> => {
       const map: Record<string, Partial<IncidentLogEntry>> = {};
       parsed.forEach((item: unknown) => {
         if (item && typeof item === 'object') {
-          const rec = item as Partial<IncidentLogEntry> & { reportId?: string };
-          const key = rec.id || rec.reportId || rec.referenceCode;
+          const rec = item as Partial<IncidentLogEntry> & {
+            reportId?: string;
+            incidentId?: string;
+            evidences?: unknown[];
+            pcrRecords?: unknown[];
+          };
+          const key = rec.id || rec.incidentId || rec.reportId || rec.referenceCode;
           if (key) {
             map[String(key)] = rec;
+          }
+          if (rec.incidentId) {
+            map[String(rec.incidentId)] = rec;
+          }
+          if (rec.referenceCode) {
+            map[String(rec.referenceCode)] = rec;
+          }
+          if (rec.id) {
+            map[String(rec.id)] = rec;
           }
         }
       });
@@ -303,10 +323,10 @@ export const MyReportsPage: React.FC = () => {
     try {
       const storedMap = readStoredLogs();
 
-      const [myReportsRes, agencyReportsRes, incidentsRes, pcrRes] = await Promise.allSettled([
+      const [myReportsRes, agencyReportsRes, allReportsRes, pcrRes] = await Promise.allSettled([
         getMyReports(),
         getAgencyReports(session?.unit && session.unit !== 'None' ? session.unit : 'RHU'),
-        requestJson<ReportItem[]>('/api/incidents', { method: 'GET' }),
+        getAllReports(),
         getPcrRecords()
       ]);
 
@@ -317,8 +337,8 @@ export const MyReportsPage: React.FC = () => {
       if (agencyReportsRes.status === 'fulfilled' && Array.isArray(agencyReportsRes.value)) {
         rawReports.push(...agencyReportsRes.value);
       }
-      if (incidentsRes.status === 'fulfilled' && Array.isArray(incidentsRes.value)) {
-        rawReports.push(...incidentsRes.value);
+      if (allReportsRes.status === 'fulfilled' && Array.isArray(allReportsRes.value)) {
+        rawReports.push(...allReportsRes.value);
       }
 
       const pcrList: PatientCareRecord[] =
@@ -366,21 +386,107 @@ export const MyReportsPage: React.FC = () => {
             (isVerified && verifiedAt && remaining === 0)
         );
 
-        const photos: EvidencePhotoItem[] = Array.isArray(stored.evidencePhotos)
-          ? stored.evidencePhotos.slice(0, MAX_EVIDENCE_PHOTOS).map((p, idx) => ({
-              id: p.id || `photo-${id}-${idx}`,
-              url: p.url,
-              timestamp: formatEvidenceTimestampExact(p.timestamp),
-              caption: p.caption || `Field Evidence #${idx + 1}`,
-              latitude: p.latitude ?? stored.latitude ?? coords.latitude,
-              longitude: p.longitude ?? stored.longitude ?? coords.longitude,
-              ipAddress: p.ipAddress || stored.ipAddress || clientIp
-            }))
-          : [];
+        type StoredEvidenceRaw = {
+          id?: string;
+          url?: string;
+          dataUrl?: string;
+          timestamp?: string;
+          capturedAtFormatted?: string;
+          capturedAtIso?: string;
+          caption?: string;
+          name?: string;
+          latitude?: number;
+          longitude?: number;
+          ipAddress?: string;
+        };
+        const rawEvidenceArray: StoredEvidenceRaw[] =
+          Array.isArray(stored.evidencePhotos) && stored.evidencePhotos.length > 0
+            ? (stored.evidencePhotos as StoredEvidenceRaw[])
+            : Array.isArray((stored as { evidences?: StoredEvidenceRaw[] }).evidences)
+            ? ((stored as { evidences: StoredEvidenceRaw[] }).evidences)
+            : [];
+
+        const photos: EvidencePhotoItem[] = rawEvidenceArray
+          .filter((p) => Boolean(p.url || p.dataUrl))
+          .slice(0, MAX_EVIDENCE_PHOTOS)
+          .map((p, idx) => ({
+            id: p.id || `photo-${id}-${idx}`,
+            url: p.url || p.dataUrl || '',
+            timestamp: formatEvidenceTimestampExact(p.timestamp || p.capturedAtFormatted || p.capturedAtIso),
+            caption: p.caption || p.name || `Field Evidence #${idx + 1}`,
+            latitude: p.latitude ?? stored.latitude ?? coords.latitude,
+            longitude: p.longitude ?? stored.longitude ?? coords.longitude,
+            ipAddress: p.ipAddress || stored.ipAddress || clientIp
+          }));
+
+        type StoredCasualtyRaw = {
+          id?: string;
+          patientName?: string;
+          age?: number | string;
+          gender?: string;
+          triageColor?: string;
+          triageTag?: string;
+          consciousness?: string;
+          levelOfConsciousness?: string;
+          bloodPressure?: string;
+          bloodPressureSystolic?: number;
+          bpSystolic?: number;
+          bloodPressureDiastolic?: number;
+          bpDiastolic?: number;
+          heartRate?: number | string;
+          heartRateBpm?: number;
+          respiratoryRate?: number | string;
+          oxygenSaturation?: number | string;
+          spO2Percent?: number;
+          spO2?: number;
+          temperature?: number | string;
+          temperatureCelsius?: number;
+          temp?: number;
+          glucose?: number;
+          bloodGlucoseMgDl?: number;
+          chiefComplaint?: string;
+          treatmentNotes?: string;
+          narrative?: string;
+          interventions?: string[];
+          anatomicalInjuries?: string[];
+          recordedAt?: string;
+        };
+
+        const rawCasualtyArray: StoredCasualtyRaw[] =
+          Array.isArray(stored.casualties) && stored.casualties.length > 0
+            ? (stored.casualties as StoredCasualtyRaw[])
+            : Array.isArray((stored as { pcrRecords?: StoredCasualtyRaw[] }).pcrRecords)
+            ? ((stored as { pcrRecords: StoredCasualtyRaw[] }).pcrRecords)
+            : [];
 
         const casualties: CasualtyVitalsEntry[] =
-          Array.isArray(stored.casualties) && stored.casualties.length > 0
-            ? stored.casualties
+          rawCasualtyArray.length > 0
+            ? rawCasualtyArray.map((c, idx) => {
+                const systolic = c.bloodPressureSystolic ?? c.bpSystolic ?? 120;
+                const diastolic = c.bloodPressureDiastolic ?? c.bpDiastolic ?? 80;
+                const hr = Number(c.heartRateBpm ?? c.heartRate ?? 84);
+                const spo2 = Number(c.spO2Percent ?? c.spO2 ?? c.oxygenSaturation ?? 98);
+                return {
+                  id: c.id || `pcr-${id}-${idx}`,
+                  patientName: c.patientName || 'Trauma Patient',
+                  age: typeof c.age === 'number' ? c.age : parseInt(String(c.age || 30), 10) || 30,
+                  gender: c.gender || 'Unknown',
+                  triageTag: c.triageTag || (spo2 < 92 || hr > 120 ? 'RED — IMMEDIATE' : 'YELLOW — DELAYED'),
+                  levelOfConsciousness: c.levelOfConsciousness || c.consciousness || 'Alert',
+                  bloodPressureSystolic: systolic,
+                  bloodPressureDiastolic: diastolic,
+                  heartRateBpm: hr,
+                  respiratoryRate: Number(c.respiratoryRate ?? 18),
+                  spO2Percent: spo2,
+                  temperatureCelsius: Number(c.temperatureCelsius ?? c.temperature ?? c.temp ?? 36.7),
+                  bloodGlucoseMgDl: Number(c.bloodGlucoseMgDl ?? c.glucose ?? 100),
+                  chiefComplaint: c.chiefComplaint || c.treatmentNotes || c.narrative || 'Field medical stabilization',
+                  interventions: Array.isArray(c.interventions) ? c.interventions : [],
+                  anatomicalInjuries: Array.isArray(c.anatomicalInjuries) ? c.anatomicalInjuries : [],
+                  narrative: c.narrative || c.treatmentNotes,
+                  recordedAt: formatEvidenceTimestampExact(c.recordedAt)
+                };
+              })
             : pcrByReportId[id] || [];
 
         if (isClosed) {
@@ -417,7 +523,7 @@ export const MyReportsPage: React.FC = () => {
       // 2. Merge backend ReportItems
       rawReports.forEach((r) => {
         if (!r || !r.id) return;
-        const existing = mergedById.get(r.id);
+        const existing = mergedById.get(r.id) || (r.referenceCode ? mergedById.get(r.referenceCode) : undefined);
         const backendVerified = Boolean(
           r.verifiedAt || r.status === 'Verified' || r.status === 'Resolved' || existing?.isVerified
         );

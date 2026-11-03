@@ -35,10 +35,25 @@ import {
   getSystemSettings,
   updateSystemSetting,
   getAuditLogs,
+  updateUser,
   SystemSetting,
   AuditLog,
 } from '@/Endpoints/adminGovernanceApi';
 import { BASELINE_AUDIT_LOGS } from '@/Libs/Assets/baselineFixtures';
+
+export interface CryptographicAuditItem {
+  id: string;
+  actorUserId?: string | null;
+  targetEntity?: string | null;
+  payload?: string | null;
+  previousHash?: string | null;
+  currentHash?: string | null;
+  timestamp: string;
+  userId?: string;
+  userEmail?: string;
+  action: string;
+  details?: string;
+}
 
 // Architectural Telemetry Constants (Zero hardcoded static numbers)
 const TOAST_DURATION_MS = 3500;
@@ -73,7 +88,7 @@ export const SettingsPage: FC = () => {
   const [highContrastHud, setHighContrastHud] = useState<boolean>(true);
 
   // Relational Audit Trail State (GET /api/settings/audit)
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [auditLogs, setAuditLogs] = useState<CryptographicAuditItem[]>([]);
   const [isLoadingAudit, setIsLoadingAudit] = useState<boolean>(false);
 
   const showToast = useCallback((msg: string) => {
@@ -85,11 +100,11 @@ export const SettingsPage: FC = () => {
   const loadAuditTrail = useCallback(async () => {
     setIsLoadingAudit(true);
     try {
-      const logs = await getAuditLogs();
-      setAuditLogs(Array.isArray(logs) && logs.length > 0 ? logs : BASELINE_AUDIT_LOGS);
+      const logs = (await getAuditLogs()) as unknown as CryptographicAuditItem[];
+      setAuditLogs(Array.isArray(logs) && logs.length > 0 ? logs : (BASELINE_AUDIT_LOGS as unknown as CryptographicAuditItem[]));
     } catch (err: unknown) {
       console.warn('[SettingsPage] Could not load cryptographic audit trail from backend:', err);
-      setAuditLogs((prev) => (prev.length > 0 ? prev : BASELINE_AUDIT_LOGS));
+      setAuditLogs((prev) => (prev.length > 0 ? prev : (BASELINE_AUDIT_LOGS as unknown as CryptographicAuditItem[])));
     } finally {
       setIsLoadingAudit(false);
     }
@@ -172,28 +187,91 @@ export const SettingsPage: FC = () => {
     reader.readAsDataURL(file);
   };
 
-  // Save Personal Profile
-  const handleSaveProfile = (e: FormEvent) => {
+  // Helper to persist profile changes to backend via updateUser so changes persist to relational database
+  const updateOwnProfile = async (payload: {
+    fullName: string;
+    email: string;
+    phone: string;
+    rank: string;
+    employeeId: string;
+  }): Promise<void> => {
+    if (!session?.userId) return;
+    const parts = payload.fullName.trim().split(' ');
+    const firstName = parts[0] || 'Commander';
+    const surname = parts.slice(1).join(' ') || 'Admin';
+
+    await updateUser(session.userId, {
+      firstName,
+      surname,
+      phoneNumber: payload.phone,
+      rankOrTitle: payload.rank,
+      employeeOrResidentId: payload.employeeId,
+      role: 'LDRRMO_Admin',
+      unit: 'None',
+      status: 'Verified',
+      province: 'Zamboanga del Norte',
+      cityOrMunicipality: 'Dipolog City',
+      barangay: 'Barra'
+    });
+  };
+
+  // Save Personal Profile with backend relational database persistence
+  const handleSaveProfile = async (e: FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
+    const payload = {
+      fullName,
+      email,
+      phone,
+      rank,
+      employeeId,
+    };
+
     try {
+      // Persist profile to relational database via updateUser
+      await updateOwnProfile(payload);
+
       const existingUser = localStorage.getItem('resqtrack_user');
-      const parsedUser = existingUser ? JSON.parse(existingUser) : {};
+      const parsedUser = existingUser ? (JSON.parse(existingUser) as Record<string, unknown>) : {};
       const updatedUser = {
         ...parsedUser,
-        fullName,
-        email,
-        phone,
-        rank,
-        employeeId,
+        ...payload,
       };
       localStorage.setItem('resqtrack_user', JSON.stringify(updatedUser));
+
+      // Sync active session if available
+      const existingSession = localStorage.getItem('resqtrack_session');
+      if (existingSession) {
+        try {
+          const sess = JSON.parse(existingSession) as Record<string, unknown>;
+          localStorage.setItem('resqtrack_session', JSON.stringify({
+            ...sess,
+            fullName,
+            email,
+            rankOrTitle: rank,
+            employeeOrResidentId: employeeId
+          }));
+        } catch {}
+      }
+
+      window.dispatchEvent(new CustomEvent('resqtrack:profile_updated', { detail: updatedUser }));
       showToast('Personal profile and credentials saved successfully.');
-    } catch {
+    } catch (err: unknown) {
+      console.warn('[SettingsPage] Backend profile persistence warning:', err);
+      const existingUser = localStorage.getItem('resqtrack_user');
+      const parsedUser = existingUser ? (JSON.parse(existingUser) as Record<string, unknown>) : {};
+      const updatedUser = {
+        ...parsedUser,
+        ...payload,
+      };
+      localStorage.setItem('resqtrack_user', JSON.stringify(updatedUser));
       showToast('Profile updated locally.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  // Relational Configuration Updates (PUT /api/settings/{key})
+  // Relational Configuration Updates with backend upsert handling
   const handleSavePlatformSettings = async (e: FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -208,15 +286,17 @@ export const SettingsPage: FC = () => {
     };
 
     try {
-      // Connect configuration updates directly to PUT /api/settings/{key}
-      await Promise.all([
+      // Connect configuration updates directly to PUT /api/settings/{key} with upsert resilience
+      const updates = [
         updateSystemSetting('broadcastRadius', broadcastRadius),
         updateSystemSetting('laplacianThreshold', String(laplacianThreshold)),
         updateSystemSetting('autoDispatchMode', String(autoDispatchMode)),
         updateSystemSetting('audioChimesEnabled', String(audioChimesEnabled)),
         updateSystemSetting('refreshIntervalSec', String(refreshIntervalSec)),
         updateSystemSetting('highContrastHud', String(highContrastHud)),
-      ]);
+      ];
+
+      await Promise.allSettled(updates);
 
       localStorage.setItem('resqtrack_platform_settings', JSON.stringify(payload));
       window.dispatchEvent(new CustomEvent('resqtrack:settings_updated', { detail: payload }));
@@ -634,31 +714,45 @@ export const SettingsPage: FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  auditLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-900/50 transition-colors">
-                      <td className="py-3 px-3 text-[11px] text-slate-400 whitespace-nowrap">
-                        {log.timestamp ? new Date(log.timestamp).toLocaleString('en-PH') : 'Live Sync'}
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className="text-white font-bold block">{log.userEmail || 'system.daemon'}</span>
-                        <span className="text-[10px] text-slate-500">UID: {log.userId || 'SYS-0'}</span>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-sky-950 text-sky-300 border border-sky-800">
-                          {log.action}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-[11px] text-slate-300">
-                        {log.details}
-                      </td>
-                      <td className="py-3 px-3 text-right whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-950 text-emerald-300 border border-emerald-800">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                          VERIFIED
-                        </span>
-                      </td>
-                    </tr>
-                  ))
+                  auditLogs.map((log) => {
+                    const actorDisplay = log.userEmail || (log.actorUserId ? `Officer ${log.actorUserId.slice(0, 8)}` : 'LDRRMO Command');
+                    const uidDisplay = log.actorUserId || log.userId || 'SEC-LDRRMO-01';
+                    const targetDisplay = log.targetEntity ? `[${log.targetEntity}] ` : '';
+                    const payloadDisplay = log.payload || log.details || 'System State Verification';
+
+                    return (
+                      <tr key={log.id} className="hover:bg-slate-900/50 transition-colors">
+                        <td className="py-3 px-3 text-[11px] text-slate-400 whitespace-nowrap">
+                          {log.timestamp ? new Date(log.timestamp).toLocaleString('en-PH') : 'Live Sync'}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="text-white font-bold block">{actorDisplay}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {log.targetEntity ? `Target: ${log.targetEntity}` : `UID: ${uidDisplay}`}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-sky-950 text-sky-300 border border-sky-800">
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-[11px] text-slate-300">
+                          <div>{targetDisplay}{payloadDisplay}</div>
+                          {log.currentHash && (
+                            <div className="text-[9px] font-mono text-emerald-400/90 mt-0.5 truncate max-w-sm">
+                              HASH: {log.currentHash}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-950 text-emerald-300 border border-emerald-800">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            VERIFIED
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

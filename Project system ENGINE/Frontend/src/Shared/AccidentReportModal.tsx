@@ -1,12 +1,13 @@
 // [Layer: Shared]
-// Responsibility: 100% authentic RISKQTRAK Accident Report Modal (.modal--report) with anti-spoofing,
+// Responsibility: 100% authentic RESQTRACK Accident Report Modal (.modal--report) with anti-spoofing,
 // continuous real GPS tracking feeds, burnt-in telemetry watermark, and dynamically adjusting Laplacian blurriness detection.
-// Complies with Universal Lambdas (=>) and zero file-upload / zero-retake security rules.
+// Complies with Universal Lambdas (=>), ZERO emojis, and zero file-upload / zero-retake security rules.
 
 import React, { FC, useEffect, useRef, useState } from 'react';
-import { X, Camera, AlertTriangle, Crosshair, Send } from 'lucide-react';
+import { X, Camera, AlertTriangle, Crosshair, Send, CheckCircle2 } from 'lucide-react';
 import { createReport, CreateReportPayload, ReportItem } from '../Endpoints/reportsApi';
 import { useGpsLocation } from '../Hooks/useGpsLocation';
+import { getKatipunanBarangay } from '@/Libs/Map/mapAccuracy';
 
 export interface AccidentReportModalProps {
   isOpen: boolean;
@@ -189,23 +190,32 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
     const latStr = `${coords.latitude.toFixed(6)}° N`;
     const lngStr = `${coords.longitude.toFixed(6)}° E`;
     const accStr = `±${Math.round(coords.accuracy)}m`;
+    const barangayLabel = getKatipunanBarangay(coords.latitude, coords.longitude);
 
     ctx.fillStyle = 'rgba(7, 21, 34, 0.90)';
-    ctx.fillRect(0, height - 85, width, 85);
+    ctx.fillRect(0, height - 90, width, 90);
     ctx.fillStyle = '#e8114c';
-    ctx.fillRect(0, height - 85, width, 3);
+    ctx.fillRect(0, height - 90, width, 3);
 
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 15px "Montserrat", sans-serif';
-    ctx.fillText('RESQTRACK EMERGENCY REPORT // LIVE HARDWARE GPS TELEMETRY', 20, height - 54);
+    ctx.fillText('RESQTRACK EMERGENCY REPORT // LIVE HARDWARE GPS TELEMETRY', 20, height - 60);
 
     ctx.fillStyle = '#38bdf8';
     ctx.font = '12px "JetBrains Mono", monospace';
-    ctx.fillText(`COORDS: ${latStr}, ${lngStr} (ACCURACY: ${accStr})  |  SIGNAL: ${signalQuality.toUpperCase()}`, 20, height - 32);
+    ctx.fillText(
+      `LOCATION: ${barangayLabel} | COORDS: ${latStr}, ${lngStr} (ACCURACY: ${accStr}) | SIGNAL: ${signalQuality.toUpperCase()}`,
+      20,
+      height - 38
+    );
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = '11px "JetBrains Mono", monospace';
-    ctx.fillText(`UTC: ${nowIso}  |  CLARITY: ${variance} (TARGET: ${threshold}) [${blurry ? 'BLURRY - REQUIRES MANUAL VERIFICATION' : 'VERIFIED CLEAR'}]`, 20, height - 12);
+    ctx.fillText(
+      `UTC: ${nowIso} | CLARITY: ${variance} (TARGET: ${threshold}) [${blurry ? 'BLURRY - REQUIRES MANUAL VERIFICATION' : 'VERIFIED CLEAR'}]`,
+      20,
+      height - 16
+    );
   };
 
   const generateSyntheticSnapshot = () => {
@@ -221,7 +231,11 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
       ctx.fillText('RESQTRACK TACTICAL SENSOR FRAME', 60, 300);
       ctx.fillStyle = '#38bdf8';
       ctx.font = '20px "JetBrains Mono", monospace';
-      ctx.fillText(`GPS: ${coords.latitude.toFixed(6)}° N, ${coords.longitude.toFixed(6)}° E (±${Math.round(coords.accuracy)}m)`, 60, 350);
+      ctx.fillText(
+        `GPS: ${coords.latitude.toFixed(6)}° N, ${coords.longitude.toFixed(6)}° E (±${Math.round(coords.accuracy)}m)`,
+        60,
+        350
+      );
       burnWatermark(ctx, CANVAS_WIDTH, CANVAS_HEIGHT, 120, DEFAULT_CLARITY_THRESHOLD, false);
     }
     const dataUrl = canvas.toDataURL('image/png');
@@ -302,9 +316,9 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
         stopStream(); // Single snapshot lock: kill stream
 
         if (blurry) {
-          setHint(`⚠️ Blurry capture detected (Score: ${variance} · Target: ${dynamicCheck.threshold}). Flagged for manual LDRRMO verification; GPS coordinates locked.`);
+          setHint(`[BLURRY DETECTED] Score: ${variance} · Target: ${dynamicCheck.threshold}. Flagged for manual LDRRMO verification; GPS coordinates locked.`);
         } else {
-          setHint(`✓ Crisp evidence locked (Score: ${variance} · Target: ${dynamicCheck.threshold}). Add optional details and dispatch to command.`);
+          setHint(`[VERIFIED CLEAR] Evidence locked (Score: ${variance} · Target: ${dynamicCheck.threshold}). Add optional details and dispatch to command.`);
         }
       }
     } else {
@@ -317,6 +331,8 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
     setIsSending(true);
     setErrorMsg('');
 
+    const locationLabel = `${getKatipunanBarangay(coords.latitude, coords.longitude)} (Live Sensor Geotag)`;
+
     const payload: CreateReportPayload = {
       title: 'Road Accident',
       note: note.trim(),
@@ -328,7 +344,7 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
       isHardwareGeolocated,
       isBlurry,
       requiresManualVerification: isBlurry,
-      locationLabel: 'Katipunan, Zamboanga del Norte (Live Sensor Geotag)',
+      locationLabel,
       imageDataUrl: shotDataUrl
     };
 
@@ -354,6 +370,8 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
   };
 
   if (!isOpen) return null;
+
+  const currentBarangay = getKatipunanBarangay(coords.latitude, coords.longitude);
 
   return (
     <div className="camera modal--report" id="report-cam" role="dialog" aria-modal="true" aria-label="Road accident report camera">
@@ -431,7 +449,7 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
         </div>
 
         <p className="camera__place flex items-center flex-wrap gap-1">
-          <span>Location: <strong>Katipunan, ZN</strong> &middot; Lat: <code>{coords.latitude.toFixed(6)}</code>, Lng: <code>{coords.longitude.toFixed(6)}</code> (&plusmn;{Math.round(coords.accuracy)}m) &middot;</span>
+          <span>Location: <strong>{currentBarangay}</strong> &middot; Lat: <code>{coords.latitude.toFixed(6)}</code>, Lng: <code>{coords.longitude.toFixed(6)}</code> (&plusmn;{Math.round(coords.accuracy)}m) &middot;</span>
           {isHardwareGeolocated ? (
             <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold">
               <Crosshair className="w-3.5 h-3.5" />

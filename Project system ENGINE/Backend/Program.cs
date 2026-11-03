@@ -22,11 +22,13 @@ builder.WebHost.UseUrls("http://0.0.0.0:5000");
 builder.Services.AddControllers()
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
+builder.Services.AddHttpClient();
+
 // Add OpenAPI
 builder.Services.AddOpenApi();
 
 // Configure EF Core with dynamic Enterprise RDBMS Provider
-var dbProvider = builder.Configuration["DatabaseProvider"] ?? "SqlServer";
+var dbProvider = builder.Configuration["DatabaseProvider"] ?? Environment.GetEnvironmentVariable("DATABASE_PROVIDER") ?? "SqlServer";
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
@@ -36,6 +38,10 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         case "postgres":
         case "npgsql":
             var pgConnection = builder.Configuration.GetConnectionString("PostgreSqlConnection");
+            if (string.IsNullOrWhiteSpace(pgConnection))
+            {
+                pgConnection = builder.Configuration.GetConnectionString("PostgreSqlConnection_Docker");
+            }
             if (string.IsNullOrWhiteSpace(pgConnection))
             {
                 pgConnection = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -111,13 +117,41 @@ builder.Services.AddScoped<IUserGovernanceService, UserGovernanceService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 
-// CORS configuration for React 19 Frontend
+// Configure Distributed Cache (Redis 7 Alpine with resilient In-Memory fallback)
+var redisConnection = builder.Configuration.GetConnectionString("RedisConnection") 
+    ?? builder.Configuration["RedisConnection"] 
+    ?? Environment.GetEnvironmentVariable("REDIS_CONNECTION")
+    ?? "localhost:6379";
+
+if (!string.IsNullOrWhiteSpace(redisConnection) && !redisConnection.Equals("none", StringComparison.OrdinalIgnoreCase))
+{
+    try
+    {
+        builder.Services.AddStackExchangeRedisCache(options =>
+        {
+            options.Configuration = redisConnection;
+            options.InstanceName = "ResQTrack_";
+        });
+    }
+    catch
+    {
+        builder.Services.AddDistributedMemoryCache();
+    }
+}
+else
+{
+    builder.Services.AddDistributedMemoryCache();
+}
+
+// CORS configuration for React 19 Frontend (Multi-Port Separation Architecture)
 builder.Services.AddCors(options => options.AddPolicy("AllowViteFrontend", policy =>
     policy.WithOrigins(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
         "http://localhost:3000",
         "http://127.0.0.1:3000")
           .AllowAnyHeader()
@@ -135,12 +169,15 @@ using (var scope = app.Services.CreateScope())
         await db.Database.EnsureCreatedAsync();
         try
         {
-            await db.Database.ExecuteSqlRawAsync(@"
-                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AuditLogs' AND COLUMN_NAME='PreviousHash')
-                BEGIN
-                    ALTER TABLE [AuditLogs] ALTER COLUMN [PreviousHash] NVARCHAR(128) NOT NULL;
-                    ALTER TABLE [AuditLogs] ALTER COLUMN [CurrentHash] NVARCHAR(128) NOT NULL;
-                END");
+            if (db.Database.IsSqlServer())
+            {
+                await db.Database.ExecuteSqlRawAsync(@"
+                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AuditLogs' AND COLUMN_NAME='PreviousHash')
+                    BEGIN
+                        ALTER TABLE [AuditLogs] ALTER COLUMN [PreviousHash] NVARCHAR(128) NOT NULL;
+                        ALTER TABLE [AuditLogs] ALTER COLUMN [CurrentHash] NVARCHAR(128) NOT NULL;
+                    END");
+            }
         }
         catch { }
         await DatabaseSeeder.SeedAsync(db, app.Environment);
@@ -176,9 +213,26 @@ app.MapScalarApiReference(options =>
 });
 
 // Safety redirects for Scalar relative path resolution
-app.MapGet("/scalar/openapi/v1.json", () => Results.Redirect("/openapi/v1.json"));
-app.MapGet("/scalar/v1/scalar.js", () => Results.Redirect("/scalar/scalar.js"));
-app.MapGet("/scalar/v1/scalar.aspnetcore.js", () => Results.Redirect("/scalar/scalar.aspnetcore.js"));
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value;
+    if (path == "/scalar/openapi/v1.json")
+    {
+        context.Response.Redirect("/openapi/v1.json", permanent: false);
+        return;
+    }
+    if (path == "/scalar/v1/scalar.js")
+    {
+        context.Response.Redirect("/scalar/scalar.js", permanent: false);
+        return;
+    }
+    if (path == "/scalar/v1/scalar.aspnetcore.js")
+    {
+        context.Response.Redirect("/scalar/scalar.aspnetcore.js", permanent: false);
+        return;
+    }
+    await next();
+});
 
 app.UseCors("AllowViteFrontend");
 

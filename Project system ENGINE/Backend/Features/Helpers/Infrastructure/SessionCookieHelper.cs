@@ -25,7 +25,8 @@ public static class SessionCookieHelper
             Secure = false, // Set to true in strict HTTPS production
             SameSite = SameSiteMode.Lax,
             Expires = expiresAt,
-            Path = "/"
+            Path = "/",
+            IsEssential = true
         });
 
     public static void ExpireSessionCookie(HttpResponse response) =>
@@ -34,13 +35,39 @@ public static class SessionCookieHelper
             Path = "/",
             HttpOnly = true,
             Secure = false,
-            SameSite = SameSiteMode.Lax
+            SameSite = SameSiteMode.Lax,
+            IsEssential = true
         });
 
-    public static string? ExtractToken(HttpRequest request) =>
-        request.Cookies.TryGetValue(CookieName, out var cookieToken) && !string.IsNullOrWhiteSpace(cookieToken)
-            ? cookieToken
-            : request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-                ? request.Headers.Authorization.ToString()["Bearer ".Length..].Trim()
-                : null;
+    public static string? ExtractToken(HttpRequest request)
+    {
+        // 1. Authorization: Bearer <token> FIRST!
+        var authHeader = request.Headers.Authorization.ToString();
+        if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            var bearerToken = authHeader["Bearer ".Length..].Trim();
+            if (!string.IsNullOrWhiteSpace(bearerToken))
+            {
+                return bearerToken;
+            }
+        }
+
+        // 2. X-Session-Token SECOND!
+        if (request.Headers.TryGetValue("X-Session-Token", out var sessionTokenHeader))
+        {
+            var customToken = sessionTokenHeader.ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(customToken))
+            {
+                return customToken;
+            }
+        }
+
+        // 3. Fall back to shared browser cookie only if no header token was provided
+        if (request.Cookies.TryGetValue(CookieName, out var cookieToken) && !string.IsNullOrWhiteSpace(cookieToken))
+        {
+            return cookieToken.Trim();
+        }
+
+        return null;
+    }
 }

@@ -37,11 +37,11 @@ public class RespondersController(IResponderOpsService responderOpsService) : Co
 
     [HttpPost("pcr")]
     public async Task<IActionResult> SubmitPcrAsync([FromBody] CreatePcrRequest request, CancellationToken ct) =>
-        IsAuthorizedResponderOrAdmin()
+        IsAuthorizedAgencyOrAdmin(ResponderUnitType.RHU)
             ? await responderOpsService.SubmitPcrAsync(request, GetCurrentUserId(), ct) is { Success: true, Pcr: { } pcr }
                 ? Ok(new { message = "Patient Care Record stored successfully.", data = pcr })
                 : BadRequest(new { message = "Failed to store Patient Care Record." })
-            : StatusCode(StatusCodes.Status403Forbidden, new { message = "Unauthorized to submit Patient Care Record." });
+            : StatusCode(StatusCodes.Status403Forbidden, new { message = "Only RHU Medic responders or LDRRMO Administrators may submit Patient Care Records." });
 
     [HttpGet("pcr")]
     public async Task<IActionResult> GetPcrRecordsAsync([FromQuery] Guid? reportId, CancellationToken ct) =>
@@ -49,11 +49,11 @@ public class RespondersController(IResponderOpsService responderOpsService) : Co
 
     [HttpPost("blotter")]
     public async Task<IActionResult> FileBlotterAsync([FromBody] CreateBlotterRequest request, CancellationToken ct) =>
-        IsAuthorizedResponderOrAdmin()
+        IsAuthorizedAgencyOrAdmin(ResponderUnitType.PNP)
             ? await responderOpsService.FileBlotterAsync(request, GetCurrentUserId(), ct) is { Success: true, Blotter: { } blotter }
                 ? Ok(new { message = "Police blotter entry created and cryptographically sealed.", data = blotter })
                 : BadRequest(new { message = "Failed to file police blotter entry." })
-            : StatusCode(StatusCodes.Status403Forbidden, new { message = "Unauthorized to file police blotter entry." });
+            : StatusCode(StatusCodes.Status403Forbidden, new { message = "Only PNP Police responders or LDRRMO Administrators may file police blotter entries." });
 
     [HttpGet("blotter")]
     public async Task<IActionResult> GetBlotterEntriesAsync([FromQuery] Guid? reportId, CancellationToken ct) =>
@@ -61,11 +61,11 @@ public class RespondersController(IResponderOpsService responderOpsService) : Co
 
     [HttpPost("alarm-level")]
     public async Task<IActionResult> SetAlarmLevelAsync([FromBody] SetAlarmLevelRequest request, CancellationToken ct) =>
-        IsAuthorizedResponderOrAdmin()
+        IsAuthorizedAgencyOrAdmin(ResponderUnitType.FIRE)
             ? await responderOpsService.SetAlarmLevelAsync(request, GetCurrentUserId(), ct) is { Success: true, Alarm: { } alarm }
                 ? Ok(new { message = "Fire alarm status updated.", data = alarm })
                 : BadRequest(new { message = "Failed to update fire alarm level." })
-            : StatusCode(StatusCodes.Status403Forbidden, new { message = "Unauthorized to update fire alarm status." });
+            : StatusCode(StatusCodes.Status403Forbidden, new { message = "Only BFP Fire responders or LDRRMO Administrators may set fire alarm levels." });
 
     [HttpGet("alarm-level")]
     public async Task<IActionResult> GetAlarmStatusesAsync([FromQuery] Guid? reportId, CancellationToken ct) =>
@@ -78,7 +78,12 @@ public class RespondersController(IResponderOpsService responderOpsService) : Co
     private bool IsAuthorizedResponderOrAdmin() =>
         HttpContext.Items["UserRole"] is UserRole role
             ? role == UserRole.LDRRMO_Admin || role == UserRole.Responder
-            : true;
+            : false;
+
+    private bool IsAuthorizedAgencyOrAdmin(ResponderUnitType requiredAgency) =>
+        HttpContext.Items["UserRole"] is UserRole role
+        && (role == UserRole.LDRRMO_Admin
+            || (role == UserRole.Responder && HttpContext.Items["UserUnit"] is ResponderUnitType unit && unit == requiredAgency));
 
     private Guid? GetCurrentUserId() =>
         HttpContext.Items["UserId"] is Guid uid ? uid : null;

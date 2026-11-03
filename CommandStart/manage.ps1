@@ -10,6 +10,9 @@
 #   .\manage.ps1 stop                     (Stops all running services on ports 5000 & 5173)
 #   .\manage.ps1 migrate                  (Interactive EF Core SQL Server migration & DB update)
 #   .\manage.ps1 test                     (Build checks, API tests, SQL Server check & TS verification)
+#   .\manage.ps1 postgres-up              (Starts Standby PostgreSQL 16 Alpine container via Docker)
+#   .\manage.ps1 postgres-down            (Stops Standby PostgreSQL Docker container)
+#   .\manage.ps1 switch-db                (Interactive switch between SQL Server, PostgreSQL & MySQL)
 #   .\manage.ps1 help                     (Displays help guide and SQL Server auth details)
 #   .\manage.ps1 createsuperadmin <email> <password> <fullName> [unit]
 #   .\manage.ps1 createcustomsuperadmin <email> <password> <fullName> [unit]
@@ -321,16 +324,22 @@ function Start-AllServices {
         Write-Host "  [i] Backend process spawned. Proceeding to launch UI client..." -ForegroundColor Yellow
     }
 
-    # 4. Start React 19 Frontend Portals (Dual-Port RBAC Isolation)
+    # 4. Start React 19 Frontend Portals (Role & Port Separation)
     Write-Host "[*] Launching LDRRMO Admin Command Portal on http://127.0.0.1:5174..." -ForegroundColor Magenta
     $adminCmd = "Set-Location '$FrontendDir'; `$host.UI.RawUI.WindowTitle = 'ResQTrack LDRRMO Admin Command Portal (:5174)'; npm run dev:admin"
     Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack LDRRMO Admin Command Portal (:5174)' -ForegroundColor Magenta; $adminCmd }"
 
     Start-Sleep -Seconds 2
 
-    Write-Host "[*] Launching Responders & Civilians Portal on http://127.0.0.1:5173..." -ForegroundColor Green
-    $responderCmd = "Set-Location '$FrontendDir'; `$host.UI.RawUI.WindowTitle = 'ResQTrack Responders & Civilians Portal (:5173)'; npm run dev:responder"
-    Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack Emergency Responders & Civilians Portal (:5173)' -ForegroundColor Green; $responderCmd }"
+    Write-Host "[*] Launching Emergency Responders Portal on http://127.0.0.1:5173..." -ForegroundColor Green
+    $responderCmd = "Set-Location '$FrontendDir'; `$host.UI.RawUI.WindowTitle = 'ResQTrack Emergency Responders Portal (:5173)'; npm run dev:responder"
+    Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack Emergency Responders Portal (:5173)' -ForegroundColor Green; $responderCmd }"
+
+    Start-Sleep -Seconds 2
+
+    Write-Host "[*] Launching Civilian Emergency SOS Portal on http://127.0.0.1:5175..." -ForegroundColor Green
+    $civilianCmd = "Set-Location '$FrontendDir'; `$host.UI.RawUI.WindowTitle = 'ResQTrack Civilian Emergency SOS Portal (:5175)'; npm run dev:civilian"
+    Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack Civilian Emergency SOS Portal (:5175)' -ForegroundColor Green; $civilianCmd }"
 
     Start-Sleep -Seconds 2
 
@@ -344,18 +353,21 @@ function Start-AllServices {
     Write-Host " LDRRMO Admin Executive Command    | :5174 | ACTIVE   | http://127.0.0.1:5174/dashboard   " -ForegroundColor Magenta
     Write-Host " LDRRMO Admin Login Portal         | :5174 | ACTIVE   | http://127.0.0.1:5174/login       " -ForegroundColor Magenta
     Write-Host " Emergency Responders (RHU/Fire/PNP)|:5173 | ACTIVE   | http://127.0.0.1:5173/responder   " -ForegroundColor Green
-    Write-Host " Civilians Emergency SOS Portal    | :5173 | ACTIVE   | http://127.0.0.1:5173/civilian    " -ForegroundColor Green
-    Write-Host " Responders & Civilians Login      | :5173 | ACTIVE   | http://127.0.0.1:5173/login       " -ForegroundColor Green
+    Write-Host " Responders Login Portal           | :5173 | ACTIVE   | http://127.0.0.1:5173/login       " -ForegroundColor Green
+    Write-Host " Civilians Emergency SOS Portal    | :5175 | ACTIVE   | http://127.0.0.1:5175/civilian    " -ForegroundColor Green
     Write-Host " .NET 10 Web API Backend           | :5000 | ACTIVE   | http://localhost:5000/api         " -ForegroundColor Yellow
     Write-Host " Scalar Interactive API Docs       | :5000 | ACTIVE   | http://localhost:5000/scalar/v1   " -ForegroundColor White
     Write-Host " OpenAPI V1 Specification          | :5000 | ACTIVE   | http://localhost:5000/openapi/v1.json" -ForegroundColor White
-    Write-Host " Database Engine (SQL Server)      | :1433 | ONLINE   | localhost / ResQTrackDb (SSMS 19) " -ForegroundColor Cyan
+    Write-Host " Redis Distributed Cache           | :6379 | ACTIVE   | localhost:6379 (redis:7-alpine)   " -ForegroundColor Red
+    Write-Host " Primary Relational DB             | :5432 | ACTIVE   | localhost:5432 (Postgres / SSMS19)" -ForegroundColor Cyan
+    Write-Host " Standby Relational DB Replica     | :5433 | STANDBY  | localhost:5433 (PostgreSQL 16)    " -ForegroundColor DarkCyan
     Write-Host "==========================================================================================" -ForegroundColor DarkCyan
     Write-Host ""
 
     Write-Host "[*] Opening browser tabs for preview..." -ForegroundColor Yellow
     Start-Process "http://127.0.0.1:5174/"
     Start-Process "http://127.0.0.1:5173/"
+    Start-Process "http://127.0.0.1:5175/"
     Start-Process "http://localhost:5000/scalar/v1"
 }
 
@@ -643,6 +655,34 @@ switch ($Action.ToLower()) {
     "stop"    { Stop-AllServices; exit }
     "migrate" { Run-DatabaseMigrations; exit }
     "test"    { Run-HealthTests; exit }
+    "docker-up" {
+        & (Join-Path $PSScriptRoot "docker-start-all.ps1")
+        exit
+    }
+    "docker-down" {
+        & (Join-Path $PSScriptRoot "docker-stop-all.ps1")
+        exit
+    }
+    "install-deps" {
+        & (Join-Path $PSScriptRoot "install-dependencies.ps1")
+        exit
+    }
+    "bootstrap" {
+        & (Join-Path $PSScriptRoot "install-dependencies.ps1")
+        exit
+    }
+    "postgres-up" {
+        & (Join-Path $PSScriptRoot "start-postgres-docker.ps1")
+        exit
+    }
+    "postgres-down" {
+        & (Join-Path $PSScriptRoot "stop-postgres-docker.ps1")
+        exit
+    }
+    "switch-db" {
+        & (Join-Path $PSScriptRoot "switch-database.ps1") $AllArgs
+        exit
+    }
     "help"    { Show-Help; exit }
     "-h"      { Show-Help; exit }
     "--help"  { Show-Help; exit }
@@ -718,42 +758,50 @@ do {
     Write-Host "   Single command runner for any team member's Windows machine        " -ForegroundColor Gray
     Write-Host "======================================================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  [1] Start Fullstack Dev        -> Backend :5000 + Responders :5173 + Admin :5174" -ForegroundColor White
-    Write-Host "  [2] Live Status Matrix         -> Probes ports 5000, 5173, 5174 & SQL Server DB" -ForegroundColor White
+    Write-Host "  [1] Start Fullstack Dev        -> Backend :5000 + Responders :5173 + Admin :5174 + Civilian :5175" -ForegroundColor White
+    Write-Host "  [2] Live Status Matrix         -> Probes ports 5000, 5173, 5174, 5175 & Database" -ForegroundColor White
     Write-Host "  [3] Hard Refresh & Rebuild     -> Purge caches, re-compile & restart services" -ForegroundColor White
-    Write-Host "  [4] Stop All Services          -> Free ports 5000, 5173, and 5174" -ForegroundColor White
-    Write-Host "  [5] Database Migrations        -> EF Core SQL Server (SSMS 19) migrations" -ForegroundColor White
-    Write-Host "  [6] Health Check & Tests       -> Compilation, TypeScript, SQL Server & API" -ForegroundColor White
+    Write-Host "  [4] Stop All Services          -> Free ports 5000, 5173, 5174, and 5175" -ForegroundColor White
+    Write-Host "  [5] Database Migrations        -> EF Core Relational Database schema migration" -ForegroundColor White
+    Write-Host "  [6] Health Check & Tests       -> Compilation, TypeScript, Database & API" -ForegroundColor White
+    Write-Host "  [D] Docker 7-Container Topology-> Launch Docker Compose (Admin, Resp, Civ, API, Redis, DB Primary & Replica)" -ForegroundColor Magenta
+    Write-Host "  [DS] Docker Stop Containers    -> Stop all Docker Compose services and containers" -ForegroundColor DarkMagenta
+    Write-Host "  [I] Install All Dependencies   -> Auto-restore npm, dotnet, and check RDBMS prerequisites" -ForegroundColor Cyan
+    Write-Host "  [S] Switch Database Provider   -> Switch between SQL Server (SSMS 19), PostgreSQL & MySQL" -ForegroundColor Yellow
     Write-Host "  [7] Create SuperAdmin CLI      -> Terminal prompt for createsuperadmin" -ForegroundColor White
     Write-Host "  [8] Create Custom Admin CLI    -> Terminal prompt for createcustomsuperadmin" -ForegroundColor White
     Write-Host "  [9] Reset User Password CLI   -> Terminal prompt for resetpassword (Scrypt KDF)" -ForegroundColor White
     Write-Host "  [10] Add User CLI              -> Terminal prompt to add Admin/Responder/Civilian" -ForegroundColor White
-    Write-Host "  [11] List All Users            -> Lists all accounts from SQL Server database" -ForegroundColor White
+    Write-Host "  [11] List All Users            -> Lists all accounts from Relational Database" -ForegroundColor White
     Write-Host "  [12] Delete SuperAdmin CLI     -> Permanently delete SuperAdmin account" -ForegroundColor Red
     Write-Host ""
     Write-Host "  [0] Exit" -ForegroundColor DarkGray
     Write-Host "======================================================================" -ForegroundColor Cyan
-    $sel = Read-Host "Select an option [0-12]"
+    $sel = Read-Host "Select an option [0-12, D, DS, I, S]"
 
-    switch ($sel) {
-        "1"  { Start-AllServices; Read-Host "`nPress Enter to return to menu..." }
-        "2"  { Show-Status; Read-Host "`nPress Enter to return to menu..." }
-        "3"  { Hard-Refresh; Read-Host "`nPress Enter to return to menu..." }
-        "4"  { Stop-AllServices; Read-Host "`nPress Enter to return to menu..." }
-        "5"  { Run-DatabaseMigrations; Read-Host "`nPress Enter to return to menu..." }
-        "6"  { Run-HealthTests; Read-Host "`nPress Enter to return to menu..." }
-        "7"  { New-SuperAdminPrompt; Read-Host "`nPress Enter to return to menu..." }
-        "8"  { New-CustomSuperAdminPrompt; Read-Host "`nPress Enter to return to menu..." }
-        "9"  { New-ResetPasswordPrompt; Read-Host "`nPress Enter to return to menu..." }
-        "10" { New-UserCliPrompt; Read-Host "`nPress Enter to return to menu..." }
-        "11" { 
+    switch -Regex ($sel) {
+        "^1$"   { Start-AllServices; Read-Host "`nPress Enter to return to menu..." }
+        "^2$"   { Show-Status; Read-Host "`nPress Enter to return to menu..." }
+        "^3$"   { Hard-Refresh; Read-Host "`nPress Enter to return to menu..." }
+        "^4$"   { Stop-AllServices; Read-Host "`nPress Enter to return to menu..." }
+        "^5$"   { Run-DatabaseMigrations; Read-Host "`nPress Enter to return to menu..." }
+        "^6$"   { Run-HealthTests; Read-Host "`nPress Enter to return to menu..." }
+        "^(d|docker)$"    { & (Join-Path $PSScriptRoot "docker-start-all.ps1"); Read-Host "`nPress Enter to return to menu..." }
+        "^(ds|docker-stop)$" { & (Join-Path $PSScriptRoot "docker-stop-all.ps1"); Read-Host "`nPress Enter to return to menu..." }
+        "^(i|install)$"   { & (Join-Path $PSScriptRoot "install-dependencies.ps1"); Read-Host "`nPress Enter to return to menu..." }
+        "^(s|switch)$"    { & (Join-Path $PSScriptRoot "switch-database.ps1"); Read-Host "`nPress Enter to return to menu..." }
+        "^7$"   { New-SuperAdminPrompt; Read-Host "`nPress Enter to return to menu..." }
+        "^8$"   { New-CustomSuperAdminPrompt; Read-Host "`nPress Enter to return to menu..." }
+        "^9$"   { New-ResetPasswordPrompt; Read-Host "`nPress Enter to return to menu..." }
+        "^10$"  { New-UserCliPrompt; Read-Host "`nPress Enter to return to menu..." }
+        "^11$"  { 
             Push-Location $BackendDir
             & dotnet run -- listcliusers
             Pop-Location
             Read-Host "`nPress Enter to return to menu..." 
         }
-        "12" { New-DeleteSuperAdminPrompt; Read-Host "`nPress Enter to return to menu..." }
-        "0"  { Write-Host "`nExiting. Stay safe, ResQTrack!" -ForegroundColor Yellow; break }
+        "^12$"  { New-DeleteSuperAdminPrompt; Read-Host "`nPress Enter to return to menu..." }
+        "^0$"   { Write-Host "`nExiting. Stay safe, ResQTrack!" -ForegroundColor Yellow; break }
         Default { Write-Host "`nInvalid selection." -ForegroundColor Red; Start-Sleep -Seconds 1 }
     }
 } while ($sel -ne "0")

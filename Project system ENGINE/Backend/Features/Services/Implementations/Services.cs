@@ -36,10 +36,20 @@ public class AuthService(
         bool faceVerified = !string.IsNullOrWhiteSpace(facePath);
         AccountStatus initialStatus = faceVerified ? AccountStatus.Verified : AccountStatus.Pending;
 
+        var nameParts = (request.FullName ?? string.Empty).Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        string firstName = nameParts.Length > 0 ? nameParts[0] : string.Empty;
+        string surname = nameParts.Length > 1 ? nameParts[1] : string.Empty;
+
         var user = new User
         {
             Email = InputSanitizer.Sanitize(request.Email).ToLowerInvariant(),
             FullName = InputSanitizer.Sanitize(request.FullName),
+            FirstName = InputSanitizer.Sanitize(firstName),
+            Surname = InputSanitizer.Sanitize(surname),
+            Sex = request.Sex,
+            DateOfBirth = request.Age.HasValue ? DateTime.UtcNow.AddYears(-request.Age.Value) : null,
+            GovernmentIdType = request.GovernmentIdType ?? request.ValidIdType,
+            GovernmentIdNumber = request.GovernmentIdNumber ?? request.EmployeeOrResidentId,
             PhoneNumber = InputSanitizer.Sanitize(request.PhoneNumber),
             EmployeeOrResidentId = InputSanitizer.Sanitize(request.EmployeeOrResidentId),
             ValidIdType = request.ValidIdType,
@@ -101,6 +111,14 @@ public class AuthService(
             if (user.Role != UserRole.LDRRMO_Admin)
             {
                 return (false, "Access Denied: The Admin Command Portal on port 5174 is restricted exclusively to LDRRMO Administrators. Please sign in via the Emergency Responders & Civilians portal on port 5173.", null, null);
+            }
+        }
+        else
+        {
+            // Port 5173 is exclusively for Responders and Civilians; Admins must use dedicated Port 5174 Command Center
+            if (user.Role == UserRole.LDRRMO_Admin)
+            {
+                return (false, "Access Denied: LDRRMO Administrator personnel must sign in via the dedicated Command Portal on port 5174 (http://localhost:5174/admin/login).", null, null);
             }
         }
 
@@ -308,7 +326,8 @@ public class TriageService(
     IReportRepository reportRepo,
     IDutyUnitRepository unitRepo,
     IIncidentFixtureRepository fixtureRepo,
-    IAuditLogRepository auditRepo) : ITriageService
+    IAuditLogRepository auditRepo,
+    IUserRepository userRepo) : ITriageService
 {
     public async Task<List<IncidentFixtureResponse>> GetActiveFixturesAsync(CancellationToken ct = default) =>
         (await fixtureRepo.GetAllActiveAsync(ct)).Select(f => new IncidentFixtureResponse(
@@ -322,7 +341,19 @@ public class TriageService(
 
         report.Status = request.Status;
         report.VerifiedAt = DateTime.UtcNow;
-        if (request.Status == ReportStatus.Resolved) report.ResolvedAt = DateTime.UtcNow;
+        if (adminId != Guid.Empty)
+            report.VerifiedByAdminId = adminId;
+
+        if (request.Severity.HasValue)
+            report.Severity = request.Severity.Value;
+
+        if (!string.IsNullOrWhiteSpace(request.AdminNote))
+            report.Note = string.IsNullOrWhiteSpace(report.Note)
+                ? request.AdminNote.Trim()
+                : $"{report.Note} | Note: {request.AdminNote.Trim()}";
+
+        if (request.Status == ReportStatus.Resolved || request.Status == ReportStatus.Closed)
+            report.ResolvedAt = DateTime.UtcNow;
 
         await reportRepo.UpdateAsync(report, ct);
 
@@ -330,12 +361,12 @@ public class TriageService(
         string prevHash = await auditRepo.GetLatestHashAsync(ct);
         DateTime now = DateTime.UtcNow;
         string action = "REPORT_VERIFIED";
-        string payload = $"ReportId: {reportId}, Status: {request.Status}, AdminId: {adminId}";
+        string payload = $"ReportId: {reportId}, Status: {request.Status}, Severity: {report.Severity}, VerifierId: {adminId}, Note: {request.AdminNote}";
         string newHash = AuditHelper.ComputeChainedHash(prevHash, now, adminId, action, payload);
 
         await auditRepo.AddAsync(new AuditLog
         {
-            ActorUserId = adminId,
+            ActorUserId = adminId == Guid.Empty ? null : adminId,
             Action = action,
             TargetEntity = nameof(Report),
             Payload = payload,
@@ -353,6 +384,15 @@ public class TriageService(
         if (report == null) return (false, "Report not found.");
 
         var unit = await unitRepo.GetByIdAsync(unitId, ct);
+        if (unit == null)
+        {
+            var user = await userRepo.GetByIdAsync(unitId, ct);
+            if (user != null && user.Unit != ResponderUnitType.None)
+            {
+                unit = (await unitRepo.GetAllAsync(ct)).FirstOrDefault(u => u.Agency == user.Unit);
+            }
+            unit ??= (await unitRepo.GetAllAsync(ct)).FirstOrDefault();
+        }
         if (unit == null) return (false, "Duty unit not found.");
 
         report.AllocatedUnitId = unit.Id;
@@ -371,7 +411,36 @@ public class TriageService(
 
         await auditRepo.AddAsync(new AuditLog
         {
-            ActorUserId = adminId,
+            ActorUserId = adminId == Guid.Empty ? null : adminId,
+            Action = action,
+            TargetEntity = nameof(Report),
+            Payload = payload,
+            PreviousHash = prevHash,
+            CurrentHash = newHash,
+            Timestamp = now
+        }, ct);
+
+        return (true, null);
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateReportSeverityAsync(Guid reportId, Guid adminId, IncidentSeverity severity, CancellationToken ct = default)
+    {
+        var report = await reportRepo.GetByIdAsync(reportId, ct);
+        if (report == null) return (false, "Report not found.");
+
+        report.Severity = severity;
+        await reportRepo.UpdateAsync(report, ct);
+
+        // Audit Log
+        string prevHash = await auditRepo.GetLatestHashAsync(ct);
+        DateTime now = DateTime.UtcNow;
+        string action = "REPORT_SEVERITY_UPDATED";
+        string payload = $"ReportId: {reportId}, Severity: {severity}, VerifierId: {adminId}";
+        string newHash = AuditHelper.ComputeChainedHash(prevHash, now, adminId, action, payload);
+
+        await auditRepo.AddAsync(new AuditLog
+        {
+            ActorUserId = adminId == Guid.Empty ? null : adminId,
             Action = action,
             TargetEntity = nameof(Report),
             Payload = payload,
@@ -462,137 +531,131 @@ public class RespondersService(
             ? await db.DutyUnits.FirstOrDefaultAsync(d => d.Agency == user.Unit, ct)
             : null;
 
-    private async Task<(bool Success, string? Error, DutyUnitResponse? Unit)> MutateDutyStatusAsync(DutyUnit unit, DutyStatus status, Guid? actorId, CancellationToken ct) =>
-        await Task.Run(async () =>
+    private async Task<(bool Success, string? Error, DutyUnitResponse? Unit)> MutateDutyStatusAsync(DutyUnit unit, DutyStatus status, Guid? actorId, CancellationToken ct)
+    {
+        unit.Status = status;
+        unit.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        await AppendAuditLogAsync(actorId, "DUTY_STATUS_UPDATED", nameof(DutyUnit), $"Unit: {unit.UnitCode}, Status: {status}", ct);
+        return (true, null, MapDutyUnitToResponse(unit));
+    }
+
+    private async Task<(bool Success, string? Error)> MutateUnitStatusOnlyAsync(DutyUnit unit, DutyStatus status, CancellationToken ct)
+    {
+        unit.Status = status;
+        unit.UpdatedAt = DateTime.UtcNow;
+        await unitRepo.UpdateStatusAsync(unit.Id, status, ct);
+        await AppendAuditLogAsync(null, "DUTY_STATUS_UPDATED", nameof(DutyUnit), $"Unit: {unit.UnitCode}, Status: {status}", ct);
+        return (true, null);
+    }
+
+    private async Task<(bool Success, string? Error, PcrResponse? Pcr)> ExecutePcrSaveAsync(CreatePcrRequest request, Guid? userId, CancellationToken ct)
+    {
+        var pcr = new PatientCareRecord
         {
-            unit.Status = status;
-            unit.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
-            await AppendAuditLogAsync(actorId, "DUTY_STATUS_UPDATED", nameof(DutyUnit), $"Unit: {unit.UnitCode}, Status: {status}", ct);
-            return (true, (string?)null, MapDutyUnitToResponse(unit));
-        }, ct);
+            PcrReference = $"PCR-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..6].ToUpperInvariant()}",
+            ReportId = request.ReportId,
+            ResponderUserId = userId,
+            MedicName = InputSanitizer.Sanitize(request.MedicName ?? "Field Medic"),
+            UnitCode = InputSanitizer.Sanitize(request.UnitCode ?? "EMS-ALPHA"),
+            PatientName = InputSanitizer.Sanitize(request.PatientName),
+            Age = request.Age,
+            Gender = InputSanitizer.Sanitize(request.Gender),
+            WeightKg = request.WeightKg,
+            LevelOfConsciousness = InputSanitizer.Sanitize(request.LevelOfConsciousness),
+            BloodPressureSystolic = request.BloodPressureSystolic,
+            BloodPressureDiastolic = request.BloodPressureDiastolic,
+            HeartRateBpm = request.HeartRateBpm,
+            RespiratoryRate = request.RespiratoryRate,
+            SpO2Percent = request.SpO2Percent,
+            BloodGlucoseMgDl = request.BloodGlucoseMgDl,
+            TemperatureCelsius = request.TemperatureCelsius,
+            InterventionsJson = System.Text.Json.JsonSerializer.Serialize(request.Interventions ?? []),
+            AnatomicalInjuriesJson = System.Text.Json.JsonSerializer.Serialize(request.AnatomicalInjuries ?? []),
+            ChiefComplaint = InputSanitizer.Sanitize(request.ChiefComplaint ?? string.Empty),
+            Narrative = InputSanitizer.Sanitize(request.Narrative ?? string.Empty),
+            CreatedAt = DateTime.UtcNow
+        };
 
-    private async Task<(bool Success, string? Error)> MutateUnitStatusOnlyAsync(DutyUnit unit, DutyStatus status, CancellationToken ct) =>
-        await Task.Run(async () =>
+        await db.PatientCareRecords.AddAsync(pcr, ct);
+        await db.SaveChangesAsync(ct);
+        await AppendAuditLogAsync(userId, "PCR_SUBMITTED", nameof(PatientCareRecord), $"Ref: {pcr.PcrReference}, Patient: {pcr.PatientName}", ct);
+        return (true, null, MapToPcrResponse(pcr));
+    }
+
+    private async Task<(bool Success, string? Error, BlotterResponse? Blotter)> ExecuteBlotterSaveAsync(CreateBlotterRequest request, Guid? userId, CancellationToken ct)
+    {
+        var blotterNum = $"BLOTTER-{DateTime.UtcNow:yyyy}-{Guid.NewGuid().ToString()[..6].ToUpperInvariant()}";
+        var incidentTime = request.IncidentDateTime ?? DateTime.UtcNow;
+        var seal = ComputeBlotterSeal(blotterNum, incidentTime, request.NarrativeStatement, request.InvestigatingOfficerBadge ?? string.Empty);
+
+        var entry = new PoliceBlotterEntry
         {
-            unit.Status = status;
-            unit.UpdatedAt = DateTime.UtcNow;
-            await unitRepo.UpdateStatusAsync(unit.Id, status, ct);
-            await AppendAuditLogAsync(null, "DUTY_STATUS_UPDATED", nameof(DutyUnit), $"Unit: {unit.UnitCode}, Status: {status}", ct);
-            return (true, (string?)null);
-        }, ct);
+            BlotterNumber = blotterNum,
+            ReportId = request.ReportId,
+            IncidentClassification = InputSanitizer.Sanitize(request.IncidentClassification),
+            ComplainantName = InputSanitizer.Sanitize(request.ComplainantName),
+            ComplainantContact = InputSanitizer.Sanitize(request.ComplainantContact ?? string.Empty),
+            ComplainantAddress = InputSanitizer.Sanitize(request.ComplainantAddress ?? string.Empty),
+            SuspectName = InputSanitizer.Sanitize(request.SuspectName ?? string.Empty),
+            SuspectDescription = InputSanitizer.Sanitize(request.SuspectDescription ?? string.Empty),
+            Witnesses = InputSanitizer.Sanitize(request.Witnesses ?? string.Empty),
+            NarrativeStatement = InputSanitizer.Sanitize(request.NarrativeStatement),
+            IncidentLocation = InputSanitizer.Sanitize(request.IncidentLocation),
+            IncidentDateTime = incidentTime,
+            InvestigatingOfficerName = InputSanitizer.Sanitize(request.InvestigatingOfficerName ?? "Desk Officer"),
+            InvestigatingOfficerBadge = InputSanitizer.Sanitize(request.InvestigatingOfficerBadge ?? "PNP-OFFICER"),
+            Station = InputSanitizer.Sanitize(request.Station ?? "Dipolog City Police Station"),
+            CryptographicSeal = seal,
+            CreatedAt = DateTime.UtcNow
+        };
 
-    private async Task<(bool Success, string? Error, PcrResponse? Pcr)> ExecutePcrSaveAsync(CreatePcrRequest request, Guid? userId, CancellationToken ct) =>
-        await Task.Run(async () =>
+        await db.PoliceBlotterEntries.AddAsync(entry, ct);
+        await db.SaveChangesAsync(ct);
+        await AppendAuditLogAsync(userId, "BLOTTER_ENTRY_FILED", nameof(PoliceBlotterEntry), $"Number: {entry.BlotterNumber}, Seal: {entry.CryptographicSeal}", ct);
+        return (true, null, MapToBlotterResponse(entry));
+    }
+
+    private async Task<(bool Success, string? Error, AlarmLevelResponse? Alarm)> ExecuteAlarmSaveAsync(SetAlarmLevelRequest request, Guid? userId, CancellationToken ct)
+    {
+        var existing = request.ReportId.HasValue
+            ? await db.FireAlarmStatuses.FirstOrDefaultAsync(f => f.ReportId == request.ReportId.Value, ct)
+            : null;
+
+        var status = existing ?? new FireAlarmStatusRecord { ReportId = request.ReportId };
+        status.AlarmLevel = InputSanitizer.Sanitize(request.AlarmLevel);
+        status.BuildingType = InputSanitizer.Sanitize(request.BuildingType ?? "Residential");
+        status.TrappedOccupantsCount = Math.Max(0, request.TrappedOccupantsCount);
+        status.CommanderName = InputSanitizer.Sanitize(request.CommanderName ?? "Ground Commander");
+        status.ReportingUnit = InputSanitizer.Sanitize(request.ReportingUnit ?? "BFP-ALPHA");
+        status.Remarks = InputSanitizer.Sanitize(request.Remarks ?? string.Empty);
+        status.WaterSupplyGallons = Math.Max(0, request.WaterSupplyGallons);
+        status.UpdatedAt = DateTime.UtcNow;
+
+        if (existing == null)
+            await db.FireAlarmStatuses.AddAsync(status, ct);
+
+        await db.SaveChangesAsync(ct);
+        await AppendAuditLogAsync(userId, "FIRE_ALARM_ESCALATED", nameof(FireAlarmStatusRecord), $"Alarm: {status.AlarmLevel}, Building: {status.BuildingType}, Trapped: {status.TrappedOccupantsCount}", ct);
+        return (true, null, MapToAlarmResponse(status));
+    }
+
+    private async Task AppendAuditLogAsync(Guid? actorId, string action, string entity, string payload, CancellationToken ct)
+    {
+        var prevHash = await auditRepo.GetLatestHashAsync(ct);
+        var now = DateTime.UtcNow;
+        var newHash = AuditHelper.ComputeChainedHash(prevHash, now, actorId, action, payload);
+        await auditRepo.AddAsync(new AuditLog
         {
-            var pcr = new PatientCareRecord
-            {
-                PcrReference = $"PCR-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..6].ToUpperInvariant()}",
-                ReportId = request.ReportId,
-                ResponderUserId = userId,
-                MedicName = InputSanitizer.Sanitize(request.MedicName ?? "Field Medic"),
-                UnitCode = InputSanitizer.Sanitize(request.UnitCode ?? "EMS-ALPHA"),
-                PatientName = InputSanitizer.Sanitize(request.PatientName),
-                Age = request.Age,
-                Gender = InputSanitizer.Sanitize(request.Gender),
-                WeightKg = request.WeightKg,
-                LevelOfConsciousness = InputSanitizer.Sanitize(request.LevelOfConsciousness),
-                BloodPressureSystolic = request.BloodPressureSystolic,
-                BloodPressureDiastolic = request.BloodPressureDiastolic,
-                HeartRateBpm = request.HeartRateBpm,
-                RespiratoryRate = request.RespiratoryRate,
-                SpO2Percent = request.SpO2Percent,
-                BloodGlucoseMgDl = request.BloodGlucoseMgDl,
-                TemperatureCelsius = request.TemperatureCelsius,
-                InterventionsJson = System.Text.Json.JsonSerializer.Serialize(request.Interventions ?? []),
-                AnatomicalInjuriesJson = System.Text.Json.JsonSerializer.Serialize(request.AnatomicalInjuries ?? []),
-                ChiefComplaint = InputSanitizer.Sanitize(request.ChiefComplaint ?? string.Empty),
-                Narrative = InputSanitizer.Sanitize(request.Narrative ?? string.Empty),
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await db.PatientCareRecords.AddAsync(pcr, ct);
-            await db.SaveChangesAsync(ct);
-            await AppendAuditLogAsync(userId, "PCR_SUBMITTED", nameof(PatientCareRecord), $"Ref: {pcr.PcrReference}, Patient: {pcr.PatientName}", ct);
-            return (true, (string?)null, MapToPcrResponse(pcr));
+            ActorUserId = actorId,
+            Action = action,
+            TargetEntity = entity,
+            Payload = payload,
+            PreviousHash = prevHash,
+            CurrentHash = newHash,
+            Timestamp = now
         }, ct);
-
-    private async Task<(bool Success, string? Error, BlotterResponse? Blotter)> ExecuteBlotterSaveAsync(CreateBlotterRequest request, Guid? userId, CancellationToken ct) =>
-        await Task.Run(async () =>
-        {
-            var blotterNum = $"BLOTTER-{DateTime.UtcNow:yyyy}-{Guid.NewGuid().ToString()[..6].ToUpperInvariant()}";
-            var incidentTime = request.IncidentDateTime ?? DateTime.UtcNow;
-            var seal = ComputeBlotterSeal(blotterNum, incidentTime, request.NarrativeStatement, request.InvestigatingOfficerBadge ?? string.Empty);
-
-            var entry = new PoliceBlotterEntry
-            {
-                BlotterNumber = blotterNum,
-                ReportId = request.ReportId,
-                IncidentClassification = InputSanitizer.Sanitize(request.IncidentClassification),
-                ComplainantName = InputSanitizer.Sanitize(request.ComplainantName),
-                ComplainantContact = InputSanitizer.Sanitize(request.ComplainantContact ?? string.Empty),
-                ComplainantAddress = InputSanitizer.Sanitize(request.ComplainantAddress ?? string.Empty),
-                SuspectName = InputSanitizer.Sanitize(request.SuspectName ?? string.Empty),
-                SuspectDescription = InputSanitizer.Sanitize(request.SuspectDescription ?? string.Empty),
-                Witnesses = InputSanitizer.Sanitize(request.Witnesses ?? string.Empty),
-                NarrativeStatement = InputSanitizer.Sanitize(request.NarrativeStatement),
-                IncidentLocation = InputSanitizer.Sanitize(request.IncidentLocation),
-                IncidentDateTime = incidentTime,
-                InvestigatingOfficerName = InputSanitizer.Sanitize(request.InvestigatingOfficerName ?? "Desk Officer"),
-                InvestigatingOfficerBadge = InputSanitizer.Sanitize(request.InvestigatingOfficerBadge ?? "PNP-OFFICER"),
-                Station = InputSanitizer.Sanitize(request.Station ?? "Dipolog City Police Station"),
-                CryptographicSeal = seal,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await db.PoliceBlotterEntries.AddAsync(entry, ct);
-            await db.SaveChangesAsync(ct);
-            await AppendAuditLogAsync(userId, "BLOTTER_ENTRY_FILED", nameof(PoliceBlotterEntry), $"Number: {entry.BlotterNumber}, Seal: {entry.CryptographicSeal}", ct);
-            return (true, (string?)null, MapToBlotterResponse(entry));
-        }, ct);
-
-    private async Task<(bool Success, string? Error, AlarmLevelResponse? Alarm)> ExecuteAlarmSaveAsync(SetAlarmLevelRequest request, Guid? userId, CancellationToken ct) =>
-        await Task.Run(async () =>
-        {
-            var existing = request.ReportId.HasValue
-                ? await db.FireAlarmStatuses.FirstOrDefaultAsync(f => f.ReportId == request.ReportId.Value, ct)
-                : null;
-
-            var status = existing ?? new FireAlarmStatusRecord { ReportId = request.ReportId };
-            status.AlarmLevel = InputSanitizer.Sanitize(request.AlarmLevel);
-            status.BuildingType = InputSanitizer.Sanitize(request.BuildingType ?? "Residential");
-            status.TrappedOccupantsCount = Math.Max(0, request.TrappedOccupantsCount);
-            status.CommanderName = InputSanitizer.Sanitize(request.CommanderName ?? "Ground Commander");
-            status.ReportingUnit = InputSanitizer.Sanitize(request.ReportingUnit ?? "BFP-ALPHA");
-            status.Remarks = InputSanitizer.Sanitize(request.Remarks ?? string.Empty);
-            status.WaterSupplyGallons = Math.Max(0, request.WaterSupplyGallons);
-            status.UpdatedAt = DateTime.UtcNow;
-
-            if (existing == null)
-                await db.FireAlarmStatuses.AddAsync(status, ct);
-
-            await db.SaveChangesAsync(ct);
-            await AppendAuditLogAsync(userId, "FIRE_ALARM_ESCALATED", nameof(FireAlarmStatusRecord), $"Alarm: {status.AlarmLevel}, Building: {status.BuildingType}, Trapped: {status.TrappedOccupantsCount}", ct);
-            return (true, (string?)null, MapToAlarmResponse(status));
-        }, ct);
-
-    private async Task AppendAuditLogAsync(Guid? actorId, string action, string entity, string payload, CancellationToken ct) =>
-        await Task.Run(async () =>
-        {
-            var prevHash = await auditRepo.GetLatestHashAsync(ct);
-            var now = DateTime.UtcNow;
-            var newHash = AuditHelper.ComputeChainedHash(prevHash, now, actorId, action, payload);
-            await auditRepo.AddAsync(new AuditLog
-            {
-                ActorUserId = actorId,
-                Action = action,
-                TargetEntity = entity,
-                Payload = payload,
-                PreviousHash = prevHash,
-                CurrentHash = newHash,
-                Timestamp = now
-            }, ct);
-        }, ct);
+    }
 
     private static string ComputeBlotterSeal(string blotterNum, DateTime dt, string narrative, string badge) =>
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
@@ -845,6 +908,65 @@ public class UserGovernanceService(
         return (true, null);
     }
 
+    public async Task<(bool Success, string? Error)> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default)
+    {
+        var user = await userRepo.GetByIdAsync(userId, ct);
+        if (user == null) return (false, "User not found.");
+
+        if (!string.IsNullOrWhiteSpace(request.FirstName)) user.FirstName = InputSanitizer.Sanitize(request.FirstName);
+        if (request.MiddleName != null) user.MiddleName = InputSanitizer.Sanitize(request.MiddleName);
+        if (!string.IsNullOrWhiteSpace(request.Surname)) user.Surname = InputSanitizer.Sanitize(request.Surname);
+        if (request.Suffix != null) user.Suffix = InputSanitizer.Sanitize(request.Suffix);
+
+        if (!string.IsNullOrWhiteSpace(request.FullName))
+            user.FullName = InputSanitizer.Sanitize(request.FullName);
+        else if (!string.IsNullOrWhiteSpace(user.FirstName) && !string.IsNullOrWhiteSpace(user.Surname))
+            user.FullName = user.ComputedFullName;
+
+        if (request.PhoneNumber != null) user.PhoneNumber = InputSanitizer.Sanitize(request.PhoneNumber);
+        if (!string.IsNullOrWhiteSpace(request.Province)) user.Province = InputSanitizer.Sanitize(request.Province);
+        if (!string.IsNullOrWhiteSpace(request.CityOrMunicipality)) user.CityOrMunicipality = InputSanitizer.Sanitize(request.CityOrMunicipality);
+        if (request.Barangay != null) user.Barangay = InputSanitizer.Sanitize(request.Barangay);
+        if (request.StreetOrPurok != null) user.StreetOrPurok = InputSanitizer.Sanitize(request.StreetOrPurok);
+
+        if (request.EmergencyContactName != null) user.EmergencyContactName = InputSanitizer.Sanitize(request.EmergencyContactName);
+        if (request.EmergencyContactPhone != null) user.EmergencyContactPhone = InputSanitizer.Sanitize(request.EmergencyContactPhone);
+        if (request.EmergencyContactRelationship != null) user.EmergencyContactRelationship = InputSanitizer.Sanitize(request.EmergencyContactRelationship);
+
+        if (request.Sex != null) user.Sex = request.Sex;
+        if (request.BloodType != null) user.BloodType = request.BloodType;
+        if (request.DateOfBirth.HasValue) user.DateOfBirth = request.DateOfBirth.Value;
+
+        if (request.DepartmentOrBarangay != null) user.DepartmentOrBarangay = InputSanitizer.Sanitize(request.DepartmentOrBarangay);
+        if (request.RankOrTitle != null) user.RankOrTitle = InputSanitizer.Sanitize(request.RankOrTitle);
+        if (request.EmployeeOrResidentId != null) user.EmployeeOrResidentId = InputSanitizer.Sanitize(request.EmployeeOrResidentId);
+        if (request.GovernmentIdType != null) user.GovernmentIdType = InputSanitizer.Sanitize(request.GovernmentIdType);
+        if (request.GovernmentIdNumber != null) user.GovernmentIdNumber = InputSanitizer.Sanitize(request.GovernmentIdNumber);
+
+        user.UpdatedAt = DateTime.UtcNow;
+        await userRepo.UpdateAsync(user, ct);
+
+        // Audit Log
+        string prevHash = await auditRepo.GetLatestHashAsync(ct);
+        DateTime now = DateTime.UtcNow;
+        string action = "USER_PROFILE_UPDATED";
+        string payload = $"User: {user.Email}, Name: {user.FullName}, Role: {user.Role}";
+        string newHash = AuditHelper.ComputeChainedHash(prevHash, now, userId, action, payload);
+
+        await auditRepo.AddAsync(new AuditLog
+        {
+            ActorUserId = userId,
+            Action = action,
+            TargetEntity = nameof(User),
+            Payload = payload,
+            PreviousHash = prevHash,
+            CurrentHash = newHash,
+            Timestamp = now
+        }, ct);
+
+        return (true, null);
+    }
+
     public async Task<(bool Success, string? Error)> DeleteUserAsync(Guid id, Guid adminId, string adminEmail, CancellationToken ct = default)
     {
         var user = await userRepo.GetByIdAsync(id, ct);
@@ -1008,11 +1130,26 @@ public class SettingsService(ISettingsRepository settingsRepo) : ISettingsServic
     public async Task<bool> UpdateSettingAsync(string key, string value, Guid adminId, CancellationToken ct = default)
     {
         var setting = await settingsRepo.GetByKeyAsync(key, ct);
-        if (setting == null) return false;
+        if (setting == null)
+        {
+            setting = new Settings
+            {
+                Id = Guid.NewGuid(),
+                Key = key.Trim(),
+                Value = value,
+                Category = "Platform",
+                Description = $"Platform setting for {key}",
+                UpdatedByUserId = adminId == Guid.Empty ? null : adminId,
+                UpdatedAt = DateTime.UtcNow
+            };
+        }
+        else
+        {
+            setting.Value = value;
+            setting.UpdatedByUserId = adminId == Guid.Empty ? null : adminId;
+            setting.UpdatedAt = DateTime.UtcNow;
+        }
 
-        setting.Value = value;
-        setting.UpdatedByUserId = adminId;
-        setting.UpdatedAt = DateTime.UtcNow;
         await settingsRepo.UpdateAsync(setting, ct);
         return true;
     }
@@ -1024,11 +1161,11 @@ public class AnalyticsService(AppDbContext db) : IAnalyticsService
     {
         var totalIncidents = await db.Reports.CountAsync(ct);
         var activeDispatches = await db.Reports.CountAsync(
-            r => r.Status != ReportStatus.Resolved && r.Status != ReportStatus.Rejected, ct);
+            r => r.Status != ReportStatus.Resolved && r.Status != ReportStatus.Rejected && r.Status != ReportStatus.Closed, ct);
         var criticalIncidents = await db.Reports.CountAsync(
             r => r.Severity == IncidentSeverity.Critical, ct);
         var resolvedCount = await db.Reports.CountAsync(
-            r => r.Status == ReportStatus.Resolved, ct);
+            r => r.Status == ReportStatus.Resolved || r.Status == ReportStatus.Closed, ct);
         var totalResponders = await db.Users.CountAsync(
             u => u.Role == UserRole.Responder, ct);
         var onDutyResponders = await db.DutyUnits.CountAsync(

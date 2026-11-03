@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$NoBrowser = $false
+)
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $ScriptDir) { $ScriptDir = $PSScriptRoot }
@@ -28,8 +30,55 @@ if (Test-Path $stopScript) {
     & $stopScript
 }
 
-# 2. Synchronize SQL Server Database Schema via EF Core
-Write-Host "[*] Synchronizing SQL Server Database Schema via EF Core..." -ForegroundColor Magenta
+# 2. Check and auto-install dependencies if missing
+$nodeModulesPath = Join-Path $frontendPath "node_modules"
+$backendBinPath = Join-Path $backendPath "bin"
+if ((-not (Test-Path $nodeModulesPath)) -or (-not (Test-Path $backendBinPath))) {
+    Write-Host "[*] Missing dependencies detected. Running auto-installer..." -ForegroundColor Yellow
+    $installScript = Join-Path $PSScriptRoot "install-dependencies.ps1"
+    if (Test-Path $installScript) {
+        & $installScript
+    }
+}
+
+# 3. Check Database & Redis Cache Availability
+Write-Host "[*] Verifying Relational Database and Redis Cache status..." -ForegroundColor Cyan
+$appSettings = Join-Path $backendPath "appsettings.json"
+$dbProvider = "SqlServer"
+if (Test-Path $appSettings) {
+    $cfg = Get-Content $appSettings -Raw | ConvertFrom-Json
+    if ($cfg.DatabaseProvider) { $dbProvider = $cfg.DatabaseProvider }
+}
+
+$sqlServerOnline = $false
+try {
+    $testConn = New-Object System.Net.Sockets.TcpClient
+    $iar = $testConn.BeginConnect("127.0.0.1", 1433, $null, $null)
+    $success = $iar.AsyncWaitHandle.WaitOne(800)
+    if ($success) {
+        $testConn.EndConnect($iar)
+        $sqlServerOnline = $true
+    }
+    $testConn.Close()
+} catch { }
+
+# If SQL Server is offline or provider is Postgres, check Docker for PostgreSQL + Redis
+if (-not $sqlServerOnline -or $dbProvider -ieq "PostgreSql") {
+    Write-Host "  [*] SQL Server (:1433) is offline or PostgreSQL is configured." -ForegroundColor Yellow
+    try {
+        $dockerOk = & docker info 2>$null
+        if ($dockerOk) {
+            Write-Host "  [*] Booting Standby PostgreSQL 16 Alpine & Redis 7 Alpine in Docker..." -ForegroundColor Cyan
+            $composeFile = Join-Path $RootDir "docker-compose.yml"
+            & docker compose -f "$composeFile" up -d resqtrack-cache resqtrack-db-primary resqtrack-db-replica 2>$null
+            Start-Sleep -Seconds 2
+            Write-Host "  [OK] Docker Database & Cache services started." -ForegroundColor Green
+        }
+    } catch { }
+}
+
+# 4. Synchronize Database Schema via EF Core
+Write-Host "[*] Synchronizing Database Schema via EF Core ($dbProvider)..." -ForegroundColor Magenta
 try {
     & dotnet ef database update --project "$backendPath"
     Write-Host "  [OK] Database schema is up to date." -ForegroundColor Green
@@ -37,22 +86,12 @@ try {
     Write-Host "  [!] EF Core update note: $_" -ForegroundColor Yellow
 }
 
-# 3. Check Frontend node_modules
-$nodeModulesPath = Join-Path $frontendPath "node_modules"
-if (-not (Test-Path $nodeModulesPath)) {
-    Write-Host "[*] Frontend dependencies missing. Installing npm packages..." -ForegroundColor Yellow
-    Push-Location $frontendPath
-    npm install
-    Pop-Location
-    Write-Host "  [OK] Frontend packages installed." -ForegroundColor Green
-}
-
-# 4. Launch .NET 10 Web API Backend on Port 5000
-Write-Host "[*] Launching .NET 10 Web API backend on http://localhost:5000..." -ForegroundColor Cyan
+# 5. Launch .NET 10 Web API Backend on Port 5000
+Write-Host "`n[*] Launching .NET 10 Web API backend on http://localhost:5000..." -ForegroundColor Cyan
 $backendCmd = "Set-Location '$backendPath'; `$host.UI.RawUI.WindowTitle = 'ResQTrack .NET 10 Web API Backend (:5000)'; dotnet run --launch-profile http"
 Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack .NET 10 Web API Backend (:5000)' -ForegroundColor Cyan; $backendCmd }"
 
-# 5. Wait for backend port 5000 to be ready
+# 6. Wait for backend port 5000 to be ready
 Write-Host "[*] Waiting for backend API to initialize..." -ForegroundColor Yellow
 $maxAttempts = 20
 $attempt = 0
@@ -83,24 +122,31 @@ if ($backendReady) {
     Write-Host "  [i] Backend process spawned. Proceeding to launch UI portals..." -ForegroundColor Yellow
 }
 
-# 6. Launch Frontend Portals (Dual-Port Architecture)
-Write-Host "`n[*] Launching Frontend Portals (Dual-Port Architecture)..." -ForegroundColor Cyan
+# 7. Launch Frontend Portals (Role & Port Separation)
+Write-Host "`n[*] Launching Frontend Portals (Multi-Port Separation)..." -ForegroundColor Cyan
 
-# 6a. LDRRMO Admin Portal (:5174)
+# 7a. LDRRMO Admin Portal (:5174)
 Write-Host "  [*] Launching LDRRMO Admin Command Portal on http://127.0.0.1:5174..." -ForegroundColor Magenta
 $adminCmd = "Set-Location '$frontendPath'; `$host.UI.RawUI.WindowTitle = 'ResQTrack LDRRMO Admin Command Portal (:5174)'; npm run dev:admin"
 Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack LDRRMO Admin Command Portal (:5174)' -ForegroundColor Magenta; $adminCmd }"
 
 Start-Sleep -Seconds 2
 
-# 6b. Responders & Civilians Portal (:5173)
-Write-Host "  [*] Launching Emergency Responders & Civilians Portal on http://127.0.0.1:5173..." -ForegroundColor Green
-$responderCmd = "Set-Location '$frontendPath'; `$host.UI.RawUI.WindowTitle = 'ResQTrack Responders & Civilians Portal (:5173)'; npm run dev:responder"
-Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack Emergency Responders & Civilians Portal (:5173)' -ForegroundColor Green; $responderCmd }"
+# 7b. Responders Portal (:5173) (RHU, Fire, PNP)
+Write-Host "  [*] Launching Emergency Responders Portal on http://127.0.0.1:5173..." -ForegroundColor Green
+$responderCmd = "Set-Location '$frontendPath'; `$host.UI.RawUI.WindowTitle = 'ResQTrack Emergency Responders Portal (:5173)'; npm run dev:responder"
+Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack Emergency Responders Portal (:5173)' -ForegroundColor Green; $responderCmd }"
 
 Start-Sleep -Seconds 2
 
-# 7. Display Tactical Dashboard Status Table
+# 7c. Civilian SOS Portal (:5175)
+Write-Host "  [*] Launching Civilian Emergency SOS Portal on http://127.0.0.1:5175..." -ForegroundColor Green
+$civilianCmd = "Set-Location '$frontendPath'; `$host.UI.RawUI.WindowTitle = 'ResQTrack Civilian Emergency SOS Portal (:5175)'; npm run dev:civilian"
+Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack Civilian Emergency SOS Portal (:5175)' -ForegroundColor Green; $civilianCmd }"
+
+Start-Sleep -Seconds 2
+
+# 8. Display Tactical Dashboard Status Table
 Write-Host ""
 Write-Host "==========================================================================================" -ForegroundColor DarkCyan
 Write-Host "         RESQTRACK INCIDENT AI SYSTEM -- MULTI-PORT TACTICAL DASHBOARD                    " -ForegroundColor Cyan
@@ -110,21 +156,25 @@ Write-Host "-----------------------------------+-------+----------+-------------
 Write-Host " LDRRMO Admin Executive Command    | :5174 | ACTIVE   | http://127.0.0.1:5174/dashboard   " -ForegroundColor Magenta
 Write-Host " LDRRMO Admin Login Portal         | :5174 | ACTIVE   | http://127.0.0.1:5174/login       " -ForegroundColor Magenta
 Write-Host " Emergency Responders (RHU/Fire/PNP)|:5173 | ACTIVE   | http://127.0.0.1:5173/responder   " -ForegroundColor Green
-Write-Host " Civilians Emergency SOS Portal    | :5173 | ACTIVE   | http://127.0.0.1:5173/civilian    " -ForegroundColor Green
-Write-Host " Responders & Civilians Login      | :5173 | ACTIVE   | http://127.0.0.1:5173/login       " -ForegroundColor Green
+Write-Host " Responders Login Portal           | :5173 | ACTIVE   | http://127.0.0.1:5173/login       " -ForegroundColor Green
+Write-Host " Civilians Emergency SOS Portal    | :5175 | ACTIVE   | http://127.0.0.1:5175/civilian    " -ForegroundColor Green
 Write-Host " .NET 10 Web API Backend           | :5000 | ACTIVE   | http://localhost:5000/api         " -ForegroundColor Yellow
 Write-Host " Scalar Interactive API Docs       | :5000 | ACTIVE   | http://localhost:5000/scalar/v1   " -ForegroundColor White
-Write-Host " OpenAPI V1 Specification          | :5000 | ACTIVE   | http://localhost:5000/openapi/v1.json" -ForegroundColor White
-Write-Host " Database Engine (SQL Server)      | :1433 | ONLINE   | localhost / ResQTrackDb (SSMS 19) " -ForegroundColor Cyan
+Write-Host " Redis Distributed Cache           | :6379 | ACTIVE   | localhost:6379 (redis:7-alpine)   " -ForegroundColor Red
+Write-Host " Primary Relational DB             | :5432 | ACTIVE   | localhost:5432 ($dbProvider)      " -ForegroundColor Cyan
+Write-Host " Standby Relational DB Replica     | :5433 | STANDBY  | localhost:5433 (PostgreSQL 16)    " -ForegroundColor DarkCyan
 Write-Host "==========================================================================================" -ForegroundColor DarkCyan
 Write-Host ""
-Write-Host " [i] Development services are running in 3 separate visible PowerShell windows." -ForegroundColor Gray
+Write-Host " [i] Development services are running in 4 separate visible PowerShell windows." -ForegroundColor Gray
 Write-Host " [i] To stop all running services cleanly, run: .\CommandStart\stopdev-all.ps1" -ForegroundColor Gray
 Write-Host "==========================================================================================" -ForegroundColor DarkCyan
 Write-Host ""
 
-# 8. Open Browser Tabs
-Write-Host "[*] Opening browser tabs for preview..." -ForegroundColor Yellow
-Start-Process "http://127.0.0.1:5174/"
-Start-Process "http://127.0.0.1:5173/"
-Start-Process "http://localhost:5000/scalar/v1"
+# 9. Open Browser Tabs
+if (-not $NoBrowser) {
+    Write-Host "[*] Opening browser tabs for preview..." -ForegroundColor Yellow
+    Start-Process "http://127.0.0.1:5174/"
+    Start-Process "http://127.0.0.1:5173/"
+    Start-Process "http://127.0.0.1:5175/"
+    Start-Process "http://localhost:5000/scalar/v1"
+}

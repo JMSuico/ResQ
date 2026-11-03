@@ -18,6 +18,8 @@ import {
 import { DefaultFloatingModalCard } from './DefaultFloatingModalCard';
 import { Button } from './Button';
 import { formatDateTimeWithSecondsAmPm } from './radarPointerCategories';
+import { sendEmergencyBroadcast } from '@/Endpoints/reportsApi';
+import { createMedicDispatchRequest } from '@/Endpoints/responderOpsApi';
 
 export type BackupOptionMode = 'ADMIN_RECOMMEND' | 'DISTRESS_NEARBY' | 'CALL_OR_EMAIL';
 
@@ -97,6 +99,29 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
         })
       );
     }
+
+    // Persist emergency alert broadcast to relational backend via POST /api/alerts/broadcast
+    void sendEmergencyBroadcast({
+      title: `CALL BACKUP: ${optionLabel} (${unitCode})`,
+      message: `${unitCode} (${responderName}) triggered tactical reinforcement: "${optionLabel}". Target: ${contactTarget || 'LDRRMO Command Center'}. Sector: ${incidentLocation}. Notes: ${payload.notes}`,
+      severity: mode === 'DISTRESS_NEARBY' ? 'Critical' : 'High'
+    }).catch((err: unknown) => {
+      console.warn('[BackupOptionsModal] Failed to send emergency broadcast:', err);
+    });
+
+    // Persist tactical medic dispatch request to backend relational ledger via createMedicDispatchRequest
+    void createMedicDispatchRequest({
+      incidentId: incidentId || `INC-${payload.id}`,
+      incidentCode: payload.id,
+      incidentTitle: `TACTICAL BACKUP // ${optionLabel} (${unitCode})`,
+      category: 'BackupReinforcement',
+      severity: mode === 'DISTRESS_NEARBY' ? 'Critical' : 'High',
+      location: incidentLocation,
+      responderName,
+      notes: payload.notes
+    }).catch((err: unknown) => {
+      console.warn('[BackupOptionsModal] Failed to create medic dispatch request:', err);
+    });
 
     setDispatchedRecord(payload);
     if (onBackupDispatched) {

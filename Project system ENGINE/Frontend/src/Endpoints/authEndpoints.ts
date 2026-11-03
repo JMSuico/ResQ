@@ -82,8 +82,22 @@ export const logoutUser = async (): Promise<{ message: string }> => {
     return await requestJson<{ message: string }>('/api/logout', { method: 'POST' });
   } finally {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('resqtrack_token');
-      localStorage.removeItem('resqtrack_user');
+      try {
+        sessionStorage.removeItem('resqtrack_token');
+        sessionStorage.removeItem('resqtrack_session');
+        sessionStorage.removeItem('resqtrack_user');
+        const port = window.location.port;
+        if (port) {
+          localStorage.removeItem(`resqtrack_token_${port}`);
+          localStorage.removeItem(`resqtrack_session_${port}`);
+          localStorage.removeItem(`resqtrack_user_${port}`);
+        }
+        localStorage.removeItem('resqtrack_token');
+        localStorage.removeItem('resqtrack_session');
+        localStorage.removeItem('resqtrack_user');
+      } catch {
+        // Storage cleanup safeguard
+      }
     }
   }
 };

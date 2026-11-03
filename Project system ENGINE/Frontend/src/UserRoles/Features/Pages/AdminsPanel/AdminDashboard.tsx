@@ -125,6 +125,68 @@ export const findNearestResponderUnit = (
   };
 };
 
+const filterReportsByTimeHorizon = (items: ReportItem[], horizon: string): ReportItem[] => {
+  const now = new Date();
+  const nowMs = now.getTime();
+
+  return items.filter((r) => {
+    if (!r.createdAt) return true;
+    const d = new Date(r.createdAt);
+    if (isNaN(d.getTime())) return true;
+
+    if (horizon === '24h') {
+      return nowMs - d.getTime() <= 24 * 60 * 60 * 1000;
+    }
+    if (horizon.startsWith('week_')) {
+      const dayMap: Record<string, number> = {
+        week_sun: 0,
+        week_mon: 1,
+        week_tue: 2,
+        week_wed: 3,
+        week_thu: 4,
+        week_fri: 5,
+        week_sat: 6
+      };
+      const targetDay = dayMap[horizon];
+      if (targetDay !== undefined) {
+        return d.getDay() === targetDay;
+      }
+      return nowMs - d.getTime() <= 7 * 24 * 60 * 60 * 1000;
+    }
+    if (horizon === 'month_30') {
+      return nowMs - d.getTime() <= 30 * 24 * 60 * 60 * 1000;
+    }
+    if (horizon.startsWith('month_')) {
+      const monthMap: Record<string, number> = {
+        month_jan: 0,
+        month_feb: 1,
+        month_mar: 2,
+        month_apr: 3,
+        month_may: 4,
+        month_jun: 5,
+        month_jul: 6,
+        month_aug: 7,
+        month_sep: 8,
+        month_oct: 9,
+        month_nov: 10,
+        month_dec: 11
+      };
+      const targetMonth = monthMap[horizon];
+      if (targetMonth !== undefined) {
+        return d.getMonth() === targetMonth;
+      }
+      return true;
+    }
+    if (horizon === 'year_2025') {
+      return d.getFullYear() === 2025;
+    }
+    if (horizon === 'year_2026') {
+      return d.getFullYear() === 2026;
+    }
+    return true;
+  });
+};
+
 export const AdminDashboard: FC = () => {
   const navigate = useNavigate();
   const [reports, setReports] = useState<ReportItem[]>([]);
@@ -231,8 +293,10 @@ export const AdminDashboard: FC = () => {
       }))
   ], [fixtures, reports, roster]);
 
-  // Real Database-Derived Chart Telemetry (ZERO fake static multipliers or offsets)
+  // Real Database-Derived Chart Telemetry bound to time horizon dropdown filters
   const chartCurveData = useMemo(() => {
+    const filtered = filterReportsByTimeHorizon(reports, curveTimeHorizon);
+
     const buckets: Record<string, number> = {
       '00:00': 0,
       '04:00': 0,
@@ -242,7 +306,7 @@ export const AdminDashboard: FC = () => {
       '20:00': 0
     };
 
-    reports.forEach((r) => {
+    filtered.forEach((r) => {
       const ts = r.createdAt;
       if (!ts) return;
       const d = new Date(ts);
@@ -257,13 +321,14 @@ export const AdminDashboard: FC = () => {
     });
 
     return Object.entries(buckets).map(([label, value]) => ({ label, value }));
-  }, [reports]);
+  }, [reports, curveTimeHorizon]);
 
   const severityData = useMemo(() => {
-    const low = reports.filter((r) => (r.severity || '').toLowerCase() === 'low').length;
-    const med = reports.filter((r) => (r.severity || '').toLowerCase() === 'medium').length;
-    const high = reports.filter((r) => (r.severity || '').toLowerCase() === 'high').length;
-    const crit = reports.filter((r) => {
+    const filtered = filterReportsByTimeHorizon(reports, severityTimeHorizon);
+    const low = filtered.filter((r) => (r.severity || '').toLowerCase() === 'low').length;
+    const med = filtered.filter((r) => (r.severity || '').toLowerCase() === 'medium').length;
+    const high = filtered.filter((r) => (r.severity || '').toLowerCase() === 'high').length;
+    const crit = filtered.filter((r) => {
       const s = (r.severity || '').toLowerCase();
       return s === 'critical' || s === 'severe';
     }).length;
@@ -274,19 +339,20 @@ export const AdminDashboard: FC = () => {
       { label: 'High', value: high, color: '#ea580c' },
       { label: 'Critical', value: crit, color: '#ef4444' }
     ];
-  }, [reports]);
+  }, [reports, severityTimeHorizon]);
 
   const agencyData = useMemo(() => {
-    const rhuReports = reports.filter((r) => {
+    const filtered = filterReportsByTimeHorizon(reports, agencyTimeHorizon);
+    const rhuReports = filtered.filter((r) => {
       const a = (r.recommendedAgencyUnit || '').toUpperCase();
       const c = (r.category || '').toLowerCase();
       const code = (r.allocatedUnitCode || '').toUpperCase();
       return a === 'RHU' || c.includes('medic') || c.includes('health') || code.includes('RHU');
     }).length;
     const rhuRoster = roster.filter((u) => (u.agency || '').toUpperCase() === 'RHU').length;
-    const rhu = rhuReports > 0 ? rhuReports : rhuRoster;
+    const rhu = rhuReports > 0 ? rhuReports : (filtered.length === 0 ? 0 : rhuRoster);
 
-    const fireReports = reports.filter((r) => {
+    const fireReports = filtered.filter((r) => {
       const a = (r.recommendedAgencyUnit || '').toUpperCase();
       const c = (r.category || '').toLowerCase();
       const code = (r.allocatedUnitCode || '').toUpperCase();
@@ -296,23 +362,23 @@ export const AdminDashboard: FC = () => {
       const ag = (u.agency || '').toUpperCase();
       return ag === 'FIRE' || ag === 'BFP';
     }).length;
-    const fire = fireReports > 0 ? fireReports : fireRoster;
+    const fire = fireReports > 0 ? fireReports : (filtered.length === 0 ? 0 : fireRoster);
 
-    const pnpReports = reports.filter((r) => {
+    const pnpReports = filtered.filter((r) => {
       const a = (r.recommendedAgencyUnit || '').toUpperCase();
       const c = (r.category || '').toLowerCase();
       const code = (r.allocatedUnitCode || '').toUpperCase();
       return a === 'PNP' || c.includes('police') || c.includes('crime') || code.includes('PNP');
     }).length;
     const pnpRoster = roster.filter((u) => (u.agency || '').toUpperCase() === 'PNP').length;
-    const pnp = pnpReports > 0 ? pnpReports : pnpRoster;
+    const pnp = pnpReports > 0 ? pnpReports : (filtered.length === 0 ? 0 : pnpRoster);
 
     return [
       { label: 'RHU Medical', value: rhu, color: '#0284c7' },
       { label: 'BFP Fire', value: fire, color: '#ea580c' },
       { label: 'PNP Police', value: pnp, color: '#3b82f6' }
     ];
-  }, [reports, roster]);
+  }, [reports, roster, agencyTimeHorizon]);
 
   // Derived metrics with ZERO hardcoded static numbers
   const totalReportsCount = analyticsSummary?.totalIncidents ?? reports.length;

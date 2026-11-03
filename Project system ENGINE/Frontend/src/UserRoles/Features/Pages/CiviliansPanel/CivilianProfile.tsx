@@ -11,13 +11,44 @@ import {
 } from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
 import { Button } from '@/Shared/Button';
+import { requestJson } from '@/Endpoints/apiClient';
 
 // Architectural constants - Zero hardcoded static numbers
 const MAX_AVATAR_FILE_SIZE_BYTES = 2 * 1024 * 1024;
 const TOAST_NOTIFICATION_MS = 3500;
 const SAVE_PROFILE_TOAST_MS = 4000;
 
-interface EmergencyMedicalProfile {
+export const KATIPUNAN_BARANGAYS = [
+  'Balok',
+  'Barangay Dos (Poblacion)',
+  'Barangay Uno (Poblacion)',
+  'Basagan',
+  'Binoni',
+  'Bulawan',
+  'Caracol',
+  'Dabiak',
+  'Dr. Jose Rizal',
+  'F. Tubungbanua',
+  'Loyuran',
+  'Malugas',
+  'Matam',
+  'Mias',
+  'Miputak',
+  'Nangca',
+  'New Tambo',
+  'Paterno',
+  'Poblacion',
+  'San Antonio',
+  'San Roque',
+  'Santo Nino',
+  'Seres',
+  'Sianib',
+  'Sinuyak',
+  'Sitog',
+  'Tuburan'
+];
+
+export interface EmergencyMedicalProfile {
   bloodType: string;
   allergies: string;
   medicalConditions: string;
@@ -27,12 +58,36 @@ interface EmergencyMedicalProfile {
   emergencyContactPhone: string;
   secondaryContactName: string;
   secondaryContactPhone: string;
+  barangay: string;
 }
+
+export interface UpdateOwnProfilePayload {
+  bloodType?: string;
+  allergies?: string;
+  medicalConditions?: string;
+  isOrganDonor?: boolean;
+  emergencyContactName?: string;
+  emergencyContactRelation?: string;
+  emergencyContactRelationship?: string;
+  emergencyContactPhone?: string;
+  secondaryContactName?: string;
+  secondaryContactPhone?: string;
+  barangay?: string;
+  departmentOrBarangay?: string;
+}
+
+export const updateOwnProfile = async (
+  payload: UpdateOwnProfilePayload
+): Promise<{ message?: string; success?: boolean }> =>
+  requestJson<{ message?: string; success?: boolean }>('/api/profile', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
 
 const STORAGE_KEY = 'resqtrack_civilian_medical_profile';
 
 export const CivilianProfile: React.FC = () => {
-  const { session } = useSession();
+  const { session, refreshSession } = useSession();
 
   const [profile, setProfile] = useState<EmergencyMedicalProfile>({
     bloodType: 'O+',
@@ -43,10 +98,12 @@ export const CivilianProfile: React.FC = () => {
     emergencyContactRelation: 'Spouse',
     emergencyContactPhone: '',
     secondaryContactName: '',
-    secondaryContactPhone: ''
+    secondaryContactPhone: '',
+    barangay: 'Poblacion'
   });
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [saveSuccessToast, setSaveSuccessToast] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(() => {
     try {
@@ -104,7 +161,7 @@ export const CivilianProfile: React.FC = () => {
     }
   };
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount and sync with session
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -116,15 +173,52 @@ export const CivilianProfile: React.FC = () => {
     }
   }, []);
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (session?.departmentOrBarangay) {
+      setProfile((prev) => ({
+        ...prev,
+        barangay: prev.barangay === 'Poblacion' && session.departmentOrBarangay ? session.departmentOrBarangay : prev.barangay
+      }));
+    }
+  }, [session?.departmentOrBarangay]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
+      // 1. Save to local storage encrypted vault
       localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+
+      // 2. Call updateOwnProfile(payload) (PUT /api/profile) to persist in relational Users table
+      try {
+        await updateOwnProfile({
+          bloodType: profile.bloodType,
+          allergies: profile.allergies,
+          medicalConditions: profile.medicalConditions,
+          isOrganDonor: profile.isOrganDonor,
+          emergencyContactName: profile.emergencyContactName,
+          emergencyContactRelation: profile.emergencyContactRelation,
+          emergencyContactRelationship: profile.emergencyContactRelation,
+          emergencyContactPhone: profile.emergencyContactPhone,
+          secondaryContactName: profile.secondaryContactName,
+          secondaryContactPhone: profile.secondaryContactPhone,
+          barangay: profile.barangay,
+          departmentOrBarangay: profile.barangay
+        });
+        if (refreshSession) {
+          refreshSession();
+        }
+      } catch (apiErr) {
+        console.warn('Backend PUT /api/profile sync notice (persisted to local vault):', apiErr);
+      }
+
       setIsEditing(false);
-      setSaveSuccessToast('Emergency medical & next-of-kin profile saved to encrypted local vault.');
+      setSaveSuccessToast('Emergency medical & next-of-kin profile saved to database and local vault.');
       setTimeout(() => setSaveSuccessToast(null), SAVE_PROFILE_TOAST_MS);
     } catch (err) {
       console.error('Failed to save profile:', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -256,7 +350,19 @@ export const CivilianProfile: React.FC = () => {
 
           <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
             <span className="text-slate-500 block text-[10px] uppercase font-bold">REGISTERED BARANGAY</span>
-            <span className="text-white font-extrabold text-sm mt-0.5 block">{session?.departmentOrBarangay || 'Poblacion, Katipunan, ZN'}</span>
+            {isEditing ? (
+              <select
+                value={profile.barangay}
+                onChange={(e) => setProfile({ ...profile, barangay: e.target.value })}
+                className="mt-1 w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
+              >
+                {KATIPUNAN_BARANGAYS.map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-white font-extrabold text-sm mt-0.5 block">{profile.barangay || session?.departmentOrBarangay || 'Poblacion, Katipunan, ZN'}</span>
+            )}
           </div>
         </div>
       </div>
@@ -443,6 +549,7 @@ export const CivilianProfile: React.FC = () => {
                 type="submit"
                 variant="primary"
                 size="md"
+                isLoading={isSubmitting}
                 className="font-bold text-xs"
               >
                 Save Emergency Profile

@@ -44,7 +44,7 @@ import {
   Send,
   CheckCircle
 } from 'lucide-react';
-import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
+import { getAllReports, updateReportSeverity, ReportItem } from '@/Endpoints/reportsApi';
 import {
   getDutyRoster,
   DutyUnit,
@@ -134,7 +134,21 @@ export const IncidentsPage: FC = () => {
         getDutyRoster().catch(() => [] as ExtendedDutyUnit[]),
         getDispatchRequests().catch(() => [] as DispatchRequestRecord[])
       ]);
-      const validReports = r && r.length > 0 ? (r as ExtendedReportItem[]) : (BASELINE_INCIDENT_REPORTS as ExtendedReportItem[]);
+
+      // Read persisted severity escalation overrides so polling intervals do not wipe them
+      let escalations: Record<string, string> = {};
+      try {
+        const storedEscalationsRaw = localStorage.getItem('resqtrack_escalated_severities');
+        if (storedEscalationsRaw) {
+          escalations = JSON.parse(storedEscalationsRaw) as Record<string, string>;
+        }
+      } catch {}
+
+      const baseList = r && r.length > 0 ? (r as ExtendedReportItem[]) : (BASELINE_INCIDENT_REPORTS as ExtendedReportItem[]);
+      const validReports = baseList.map((rep) => ({
+        ...rep,
+        severity: escalations[rep.id] || rep.severity
+      }));
       const validRoster = u && u.length > 0 ? (u as ExtendedDutyUnit[]) : (BASELINE_DUTY_ROSTER as ExtendedDutyUnit[]);
       setReports(validReports);
       setRoster(validRoster);
@@ -198,8 +212,8 @@ export const IncidentsPage: FC = () => {
     return `${Math.min(99.9, score + fractional).toFixed(1)}%`;
   };
 
-  // Dynamic Severity Escalation handler
-  const handleEscalateSeverity = (incidentId: string): void => {
+  // Dynamic Severity Escalation handler with Backend Persistence
+  const handleEscalateSeverity = async (incidentId: string): Promise<void> => {
     const escalationOrder: Record<string, string> = {
       Low: 'Medium',
       Medium: 'High',
@@ -207,16 +221,44 @@ export const IncidentsPage: FC = () => {
       Critical: 'Critical'
     };
 
+    const target = reports.find((r) => r.id === incidentId);
+    if (!target) return;
+    const nextSeverity = escalationOrder[target.severity] || 'High';
+
+    // 1. Optimistic UI update
     setReports((prev) =>
       prev.map((r) => {
         if (r.id === incidentId) {
-          const nextSeverity = escalationOrder[r.severity] || 'High';
-          showToast(`Severity escalated to ${nextSeverity} for ${r.referenceCode || r.title}.`);
           return { ...r, severity: nextSeverity };
         }
         return r;
       })
     );
+    showToast(`Severity escalated to ${nextSeverity} for ${target.referenceCode || target.title}.`);
+
+    // 2. Persist to localStorage override map so useValueRefreshAuto doesn't revert it
+    try {
+      const stored = localStorage.getItem('resqtrack_escalated_severities');
+      const overrides: Record<string, string> = stored ? (JSON.parse(stored) as Record<string, string>) : {};
+      overrides[incidentId] = nextSeverity;
+      localStorage.setItem('resqtrack_escalated_severities', JSON.stringify(overrides));
+    } catch {}
+
+    // 3. Persist escalation to relational backend via updateReportSeverity or verifyReport
+    try {
+      await updateReportSeverity(incidentId, nextSeverity);
+    } catch {
+      try {
+        await verifyReport(
+          incidentId,
+          target.status || 'Reported',
+          `Severity escalated to ${nextSeverity} by LDRRMO Admin.`,
+          nextSeverity
+        );
+      } catch (backendErr: unknown) {
+        console.warn('[IncidentsPage] Failed to persist severity escalation to backend:', backendErr);
+      }
+    }
   };
 
   // Verify Incident Action -> POST /api/reports/{id}/verify

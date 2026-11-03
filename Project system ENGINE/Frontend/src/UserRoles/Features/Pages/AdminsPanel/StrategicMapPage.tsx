@@ -2,6 +2,7 @@
 // StrategicMapPage.tsx -- Full Enlarged Tactical Strategic Map with 4-Pane Live Command Deck.
 // Conforms to Task 11 with full enlarge satellite map and live pane for Incidents, Calls, Units, Severity.
 // Universal Lucide migration, strictly typed relational synchronization, and dynamic Haversine distance & ETA calculations.
+// 100% arrow functions (=>), ZERO emojis, STRICT TypeScript with ZERO any.
 
 import React, { useState, useEffect, FC, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -20,11 +21,7 @@ import {
   Radio,
   Flame,
   HeartPulse,
-  Maximize2,
-  Minimize2,
-  CheckCircle2,
-  Compass,
-  Filter
+  Minimize2
 } from 'lucide-react';
 import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
 import { getDutyRoster, DutyUnit } from '@/Endpoints/responderOpsApi';
@@ -36,42 +33,28 @@ import { Button, Dropdown } from '@/Shared';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import {
+  calculateHaversineDistanceKm,
+  calculateDynamicEtaMinutes,
+  KATIPUNAN_BASE_COORDS,
+  getKatipunanBarangay
+} from '@/Libs/Map/mapAccuracy';
+import {
   BASELINE_INCIDENT_REPORTS,
   BASELINE_INCIDENT_FIXTURES,
   BASELINE_DUTY_ROSTER,
   BASELINE_ANALYTICS_SUMMARY
 } from '@/Libs/Assets/baselineFixtures';
 
+export {
+  calculateHaversineDistanceKm,
+  calculateDynamicEtaMinutes
+} from '@/Libs/Map/mapAccuracy';
+
 export interface NearestUnitResult {
   unit: DutyUnit;
   distanceKm: number;
   etaMinutes: number;
 }
-
-export const calculateHaversineDistanceKm = (
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number => {
-  const R = 6371; // Earth radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Number((R * c).toFixed(2));
-};
-
-export const calculateDynamicEtaMinutes = (distanceKm: number, averageSpeedKmH = 40): number => {
-  if (distanceKm <= 0) return 1;
-  const hours = distanceKm / averageSpeedKmH;
-  return Math.max(1, Math.round(hours * 60));
-};
 
 export const findNearestResponderUnit = (
   incidentLat: number,
@@ -124,8 +107,8 @@ export const StrategicMapPage: FC = () => {
   const [filterAgency, setFilterAgency] = useState<string>('ALL');
   const [selectedIncident, setSelectedIncident] = useState<ReportItem | null>(null);
   const [activeCenter, setActiveCenter] = useState<{ lat: number; lng: number }>({
-    lat: 8.5147,
-    lng: 123.2842
+    lat: KATIPUNAN_BASE_COORDS.latitude,
+    lng: KATIPUNAN_BASE_COORDS.longitude
   });
 
   const loadData = useCallback(async () => {
@@ -186,7 +169,9 @@ export const StrategicMapPage: FC = () => {
         category: rep.category,
         severity: rep.severity,
         requiresManualVerification: rep.requiresManualVerification,
-        gpsAccuracyMeters: rep.gpsAccuracyMeters ?? undefined
+        gpsAccuracyMeters: rep.gpsAccuracyMeters ?? undefined,
+        allocatedUnitId: rep.allocatedUnitId,
+        allocatedUnitCode: rep.allocatedUnitCode
       })),
     ...roster
       .filter((u) => {
@@ -349,7 +334,7 @@ export const StrategicMapPage: FC = () => {
               <h3 className="font-bold text-white text-sm truncate">{selectedIncident.title}</h3>
               <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                 <MapPin className="w-3 h-3 text-slate-500" />
-                {selectedIncident.locationLabel || 'Municipal Coordinates'}
+                {selectedIncident.locationLabel || getKatipunanBarangay(selectedIncident.latitude, selectedIncident.longitude)}
               </p>
               <div className="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between font-mono text-[10px]">
                 <span className="text-slate-400">Severity:</span>
@@ -393,6 +378,22 @@ export const StrategicMapPage: FC = () => {
           <div className="flex-1 w-full h-full min-h-[420px]">
             <SatelliteCommandMap
               markers={markers}
+              responders={roster.map((u) => ({
+                id: u.id,
+                unitCode: u.unitCode,
+                name: u.unitName || u.unitCode,
+                lat: u.baseLatitude,
+                lng: u.baseLongitude,
+                status: u.status,
+                agency: u.agency
+              }))}
+              selectedIncidentId={selectedIncident?.id}
+              onSelectIncident={(inc) => {
+                const matched = reports.find((r) => r.id === inc.id);
+                if (matched) {
+                  handleSelectIncident(matched);
+                }
+              }}
               centerLat={activeCenter.lat}
               centerLng={activeCenter.lng}
               className="w-full h-full min-h-[420px]"
@@ -452,7 +453,7 @@ export const StrategicMapPage: FC = () => {
                     </div>
 
                     <div className="text-[10px] text-slate-400 truncate">
-                      {r.locationLabel || 'Municipal Coordinates'}
+                      {r.locationLabel || getKatipunanBarangay(r.latitude, r.longitude)}
                     </div>
 
                     {/* Dynamic Haversine & ETA */}

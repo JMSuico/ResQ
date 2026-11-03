@@ -1,7 +1,8 @@
 // [Layer: Shared]
 // Responsibility: Interactive Leaflet satellite command map with 16 Tactical Incident Pointer Categories,
 // RHU Medic vs Non-Medic role filtering, Pale Non-Medic Pointer mode, Dynamic Centered Pointer Modal,
-// IP Address + GPS + Street Address + Picture Evidence display, and 5-Minute Verification Loading Timer.
+// IP Address + GPS + Street Address + Picture Evidence display, 5-Minute Verification Loading Timer,
+// dynamic proximity circles and lines to closest on-duty units, and prominent pulsing red/amber markers for new incidents.
 // Universal lambda expressions (=>). 100% pure Lucide icons (zero emojis).
 
 import React, { FC, useEffect, useRef, useState, useMemo, useCallback } from 'react';
@@ -18,7 +19,6 @@ import {
   Navigation,
   Clock,
   CheckCircle2,
-  ShieldAlert,
   Send,
   X,
   Camera,
@@ -38,6 +38,10 @@ import {
   DEFAULT_VERIFICATION_CLOSE_SECONDS
 } from './radarPointerCategories';
 import { ImageLightboxModal, LightboxMediaItem } from './ImageLightboxModal';
+import {
+  calculateHaversineDistanceKm,
+  calculateDynamicEtaMinutes
+} from '@/Libs/Map/mapAccuracy';
 
 export interface IncidentPinData {
   id: string;
@@ -60,6 +64,8 @@ export interface IncidentPinData {
   recommendedAgency?: string;
   gpsAccuracyMeters?: number;
   description?: string;
+  allocatedUnitId?: string | null;
+  allocatedUnitCode?: string | null;
 }
 
 export interface MapMarker {
@@ -79,6 +85,8 @@ export interface MapMarker {
   verifiedAt?: string | number | null;
   requiresManualVerification?: boolean;
   gpsAccuracyMeters?: number;
+  allocatedUnitId?: string | null;
+  allocatedUnitCode?: string | null;
 }
 
 export interface ResponderMapUnit {
@@ -138,6 +146,7 @@ const generateDeterministicIp = (seedId: string): string => {
 export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   incidents = [],
   markers = [],
+  responders = [],
   selectedIncidentId,
   onSelectIncident,
   onRequestDeploy,
@@ -155,6 +164,8 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const accuracyCirclesLayerRef = useRef<L.LayerGroup | null>(null);
+  const dispatchRoutesLayerRef = useRef<L.LayerGroup | null>(null);
+  const respondersLayerRef = useRef<L.LayerGroup | null>(null);
 
   const [sortMode, setSortMode] = useState<'ALL' | 'FOR_MEDICS'>('ALL');
   const [pointerSettings, setPointerSettings] = useState(() => getMedicPointerSettings());
@@ -228,12 +239,61 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     return () => window.clearInterval(timer);
   }, []);
 
+  // Normalizes all responder units from both `responders` prop and `markers` where type === 'gps'
+  const allResponderUnits = useMemo(() => {
+    const list: Array<{
+      id: string;
+      name: string;
+      lat: number;
+      lng: number;
+      agency?: string;
+      status?: string;
+    }> = [];
+
+    if (responders && responders.length > 0) {
+      responders.forEach((r) => {
+        if (typeof r.lat === 'number' && typeof r.lng === 'number') {
+          list.push({
+            id: r.id,
+            name: r.unitCode || r.name || `Unit ${r.id}`,
+            lat: r.lat,
+            lng: r.lng,
+            agency: r.agency,
+            status: r.status
+          });
+        }
+      });
+    }
+
+    markers.forEach((m) => {
+      if (m.type === 'gps' && typeof m.lat === 'number' && typeof m.lng === 'number') {
+        const alreadyExists = list.some(
+          (u) => u.id === m.id || u.id === m.id.replace('unit-', '') || `unit-${u.id}` === m.id
+        );
+        if (!alreadyExists) {
+          list.push({
+            id: m.id,
+            name: m.title || `Unit ${m.id}`,
+            lat: m.lat,
+            lng: m.lng,
+            agency: m.agency,
+            status: m.status
+          });
+        }
+      }
+    });
+
+    return list;
+  }, [responders, markers]);
+
   // Merge `incidents` and `markers` into a unified enriched list with 16-category resolution
+  // Excludes responder units (type === 'gps') which are rendered separately
   const unifiedIncidents: Array<IncidentPinData & { categoryMeta: RadarPointerCategoryMeta }> =
     useMemo(() => {
       const combined: IncidentPinData[] = [...incidents];
 
       markers.forEach((m) => {
+        if (m.type === 'gps') return;
         if (!combined.some((inc) => inc.id === m.id)) {
           combined.push({
             id: m.id,
@@ -252,7 +312,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             requiresManualVerification: m.requiresManualVerification,
             recommendedAgency: m.agency,
             gpsAccuracyMeters: m.gpsAccuracyMeters,
-            description: m.description
+            description: m.description,
+            allocatedUnitId: m.allocatedUnitId,
+            allocatedUnitCode: m.allocatedUnitCode
           });
         }
       });
@@ -346,9 +408,14 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       }
     ).addTo(map);
 
-    const circlesLayer = L.layerGroup().addTo(map);
+    const accuracyCirclesLayer = L.layerGroup().addTo(map);
+    const dispatchRoutesLayer = L.layerGroup().addTo(map);
+    const respondersLayer = L.layerGroup().addTo(map);
     const markersLayer = L.layerGroup().addTo(map);
-    accuracyCirclesLayerRef.current = circlesLayer;
+
+    accuracyCirclesLayerRef.current = accuracyCirclesLayer;
+    dispatchRoutesLayerRef.current = dispatchRoutesLayer;
+    respondersLayerRef.current = respondersLayer;
     markersLayerRef.current = markersLayer;
     mapInstanceRef.current = map;
 
@@ -395,7 +462,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     }
   }, [selectedIncidentId, unifiedIncidents]);
 
-  // Render 16-category pointers onto Leaflet layer
+  // Render 16-category pointers onto Leaflet layer with prominent pulsing red/amber markers for unallocated or critical incidents
   useEffect(() => {
     const markersLayer = markersLayerRef.current;
     const circlesLayer = accuracyCirclesLayerRef.current;
@@ -421,20 +488,40 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         ? 'opacity: 0.38; filter: grayscale(82%);'
         : 'opacity: 1;';
 
+      // Prominent pulsing red or amber markers for unallocated or critical reports
+      const isCritical = (inc.severity || '').toLowerCase() === 'critical';
+      const isUnallocated = !inc.allocatedUnitCode && !inc.allocatedUnitId && !isResponded;
+      const isPulsing = (isUnallocated || isCritical) && !isResponded;
+      const pulseColor = isCritical ? '#ef4444' : '#f59e0b';
+      const glowAnimation = isCritical
+        ? 'resqtrackBeaconGlow 1.6s ease-in-out infinite'
+        : 'resqtrackAmberGlow 1.8s ease-in-out infinite';
+
+      const pulsingRingHtml = isPulsing
+        ? `
+          <span style="position:absolute;inset:-6px;border-radius:9999px;border:2.5px solid ${pulseColor};animation:resqtrackPulseRing 1.8s cubic-bezier(0,0,0.2,1) infinite;"></span>
+          <span style="position:absolute;inset:-2px;border-radius:9999px;background:${pulseColor};opacity:0.35;animation:resqtrackPulseRing 1.8s cubic-bezier(0,0,0.2,1) infinite;animation-delay:0.45s;"></span>
+          <span style="position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:9999px;background:${pulseColor};border:2px solid #ffffff;box-shadow:0 0 6px ${pulseColor};z-index:2;"></span>
+        `
+        : '';
+
       const pinIcon = L.divIcon({
         className: 'resqtrack-tactical-pointer',
         html: `
-          <div style="position:relative;width:36px;height:36px;display:flex;align-items:center;justify-content:center;${paleStyle};transition:all 200ms ease;">
+          <div style="position:relative;width:38px;height:38px;display:flex;align-items:center;justify-content:center;${paleStyle};transition:all 200ms ease;">
+            ${pulsingRingHtml}
             <span style="position:absolute;inset:0;border-radius:9999px;background:${pointerBgColor};opacity:0.28;transform:scale(1.25);"></span>
-            <div style="position:relative;width:32px;height:32px;border-radius:9999px;background:${pointerBgColor};border:2px solid #ffffff;box-shadow:0 4px 14px rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;color:#ffffff;">
+            <div style="position:relative;width:32px;height:32px;border-radius:9999px;background:${pointerBgColor};border:2px solid #ffffff;box-shadow:0 4px 14px rgba(0,0,0,0.65);${
+              isPulsing ? `animation:${glowAnimation};` : ''
+            }display:flex;align-items:center;justify-content:center;color:#ffffff;z-index:1;">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
                 ${meta.svgPathMarkup}
               </svg>
             </div>
           </div>
         `,
-        iconSize: [36, 36],
-        iconAnchor: [18, 18]
+        iconSize: [38, 38],
+        iconAnchor: [19, 19]
       });
 
       const marker = L.marker([inc.lat, inc.lng], {
@@ -466,7 +553,185 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
       markersLayer.addLayer(marker);
     });
-  }, [visibleIncidents, pointerSettings.paleNonMedicEnabled, respondedIds]);
+  }, [visibleIncidents, pointerSettings.paleNonMedicEnabled, respondedIds, onSelectIncident]);
+
+  // Render on-duty responder units on map with tactical agency badges
+  useEffect(() => {
+    const respondersLayer = respondersLayerRef.current;
+    if (!respondersLayer) return;
+
+    respondersLayer.clearLayers();
+
+    allResponderUnits.forEach((unit) => {
+      if (typeof unit.lat !== 'number' || typeof unit.lng !== 'number') return;
+
+      const agencyUpper = (unit.agency || '').toUpperCase();
+      let agencyColor = '#0284c7'; // default sky
+      let badgeLetter = 'U';
+      if (agencyUpper.includes('FIRE') || agencyUpper.includes('BFP')) {
+        agencyColor = '#ea580c'; // fire orange
+        badgeLetter = 'F';
+      } else if (agencyUpper.includes('PNP') || agencyUpper.includes('POLICE')) {
+        agencyColor = '#2563eb'; // police blue
+        badgeLetter = 'P';
+      } else if (agencyUpper.includes('RHU') || agencyUpper.includes('MEDIC')) {
+        agencyColor = '#10b981'; // medical emerald
+        badgeLetter = 'M';
+      }
+
+      const unitIcon = L.divIcon({
+        className: 'resqtrack-responder-unit-icon',
+        html: `
+          <div style="position:relative;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+            <div style="position:relative;width:24px;height:24px;border-radius:6px;background:${agencyColor};border:2px solid #ffffff;box-shadow:0 3px 10px rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;color:#ffffff;transform:rotate(45deg);">
+              <div style="transform:rotate(-45deg);font-size:10px;font-weight:900;font-family:monospace;">
+                ${badgeLetter}
+              </div>
+            </div>
+          </div>
+        `,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      });
+
+      const marker = L.marker([unit.lat, unit.lng], {
+        icon: unitIcon,
+        title: `${unit.name} (${unit.agency || 'Responder'}) - ${unit.status || 'Active'}`
+      });
+
+      marker.bindTooltip(
+        `<div style="text-align:left;">` +
+          `<strong style="color:${agencyColor};">${unit.name}</strong><br/>` +
+          `Agency: ${unit.agency || 'Emergency Services'}<br/>` +
+          `Status: <strong>${unit.status || 'OnDuty'}</strong>` +
+        `</div>`,
+        { direction: 'top', className: 'tactical-map-tooltip' }
+      );
+
+      respondersLayer.addLayer(marker);
+    });
+  }, [allResponderUnits]);
+
+  // When a report is clicked, dynamically center map and draw proximity circles or lines to closest on-duty units
+  useEffect(() => {
+    const dispatchLayer = dispatchRoutesLayerRef.current;
+    if (!dispatchLayer) return;
+
+    dispatchLayer.clearLayers();
+
+    const selectedInc =
+      activePointer || unifiedIncidents.find((i) => i.id === selectedIncidentId);
+    if (!selectedInc || typeof selectedInc.lat !== 'number' || typeof selectedInc.lng !== 'number') {
+      return;
+    }
+
+    // Smoothly center the map on the selected incident
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.panTo([selectedInc.lat, selectedInc.lng], {
+        animate: true,
+        duration: 0.6
+      });
+    }
+
+    // Filter available on-duty responder units
+    const eligibleUnits = allResponderUnits.filter((u) => {
+      const statusLower = (u.status || '').toLowerCase();
+      return statusLower !== 'offduty' && typeof u.lat === 'number' && typeof u.lng === 'number';
+    });
+
+    if (eligibleUnits.length === 0) {
+      // Standalone tactical perimeter
+      const perimeter = L.circle([selectedInc.lat, selectedInc.lng], {
+        radius: 300,
+        color: '#f43f5e',
+        weight: 2,
+        dashArray: '5, 5',
+        fillColor: '#f43f5e',
+        fillOpacity: 0.08
+      });
+      dispatchLayer.addLayer(perimeter);
+      return;
+    }
+
+    // Calculate dynamic Haversine distance and ETA
+    const ranked = eligibleUnits
+      .map((unit) => {
+        const distanceKm = calculateHaversineDistanceKm(
+          selectedInc.lat,
+          selectedInc.lng,
+          unit.lat,
+          unit.lng
+        );
+        return {
+          unit,
+          distanceKm,
+          etaMinutes: calculateDynamicEtaMinutes(distanceKm)
+        };
+      })
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+
+    const closestUnits = ranked.slice(0, 3);
+    const nearestUnit = closestUnits[0];
+
+    // Draw proximity radius circle encompassing closest responder range
+    if (nearestUnit) {
+      const radiusMeters = Math.max(300, Math.min(nearestUnit.distanceKm * 1000, 15000));
+      const proximityCircle = L.circle([selectedInc.lat, selectedInc.lng], {
+        radius: radiusMeters,
+        color: '#f43f5e',
+        weight: 1.5,
+        dashArray: '6, 6',
+        fillColor: '#f43f5e',
+        fillOpacity: 0.04
+      });
+      dispatchLayer.addLayer(proximityCircle);
+    }
+
+    // Draw inner tactical cordon perimeter
+    const innerCordon = L.circle([selectedInc.lat, selectedInc.lng], {
+      radius: 200,
+      color: '#38bdf8',
+      weight: 2,
+      fillColor: '#38bdf8',
+      fillOpacity: 0.12
+    });
+    dispatchLayer.addLayer(innerCordon);
+
+    // Draw proximity lines to closest on-duty units
+    closestUnits.forEach((rUnit, idx) => {
+      const isPrimary = idx === 0;
+      const lineColor = isPrimary ? '#38bdf8' : '#94a3b8';
+      const lineWeight = isPrimary ? 3 : 2;
+
+      const polyline = L.polyline(
+        [
+          [selectedInc.lat, selectedInc.lng],
+          [rUnit.unit.lat, rUnit.unit.lng]
+        ],
+        {
+          color: lineColor,
+          weight: lineWeight,
+          dashArray: isPrimary ? '8, 8' : '5, 5',
+          opacity: isPrimary ? 0.9 : 0.65
+        }
+      );
+
+      polyline.bindTooltip(
+        `<div style="text-align:left;">` +
+          `<strong style="color:#38bdf8;">${rUnit.unit.name}</strong> (${rUnit.unit.agency || 'Unit'})<br/>` +
+          `Distance: <strong>${rUnit.distanceKm} km</strong><br/>` +
+          `Est. ETA: <strong style="color:#fbbf24;">~${rUnit.etaMinutes} min</strong>` +
+        `</div>`,
+        {
+          permanent: false,
+          direction: 'center',
+          className: 'tactical-map-tooltip'
+        }
+      );
+
+      dispatchLayer.addLayer(polyline);
+    });
+  }, [activePointer, selectedIncidentId, unifiedIncidents, allResponderUnits]);
 
   const handleTogglePaleNonMedic = () => {
     const updated = saveMedicPointerSettings({
@@ -573,6 +838,36 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           : undefined
       }
     >
+      {/* Global CSS for pulsing beacon animations & tactical tooltips */}
+      <style>{`
+        @keyframes resqtrackPulseRing {
+          0% { transform: scale(0.9); opacity: 0.9; }
+          50% { transform: scale(1.6); opacity: 0.35; }
+          100% { transform: scale(2.2); opacity: 0; }
+        }
+        @keyframes resqtrackBeaconGlow {
+          0%, 100% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.7), 0 0 20px rgba(239, 68, 68, 0.5); }
+          50% { box-shadow: 0 0 22px rgba(239, 68, 68, 0.95), 0 0 35px rgba(239, 68, 68, 0.75); }
+        }
+        @keyframes resqtrackAmberGlow {
+          0%, 100% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.7), 0 0 20px rgba(245, 158, 11, 0.5); }
+          50% { box-shadow: 0 0 22px rgba(245, 158, 11, 0.95), 0 0 35px rgba(245, 158, 11, 0.75); }
+        }
+        .tactical-map-tooltip {
+          background: rgba(15, 23, 42, 0.95) !important;
+          border: 1px solid rgba(56, 189, 248, 0.6) !important;
+          color: #f8fafc !important;
+          font-family: monospace !important;
+          font-size: 11px !important;
+          border-radius: 8px !important;
+          padding: 6px 10px !important;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8) !important;
+        }
+        .tactical-map-tooltip::before {
+          border-top-color: rgba(56, 189, 248, 0.6) !important;
+        }
+      `}</style>
+
       {/* Top RHU Medic Radar HUD Overlay */}
       {showMedicHud && (
         <div className="absolute top-3 left-3 right-3 z-[400] flex flex-wrap items-center justify-between gap-2 pointer-events-none">
@@ -981,7 +1276,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         }
       />
 
-      {/* Multi-Media Evidence Lightbox (Up to 40 Captures with Seconds & AM/PM) */}
+      {/* Multi-Media Evidence Lightbox */}
       <ImageLightboxModal
         isOpen={lightboxOpen}
         onClose={() => setLightboxOpen(false)}

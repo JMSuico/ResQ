@@ -40,48 +40,134 @@ import { EmergencyHotlinesUnits } from '@/UserRoles/Features/Pages/CiviliansPane
 import { CivilianProfile } from '@/UserRoles/Features/Pages/CiviliansPanel/CivilianProfile';
 
 // Smart Dynamic Role Routers for Universal Compatibility
-const getStoredRole = (): string | null => {
+const getStoredSessionData = (): { role?: string; unit?: string } | null => {
+  if (typeof window === 'undefined') return null;
   try {
-    const raw = typeof window !== 'undefined'
-      ? (localStorage.getItem('resqtrack_session') || localStorage.getItem('resqtrack_user'))
-      : null;
-    return raw ? JSON.parse(raw)?.role : null;
+    const port = window.location.port || '5173';
+    // 1. Tab-isolated session storage has top priority
+    const tabRaw = sessionStorage.getItem('resqtrack_session') || sessionStorage.getItem('resqtrack_user');
+    if (tabRaw) return JSON.parse(tabRaw) as { role?: string; unit?: string };
+
+    // 2. Tab-unit scoped local storage
+    const tabUnit = (sessionStorage.getItem('resqtrack_unit') || '').toLowerCase().trim();
+    if (tabUnit && tabUnit !== 'none') {
+      const unitRaw = localStorage.getItem(`resqtrack_session_${tabUnit}`) || localStorage.getItem(`resqtrack_user_${tabUnit}`);
+      if (unitRaw) return JSON.parse(unitRaw) as { role?: string; unit?: string };
+    }
+
+    if (port === '5174') {
+      const adminRaw = localStorage.getItem('resqtrack_session_5174') || localStorage.getItem('resqtrack_user_5174');
+      if (adminRaw) return JSON.parse(adminRaw) as { role?: string; unit?: string };
+    } else {
+      const portRaw = localStorage.getItem(`resqtrack_session_${port}`) || localStorage.getItem(`resqtrack_user_${port}`);
+      if (portRaw) {
+        const parsed = JSON.parse(portRaw) as { role?: string; unit?: string };
+        // Never allow an old or stray Admin session on port 5173 to hijack Port 5173 routing!
+        if (!(parsed.role || '').toLowerCase().includes('admin')) {
+          return parsed;
+        }
+      }
+    }
+
+    return null;
   } catch {
     return null;
   }
 };
 
+const getStoredRole = (): string | null => {
+  const session = getStoredSessionData();
+  return session?.role ?? null;
+};
+
 const SmartDashboardRouter: React.FC = () => {
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
+  const host = typeof window !== 'undefined' ? (window.location.hostname || '127.0.0.1') : '127.0.0.1';
+  const role = (getStoredRole() || '').toLowerCase();
+  const isAdmin = role.includes('admin') || role.includes('ldrrmo') || role === '1';
+
   if (currentPort === '5174') {
+    if (!isAdmin) return <Navigate to="/admin/login" replace />;
     return <Navigate to="/admin/dashboard" replace />;
   }
-  const role = (getStoredRole() || '').toLowerCase();
-  if (role === 'ldrrmo_admin' || role === 'admin') return <Navigate to="/admin/dashboard" replace />;
-  if (role === 'responder') return <Navigate to="/responder/dashboard" replace />;
-  if (role === 'civilian') return <Navigate to="/civilian/dashboard" replace />;
+
+  if (isAdmin) {
+    const token = typeof window !== 'undefined'
+      ? (sessionStorage.getItem('resqtrack_token') || localStorage.getItem('resqtrack_token_5173') || localStorage.getItem('resqtrack_token'))
+      : null;
+    const targetUrl = token
+      ? `http://${host}:5174/admin/dashboard?session_token=${encodeURIComponent(token)}`
+      : `http://${host}:5174/admin/dashboard`;
+    window.location.href = targetUrl;
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 font-mono text-sm text-rose-400">
+        Admin account detected. Redirecting to Executive Command (5174)...
+      </div>
+    );
+  }
+
+  if (role === 'responder' || role === '2') return <Navigate to="/responder/dashboard" replace />;
+  if (role === 'civilian' || role === '3') return <Navigate to="/civilian/dashboard" replace />;
   return <Navigate to="/login" replace />;
 };
 
 const SmartIncidentsRouter: React.FC = () => {
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
+  const host = typeof window !== 'undefined' ? (window.location.hostname || '127.0.0.1') : '127.0.0.1';
+  const role = (getStoredRole() || '').toLowerCase();
+  const isAdmin = role.includes('admin') || role.includes('ldrrmo') || role === '1';
+
   if (currentPort === '5174') {
+    if (!isAdmin) return <Navigate to="/admin/login" replace />;
     return <Navigate to="/admin/incidents" replace />;
   }
-  const role = (getStoredRole() || '').toLowerCase();
-  if (role === 'ldrrmo_admin' || role === 'admin') return <Navigate to="/admin/incidents" replace />;
-  if (role === 'responder') return <Navigate to="/responder/incidents" replace />;
+
+  if (isAdmin) {
+    const token = typeof window !== 'undefined'
+      ? (sessionStorage.getItem('resqtrack_token') || localStorage.getItem('resqtrack_token_5173') || localStorage.getItem('resqtrack_token'))
+      : null;
+    const targetUrl = token
+      ? `http://${host}:5174/admin/incidents?session_token=${encodeURIComponent(token)}`
+      : `http://${host}:5174/admin/incidents`;
+    window.location.href = targetUrl;
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 font-mono text-sm text-rose-400">
+        Admin account detected. Redirecting to Executive Command (5174)...
+      </div>
+    );
+  }
+
+  if (role === 'responder' || role === '2') return <Navigate to="/responder/incidents" replace />;
   return <Navigate to="/civilian/my-reports" replace />;
 };
 
 const SmartRosterRouter: React.FC = () => {
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
+  const host = typeof window !== 'undefined' ? (window.location.hostname || '127.0.0.1') : '127.0.0.1';
+  const role = (getStoredRole() || '').toLowerCase();
+  const isAdmin = role.includes('admin') || role.includes('ldrrmo') || role === '1';
+
   if (currentPort === '5174') {
+    if (!isAdmin) return <Navigate to="/admin/login" replace />;
     return <Navigate to="/admin/roster" replace />;
   }
-  const role = (getStoredRole() || '').toLowerCase();
-  if (role === 'ldrrmo_admin' || role === 'admin') return <Navigate to="/admin/roster" replace />;
-  if (role === 'responder') return <Navigate to="/responder/roster" replace />;
+
+  if (isAdmin) {
+    const token = typeof window !== 'undefined'
+      ? (sessionStorage.getItem('resqtrack_token') || localStorage.getItem('resqtrack_token_5173') || localStorage.getItem('resqtrack_token'))
+      : null;
+    const targetUrl = token
+      ? `http://${host}:5174/admin/roster?session_token=${encodeURIComponent(token)}`
+      : `http://${host}:5174/admin/roster`;
+    window.location.href = targetUrl;
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 font-mono text-sm text-rose-400">
+        Admin account detected. Redirecting to Executive Command (5174)...
+      </div>
+    );
+  }
+
+  if (role === 'responder' || role === '2') return <Navigate to="/responder/roster" replace />;
   return <Navigate to="/civilian/hotlines" replace />;
 };
 
@@ -95,22 +181,22 @@ export const App: React.FC = () => {
         {/* Public Landing & Authentication */}
         <Route element={<LandingLayout />}>
           <Route path="/" element={isAdminPort ? <AdminLoginPage /> : <LandingPage />} />
-          <Route path="/home" element={<LandingPage />} />
-          <Route path="/landing" element={<LandingPage />} />
+          <Route path="/home" element={isAdminPort ? <AdminLoginPage /> : <LandingPage />} />
+          <Route path="/landing" element={isAdminPort ? <AdminLoginPage /> : <LandingPage />} />
           <Route path="/login" element={isAdminPort ? <AdminLoginPage /> : <LoginPage />} />
           <Route path="/admin/login" element={<AdminLoginPage />} />
-          <Route path="/responder/login" element={<LoginPage />} />
-          <Route path="/civilian/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/responder/login" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <LoginPage />} />
+          <Route path="/civilian/login" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <LoginPage />} />
+          <Route path="/register" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <RegisterPage />} />
         </Route>
 
         {/* Top-Level Tactical Routes with Smart Role Navigation */}
         <Route path="/dashboard" element={<SmartDashboardRouter />} />
         <Route path="/incidents" element={<SmartIncidentsRouter />} />
         <Route path="/responders" element={<SmartRosterRouter />} />
-        <Route path="/settings" element={<Navigate to="/admin/settings" replace />} />
-        <Route path="/analytics" element={<Navigate to="/admin/analytics" replace />} />
-        <Route path="/submitted-reports" element={<Navigate to="/admin/submitted-reports" replace />} />
+        <Route path="/settings" element={isAdminPort ? <Navigate to="/admin/settings" replace /> : <SmartDashboardRouter />} />
+        <Route path="/analytics" element={isAdminPort ? <Navigate to="/admin/analytics" replace /> : <SmartDashboardRouter />} />
+        <Route path="/submitted-reports" element={isAdminPort ? <Navigate to="/admin/submitted-reports" replace /> : <SmartDashboardRouter />} />
 
         {/* LDRRMO Admin Executive Command Portal (/admin/*) */}
         <Route path="/admin" element={<AdminLayout />}>
@@ -128,7 +214,7 @@ export const App: React.FC = () => {
         </Route>
 
         {/* Responders Portal (/responder/*) */}
-        <Route path="/responder" element={<ResponderLayout />}>
+        <Route path="/responder" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <ResponderLayout />}>
           <Route index element={<ResponderDashboard />} />
           <Route path="dashboard" element={<ResponderDashboard />} />
           <Route path="incidents" element={<UnitIncidentsFeed />} />
@@ -142,7 +228,7 @@ export const App: React.FC = () => {
         </Route>
 
         {/* UG Residents & Civilians Portal (/civilian/*) */}
-        <Route path="/civilian" element={<CivilianLayout />}>
+        <Route path="/civilian" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <CivilianLayout />}>
           <Route index element={<CivilianDashboard />} />
           <Route path="dashboard" element={<CivilianDashboard />} />
           <Route path="report" element={<ReportAccidentPage />} />
@@ -153,25 +239,25 @@ export const App: React.FC = () => {
         </Route>
 
         {/* Canonical / Alias Portal Routing */}
-        <Route path="/civilian-portal" element={<Navigate to="/civilian/dashboard" replace />} />
-        <Route path="/civilian-portal/*" element={<Navigate to="/civilian" replace />} />
-        <Route path="/responder-portal" element={<Navigate to="/responder/dashboard" replace />} />
-        <Route path="/responder-portal/*" element={<Navigate to="/responder" replace />} />
+        <Route path="/civilian-portal" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <Navigate to="/civilian/dashboard" replace />} />
+        <Route path="/civilian-portal/*" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <Navigate to="/civilian" replace />} />
+        <Route path="/responder-portal" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <Navigate to="/responder/dashboard" replace />} />
+        <Route path="/responder-portal/*" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <Navigate to="/responder" replace />} />
         <Route path="/admin-portal" element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin-portal/*" element={<Navigate to="/admin" replace />} />
 
         {/* Static HTML Compatibility Redirects */}
         <Route path="/index.html" element={<Navigate to="/login" replace />} />
-        <Route path="/register.html" element={<Navigate to="/register" replace />} />
+        <Route path="/register.html" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <Navigate to="/register" replace />} />
         <Route path="/dashboard.html" element={<Navigate to="/dashboard" replace />} />
         <Route path="/incidents.html" element={<Navigate to="/incidents" replace />} />
         <Route path="/responders.html" element={<Navigate to="/responders" replace />} />
         <Route path="/admin.html" element={<Navigate to="/admin/users" replace />} />
-        <Route path="/responder.html" element={<Navigate to="/responder" replace />} />
-        <Route path="/settings.html" element={<Navigate to="/settings" replace />} />
+        <Route path="/responder.html" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <Navigate to="/responder" replace />} />
+        <Route path="/settings.html" element={isAdminPort ? <Navigate to="/admin/settings" replace /> : <Navigate to="/login" replace />} />
 
         {/* Fallback */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );

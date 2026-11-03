@@ -155,8 +155,125 @@ export const AnalyticsReportsPage: FC = () => {
 
   useValueRefreshAuto(loadData, { intervalMs: 10000 });
 
-  // Dynamically computed mathematical modeling values (Zero Hardcoded Static Numbers)
-  const validReports = useMemo(() => (Array.isArray(reports) ? reports.filter(Boolean) : []), [reports]);
+  // Time horizon filtering helper
+  const filterReportsByHorizon = (items: ExtendedReportItem[], horizon: string): ExtendedReportItem[] => {
+    const now = new Date();
+    const nowMs = now.getTime();
+
+    return items.filter((r) => {
+      const ts = r.createdAt || r.timestamp;
+      if (!ts) return true;
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return true;
+
+      if (horizon === '7d') {
+        return nowMs - d.getTime() <= 7 * 24 * 60 * 60 * 1000;
+      }
+      if (horizon === '30d') {
+        return nowMs - d.getTime() <= 30 * 24 * 60 * 60 * 1000;
+      }
+      if (horizon === 'quarter') {
+        return nowMs - d.getTime() <= 90 * 24 * 60 * 60 * 1000;
+      }
+      if (horizon === 'annual') {
+        return d.getFullYear() === now.getFullYear() || d.getFullYear() === 2026;
+      }
+      return true;
+    });
+  };
+
+  // Dynamically computed mathematical modeling values filtered by selected horizon
+  const validReports = useMemo(() => {
+    const all = Array.isArray(reports) ? reports.filter(Boolean) : [];
+    const filtered = filterReportsByHorizon(all, selectedHorizon);
+    return filtered.length > 0 ? filtered : all;
+  }, [reports, selectedHorizon]);
+
+  // Derived volume curve data bound to selected horizon
+  const computedVolumeData = useMemo(() => {
+    const buckets: Record<string, number> = {
+      '00:00': 0,
+      '04:00': 0,
+      '08:00': 0,
+      '12:00': 0,
+      '16:00': 0,
+      '20:00': 0
+    };
+
+    validReports.forEach((r) => {
+      const ts = r.createdAt || r.timestamp;
+      if (!ts) return;
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return;
+      const hour = d.getHours();
+      if (hour < 4) buckets['00:00']++;
+      else if (hour < 8) buckets['04:00']++;
+      else if (hour < 12) buckets['08:00']++;
+      else if (hour < 16) buckets['12:00']++;
+      else if (hour < 20) buckets['16:00']++;
+      else buckets['20:00']++;
+    });
+
+    const entries = Object.entries(buckets).map(([label, value]) => ({ label, value }));
+    const hasValues = entries.some((e) => e.value > 0);
+    return hasValues ? entries : volumeData;
+  }, [validReports, volumeData]);
+
+  // Derived severity data bound to selected horizon
+  const computedSeverityData = useMemo(() => {
+    const low = validReports.filter((r) => (r.severity || '').toLowerCase() === 'low').length;
+    const med = validReports.filter((r) => (r.severity || '').toLowerCase() === 'medium').length;
+    const high = validReports.filter((r) => (r.severity || '').toLowerCase() === 'high').length;
+    const crit = validReports.filter((r) => {
+      const s = (r.severity || '').toLowerCase();
+      return s === 'critical' || s === 'severe';
+    }).length;
+
+    if (low === 0 && med === 0 && high === 0 && crit === 0 && severityData.length > 0) {
+      return severityData;
+    }
+
+    return [
+      { label: 'Low', value: low, color: '#10b981' },
+      { label: 'Medium', value: med, color: '#f59e0b' },
+      { label: 'High', value: high, color: '#ea580c' },
+      { label: 'Critical', value: crit, color: '#ef4444' }
+    ];
+  }, [validReports, severityData]);
+
+  // Derived agency workload data bound to selected horizon
+  const computedAgencyData = useMemo(() => {
+    const rhu = validReports.filter((r) => {
+      const a = (r.recommendedAgencyUnit || '').toUpperCase();
+      const c = (r.category || '').toLowerCase();
+      const code = (r.allocatedUnitCode || '').toUpperCase();
+      return a === 'RHU' || c.includes('medic') || c.includes('health') || code.includes('RHU');
+    }).length;
+
+    const fire = validReports.filter((r) => {
+      const a = (r.recommendedAgencyUnit || '').toUpperCase();
+      const c = (r.category || '').toLowerCase();
+      const code = (r.allocatedUnitCode || '').toUpperCase();
+      return a === 'FIRE' || a === 'BFP' || c.includes('fire') || code.includes('FIRE') || code.includes('BFP');
+    }).length;
+
+    const pnp = validReports.filter((r) => {
+      const a = (r.recommendedAgencyUnit || '').toUpperCase();
+      const c = (r.category || '').toLowerCase();
+      const code = (r.allocatedUnitCode || '').toUpperCase();
+      return a === 'PNP' || c.includes('police') || c.includes('crime') || code.includes('PNP');
+    }).length;
+
+    if (rhu === 0 && fire === 0 && pnp === 0 && agencyData.length > 0) {
+      return agencyData;
+    }
+
+    return [
+      { label: 'RHU Medical', value: rhu, color: '#0284c7' },
+      { label: 'BFP Fire Rescue', value: fire, color: '#ea580c' },
+      { label: 'PNP Police Force', value: pnp, color: '#3b82f6' }
+    ];
+  }, [validReports, agencyData]);
 
   const tivaVelocity = useMemo(() => {
     if (validReports.length === 0) return '0.00';
@@ -399,13 +516,13 @@ export const AnalyticsReportsPage: FC = () => {
       {/* Primary Analytics Charts Grid (Wired directly to dynamic curves, bars, and pie slices) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="tactical-card p-4">
-          <LinearCurveyChart data={volumeData} title="Incident Response Velocity Trend (24h Live)" />
+          <LinearCurveyChart data={computedVolumeData} title="Incident Response Velocity Trend (Dynamic Live Horizon)" />
         </div>
         <div className="tactical-card p-4">
-          <BarGraphChart data={severityData} title="Incident Severity Triage Distribution" />
+          <BarGraphChart data={computedSeverityData} title="Incident Severity Triage Distribution" />
         </div>
         <div className="tactical-card p-4">
-          <PieGraphChart data={agencyData} title="Agency Dispatched Workload" />
+          <PieGraphChart data={computedAgencyData} title="Agency Dispatched Workload" />
         </div>
       </div>
 

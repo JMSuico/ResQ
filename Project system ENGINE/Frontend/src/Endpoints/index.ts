@@ -10,3 +10,5 @@ export * from './responderOpsApi';
 export * from './userEndpoints';
 export * from './adminGovernanceApi';
 export * from './analyticsApi';
+export * from './usersApi';
+export { verifyReport } from './reportsApi';

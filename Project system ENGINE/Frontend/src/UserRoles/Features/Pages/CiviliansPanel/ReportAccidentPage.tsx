@@ -97,6 +97,20 @@ export const ReportAccidentPage: React.FC = () => {
       });
 
       dispatchReportEvent(res.report);
+
+      try {
+        const existing = JSON.parse(localStorage.getItem('resqtrack_submitted_report_ids') || '[]') as string[];
+        if (!existing.includes(res.report.id)) {
+          existing.unshift(res.report.id);
+        }
+        localStorage.setItem('resqtrack_submitted_report_ids', JSON.stringify(existing));
+        if (res.report.reporterId) {
+          localStorage.setItem('resqtrack_reporter_id', res.report.reporterId);
+        }
+      } catch {
+        // Storage access safeguard
+      }
+
       setIsConfirmModalOpen(false);
       navigate('/civilian/my-reports');
     } catch (err: unknown) {

@@ -4,9 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5173",
-    "dev:responder": "vite --host 127.0.0.1 --port 5173",
-    "dev:admin": "vite --host 127.0.0.1 --port 5174",
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "dev:responder": "vite --host 0.0.0.0 --port 5173",
+    "dev:admin": "vite --host 0.0.0.0 --port 5174",
+    "dev:civilian": "vite --host 0.0.0.0 --port 5175",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

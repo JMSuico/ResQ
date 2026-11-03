@@ -2,13 +2,15 @@
 // Responsibility: In-memory high-frequency frame caching store for biometric face liveness and multi-angle verification.
 // DO NOT bypass cryptographic verification or retain raw unvalidated frames after session completion.
 
-export type BiometricPose = 'CENTER' | 'LEFT' | 'RIGHT' | 'UP';
+export type BiometricPose = 'CENTER' | 'LEFT' | 'RIGHT' | 'UP' | 'BLINK';
 
 export interface CachedFrameEntry {
   timestamp: number;
-  pose: 'CENTER' | 'LEFT' | 'RIGHT' | 'UP';
+  pose: BiometricPose;
   frameDataUrl: string;
   laplacianVariance: number;
+  yaw?: number;
+  pitch?: number;
 }
 
 export interface BiometricCacheMetadata {
@@ -17,8 +19,9 @@ export interface BiometricCacheMetadata {
   leftFramesCount: number;
   rightFramesCount: number;
   upFramesCount: number;
+  blinkFramesCount?: number;
   averageLaplacian: number;
-  bestFramePerPose: Record<'CENTER' | 'LEFT' | 'RIGHT' | 'UP', string>;
+  bestFramePerPose: Record<BiometricPose, string>;
 }
 
 export interface BiometricPersistResult {
@@ -30,23 +33,99 @@ export interface BiometricPersistResult {
 
 export class BiometricFrameCacheStore {
   private frames: CachedFrameEntry[] = [];
+  private readonly maxFramesPerPose: number = 10;
+  private isPaused: boolean = false;
+  private pauseReason: string = '';
+
+  public pause = (reason: string = 'MANUAL_PAUSE'): void => {
+    this.isPaused = true;
+    this.pauseReason = reason;
+  };
+
+  public resume = (): void => {
+    this.isPaused = false;
+    this.pauseReason = '';
+  };
+
+  public getIsPaused = (): boolean => {
+    return this.isPaused;
+  };
+
+  public getPauseReason = (): string => {
+    return this.pauseReason;
+  };
 
   public addFrame = (
-    pose: 'CENTER' | 'LEFT' | 'RIGHT' | 'UP',
+    pose: BiometricPose,
     frameDataUrl: string,
-    laplacianVariance: number
-  ): void => {
+    laplacianVariance: number,
+    yaw?: number,
+    pitch?: number
+  ): boolean => {
+    if (this.isPaused) {
+      return false; // Frame caching is paused
+    }
+    const variance = Number.isFinite(laplacianVariance) ? laplacianVariance : 0;
     const entry: CachedFrameEntry = {
       timestamp: Date.now(),
       pose,
       frameDataUrl,
-      laplacianVariance: Number.isFinite(laplacianVariance) ? laplacianVariance : 0,
+      laplacianVariance: variance,
+      yaw,
+      pitch
     };
-    this.frames.push(entry);
+
+    const poseIndices: number[] = [];
+    for (let i = 0; i < this.frames.length; i++) {
+      if (this.frames[i].pose === pose) {
+        poseIndices.push(i);
+      }
+    }
+
+    if (poseIndices.length < this.maxFramesPerPose) {
+      this.frames.push(entry);
+    } else {
+      // Find lowest clarity frame in this pose to replace if the new frame is sharper
+      let minIdx = poseIndices[0];
+      let minScore = this.frames[minIdx].laplacianVariance;
+      for (const idx of poseIndices) {
+        if (this.frames[idx].laplacianVariance < minScore) {
+          minScore = this.frames[idx].laplacianVariance;
+          minIdx = idx;
+        }
+      }
+      if (variance > minScore) {
+        this.frames[minIdx] = entry;
+      }
+    }
+    return true;
+  };
+
+  public getPoseCounts = (): {
+    CENTER: number;
+    LEFT: number;
+    RIGHT: number;
+    UP: number;
+    BLINK: number;
+    total: number;
+  } => {
+    let c = 0;
+    let l = 0;
+    let r = 0;
+    let u = 0;
+    let b = 0;
+    for (const f of this.frames) {
+      if (f.pose === 'CENTER') c++;
+      else if (f.pose === 'LEFT') l++;
+      else if (f.pose === 'RIGHT') r++;
+      else if (f.pose === 'UP') u++;
+      else if (f.pose === 'BLINK') b++;
+    }
+    return { CENTER: c, LEFT: l, RIGHT: r, UP: u, BLINK: b, total: this.frames.length };
   };
 
   public getFrames = (
-    pose?: 'CENTER' | 'LEFT' | 'RIGHT' | 'UP'
+    pose?: BiometricPose
   ): CachedFrameEntry[] => {
     if (!pose) {
       return [...this.frames];
@@ -58,13 +137,14 @@ export class BiometricFrameCacheStore {
     return this.frames.length;
   };
 
-  public getBestFrames = (): Record<'CENTER' | 'LEFT' | 'RIGHT' | 'UP', string> => {
-    const poses: BiometricPose[] = ['CENTER', 'LEFT', 'RIGHT', 'UP'];
-    const result: Record<'CENTER' | 'LEFT' | 'RIGHT' | 'UP', string> = {
+  public getBestFrames = (): Record<BiometricPose, string> => {
+    const poses: BiometricPose[] = ['CENTER', 'LEFT', 'RIGHT', 'UP', 'BLINK'];
+    const result: Record<BiometricPose, string> = {
       CENTER: '',
       LEFT: '',
       RIGHT: '',
       UP: '',
+      BLINK: '',
     };
 
     poses.forEach((pose) => {
@@ -86,6 +166,8 @@ export class BiometricFrameCacheStore {
 
   public clear = (): void => {
     this.frames = [];
+    this.isPaused = false;
+    this.pauseReason = '';
   };
 
   public persistToDatabaseSimulation = async (
@@ -140,7 +222,7 @@ export const computeAverageLaplacian = (frames: CachedFrameEntry[]): number => {
 
 export const findBestFrameForPose = (
   frames: CachedFrameEntry[],
-  pose: 'CENTER' | 'LEFT' | 'RIGHT' | 'UP'
+  pose: BiometricPose
 ): CachedFrameEntry | null => {
   const matching = frames.filter((f) => f.pose === pose);
   if (matching.length === 0) return null;
@@ -168,12 +250,13 @@ export const generateBiometricHash = (
 export const buildBiometricCacheMetadata = (
   frames: CachedFrameEntry[]
 ): BiometricCacheMetadata => {
-  const poses: BiometricPose[] = ['CENTER', 'LEFT', 'RIGHT', 'UP'];
-  const bestFramePerPose: Record<'CENTER' | 'LEFT' | 'RIGHT' | 'UP', string> = {
+  const poses: BiometricPose[] = ['CENTER', 'LEFT', 'RIGHT', 'UP', 'BLINK'];
+  const bestFramePerPose: Record<BiometricPose, string> = {
     CENTER: '',
     LEFT: '',
     RIGHT: '',
     UP: '',
+    BLINK: '',
   };
 
   poses.forEach((pose) => {
@@ -189,6 +272,7 @@ export const buildBiometricCacheMetadata = (
     leftFramesCount: frames.filter((f) => f.pose === 'LEFT').length,
     rightFramesCount: frames.filter((f) => f.pose === 'RIGHT').length,
     upFramesCount: frames.filter((f) => f.pose === 'UP').length,
+    blinkFramesCount: frames.filter((f) => f.pose === 'BLINK').length,
     averageLaplacian: computeAverageLaplacian(frames),
     bestFramePerPose,
   };
@@ -198,8 +282,12 @@ export const isBiometricCacheComplete = (
   storeOrFrames: BiometricFrameCacheStore | CachedFrameEntry[]
 ): boolean => {
   const frames = Array.isArray(storeOrFrames) ? storeOrFrames : storeOrFrames.getFrames();
-  const poses: BiometricPose[] = ['CENTER', 'LEFT', 'RIGHT', 'UP'];
-  return poses.every((pose) => frames.some((f) => f.pose === pose));
+  // Valid if CENTER, LEFT, RIGHT, and either BLINK or UP are present
+  const hasBase = frames.some((f) => f.pose === 'CENTER') &&
+                  frames.some((f) => f.pose === 'LEFT') &&
+                  frames.some((f) => f.pose === 'RIGHT');
+  const hasLiveness = frames.some((f) => f.pose === 'BLINK') || frames.some((f) => f.pose === 'UP');
+  return hasBase && hasLiveness;
 };
 
 export const getBiometricCache = (): BiometricFrameCacheStore => biometricFrameCache;
