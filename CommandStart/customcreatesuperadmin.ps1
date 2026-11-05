@@ -37,13 +37,13 @@ if ([string]::IsNullOrWhiteSpace($Email)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($Password)) {
-    $secPass = Read-Host "Enter Password (min 12 chars)" -AsSecureString
+    $secPass = Read-Host "Enter Password (min 5 chars)" -AsSecureString
     $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secPass)
     $Password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
 }
 
-if ($Password.Length -lt 12) {
-    Write-Host "[!] Error: Password must be at least 12 characters long." -ForegroundColor Red
+if ($Password.Length -lt 5) {
+    Write-Host "[!] Error: Password must be at least 5 characters long." -ForegroundColor Red
     exit 1
 }
 

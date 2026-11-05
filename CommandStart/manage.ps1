@@ -200,8 +200,9 @@ function Show-Status {
     
     $services = @(
         @{ Port = 5000; Name = "Backend Web API"; Target = "http://localhost:5000/api/reports"; Role = ".NET 10 REST API & Scalar Docs" },
-        @{ Port = 5173; Name = "Responders & Civilians"; Target = "http://127.0.0.1:5173/"; Role = "React 19 Responders & Civilian SOS Portal" },
-        @{ Port = 5174; Name = "LDRRMO Admin Command"; Target = "http://127.0.0.1:5174/"; Role = "React 19 Executive Command & Governance" }
+        @{ Port = 5173; Name = "Emergency Responders"; Target = "http://127.0.0.1:5173/"; Role = "React 19 Responders (RHU/Fire/PNP) & Induction" },
+        @{ Port = 5174; Name = "LDRRMO Admin Command"; Target = "http://127.0.0.1:5174/"; Role = "React 19 Executive Command & Governance" },
+        @{ Port = 5175; Name = "Civilian SOS Portal"; Target = "http://127.0.0.1:5175/"; Role = "React 19 Citizen Emergency SOS & Live Map" }
     )
 
     $format = "{0,-6} | {1,-20} | {2,-8} | {3,-12} | {4,-14} | {5}"
@@ -374,7 +375,7 @@ function Start-AllServices {
 function Hard-Refresh {
     Write-Header "HARD REFRESH & CLEAN REBUILD (ALL SERVICES)"
     
-    # 1. Stop existing services on ports 5000, 5173, and 5174
+    # 1. Stop existing services on ports 5000, 5173, 5174, and 5175
     Stop-AllServices
 
     # 2. Clean Vite Cache & Build Artifacts
@@ -416,7 +417,7 @@ function Hard-Refresh {
     Write-Host "  [OK] Backend built successfully with 0 errors." -ForegroundColor Green
     Pop-Location
 
-    # 6. Re-launch fresh services across both ports
+    # 6. Re-launch fresh services across all 4 ports (5000, 5173, 5174, 5175)
     Start-AllServices
 }
 
@@ -521,13 +522,22 @@ function Run-HealthTests {
         Write-Host "  [i] Backend is not currently running. Start services via Option [1] to test live API." -ForegroundColor Yellow
     }
 
-    # 5. Probe Frontend Port 5173
-    Write-Host "[5/5] Checking Frontend listener (:5173)..." -ForegroundColor Gray
-    $found = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue
-    if ($found) {
-        Write-Host "  [OK] Frontend Client (:5173) is active (PID: $($found.OwningProcess))." -ForegroundColor Green
-    } else {
-        Write-Host "  [i] Frontend Client (:5173) is not listening." -ForegroundColor DarkGray
+    # 5. Probe Frontend Ports (5173, 5174, 5175)
+    $frontendPorts = @(
+        @{ Port = 5173; Name = "Responders & ID Induction" },
+        @{ Port = 5174; Name = "LDRRMO Admin Console" },
+        @{ Port = 5175; Name = "Civilian Emergency Portal" }
+    )
+    foreach ($fp in $frontendPorts) {
+        $p = $fp.Port
+        Write-Host "[5/5] Checking Frontend listener (:$p - $($fp.Name))..." -ForegroundColor Gray
+        $found = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue
+        if ($found) {
+            $pids = ($found.OwningProcess | Select-Object -Unique) -join ', '
+            Write-Host "  [OK] $($fp.Name) (:$p) is active (PID: $pids)." -ForegroundColor Green
+        } else {
+            Write-Host "  [i] $($fp.Name) (:$p) is not listening." -ForegroundColor DarkGray
+        }
     }
 }
 
@@ -535,7 +545,10 @@ function Show-Help {
     Write-Header "RESQTRACK DEV & OPS MASTER CONTROLLER -- USAGE & HELP"
     Write-Host "Architecture Overview:" -ForegroundColor Yellow
     Write-Host "  Backend:    .NET 10 ASP.NET Core REST API (:5000)" -ForegroundColor White
-    Write-Host "  Frontend:   React 19 + TypeScript + Vite (:5173)" -ForegroundColor White
+    Write-Host "  Frontend:   Multi-Portal Vite Architecture:" -ForegroundColor White
+    Write-Host "              - Responders & ID Induction: http://localhost:5173" -ForegroundColor White
+    Write-Host "              - LDRRMO Executive Admin:     http://localhost:5174" -ForegroundColor White
+    Write-Host "              - Civilian Emergency SOS:     http://localhost:5175" -ForegroundColor White
     Write-Host "  Database:   Microsoft SQL Server (SSMS 19 Compatible Relational Store)" -ForegroundColor White
     Write-Host ""
     Write-Host "SQL Server Authentication Options (configured in appsettings.json):" -ForegroundColor Yellow
@@ -547,12 +560,14 @@ function Show-Help {
     Write-Host "    Server=localhost;Database=ResQTrackDb;User Id=sa;Password=<YourPassword>;TrustServerCertificate=True;MultipleActiveResultSets=true;" -ForegroundColor Gray
     Write-Host ""
     Write-Host "Available CLI Actions:" -ForegroundColor Yellow
-    Write-Host "  .\manage.ps1 start                    Start Backend (:5000) & Frontend (:5173)"
+    Write-Host "  .\manage.ps1 start                    Start Backend (:5000) & Frontends (:5173, :5174, :5175)"
     Write-Host "  .\manage.ps1 status                   Inspect health matrix & SQL Server RDBMS connection"
     Write-Host "  .\manage.ps1 refresh                  Hard refresh: cleans caches, rebuilds & restarts"
-    Write-Host "  .\manage.ps1 stop                     Stop all running services on ports 5000 & 5173"
+    Write-Host "  .\manage.ps1 stop                     Stop all running services on ports 5000, 5173, 5174, 5175"
     Write-Host "  .\manage.ps1 migrate                  Apply EF Core migrations to SQL Server (SSMS 19)"
     Write-Host "  .\manage.ps1 test                     Run compilation, TypeScript, and SQL Server health tests"
+    Write-Host "  .\manage.ps1 audit                    Run automated browser Playwright audit (Civilian, Admin, Responder)"
+    Write-Host "  .\manage.ps1 scan-test                Run automated ID scanner freeze & laser sweep Playwright test"
     Write-Host "  .\manage.ps1 help                     Display this help guide"
     Write-Host "  .\manage.ps1 createsuperadmin <email> <password> <fullName> [unit]"
     Write-Host "  .\manage.ps1 createcustomsuperadmin <email> <password> <fullName> [unit]"
@@ -565,7 +580,7 @@ function Show-Help {
 function New-SuperAdminPrompt {
     Write-Header "CREATE SUPERADMIN CLI (LDRRMO EXECUTIVE DIRECTOR)"
     $email = Read-Host "Enter Email (e.g. ldrrmo.admin@resqtrack.gov.ph)"
-    $password = Read-Host "Enter Password (min 12 chars)"
+    $password = Read-Host "Enter Password (min 5 chars)"
     $fullName = Read-Host "Enter Full Name (e.g. Director Alejandro Ramos)"
     $unit = Read-Host "Enter Unit [LDRRMO/RHU/FIRE/PNP/Security] (Default: LDRRMO)"
     if ([string]::IsNullOrWhiteSpace($unit)) { $unit = "LDRRMO" }
@@ -582,7 +597,7 @@ function New-SuperAdminPrompt {
 function New-CustomSuperAdminPrompt {
     Write-Header "CREATE CUSTOM SUPERADMIN CLI"
     $email = Read-Host "Enter Email"
-    $password = Read-Host "Enter Password (min 12 chars)"
+    $password = Read-Host "Enter Password (min 5 chars)"
     $fullName = Read-Host "Enter Full Name"
     $unit = Read-Host "Enter Unit [LDRRMO/RHU/FIRE/PNP/Security] (Default: RHU)"
     if ([string]::IsNullOrWhiteSpace($unit)) { $unit = "RHU" }
@@ -599,7 +614,7 @@ function New-CustomSuperAdminPrompt {
 function New-ResetPasswordPrompt {
     Write-Header "RESET USER PASSWORD CLI (SCRYPT KDF)"
     $email = Read-Host "Enter Email of User"
-    $newPassword = Read-Host "Enter New Password (min 12 chars)"
+    $newPassword = Read-Host "Enter New Password (min 5 chars)"
     if ([string]::IsNullOrWhiteSpace($email) -or [string]::IsNullOrWhiteSpace($newPassword)) {
         Write-Host "[!] Email and New Password are required." -ForegroundColor Red
         return
@@ -612,7 +627,7 @@ function New-ResetPasswordPrompt {
 function New-UserCliPrompt {
     Write-Header "ADD NEW USER CLI (ADMIN / RESPONDER / CIVILIAN)"
     $email = Read-Host "Enter Email"
-    $password = Read-Host "Enter Password (min 12 chars)"
+    $password = Read-Host "Enter Password (min 5 chars)"
     $fullName = Read-Host "Enter Full Name"
     $role = Read-Host "Enter Role [LDRRMO_Admin/Responder/Civilian] (Default: Civilian)"
     if ([string]::IsNullOrWhiteSpace($role)) { $role = "Civilian" }
@@ -655,6 +670,34 @@ switch ($Action.ToLower()) {
     "stop"    { Stop-AllServices; exit }
     "migrate" { Run-DatabaseMigrations; exit }
     "test"    { Run-HealthTests; exit }
+    "audit"   {
+        Write-Header "RUNNING FULL PLAYWRIGHT AUTOMATION AUDIT (CIVILIAN + ADMIN + RESPONDER)"
+        Push-Location $FrontendDir
+        & npx tsx "src/Libs/Testing/verify_map_and_dual_approval_workflows.ts"
+        Pop-Location
+        exit
+    }
+    "verify"  {
+        Write-Header "RUNNING FULL PLAYWRIGHT AUTOMATION AUDIT (CIVILIAN + ADMIN + RESPONDER)"
+        Push-Location $FrontendDir
+        & npx tsx "src/Libs/Testing/verify_map_and_dual_approval_workflows.ts"
+        Pop-Location
+        exit
+    }
+    "test-id" {
+        Write-Header "RUNNING ID SCANNER FREEZE & LASER SWEEP PLAYWRIGHT TEST"
+        Push-Location $FrontendDir
+        & npx tsx "src/Libs/Testing/test_id_scan_freeze_and_autofill_browser.ts"
+        Pop-Location
+        exit
+    }
+    "scan-test" {
+        Write-Header "RUNNING ID SCANNER FREEZE & LASER SWEEP PLAYWRIGHT TEST"
+        Push-Location $FrontendDir
+        & npx tsx "src/Libs/Testing/test_id_scan_freeze_and_autofill_browser.ts"
+        Pop-Location
+        exit
+    }
     "docker-up" {
         & (Join-Path $PSScriptRoot "docker-start-all.ps1")
         exit
@@ -764,6 +807,8 @@ do {
     Write-Host "  [4] Stop All Services          -> Free ports 5000, 5173, 5174, and 5175" -ForegroundColor White
     Write-Host "  [5] Database Migrations        -> EF Core Relational Database schema migration" -ForegroundColor White
     Write-Host "  [6] Health Check & Tests       -> Compilation, TypeScript, Database & API" -ForegroundColor White
+    Write-Host "  [T] Playwright E2E Audit       -> Automated test of Civilian, Admin & Responder dispatch" -ForegroundColor Green
+    Write-Host "  [TI] ID Auto-Scan E2E Test     -> Automated test of ID freeze, laser sweep & autofill" -ForegroundColor Green
     Write-Host "  [D] Docker 7-Container Topology-> Launch Docker Compose (Admin, Resp, Civ, API, Redis, DB Primary & Replica)" -ForegroundColor Magenta
     Write-Host "  [DS] Docker Stop Containers    -> Stop all Docker Compose services and containers" -ForegroundColor DarkMagenta
     Write-Host "  [I] Install All Dependencies   -> Auto-restore npm, dotnet, and check RDBMS prerequisites" -ForegroundColor Cyan
@@ -777,7 +822,7 @@ do {
     Write-Host ""
     Write-Host "  [0] Exit" -ForegroundColor DarkGray
     Write-Host "======================================================================" -ForegroundColor Cyan
-    $sel = Read-Host "Select an option [0-12, D, DS, I, S]"
+    $sel = Read-Host "Select an option [0-12, T, TI, D, DS, I, S]"
 
     switch -Regex ($sel) {
         "^1$"   { Start-AllServices; Read-Host "`nPress Enter to return to menu..." }
@@ -786,6 +831,20 @@ do {
         "^4$"   { Stop-AllServices; Read-Host "`nPress Enter to return to menu..." }
         "^5$"   { Run-DatabaseMigrations; Read-Host "`nPress Enter to return to menu..." }
         "^6$"   { Run-HealthTests; Read-Host "`nPress Enter to return to menu..." }
+        "^(t|audit|test-all)$" {
+            Write-Header "RUNNING FULL PLAYWRIGHT AUTOMATION AUDIT"
+            Push-Location $FrontendDir
+            & npx tsx "src/Libs/Testing/verify_map_and_dual_approval_workflows.ts"
+            Pop-Location
+            Read-Host "`nPress Enter to return to menu..."
+        }
+        "^(ti|scan-test|id-test)$" {
+            Write-Header "RUNNING ID SCANNER FREEZE & LASER SWEEP TEST"
+            Push-Location $FrontendDir
+            & npx tsx "src/Libs/Testing/test_id_scan_freeze_and_autofill_browser.ts"
+            Pop-Location
+            Read-Host "`nPress Enter to return to menu..."
+        }
         "^(d|docker)$"    { & (Join-Path $PSScriptRoot "docker-start-all.ps1"); Read-Host "`nPress Enter to return to menu..." }
         "^(ds|docker-stop)$" { & (Join-Path $PSScriptRoot "docker-stop-all.ps1"); Read-Host "`nPress Enter to return to menu..." }
         "^(i|install)$"   { & (Join-Path $PSScriptRoot "install-dependencies.ps1"); Read-Host "`nPress Enter to return to menu..." }

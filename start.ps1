@@ -77,6 +77,56 @@ switch -Regex ($Action.ToLowerInvariant()) {
         }
     }
 
+    "^(status|probe)$" {
+        if (Test-Path $manageScript) {
+            & $manageScript -Action "status"
+        } else {
+            Write-Error "Could not find manage.ps1 at $manageScript"
+            exit 1
+        }
+    }
+
+    "^(refresh|hard-refresh)$" {
+        if (Test-Path $manageScript) {
+            & $manageScript -Action "refresh"
+        } else {
+            Write-Error "Could not find manage.ps1 at $manageScript"
+            exit 1
+        }
+    }
+
+    "^(test|audit|verify)$" {
+        $frontendDir = Join-Path $ScriptDir "Project system ENGINE\Frontend"
+        Write-Host "[*] Executing ResQTrack Comprehensive Production Map & Dual-Approval Audit..." -ForegroundColor Cyan
+        Push-Location $frontendDir
+        try {
+            npx tsx src/Libs/Testing/verify_map_and_dual_approval_workflows.ts
+        } finally {
+            Pop-Location
+        }
+    }
+
+    "^(test-id|scan-test|id-test)$" {
+        $frontendDir = Join-Path $ScriptDir "Project system ENGINE\Frontend"
+        Write-Host "[*] Executing Optical ID Frame Freezing, Laser Scan & Autofill Verification..." -ForegroundColor Cyan
+        Push-Location $frontendDir
+        try {
+            npx tsx src/Libs/Testing/test_id_scan_freeze_and_autofill_browser.ts
+        } finally {
+            Pop-Location
+        }
+    }
+
+    "^(migrate|db-migrate)$" {
+        $migrateScript = Join-Path $ScriptDir "CommandStart\migrate.ps1"
+        if (Test-Path $migrateScript) {
+            & $migrateScript
+        } else {
+            Write-Error "Could not find migrate.ps1 at $migrateScript"
+            exit 1
+        }
+    }
+
     "^(menu)$" {
         if (Test-Path $manageScript) {
             & $manageScript
