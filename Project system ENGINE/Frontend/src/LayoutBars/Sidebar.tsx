@@ -187,6 +187,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
     menuItems = [
       { to: '/civilian/dashboard', label: 'Emergency Hub', icon: Home },
+      { to: '/civilian/live-map', label: 'Tactical Live Map', icon: Map },
       { to: '/civilian/report', label: 'Report Incident (SOS)', icon: Camera },
       { to: '/civilian/my-reports', label: 'My Reports Feed', icon: AlertTriangle },
       { to: '/civilian/alerts', label: 'Municipal Warnings', icon: Bell },

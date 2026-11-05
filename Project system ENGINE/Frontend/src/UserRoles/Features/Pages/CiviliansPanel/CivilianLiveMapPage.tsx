@@ -208,16 +208,49 @@ export const CivilianLiveMapPage: React.FC = () => {
           lat: r.latitude,
           lng: r.longitude,
           title: `Your SOS: ${r.title} [${(r.status || 'Reported').toUpperCase()}]`,
+          status: r.status || 'Reported',
           type: 'incident' as const,
           category: r.category,
           severity: r.severity,
-          agency: r.recommendedAgencyUnit || undefined
+          agency: r.recommendedAgencyUnit || undefined,
+          evidenceUrl: r.hasImage ? (r.imageUrl || `/api/reports/${r.id}/image`) : undefined,
+          verifiedAt: r.verifiedAt,
+          requiresManualVerification: r.requiresManualVerification,
+          gpsAccuracyMeters: r.gpsAccuracyMeters ?? undefined,
+          description: r.note || r.locationLabel,
+          allocatedUnitCode: r.allocatedUnitCode,
+          allocatedUnitId: r.allocatedUnitId
         });
       });
     }
 
+    if (activeLayer === 'ALL') {
+      reports
+        .filter((r) => !myReports.some((m) => m.id === r.id) && (r.status === 'Verified' || r.status === 'Allocated' || r.status === 'EnRoute' || r.status === 'OnScene' || Boolean(r.verifiedAt)))
+        .forEach((r) => {
+          list.push({
+            id: `community-report-${r.id}`,
+            lat: r.latitude,
+            lng: r.longitude,
+            title: `Community Alert: ${r.title}`,
+            status: r.status || 'Verified',
+            type: 'incident' as const,
+            category: r.category,
+            severity: r.severity,
+            agency: r.recommendedAgencyUnit || undefined,
+            evidenceUrl: r.hasImage ? (r.imageUrl || `/api/reports/${r.id}/image`) : undefined,
+            verifiedAt: r.verifiedAt,
+            requiresManualVerification: r.requiresManualVerification,
+            gpsAccuracyMeters: r.gpsAccuracyMeters ?? undefined,
+            description: r.note || r.locationLabel,
+            allocatedUnitCode: r.allocatedUnitCode,
+            allocatedUnitId: r.allocatedUnitId
+          });
+        });
+    }
+
     return list;
-  }, [coords.latitude, coords.longitude, fixtures, myReports, activeLayer]);
+  }, [coords.latitude, coords.longitude, fixtures, myReports, reports, activeLayer]);
 
   const getDialNumber = (hotline: string): string => {
     const raw = hotline.split('/')[0].trim();

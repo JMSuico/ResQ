@@ -225,7 +225,7 @@ public class ReportService(
             Note = InputSanitizer.Sanitize(request.Note),
             Category = request.Category,
             Severity = request.Severity,
-            Status = requiresManualVerif ? ReportStatus.Reported : ReportStatus.Reported,
+            Status = requiresManualVerif ? ReportStatus.Reported : ReportStatus.Verified,
             Latitude = request.Latitude,
             Longitude = request.Longitude,
             GpsAccuracyMeters = request.GpsAccuracyMeters,
@@ -235,7 +235,8 @@ public class ReportService(
             RecommendedAgencyUnit = recommendedAgency,
             LocationLabel = InputSanitizer.Sanitize(request.LocationLabel),
             ImageCapturePath = imagePath,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            VerifiedAt = requiresManualVerif ? null : DateTime.UtcNow
         };
 
         await reportRepo.AddAsync(report, ct);
@@ -243,7 +244,7 @@ public class ReportService(
         // Audit Log
         string prevHash = await auditRepo.GetLatestHashAsync(ct);
         DateTime now = DateTime.UtcNow;
-        string action = "REPORT_CREATED";
+        string action = requiresManualVerif ? "REPORT_CREATED" : "REPORT_AUTO_VERIFIED";
         string payload = $"Report: {refCode}, Cat: {report.Category}, Sev: {report.Severity}, Loc: {report.Latitude:F4},{report.Longitude:F4}, Blurry: {report.IsBlurry}, RecAgency: {recommendedAgency}";
         string newHash = AuditHelper.ComputeChainedHash(prevHash, now, reporterId, action, payload);
 

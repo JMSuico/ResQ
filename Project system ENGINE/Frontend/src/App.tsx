@@ -38,6 +38,7 @@ import { MyReportsHistory } from '@/UserRoles/Features/Pages/CiviliansPanel/MyRe
 import { CommunityAlertsPage } from '@/UserRoles/Features/Pages/CiviliansPanel/CommunityAlertsPage';
 import { EmergencyHotlinesUnits } from '@/UserRoles/Features/Pages/CiviliansPanel/EmergencyHotlinesUnits';
 import { CivilianProfile } from '@/UserRoles/Features/Pages/CiviliansPanel/CivilianProfile';
+import { CivilianLiveMapPage } from '@/UserRoles/Features/Pages/CiviliansPanel/CivilianLiveMapPage';
 
 // Smart Dynamic Role Routers for Universal Compatibility
 const getStoredSessionData = (): { role?: string; unit?: string } | null => {
@@ -231,6 +232,8 @@ export const App: React.FC = () => {
         <Route path="/civilian" element={isAdminPort ? <Navigate to="/admin/login" replace /> : <CivilianLayout />}>
           <Route index element={<CivilianDashboard />} />
           <Route path="dashboard" element={<CivilianDashboard />} />
+          <Route path="live-map" element={<CivilianLiveMapPage />} />
+          <Route path="map" element={<CivilianLiveMapPage />} />
           <Route path="report" element={<ReportAccidentPage />} />
           <Route path="my-reports" element={<MyReportsHistory />} />
           <Route path="alerts" element={<CommunityAlertsPage />} />

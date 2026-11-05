@@ -350,8 +350,14 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         verifiedTimestamps[inc.id] ||
         (inc.verifiedAt ? new Date(inc.verifiedAt).getTime() : null);
 
-      // Hide pointer once 5-minute verification countdown completes (00:00 -> 100% solved)
-      if (verifiedStart) {
+      // Hide pointer once 5-minute countdown completes ONLY IF marked responded or resolved
+      const isResolvedOrResponded =
+        Boolean(respondedIds[inc.id]) ||
+        inc.status?.toLowerCase() === 'responded' ||
+        inc.status?.toLowerCase() === 'resolved' ||
+        inc.status?.toLowerCase() === 'closed';
+
+      if (isResolvedOrResponded && verifiedStart) {
         const remaining = getRemainingCloseSeconds(verifiedStart);
         if (remaining <= 0) {
           return false;
