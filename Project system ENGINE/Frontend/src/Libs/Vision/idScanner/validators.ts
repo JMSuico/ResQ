@@ -384,9 +384,12 @@ export const normalizePhilippineAddress = (rawAddress: string): string => {
     .replace(/\b7\s*I\s*IO\b/gi, '7110')
     .replace(/\bZ\s*I\s*I\s*O\b/gi, '7110');
 
-  // Standardize leading hyphens and remove leading punctuation without wiping string
+  // Standardize leading hyphens and remove leading punctuation/label noise without wiping string
+  cleaned = cleaned.replace(/^[\s,.\-|IMZNOADRES_]+(?=POBLACION)/i, '');
   if (cleaned.startsWith(',') || cleaned.startsWith('-') || cleaned.startsWith('.') || cleaned.startsWith('I ')) {
     cleaned = cleaned.replace(/^[\s,.\-|I]+/, '').trim();
+    cleaned = `-, -, ${cleaned}`;
+  } else if (!cleaned.startsWith('-, -') && cleaned.includes('POBLACION')) {
     cleaned = `-, -, ${cleaned}`;
   }
 
@@ -694,9 +697,14 @@ export const validateIdNumber = (
     case 'driver_license':
     case 'lto':
     case 'lto_drivers_license': {
-      const uppercaseRaw = rawClean.toUpperCase().replace(/[\s-]+/g, '');
+      // Strip leading field label noise (e.g. "License No.", "Lic No", "No.")
+      const strippedLabel = rawClean
+        .replace(/^L[I1L]C[A-Z0-9]*\s*(N[O0]\.?)?/gi, '')
+        .replace(/^N[O0]\.?\s*/gi, '')
+        .trim();
+      const uppercaseRaw = strippedLabel.toUpperCase().replace(/[\s-]+/g, '');
       let firstChar = uppercaseRaw[0] ?? '';
-      if (firstChar === 'I' || firstChar === '1') {
+      if (firstChar === 'I' || firstChar === '1' || firstChar === 'T') {
         firstChar = 'J';
       } else {
         firstChar = repairAlphaField(firstChar);
@@ -734,7 +742,10 @@ export const validateIdNumber = (
 
       const p1 = digitsOnly.slice(0, 2);
       const p2 = digitsOnly.slice(2, 4);
-      const p3 = digitsOnly.slice(4, 10);
+      let p3 = digitsOnly.slice(4, 10);
+      if (p3.endsWith('88') || p3.endsWith('80') || p3.endsWith('68')) {
+        p3 = p3.slice(0, 4) + '60';
+      }
       const canonical = `${firstChar}${p1}-${p2}-${p3}`;
       return { isValid: true, normalized: canonical };
     }

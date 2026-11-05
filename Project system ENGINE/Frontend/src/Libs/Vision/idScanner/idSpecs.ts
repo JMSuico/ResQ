@@ -275,7 +275,7 @@ const driversSpec: GovernmentIdSpec = {
     {
       fieldKey: 'address',
       label: 'Address',
-      relativeRoi: { x: 0.34, y: 0.49, w: 0.63, h: 0.13 },
+      relativeRoi: { x: 0.34, y: 0.51, w: 0.63, h: 0.12 },
       expectedCharType: 'ALPHANUMERIC',
       regexPattern: /^.+$/,
       required: true,
@@ -283,7 +283,7 @@ const driversSpec: GovernmentIdSpec = {
     {
       fieldKey: 'licenseNumber',
       label: "Driver's License Number",
-      relativeRoi: { x: 0.34, y: 0.63, w: 0.25, h: 0.07 },
+      relativeRoi: { x: 0.34, y: 0.65, w: 0.25, h: 0.055 },
       expectedCharType: 'ALPHANUMERIC',
       regexPattern: /^[A-Z][0-9]{2}-[0-9]{2}-[0-9]{6}$/,
       required: true,

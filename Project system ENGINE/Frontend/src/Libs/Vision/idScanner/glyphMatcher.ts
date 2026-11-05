@@ -432,12 +432,12 @@ export const disambiguateGlyph = (
     }
   }
 
-  // 14. 6 vs 8: in 6, top-left (rows 0..4 cols 0..4) is empty, and bottom has closed loop
+  // 14. 6 vs 8: in 6, top-right (rows 1..5 cols 11..15) is completely empty, whereas in 8 it has a top-right loop
   if (isNumeric && (candidateChar === '8' || candidateChar === 'B' || candidateChar === '6')) {
-    let topL = 0;
-    for (let y = 0; y <= 4; y++) {
-      for (let x = 0; x <= 4; x++) {
-        if (glyph16[y * 16 + x] > 0) topL++;
+    let topR = 0;
+    for (let y = 1; y <= 5; y++) {
+      for (let x = 11; x <= 15; x++) {
+        if (glyph16[y * 16 + x] > 0) topR++;
       }
     }
     let botHole = 0;
@@ -446,18 +446,20 @@ export const disambiguateGlyph = (
         if (glyph16[y * 16 + x] === 0) botHole++;
       }
     }
-    if (topL <= 2 && botHole >= 6) {
+    if (topR <= 2 && botHole >= 4) {
       return '6';
     }
   }
 
-  // 15. 0 vs 8: in 0, center (rows 6..9 cols 6..9) is completely hollow with no waist bar
+  // 15. 0 vs 8: in 0, center interior (rows 7..8 cols 6..9) is completely hollow with no waist bar
   if (isNumeric && (candidateChar === '8' || candidateChar === 'B' || candidateChar === '0' || candidateChar === 'O' || candidateChar === 'D')) {
-    let midWaist = 0;
-    for (let x = 5; x <= 10; x++) {
-      if (glyph16[7 * 16 + x] > 0 || glyph16[8 * 16 + x] > 0) midWaist++;
+    let midInteriorWaist = 0;
+    for (let y = 7; y <= 8; y++) {
+      for (let x = 6; x <= 9; x++) {
+        if (glyph16[y * 16 + x] > 0) midInteriorWaist++;
+      }
     }
-    if (midWaist <= 2) {
+    if (midInteriorWaist <= 1) {
       return '0';
     }
   }
