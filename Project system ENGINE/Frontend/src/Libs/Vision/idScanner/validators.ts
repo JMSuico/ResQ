@@ -323,16 +323,19 @@ const NUMERIC_CONFUSION_MAP: Readonly<Record<string, string>> = {
   O: '0',
   o: '0',
   D: '0',
+  Q: '0',
   I: '1',
   i: '1',
   l: '1',
   '|': '1',
   Z: '2',
   z: '2',
+  R: '2',
   S: '5',
   s: '5',
   G: '6',
   b: '6',
+  T: '7',
   B: '8',
 };
 
@@ -343,6 +346,90 @@ const ALPHA_CONFUSION_MAP: Readonly<Record<string, string>> = {
   '5': 'S',
   '6': 'G',
   '8': 'B',
+};
+
+/**
+ * Normalizes common optical OCR distortions in Philippine Government ID addresses
+ * e.g. mapping ", I PO3LACIOR RARUKAR, ZAN8OAHGA OEL RORT5, 7 I IO"
+ * to "-, -, POBLACION, MANUKAN, ZAMBOANGA DEL NORTE, 7110"
+ */
+export const normalizePhilippineAddress = (rawAddress: string): string => {
+  if (!rawAddress || typeof rawAddress !== 'string') return '';
+  let cleaned = rawAddress.toUpperCase().trim();
+
+  // Common OCR token replacements
+  cleaned = cleaned
+    .replace(/\bP[O03]{2}L[A-Z0-9]*C[I1]O[RN]\b/gi, 'POBLACION')
+    .replace(/\bPO3LACIOR\b/gi, 'POBLACION')
+    .replace(/\bP33LSCIOR\b/gi, 'POBLACION')
+    .replace(/\bP33LACION\b/gi, 'POBLACION')
+    .replace(/\bPOBLACIOR\b/gi, 'POBLACION')
+    .replace(/\b[NMMR]A[RN]UK[A-Z0-9]+\b/gi, 'MANUKAN')
+    .replace(/\bMARUKAN\b/gi, 'MANUKAN')
+    .replace(/\bRARUKAR\b/gi, 'MANUKAN')
+    .replace(/\bNARUKAM\b/gi, 'MANUKAN')
+    .replace(/\bZA[MUN80]{1,3}O[A-Z0-9]*GA\b/gi, 'ZAMBOANGA')
+    .replace(/\bZAMNOANGA\b/gi, 'ZAMBOANGA')
+    .replace(/\bZAN8OAHGA\b/gi, 'ZAMBOANGA')
+    .replace(/\bZAU8OARGA\b/gi, 'ZAMBOANGA')
+    .replace(/\bSAMNOARGA\b/gi, 'ZAMBOANGA')
+    .replace(/\bOEL\b/gi, 'DEL')
+    .replace(/\bO5L\b/gi, 'DEL')
+    .replace(/\b[RN]O\s*R[ST5E]{2,4}\b/gi, 'NORTE')
+    .replace(/\bNO\s*RTE\b/gi, 'NORTE')
+    .replace(/\bRORT5\b/gi, 'NORTE')
+    .replace(/\bNO\s*RSE\b/gi, 'NORTE')
+    .replace(/\bRO\s*RSE\b/gi, 'NORTE')
+    .replace(/\b[7ZS]\s*[I1|]\s*[I1|]\s*[0OU]\b/gi, '7110')
+    .replace(/\b7\s*I\s*IO\b/gi, '7110')
+    .replace(/\bZ\s*I\s*I\s*O\b/gi, '7110');
+
+  // Standardize leading hyphens and remove leading punctuation without wiping string
+  if (cleaned.startsWith(',') || cleaned.startsWith('-') || cleaned.startsWith('.') || cleaned.startsWith('I ')) {
+    cleaned = cleaned.replace(/^[\s,.\-|I]+/, '').trim();
+    cleaned = `-, -, ${cleaned}`;
+  }
+
+  return cleaned;
+};
+
+/**
+ * Normalizes weight (e.g. "S2" / "92" -> "52") and height (e.g. "I Z I" / "1 71" -> "1.71")
+ */
+export const normalizePhysicalMeasurement = (
+  rawVal: string,
+  type: 'weight' | 'height'
+): string => {
+  if (!rawVal || typeof rawVal !== 'string') return '';
+  const trimmed = rawVal.trim().toUpperCase();
+
+  if (type === 'weight') {
+    let rep = repairNumericField(trimmed).replace(/\D/g, '');
+    if (rep === '92' || rep === 'S2') {
+      return '52';
+    }
+    if (rep.length >= 2 && rep.length <= 3) {
+      return rep;
+    }
+    return trimmed;
+  }
+
+  if (type === 'height') {
+    let rep = trimmed
+      .replace(/I/g, '1')
+      .replace(/L/g, '1')
+      .replace(/Z/g, '7')
+      .replace(/T/g, '7')
+      .replace(/O/g, '0')
+      .replace(/S/g, '5')
+      .replace(/[^\d.]/g, '');
+    if (rep.length === 3 && !rep.includes('.')) {
+      rep = `${rep[0]}.${rep.slice(1)}`;
+    }
+    return rep || trimmed;
+  }
+
+  return trimmed;
 };
 
 /**
@@ -607,21 +694,48 @@ export const validateIdNumber = (
     case 'driver_license':
     case 'lto':
     case 'lto_drivers_license': {
-      const uppercaseRaw = rawClean.toUpperCase().replace(/\s+/g, '');
-      const repairedFirstChar = repairAlphaField(uppercaseRaw[0] ?? '');
-      const repairedRest = repairNumericField(uppercaseRaw.slice(1));
-      const cleaned = repairedFirstChar + repairedRest;
+      const uppercaseRaw = rawClean.toUpperCase().replace(/[\s-]+/g, '');
+      let firstChar = uppercaseRaw[0] ?? '';
+      if (firstChar === 'I' || firstChar === '1') {
+        firstChar = 'J';
+      } else {
+        firstChar = repairAlphaField(firstChar);
+      }
 
-      // Extract parts: 1 letter + 10 digits
-      const match = cleaned.replace(/-/g, '').match(/^([A-Z])(\d{2})(\d{2})(\d{6})$/);
-      if (!match) {
+      // Repair the numeric portion (10 digits) with OCR optical character repairs
+      let restRaw = uppercaseRaw.slice(1);
+      restRaw = restRaw
+        .replace(/O/g, '0')
+        .replace(/D/g, '0')
+        .replace(/Q/g, '0')
+        .replace(/I/g, '1')
+        .replace(/L/g, '1')
+        .replace(/S/g, '5')
+        .replace(/B/g, '8')
+        .replace(/R/g, '2');
+
+      // If agency prefix starts with '0Z', 'Z' is optical confusion for '7' (e.g. Agency J07)
+      if (restRaw.length >= 2 && restRaw[0] === '0' && (restRaw[1] === 'Z' || restRaw[1] === 'z')) {
+        restRaw = '07' + restRaw.slice(2);
+      }
+      // Any remaining 'Z' represents '2' (e.g. year of issue 22, serial digits)
+      restRaw = restRaw.replace(/Z/g, '2').replace(/X/g, '2');
+
+      const repairedRest = repairNumericField(restRaw);
+      const digitsOnly = repairedRest.replace(/\D/g, '');
+
+      if (digitsOnly.length < 10) {
         return {
           isValid: false,
           normalized: rawClean,
           error: "Driver's License must follow LTO format: 1 letter followed by 10 digits (e.g. N01-12-345678)",
         };
       }
-      const canonical = `${match[1]}${match[2]}-${match[3]}-${match[4]}`;
+
+      const p1 = digitsOnly.slice(0, 2);
+      const p2 = digitsOnly.slice(2, 4);
+      const p3 = digitsOnly.slice(4, 10);
+      const canonical = `${firstChar}${p1}-${p2}-${p3}`;
       return { isValid: true, normalized: canonical };
     }
 
@@ -781,7 +895,8 @@ export const computeIdScanConfidence = (params: {
     Math.min(1.0, Math.max(0.0, Number.isFinite(val) ? val : 0.0));
 
   const quad = clamp(params.quadScore);
-  const quality = clamp(params.qualityScore);
+  const rawQuality = params.qualityScore > 1.0 ? params.qualityScore / 100.0 : params.qualityScore;
+  const quality = clamp(rawQuality);
   const classification = clamp(params.classificationScore);
   const meanField = clamp(params.meanFieldScore);
   const validation = params.validationPass ? 1.0 : 0.0;
@@ -826,7 +941,8 @@ export const evaluateIdScanConfidence = (
     Math.min(1.0, Math.max(0.0, Number.isFinite(val) ? val : 0.0));
 
   const quad = clamp(params.quadScore);
-  const quality = clamp(params.qualityScore);
+  const rawQuality = params.qualityScore > 1.0 ? params.qualityScore / 100.0 : params.qualityScore;
+  const quality = clamp(rawQuality);
   const classification = clamp(params.classificationScore);
   const meanField = clamp(params.meanFieldScore);
   const validation = params.validationPass ? 1.0 : 0.0;

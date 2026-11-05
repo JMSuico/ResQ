@@ -17,4 +17,5 @@ export * from './templateMatch';
 export * from './ai';
 export * from './idScanWorker';
 export * from './idScanEngine';
+export * from './cardPresenceGate';
 export * from './face/skinFaceTracker';

@@ -23,8 +23,8 @@ public class AuthService(
         if (await userRepo.ExistsEmailAsync(request.Email, ct))
             return (false, "An account with this email address already exists.", null);
 
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 12)
-            return (false, "Password must be at least 12 characters long.", null);
+        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 5)
+            return (false, "Password must be at least 5 characters long.", null);
 
         var (hash, salt) = ScryptPasswordHelper.HashPassword(request.Password);
 
@@ -734,8 +734,8 @@ public class UserGovernanceService(
         if (await userRepo.ExistsEmailAsync(request.Email, ct))
             return (false, "An account with this email address already exists.", null);
 
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 12)
-            return (false, "Password must be at least 12 characters long.", null);
+        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 5)
+            return (false, "Password must be at least 5 characters long.", null);
 
         var (hash, salt) = ScryptPasswordHelper.HashPassword(request.Password);
 

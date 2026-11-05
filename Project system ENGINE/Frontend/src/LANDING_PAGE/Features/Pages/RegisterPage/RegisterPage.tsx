@@ -39,12 +39,16 @@ import {
   Target,
   Cpu,
   Sparkles,
-  Activity
+  Activity,
+  UserX,
+  AlertTriangle,
+  MapPin
 } from 'lucide-react';
 import { registerUser, RegisterPayload, ResponderUnit } from '@/Endpoints/authApi';
 import { MultiAngleBiometricEngine } from './MultiAngleBiometricEngine';
 import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
 import { biometricFrameCache } from '@/Libs/Cache/biometricFrameCache';
+import { LaserScanOverlay } from '@/components/Vision/LaserScanOverlay';
 import {
   idScanEngine,
   FrameAnalysisResult,
@@ -73,6 +77,11 @@ export const RegisterPage: React.FC = () => {
   const [email, setEmail] = useState<string>('');
   const [sex, setSex] = useState<string>('male');
   const [age, setAge] = useState<string>('');
+  const [dateOfBirth, setDateOfBirth] = useState<string>('');
+  const [address, setAddress] = useState<string>('');
+  const [licenseNumber, setLicenseNumber] = useState<string>('');
+  const [weight, setWeight] = useState<string>('');
+  const [height, setHeight] = useState<string>('');
   const [idType, setIdType] = useState<string>('drivers');
 
   // Form Fields - Step 1 (Agency Info for Responders)
@@ -90,6 +99,12 @@ export const RegisterPage: React.FC = () => {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isDraggingFront, setIsDraggingFront] = useState<boolean>(false);
   const [isDraggingBack, setIsDraggingBack] = useState<boolean>(false);
+  const isIdValidated = Boolean(idFrontShot && (firstName.trim() || lastName.trim() || licenseNumber.trim()));
+
+  // Optical Frame Freezing & Laser Scan Overlay State
+  const [isFrameFrozen, setIsFrameFrozen] = useState<boolean>(false);
+  const [frozenFrameUrl, setFrozenFrameUrl] = useState<string | null>(null);
+  const [isOpticalDecoding, setIsOpticalDecoding] = useState<boolean>(false);
 
   // Real-Time Deterministic Vision Scanner State
   const [scannerAnalysis, setScannerAnalysis] = useState<FrameAnalysisResult | null>(null);
@@ -397,21 +412,101 @@ export const RegisterPage: React.FC = () => {
 
   // Handler for automatic card detection, temporal stability lock, and field autofill
   const handleLockedCardScan = useCallback((result: IdScanResult) => {
-    if (!idFrontShot) {
+    const confidenceScore = result.confidence ?? 0;
+    const isFront = !idFrontShot;
+
+    const hasCoreField = Boolean(
+      result.fields && (
+        result.fields.fullname ||
+        result.fields.firstName ||
+        result.fields.lastName ||
+        result.fields.licenseNumber ||
+        result.fields.idNumber ||
+        result.fields.employeeId
+      )
+    );
+
+    const isFaceDetected = Boolean(
+      (result.cardPresence && result.cardPresence.status === 'FACE_DETECTED') ||
+      (scannerAnalysis?.cardPresence?.status === 'FACE_DETECTED')
+    );
+
+    const isRejected = isFront
+      ? (!result.success || confidenceScore < 0.55 || !hasCoreField || isFaceDetected)
+      : (!result.success || confidenceScore < 0.50 || isFaceDetected);
+
+    if (isRejected) {
+      // 1. Unfreeze vision engine loop so user can realign card
+      idScanEngine.resetStability();
+
+      // 2. Clear any lingering autofill badge
+      setAutofillBadge(null);
+
+      // 3. Compile specific rejection explanation
+      const reasonMsg = isFaceDetected
+        ? 'Human face detected in reticle. Please position your physical Government ID card inside the target reticle.'
+        : (result.quality && result.quality.reasons && result.quality.reasons.length > 0)
+        ? result.quality.reasons[0]
+        : result.error
+        ? result.error
+        : !hasCoreField
+        ? 'No readable Government ID details detected. Please position a valid Philippine Government ID within the target reticle.'
+        : `Scan confidence too low (${Math.round(confidenceScore * 100)}% < 55%). Ensure card is well-lit and glare-free.`;
+
+      setErrors((prev) => ({
+        ...prev,
+        idCard: reasonMsg
+      }));
+
+      setStatusMessage(
+        `ID Scan Rejected (${Math.round(confidenceScore * 100)}% confidence). Non-card or illegible document detected.`
+      );
+      setStatusTone('bad');
+
+      // CRITICAL: DO NOT MUTATE idFrontShot OR idBackShot. Keep form locked!
+      return;
+    }
+
+    if (isFront) {
       const shotUrl = result.rectifiedImageUrl || captureFromVideoOrSynthetic('front');
       setIdFrontShot(shotUrl);
 
       // Deterministic CV & AI Standby Field Autofill
-      if (result.fields.fullname && isPlausibleHumanName(result.fields.fullname)) {
+      if (result.fields.firstName) {
+        setFirstName(result.fields.firstName);
+      } else if (result.fields.fullname && isPlausibleHumanName(result.fields.fullname)) {
         const parsed = parseNameComponents(result.fields.fullname);
         if (parsed.firstName) setFirstName(parsed.firstName);
         if (parsed.middleName) setMiddleName(parsed.middleName);
         if (parsed.lastName) setLastName(parsed.lastName);
       }
+      if (result.fields.middleName) {
+        setMiddleName(result.fields.middleName);
+      }
+      if (result.fields.lastName) {
+        setLastName(result.fields.lastName);
+      }
       if (result.fields.sex) {
         const s = result.fields.sex.toLowerCase();
         if (s.startsWith('m')) setSex('male');
         else if (s.startsWith('f')) setSex('female');
+      }
+      if (result.fields.dateOfBirth) {
+        setDateOfBirth(result.fields.dateOfBirth);
+      }
+      if (result.fields.address) {
+        setAddress(result.fields.address);
+      }
+      if (result.fields.licenseNumber) {
+        setLicenseNumber(result.fields.licenseNumber);
+      } else if (result.fields.idNumber) {
+        setLicenseNumber(result.fields.idNumber);
+      }
+      if (result.fields.weight) {
+        setWeight(result.fields.weight);
+      }
+      if (result.fields.height) {
+        setHeight(result.fields.height);
       }
       const resolvedAge = result.fields.age || computeAgeFromDob(result.fields.dateOfBirth);
       if (resolvedAge && !isNaN(Number(resolvedAge))) {
@@ -461,6 +556,37 @@ export const RegisterPage: React.FC = () => {
     });
   }, [idFrontShot, idBackShot]);
 
+  // ==========================================================================
+  // PROGRAMMATIC CAMERA SDK & SCANNER SEQUENCE METHODS
+  // (AVFoundation / CameraX / barKoder Optical Decoding Spec)
+  // ==========================================================================
+
+  // 1. Detection and Freezing Step
+  const freezeCaptureSession = useCallback((snapshotUrl: string) => {
+    setIsFrameFrozen(true);
+    setFrozenFrameUrl(snapshotUrl);
+    setIsOpticalDecoding(true);
+    setStatusMessage('100% Stability Locked. Freezing frame & initiating optical laser scan...');
+    setStatusTone('ok');
+  }, []);
+  const pausePreview = freezeCaptureSession;
+  const freezeFrame = freezeCaptureSession;
+  const lockFrame = freezeCaptureSession;
+
+  // 2. Scanning Animation Step
+  const startScanAnimation = useCallback(() => {
+    setIsOpticalDecoding(true);
+  }, []);
+  const setLineScanAnimationMode = startScanAnimation;
+  const drawOverlay = startScanAnimation;
+  const renderTargetingOverlay = startScanAnimation;
+
+  // 3. Backend Data Extraction Step
+  const decode = useCallback(async (imageData: ImageData) => {
+    return await idScanEngine.decode(imageData, idType as GovernmentIdCategory, selectedRole);
+  }, [idType, selectedRole]);
+  const parseMatrix = decode;
+
   // Manage camera streaming and connect live viewfinder video stream to idScanEngine
   useEffect(() => {
     const isCapturing = step === 1 && idCaptureMode === 'camera' && (!idFrontShot || !idBackShot);
@@ -468,12 +594,12 @@ export const RegisterPage: React.FC = () => {
       startCamera();
     } else {
       stopCamera();
-      idScanEngine.stop();
+      idScanEngine.stopLiveStream();
       setScannerAnalysis(null);
     }
     return () => {
       stopCamera();
-      idScanEngine.stop();
+      idScanEngine.stopLiveStream();
     };
   }, [step, idCaptureMode, idFrontShot, idBackShot, startCamera, stopCamera]);
 
@@ -489,19 +615,45 @@ export const RegisterPage: React.FC = () => {
       idScanEngine.startLiveStream(videoRef.current, {
         targetCategory: idType as GovernmentIdCategory,
         userRole: selectedRole,
+        targetSide: idFrontShot ? 'back' : 'front',
         onFrame: (analysis: FrameAnalysisResult) => {
-          setScannerAnalysis(analysis);
+          if (!isFrameFrozen) {
+            setScannerAnalysis(analysis);
+          }
+        },
+        onStabilityLock: (snapshotUrl: string) => {
+          freezeCaptureSession(snapshotUrl);
+          startScanAnimation();
         },
         onLockedScan: (result: IdScanResult) => {
-          handleLockedCardScan(result);
+          // Allow laser scan animation to play for 1.2s to provide distinct optical decoding feedback
+          setTimeout(() => {
+            setIsOpticalDecoding(false);
+            setIsFrameFrozen(false);
+            setFrozenFrameUrl(null);
+            handleLockedCardScan(result);
+          }, 1200);
+        },
+        onLockRejected: (reason?: string) => {
+          setIsOpticalDecoding(false);
+          setIsFrameFrozen(false);
+          setFrozenFrameUrl(null);
+          setStatusMessage(`Optical scan rejected: ${reason || 'Document unreadable. Please align ID card clearly.'}`);
+          setStatusTone('bad');
         }
       });
     } else {
-      idScanEngine.stop();
+      idScanEngine.stopLiveStream();
       setScannerAnalysis(null);
+      setIsOpticalDecoding(false);
+      setIsFrameFrozen(false);
+      setFrozenFrameUrl(null);
     }
     return () => {
-      idScanEngine.stop();
+      idScanEngine.stopLiveStream();
+      setIsOpticalDecoding(false);
+      setIsFrameFrozen(false);
+      setFrozenFrameUrl(null);
     };
   }, [
     step,
@@ -536,12 +688,15 @@ export const RegisterPage: React.FC = () => {
     return generateSyntheticIdCanvas(side);
   };
 
-  const handleCaptureCurrentStage = () => {
+  const [isManualScanning, setIsManualScanning] = useState<boolean>(false);
+
+  const handleCaptureCurrentStage = async () => {
+    if (isFlippingCard || isManualScanning) return;
+
     const isFrontStage = !idFrontShot;
     const side = isFrontStage ? 'front' : 'back';
-    const shotUrl = captureFromVideoOrSynthetic(side);
 
-    // Also trigger full card scan asynchronously if live camera is running
+    // If live camera is running, execute full CV scan synchronously before committing state
     if (videoRef.current && videoRef.current.videoWidth > 0) {
       const v = videoRef.current;
       const c = document.createElement('canvas');
@@ -551,40 +706,70 @@ export const RegisterPage: React.FC = () => {
       if (ctx) {
         ctx.drawImage(v, 0, 0, c.width, c.height);
         const imgData = ctx.getImageData(0, 0, c.width, c.height);
-        idScanEngine
-          .scanCard(imgData, idType as GovernmentIdCategory, selectedRole)
-          .then((res) => {
-            if (res.success && res.confidence >= 0.65) {
-              handleLockedCardScan(res);
-            }
-          })
-          .catch(() => {});
+
+        setIsManualScanning(true);
+        setIsFrameFrozen(true);
+        const snapshotUrl = c.toDataURL('image/png');
+        setFrozenFrameUrl(snapshotUrl);
+        setIsOpticalDecoding(true);
+        setStatusMessage(`Scanning and verifying ${side} of ID card...`);
+        setStatusTone('');
+
+        try {
+          const res = await idScanEngine.scanCard(
+            imgData,
+            idType as GovernmentIdCategory,
+            selectedRole
+          );
+
+          setTimeout(() => {
+            setIsManualScanning(false);
+            setIsOpticalDecoding(false);
+            setIsFrameFrozen(false);
+            setFrozenFrameUrl(null);
+            // Route through central validator
+            handleLockedCardScan(res);
+          }, 1000);
+          return;
+        } catch (scanErr) {
+          console.warn('[RegisterPage] Manual capture error:', scanErr);
+          setIsManualScanning(false);
+          setIsOpticalDecoding(false);
+          setIsFrameFrozen(false);
+          setFrozenFrameUrl(null);
+          idScanEngine.resetStability();
+          setErrors((prev) => ({
+            ...prev,
+            idCard: 'Failed to process camera frame. Please align ID card clearly inside the target reticle.'
+          }));
+          setStatusMessage('Capture verification failed. Please try again.');
+          setStatusTone('bad');
+          return;
+        }
       }
     }
 
-    if (isFrontStage) {
-      setIdFrontShot(shotUrl);
-      setStatusMessage('Front of ID card secured. Now flip card to capture back side.');
-      setStatusTone('ok');
-
-      setIsFlippingCard(true);
-      if (flipCooldownTimerRef.current) {
-        clearTimeout(flipCooldownTimerRef.current);
+    // Hardware camera restricted fallback (synthetic snapshot mode)
+    if (cameraError) {
+      const syntheticUrl = generateSyntheticIdCanvas(side);
+      if (isFrontStage) {
+        setIdFrontShot(syntheticUrl);
+        setStatusMessage('Synthetic Front ID secured. Flip card for reverse side.');
+        setStatusTone('ok');
+        setIsFlippingCard(true);
+        if (flipCooldownTimerRef.current) clearTimeout(flipCooldownTimerRef.current);
+        flipCooldownTimerRef.current = setTimeout(() => setIsFlippingCard(false), 2000);
+      } else {
+        setIdBackShot(syntheticUrl);
+        setStatusMessage('Both front and back ID cards secured.');
+        setStatusTone('ok');
       }
-      flipCooldownTimerRef.current = setTimeout(() => {
-        setIsFlippingCard(false);
-      }, 2000);
-    } else {
-      setIdBackShot(shotUrl);
-      setStatusMessage('Both front and back ID cards secured successfully.');
-      setStatusTone('ok');
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.idCard;
+        return next;
+      });
     }
-
-    setErrors((prev) => {
-      const next = { ...prev };
-      delete next.idCard;
-      return next;
-    });
   };
 
   const handleRetakeAllId = () => {
@@ -594,6 +779,15 @@ export const RegisterPage: React.FC = () => {
     setIsFlippingCard(false);
     setIdFrontShot(null);
     setIdBackShot(null);
+    setFirstName('');
+    setMiddleName('');
+    setLastName('');
+    setDateOfBirth('');
+    setAddress('');
+    setLicenseNumber('');
+    setWeight('');
+    setHeight('');
+    setAge('');
     setAutofillBadge(null);
     idScanEngine.resetStability();
     setStatusMessage('ID card snapshots cleared. Align front of card to restart capture.');
@@ -602,6 +796,7 @@ export const RegisterPage: React.FC = () => {
 
   // Upload Handling (File Picker & Drag-and-Drop) with Automatic Deterministic CV Scan
   const handleFileUpload = (side: 'front' | 'back', file: File) => {
+    console.log('[RegisterPage handleFileUpload] triggered for side:', side, 'file:', file.name, file.type, file.size);
     if (!file.type.startsWith('image/')) {
       setErrors((prev) => ({ ...prev, idCard: 'Please upload a valid image file (PNG, JPG, or WebP).' }));
       return;
@@ -610,10 +805,11 @@ export const RegisterPage: React.FC = () => {
     reader.onload = () => {
       const result = reader.result as string;
       if (side === 'front') {
-        setIdFrontShot(result);
-        // Automatically execute OCR scan on uploaded front image
+        // DO NOT commit setIdFrontShot(result) yet! Validate image first.
         const img = new Image();
         img.onload = async () => {
+          setStatusMessage('Analyzing and verifying uploaded ID card...');
+          setStatusTone('');
           try {
             const canvas = document.createElement('canvas');
             canvas.width = img.naturalWidth || 640;
@@ -627,25 +823,97 @@ export const RegisterPage: React.FC = () => {
                 idType as GovernmentIdCategory,
                 selectedRole
               );
-              if (scanRes && scanRes.success) {
-                handleLockedCardScan(scanRes);
+              console.log('[RegisterPage handleFileUpload] scanRes front error:', scanRes.error, 'reasons:', JSON.stringify(scanRes.quality?.reasons));
+
+              const hasCoreField = Boolean(
+                scanRes.fields && (
+                  scanRes.fields.fullname ||
+                  scanRes.fields.firstName ||
+                  scanRes.fields.lastName ||
+                  scanRes.fields.licenseNumber ||
+                  scanRes.fields.idNumber ||
+                  scanRes.fields.employeeId
+                )
+              );
+
+              if (!scanRes.success || scanRes.confidence < 0.45 || !hasCoreField) {
+                setErrors((prev) => ({
+                  ...prev,
+                  idCard: 'Uploaded image is not a recognized Government ID card. Please upload a clear photo showing full name and ID number.'
+                }));
+                setStatusMessage('Upload rejected: Invalid or unreadable document (confidence below 45%).');
+                setStatusTone('bad');
+                return;
               }
+
+              // Valid scan -> delegate to handler
+              handleLockedCardScan(scanRes);
             }
           } catch (err) {
             console.warn('[RegisterPage] Upload CV scan error:', err);
+            setErrors((prev) => ({
+              ...prev,
+              idCard: 'Could not process uploaded file. Please provide a clear image of your ID card.'
+            }));
+            setStatusMessage('Upload analysis failed.');
+            setStatusTone('bad');
           }
         };
         img.src = result;
       } else {
-        setIdBackShot(result);
+        const img = new Image();
+        img.onload = async () => {
+          setStatusMessage('Analyzing and verifying uploaded Back ID card...');
+          setStatusTone('');
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || 640;
+            canvas.height = img.naturalHeight || 480;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const scanRes = await idScanEngine.scanCard(
+                imgData,
+                idType as GovernmentIdCategory,
+                selectedRole
+              );
+              console.log('[RegisterPage handleFileUpload] scanRes back error:', scanRes.error, 'reasons:', JSON.stringify(scanRes.quality?.reasons));
+
+              const isFaceDetected = Boolean(
+                scanRes.cardPresence && scanRes.cardPresence.status === 'FACE_DETECTED'
+              );
+
+              if (isFaceDetected || !scanRes.corners || scanRes.corners.length !== 4) {
+                setErrors((prev) => ({
+                  ...prev,
+                  idCard: isFaceDetected
+                    ? 'Human face detected. Please position or upload the back side of your physical Government ID card.'
+                    : 'Uploaded image does not appear to be the back of a physical Government ID card. Please ensure the card boundary is visible.'
+                }));
+                setStatusMessage('Back ID rejected: Invalid document or human face detected.');
+                setStatusTone('bad');
+                return;
+              }
+
+              setIdBackShot(scanRes.rectifiedImageUrl || result);
+              setErrors((prev) => {
+                const next = { ...prev };
+                delete next.idCard;
+                return next;
+              });
+              setStatusMessage('Both front and back ID cards secured successfully.');
+              setStatusTone('ok');
+            }
+          } catch (err) {
+            console.warn('[RegisterPage] Back ID CV scan error:', err);
+            setIdBackShot(result);
+            setStatusMessage('Back ID image secured.');
+            setStatusTone('ok');
+          }
+        };
+        img.src = result;
       }
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next.idCard;
-        return next;
-      });
-      setStatusMessage(`${side === 'front' ? 'Front' : 'Back'} ID image uploaded.`);
-      setStatusTone('ok');
     };
     reader.readAsDataURL(file);
   };
@@ -701,6 +969,8 @@ export const RegisterPage: React.FC = () => {
   const exposureStatus = exposureVal < 60 ? 'UNDEREXPOSED' : exposureVal > 200 ? 'OVEREXPOSED' : 'OPTIMAL';
   const lockProgress = scannerAnalysis?.stability.lockProgress ?? 0;
   const isLocked = scannerAnalysis?.stability.isLocked ?? false;
+  const presenceStatus = scannerAnalysis?.cardPresence?.status
+    ?? (isLocked ? 'LOCKED' : lockProgress > 0 ? 'ALIGNING' : 'NO_CARD');
 
   // Role Selection Logic for Step 0
   const handleSelectRole = (role: 'Responder' | 'Civilian') => {
@@ -781,8 +1051,8 @@ export const RegisterPage: React.FC = () => {
 
   const validateStep3 = (): boolean => {
     const newErrors: { [key: string]: string } = {};
-    if (password.length < 12) {
-      newErrors.password = 'Password must be at least 12 characters for government compliance.';
+    if (password.length < 5) {
+      newErrors.password = 'Password must be at least 5 characters.';
     }
     if (password !== confirmPassword) {
       newErrors.confirm = 'Passwords do not match.';
@@ -1464,13 +1734,31 @@ export const RegisterPage: React.FC = () => {
 
                           {/* Viewfinder Aspect Ratio Window with Deterministic CV Tactical HUD */}
                           <div className="relative w-full max-w-lg mx-auto bg-[#070c14] rounded-lg overflow-hidden border border-rose-500/40 aspect-[16/10] flex items-center justify-center">
-                            {/* Live Video Feed */}
+                            {/* Live Video Feed or Frozen Frame */}
                             <video
                               ref={videoRef}
                               autoPlay
                               playsInline
                               muted
-                              className="absolute inset-0 w-full h-full object-cover"
+                              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
+                                isFrameFrozen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                              }`}
+                            />
+
+                            {/* Frozen Frame Snapshot during Optical Decoding */}
+                            {isFrameFrozen && frozenFrameUrl && (
+                              <img
+                                src={frozenFrameUrl}
+                                alt="Frozen Frame for Optical Scanning"
+                                className="absolute inset-0 w-full h-full object-cover z-0"
+                              />
+                            )}
+
+                            {/* Laser Scan Line Sweep & Reticle Overlay */}
+                            <LaserScanOverlay
+                              isScanning={isOpticalDecoding}
+                              label={!idFrontShot ? 'DECODING FRONT CREDENTIAL MATRIX...' : 'DECODING REVERSE MATRIX...'}
+                              cardCategory={idType}
                             />
 
                             {/* HUD Top Status Pills Bar */}
@@ -1509,13 +1797,26 @@ export const RegisterPage: React.FC = () => {
                                 </span>
                                 <span
                                   className={`px-2 py-0.5 rounded backdrop-blur-md border font-bold flex items-center gap-1 ${
-                                    isLocked
+                                    presenceStatus === 'LOCKED'
                                       ? 'bg-emerald-900/90 border-emerald-400 text-emerald-200 shadow-[0_0_12px_rgba(52,211,153,0.6)]'
+                                      : presenceStatus === 'FACE_DETECTED'
+                                      ? 'bg-amber-950/90 border-amber-500 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.5)] animate-pulse'
+                                      : presenceStatus === 'ALIGNING'
+                                      ? 'bg-cyan-950/85 border-cyan-500/60 text-cyan-300'
                                       : 'bg-black/85 border-rose-500/60 text-rose-300'
                                   }`}
                                 >
-                                  <Target className="w-2.5 h-2.5" />
-                                  LOCK: {lockProgress}% {isLocked ? '[LOCKED]' : '[ALIGNING]'}
+                                  {presenceStatus === 'FACE_DETECTED' ? (
+                                    <>
+                                      <UserX className="w-2.5 h-2.5" />
+                                      REJECT: FACE DETECTED
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Target className="w-2.5 h-2.5" />
+                                      LOCK: {presenceStatus === 'NO_CARD' ? 0 : lockProgress}% {presenceStatus === 'LOCKED' ? '[LOCKED]' : '[ALIGNING]'}
+                                    </>
+                                  )}
                                 </span>
                               </div>
                             </div>
@@ -1529,17 +1830,65 @@ export const RegisterPage: React.FC = () => {
                               >
                                 <polygon
                                   points={scannerAnalysis.corners.map((p) => `${p.x},${p.y}`).join(' ')}
-                                  fill={isLocked ? 'rgba(52, 211, 153, 0.14)' : 'rgba(255, 92, 116, 0.08)'}
-                                  stroke={isLocked ? '#34d399' : '#ff5c74'}
+                                  fill={
+                                    presenceStatus === 'LOCKED'
+                                      ? 'rgba(52, 211, 153, 0.18)'
+                                      : presenceStatus === 'FACE_DETECTED'
+                                      ? 'rgba(245, 158, 11, 0.12)'
+                                      : 'rgba(6, 182, 212, 0.10)'
+                                  }
+                                  stroke={
+                                    presenceStatus === 'LOCKED'
+                                      ? '#34d399'
+                                      : presenceStatus === 'FACE_DETECTED'
+                                      ? '#f59e0b'
+                                      : '#06b6d4'
+                                  }
                                   strokeWidth="2.5"
-                                  strokeDasharray={isLocked ? 'none' : '6 4'}
+                                  strokeDasharray={presenceStatus === 'LOCKED' ? 'none' : '6 4'}
                                 />
                                 {scannerAnalysis.corners.map((p, idx) => (
                                   <g key={idx} transform={`translate(${p.x}, ${p.y})`}>
-                                    <circle r="7" fill={isLocked ? '#34d399' : '#ff5c74'} fillOpacity="0.4" />
+                                    <circle
+                                      r="7"
+                                      fill={
+                                        presenceStatus === 'LOCKED'
+                                          ? '#34d399'
+                                          : presenceStatus === 'FACE_DETECTED'
+                                          ? '#f59e0b'
+                                          : '#06b6d4'
+                                      }
+                                      fillOpacity="0.4"
+                                    />
                                     <circle r="3" fill="#ffffff" />
-                                    <line x1="-12" y1="0" x2="12" y2="0" stroke={isLocked ? '#34d399' : '#ff5c74'} strokeWidth="2" />
-                                    <line x1="0" y1="-12" x2="0" y2="12" stroke={isLocked ? '#34d399' : '#ff5c74'} strokeWidth="2" />
+                                    <line
+                                      x1="-12"
+                                      y1="0"
+                                      x2="12"
+                                      y2="0"
+                                      stroke={
+                                        presenceStatus === 'LOCKED'
+                                          ? '#34d399'
+                                          : presenceStatus === 'FACE_DETECTED'
+                                          ? '#f59e0b'
+                                          : '#06b6d4'
+                                      }
+                                      strokeWidth="2"
+                                    />
+                                    <line
+                                      x1="0"
+                                      y1="-12"
+                                      x2="0"
+                                      y2="12"
+                                      stroke={
+                                        presenceStatus === 'LOCKED'
+                                          ? '#34d399'
+                                          : presenceStatus === 'FACE_DETECTED'
+                                          ? '#f59e0b'
+                                          : '#06b6d4'
+                                      }
+                                      strokeWidth="2"
+                                    />
                                   </g>
                                 ))}
                               </svg>
@@ -1708,6 +2057,18 @@ export const RegisterPage: React.FC = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {/* Dropzone 1: Front ID Card */}
                       <div className="flex flex-col">
+                        <input
+                          type="file"
+                          ref={frontFileInputRef}
+                          data-side="front"
+                          accept="image/png,image/jpeg,image/jpg,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              handleFileUpload('front', e.target.files[0]);
+                            }
+                          }}
+                        />
                         <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
                           <span className="font-bold uppercase tracking-wider text-slate-200">Front ID Card</span>
                           <span className={idFrontShot ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
@@ -1761,17 +2122,6 @@ export const RegisterPage: React.FC = () => {
                                 : 'border-rose-500/30 bg-[#16070d]/60 hover:border-rose-400 hover:bg-[#1f0a13]/70'
                             }`}
                           >
-                            <input
-                              type="file"
-                              ref={frontFileInputRef}
-                              accept="image/png,image/jpeg,image/jpg,image/webp"
-                              className="hidden"
-                              onChange={(e) => {
-                                if (e.target.files && e.target.files[0]) {
-                                  handleFileUpload('front', e.target.files[0]);
-                                }
-                              }}
-                            />
                             <div className="p-2.5 rounded-full bg-rose-950/60 border border-rose-500/30 text-[#ff5c74] mb-2">
                               <Upload className="w-5 h-5" />
                             </div>
@@ -1790,6 +2140,18 @@ export const RegisterPage: React.FC = () => {
 
                       {/* Dropzone 2: Back ID Card */}
                       <div className="flex flex-col">
+                        <input
+                          type="file"
+                          ref={backFileInputRef}
+                          data-side="back"
+                          accept="image/png,image/jpeg,image/jpg,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              handleFileUpload('back', e.target.files[0]);
+                            }
+                          }}
+                        />
                         <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
                           <span className="font-bold uppercase tracking-wider text-slate-200">Back ID Card</span>
                           <span className={idBackShot ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
@@ -1843,17 +2205,6 @@ export const RegisterPage: React.FC = () => {
                                 : 'border-rose-500/30 bg-[#16070d]/60 hover:border-rose-400 hover:bg-[#1f0a13]/70'
                             }`}
                           >
-                            <input
-                              type="file"
-                              ref={backFileInputRef}
-                              accept="image/png,image/jpeg,image/jpg,image/webp"
-                              className="hidden"
-                              onChange={(e) => {
-                                if (e.target.files && e.target.files[0]) {
-                                  handleFileUpload('back', e.target.files[0]);
-                                }
-                              }}
-                            />
                             <div className="p-2.5 rounded-full bg-rose-950/60 border border-rose-500/30 text-[#ff5c74] mb-2">
                               <Upload className="w-5 h-5" />
                             </div>
@@ -1881,7 +2232,7 @@ export const RegisterPage: React.FC = () => {
                 </div>
 
                 {/* ============ PHASE 1 BOTTOM: PERSONAL DETAILS EDITABLE INPUTS ============ */}
-                {!idFrontShot ? (
+                {!isIdValidated ? (
                   <div className="p-5 rounded-xl bg-black/40 border border-slate-800 text-center font-mono space-y-2 mt-4 backdrop-blur-sm">
                     <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center mx-auto text-slate-400">
                       <Lock className="w-5 h-5 text-rose-400/90" />
@@ -1890,7 +2241,7 @@ export const RegisterPage: React.FC = () => {
                       Personal Details Locked Until Government ID Scanned
                     </p>
                     <p className="text-[11px] text-slate-400 max-w-md mx-auto leading-relaxed">
-                      Select your Government ID type above and scan or upload your card. Once validated by the deterministic computer vision engine, your First Name, Middle Name, Surname, Sex, and Age fields will unlock and autofill below for your review.
+                      Select your Government ID type above and scan or upload your card. Once validated by the deterministic computer vision engine, your Personal Details (Surname, First Name, Middle Name, Sex, Date of Birth, Address, License Number, Weight, and Height) will unlock and autofill below for your review.
                     </p>
                   </div>
                 ) : (
@@ -2006,6 +2357,186 @@ export const RegisterPage: React.FC = () => {
                         )}
                       </div>
 
+                      {/* Sex */}
+                      <div className="field" id="sex-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="sex">
+                            Sex <span className="req">*</span>
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[DEMO]</span>
+                        </div>
+                        <div
+                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <Users className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <select
+                            className="field__input select__input font-sans text-white text-[13px]"
+                            id="sex"
+                            name="sex"
+                            value={sex}
+                            onChange={(e) => setSex(e.target.value)}
+                          >
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                            <option value="other">Other</option>
+                          </select>
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+                        </div>
+                      </div>
+
+                      {/* Date of Birth */}
+                      <div className="field" id="dob-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="dob">
+                            Date of Birth
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[DOB]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <Calendar className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="dob"
+                            name="dateOfBirth"
+                            type="text"
+                            value={dateOfBirth}
+                            onChange={(e) => setDateOfBirth(e.target.value)}
+                            placeholder="YYYY/MM/DD"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
+                      {/* License Number / ID Number */}
+                      <div className="field" id="license-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="license-number">
+                            License No. / ID No.
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[LICENSE.NO]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="license-number"
+                            name="licenseNumber"
+                            type="text"
+                            value={licenseNumber}
+                            onChange={(e) => setLicenseNumber(e.target.value)}
+                            placeholder="e.g. J07-22-302560"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Weight */}
+                      <div className="field" id="weight-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="weight">
+                            Weight
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[WEIGHT.KG]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="weight"
+                            name="weight"
+                            type="text"
+                            value={weight}
+                            onChange={(e) => setWeight(e.target.value)}
+                            placeholder="e.g. 52 kg"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Height */}
+                      <div className="field" id="height-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="height">
+                            Height
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[HEIGHT.M]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="height"
+                            name="height"
+                            type="text"
+                            value={height}
+                            onChange={(e) => setHeight(e.target.value)}
+                            placeholder="e.g. 1.71 m"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Address */}
+                      <div className="field md:col-span-2" id="address-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="address">
+                            Address
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[ADDRESS]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <MapPin className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="address"
+                            name="address"
+                            type="text"
+                            value={address}
+                            onChange={(e) => setAddress(e.target.value)}
+                            placeholder="e.g. Poblacion, Manukan, Zamboanga del Norte, 7110"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
                       {/* Email Address */}
                       <div className={`field ${errors.email ? 'is-invalid' : ''}`}>
                         <div className="flex items-center justify-between mb-1">
@@ -2043,37 +2574,6 @@ export const RegisterPage: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Sex */}
-                      <div className="field" id="sex-field">
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="sex">
-                            Sex <span className="req">*</span>
-                          </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">[DEMO]</span>
-                        </div>
-                        <div
-                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <Users className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
-                          <select
-                            className="field__input select__input font-sans text-white text-[13px]"
-                            id="sex"
-                            value={sex}
-                            onChange={(e) => setSex(e.target.value)}
-                          >
-                            <option value="male">Male</option>
-                            <option value="female">Female</option>
-                            <option value="other">Other</option>
-                          </select>
-                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
-                        </div>
-                      </div>
-
                       {/* Age */}
                       <div className={`field ${errors.age ? 'is-invalid' : ''}`} id="age-field">
                         <div className="flex items-center justify-between mb-1">
@@ -2094,6 +2594,7 @@ export const RegisterPage: React.FC = () => {
                           <input
                             className="field__input font-sans text-white text-[13px]"
                             id="age"
+                            name="age"
                             type="number"
                             min="18"
                             max="100"

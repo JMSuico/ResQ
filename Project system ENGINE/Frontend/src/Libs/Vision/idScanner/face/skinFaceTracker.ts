@@ -2007,3 +2007,80 @@ export const detectEyeBlinkTransition = (
 
   return state;
 };
+
+// ============================================================================
+// ANTHROPOMETRIC ACTIVE LIVENESS HELPERS & THRESHOLD CONSTANTS
+// (Apple Face ID / Google ML Kit Face Detection / OpenCV KYC Specification)
+// ============================================================================
+
+export const yaw_thresh = 15.0; // Horizontal Yaw threshold in degrees (±15°)
+export const YAW_THRESH = yaw_thresh;
+
+export const blink_eye_thresh = 0.18; // Eye Aspect Ratio (EAR) occlusion cutoff
+export const BLINK_EYE_THRESH = blink_eye_thresh;
+
+/**
+ * Returns horizontal Yaw angle (getEulerY) in degrees.
+ * Negative indicates left turn, positive indicates right turn.
+ */
+export const getEulerY = (result: SkinFaceTrackingFrameResult): number => {
+  return result.yawDegrees;
+};
+
+/**
+ * Returns Eye Aspect Ratio (EAR) / eye openness probability (isLeftEyeOpenProbability).
+ * Drops near zero during physiological eye blink occlusion.
+ */
+export const isLeftEyeOpenProbability = (result: SkinFaceTrackingFrameResult): number => {
+  return result.blink?.eyeOpenness ?? 1.0;
+};
+
+/**
+ * Evaluates active biometric liveness challenge gestures:
+ * - Center Lock: Within ±12° yaw/pitch
+ * - Turn Left: getEulerY() <= -yaw_thresh (-15°)
+ * - Turn Right: getEulerY() >= +yaw_thresh (+15°)
+ * - Look Up: pitch >= +10°
+ * - Eye Blink: isLeftEyeOpenProbability() < blink_eye_thresh (EAR < 0.18)
+ */
+export const livenessDetection = (
+  result: SkinFaceTrackingFrameResult,
+  challenge: 'CENTER' | 'LEFT' | 'RIGHT' | 'UP' | 'BLINK'
+): { passed: boolean; score: number; challengeName: string } => {
+  const yaw = getEulerY(result);
+  const ear = isLeftEyeOpenProbability(result);
+
+  switch (challenge) {
+    case 'LEFT':
+      return {
+        passed: yaw <= -yaw_thresh || (result.pose.deltaYaw ?? 0) <= -12.0,
+        score: Math.abs(yaw),
+        challengeName: 'ACTIVE_CHALLENGE_HEAD_TURN_LEFT'
+      };
+    case 'RIGHT':
+      return {
+        passed: yaw >= yaw_thresh || (result.pose.deltaYaw ?? 0) >= 12.0,
+        score: yaw,
+        challengeName: 'ACTIVE_CHALLENGE_HEAD_TURN_RIGHT'
+      };
+    case 'UP':
+      return {
+        passed: result.pitchDegrees >= 10.0 || (result.pose.deltaPitch ?? 0) >= 9.0,
+        score: result.pitchDegrees,
+        challengeName: 'ACTIVE_CHALLENGE_LOOK_UP'
+      };
+    case 'BLINK':
+      return {
+        passed: ear < blink_eye_thresh || (result.blink?.isBlinking ?? false),
+        score: 1.0 - ear,
+        challengeName: 'ACTIVE_CHALLENGE_EYE_BLINK'
+      };
+    case 'CENTER':
+    default:
+      return {
+        passed: Math.abs(yaw) <= 12.0 && Math.abs(result.pitchDegrees) <= 12.0,
+        score: 1.0,
+        challengeName: 'ACTIVE_CHALLENGE_CENTER_LOCK'
+      };
+  }
+};

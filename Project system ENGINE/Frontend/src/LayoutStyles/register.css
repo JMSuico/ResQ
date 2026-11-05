@@ -771,3 +771,24 @@
 
   .panel__foot { margin-top: 14px; }
 }
+
+/* ---------- 8. Optical Laser Scan Sweep Keyframes ---------- */
+@keyframes laserSweep {
+  0% {
+    top: 0%;
+    opacity: 0.85;
+  }
+  50% {
+    top: 96%;
+    opacity: 1;
+  }
+  100% {
+    top: 0%;
+    opacity: 0.85;
+  }
+}
+
+.animate-laser-sweep {
+  animation: laserSweep 1.8s ease-in-out infinite;
+}
+

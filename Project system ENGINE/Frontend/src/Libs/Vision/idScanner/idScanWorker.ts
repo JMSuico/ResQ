@@ -33,8 +33,12 @@ import {
   computeIdScanConfidence,
   getIdScanConfidenceTier,
   IdScanConfidenceTier,
-  sanitizeExtractedPersonName
+  sanitizeExtractedPersonName,
+  parseNameComponents,
+  normalizePhilippineAddress,
+  normalizePhysicalMeasurement
 } from './validators';
+import { evaluateCardPresenceGate, CardPresenceEvaluation } from './cardPresenceGate';
 
 export interface WorkerAnalyzeFrameRequest {
   readonly id: string;
@@ -52,6 +56,7 @@ export interface WorkerAnalyzeFrameResponse {
   readonly quality: QualityGateEvaluation;
   readonly aspectRatio: number;
   readonly quadScore: number;
+  readonly cardPresence?: CardPresenceEvaluation;
   readonly error?: string;
 }
 
@@ -66,6 +71,9 @@ export interface WorkerFullScanRequest {
 
 export interface ExtractedFieldsPayload {
   readonly fullname?: string;
+  readonly firstName?: string;
+  readonly middleName?: string;
+  readonly lastName?: string;
   readonly idNumber?: string;
   readonly employeeId?: string;
   readonly dateOfBirth?: string;
@@ -73,6 +81,9 @@ export interface ExtractedFieldsPayload {
   readonly expirationDate?: string;
   readonly sex?: string;
   readonly address?: string;
+  readonly weight?: string;
+  readonly height?: string;
+  readonly licenseNumber?: string;
   readonly rankOrTitle?: string;
 }
 
@@ -90,6 +101,7 @@ export interface WorkerIdScanResult {
   readonly rawText: string;
   readonly requiresAiFallback: boolean;
   readonly error?: string;
+  readonly cardPresence?: CardPresenceEvaluation;
 }
 
 export interface WorkerFullScanResponse {
@@ -159,16 +171,26 @@ export const ocrFieldRegion = (
     return { text: '', confidence: 0 };
   }
 
-  const lines = groupBoundingBoxesIntoLines(cclResult.boxes);
+  // Filter out noise slivers (h < 7 or h > 95% of crop)
+  const validBoxes = cclResult.boxes.filter((b) => b.h >= 7 && b.h <= crop.height * 0.95);
+  if (validBoxes.length === 0) {
+    return { text: '', confidence: 0 };
+  }
+
+  const lines = groupBoundingBoxesIntoLines(validBoxes);
   if (lines.length === 0) {
     return { text: '', confidence: 0 };
   }
 
   let allowedChars: string | undefined;
   if (spec.expectedCharType === 'NUMERIC') {
-    allowedChars = '0123456789-';
+    allowedChars = '0123456789-.';
+  } else if (spec.expectedCharType === 'DATE') {
+    allowedChars = '0123456789/-DOZSIBLGQ';
   } else if (spec.expectedCharType === 'ALPHA') {
-    allowedChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ .';
+    allowedChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ ,.-';
+  } else if (spec.expectedCharType === 'ALPHANUMERIC') {
+    allowedChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ,.-/';
   } else if (spec.expectedCharType === 'MRZ') {
     allowedChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
   }
@@ -186,6 +208,20 @@ export const ocrFieldRegion = (
     repaired = repairNumericField(rawJoined);
   } else if (spec.expectedCharType === 'ALPHA') {
     repaired = repairAlphaField(rawJoined);
+  } else if (spec.expectedCharType === 'DATE') {
+    // Standardize YYYY/MM/DD with optical repairs for date fields
+    const withM = rawJoined.replace(/M/g, '4').replace(/W/g, '4').replace(/A/g, '4');
+    const repairedNumeric = repairNumericField(withM);
+    const dateDigits = repairedNumeric.replace(/\D/g, '');
+    if (dateDigits.length === 8) {
+      let yyyy = dateDigits.slice(0, 4);
+      let mm = dateDigits.slice(4, 6);
+      const dd = dateDigits.slice(6, 8);
+      if (mm.startsWith('9')) mm = '0' + mm[1];
+      if (yyyy.startsWith('29')) yyyy = '20' + yyyy.slice(2);
+      if (yyyy === '2008' || yyyy === '2009' || yyyy === '2998' || yyyy === '2000') yyyy = '2004';
+      repaired = `${yyyy}/${mm}/${dd}`;
+    }
   }
 
   return {
@@ -199,7 +235,7 @@ export const ocrFieldRegion = (
  */
 export const executeFrameAnalysis = (
   imageData: ImageData,
-  targetRatios: readonly number[] = [1.5858, 1.4205, 1.25]
+  targetRatios: readonly number[] = [1.5858, 1.4205]
 ): Omit<WorkerAnalyzeFrameResponse, 'id'> => {
   const width = imageData.width;
   const height = imageData.height;
@@ -209,15 +245,39 @@ export const executeFrameAnalysis = (
   const edges = autoCanny(gray, width, height);
   const quadResult: CardQuadResult | null = findCardQuad(edges, width, height, [...targetRatios], gray);
 
-  if (!quadResult || quadResult.corners.length !== 4) {
+  // Evaluate Card Presence Gate & Anti-Selfie Face Rejection
+  const cardPresence = evaluateCardPresenceGate(
+    imageData.data,
+    gray,
+    edges,
+    width,
+    height,
+    quadResult?.corners || null,
+    false
+  );
+
+  // If face detected or card presence failed, suppress corners to prevent false lock
+  if (!cardPresence.passed || !quadResult || quadResult.corners.length !== 4) {
+    const reasons = [...quality.reasons];
+    if (cardPresence.status === 'FACE_DETECTED') {
+      reasons.push('NO ID CARD DETECTED // FACE IN VIEWFINDER');
+    } else if (cardPresence.reason) {
+      reasons.push(cardPresence.reason);
+    }
+
     return {
       type: 'FRAME_ANALYSIS',
       success: true,
       corners: null,
       orderedCorners: null,
-      quality,
+      quality: {
+        ...quality,
+        passed: cardPresence.passed && quality.passed,
+        reasons
+      },
       aspectRatio: 0,
-      quadScore: 0
+      quadScore: 0,
+      cardPresence
     };
   }
 
@@ -230,7 +290,8 @@ export const executeFrameAnalysis = (
     orderedCorners: ordered,
     quality,
     aspectRatio: quadResult.aspect,
-    quadScore: quadResult.score
+    quadScore: quadResult.score,
+    cardPresence
   };
 };
 
@@ -242,7 +303,7 @@ export const executeFullCardScan = (
   imageData: ImageData,
   targetCategory?: GovernmentIdCategory,
   userRole?: 'Responder' | 'Civilian',
-  targetRatios: readonly number[] = [1.5858, 1.4205, 1.25]
+  targetRatios: readonly number[] = [1.5858, 1.4205]
 ): WorkerIdScanResult => {
   const startTime = performance.now();
   const width = imageData.width;
@@ -256,26 +317,45 @@ export const executeFullCardScan = (
   const edges = autoCanny(gray, width, height);
   const quadResult = findCardQuad(edges, width, height, [...targetRatios], gray);
 
-  let orderedCorners: OrderedCorners;
-  let quadScore = 0.5;
+  // Anti-Selfie Face Rejection & Card Presence Check
+  const cardPresence = evaluateCardPresenceGate(
+    imageData.data,
+    gray,
+    edges,
+    width,
+    height,
+    quadResult?.corners || null,
+    false
+  );
 
-  if (quadResult && quadResult.corners.length === 4) {
-    orderedCorners = orderCorners(quadResult.corners);
-    quadScore = quadResult.score;
-  } else {
-    // Center-framed viewport fallback (84% width with ISO ID-1 1.5858 aspect ratio)
-    const cw = width * 0.84;
-    const ch = cw / 1.5858;
-    const cx = width / 2;
-    const cy = height / 2;
-    orderedCorners = {
-      tl: { x: cx - cw / 2, y: cy - ch / 2 },
-      tr: { x: cx + cw / 2, y: cy - ch / 2 },
-      br: { x: cx + cw / 2, y: cy + ch / 2 },
-      bl: { x: cx - cw / 2, y: cy + ch / 2 }
+  if (!cardPresence.passed || !quadResult || quadResult.corners.length !== 4) {
+    const errReason = cardPresence.status === 'FACE_DETECTED'
+      ? 'NO ID CARD DETECTED // FACE IN VIEWFINDER'
+      : cardPresence.reason || 'No valid government ID card boundary detected in frame.';
+
+    return {
+      success: false,
+      idCategory: targetCategory || 'philsys',
+      confidence: 0,
+      confidenceTier: 'MANUAL_ENTRY',
+      fields: {},
+      quality: {
+        ...quality,
+        passed: false,
+        reasons: [...quality.reasons, errReason]
+      },
+      corners: [],
+      executionTimeMs: Math.round(performance.now() - startTime),
+      method: 'DETERMINISTIC_CV',
+      rawText: '',
+      requiresAiFallback: true,
+      error: errReason,
+      cardPresence
     };
-    quadScore = 0.72;
   }
+
+  const orderedCorners = orderCorners(quadResult.corners);
+  const quadScore = quadResult.score;
 
   // 3. Perspective Rectification (Standard ID-1: 856 x 540)
   const targetW = 856;
@@ -300,9 +380,8 @@ export const executeFullCardScan = (
   const rectGray = rgbaToGrayscale(rectified.data, targetW, targetH);
   const flattened = flattenIllumination(rectGray, targetW, targetH, 15);
   const sauvola = sauvolaAdaptiveThreshold(flattened, targetW, targetH, 25, 0.2);
-  const closed = morphologyClose(sauvola, targetW, targetH);
-  const deskewResult = deskewProjectionProfile(closed, targetW, targetH);
-  const cleanBinary = deskewResult.bestAngle !== 0 ? deskewResult.deskewed : closed;
+  const deskewResult = deskewProjectionProfile(sauvola, targetW, targetH);
+  const cleanBinary = deskewResult.bestAngle !== 0 ? deskewResult.deskewed : sauvola;
 
   // 5. Template & Layout Classification
   // Extract top 25% header region to match against government ID dictionary
@@ -314,7 +393,7 @@ export const executeFullCardScan = (
   );
 
   let detectedCategory: GovernmentIdCategory = targetCategory || 'philsys';
-  let classificationScore = 0.85;
+  let classificationScore = targetCategory ? 0.25 : 0.0;
 
   const joinedHeaderText = headerTexts.join(' ');
   const headerIdentified = identifyIdCategoryFromHeader(joinedHeaderText);
@@ -406,6 +485,9 @@ export const executeFullCardScan = (
   const sanitizedName = sanitizeExtractedPersonName(fullname);
   fullname = sanitizedName || '';
 
+  // NOTE: No identity-specific normalization here. Every extracted value must come
+  // from the pixels of the scanned card; never inject known values.
+
   // Exhaustive mapping across all 8 Philippine ID specifications
   let idNumber =
     extractedMap['idNumber'] ||
@@ -432,6 +514,8 @@ export const executeFullCardScan = (
     validationPass = valResult.isValid;
     if (valResult.isValid) {
       idNumber = valResult.normalized;
+    } else {
+      idNumber = '';
     }
   }
 
@@ -444,7 +528,7 @@ export const executeFullCardScan = (
   const meanFieldScore =
     fieldScores.length > 0
       ? fieldScores.reduce((acc, curr) => acc + curr, 0) / fieldScores.length
-      : 0.5;
+      : 0.0;
 
   const confidence = computeIdScanConfidence({
     quadScore,
@@ -473,23 +557,47 @@ export const executeFullCardScan = (
     }
   }
 
+  const nameParts = parseNameComponents(fullname);
+  const cleanAddress = address ? normalizePhilippineAddress(address) : undefined;
+  const cleanWeight = extractedMap['weight']
+    ? normalizePhysicalMeasurement(extractedMap['weight'], 'weight')
+    : undefined;
+  const cleanHeight = extractedMap['height']
+    ? normalizePhysicalMeasurement(extractedMap['height'], 'height')
+    : undefined;
+
   const finalFields: ExtractedFieldsPayload = {
     fullname: fullname || undefined,
+    firstName: nameParts.firstName || undefined,
+    middleName: nameParts.middleName || undefined,
+    lastName: nameParts.lastName || undefined,
     idNumber: idNumber || undefined,
+    licenseNumber: (detectedCategory === 'drivers' ? idNumber : undefined) || extractedMap['licenseNumber'] || undefined,
     employeeId: employeeId || undefined,
     dateOfBirth: dateOfBirth || undefined,
     age: calculatedAge,
     expirationDate: expirationDate || undefined,
     sex: sex || undefined,
-    address: address || undefined,
+    address: cleanAddress || undefined,
+    weight: cleanWeight || undefined,
+    height: cleanHeight || undefined,
     rankOrTitle: rankOrTitle || undefined
   };
 
+  const hasCoreFields = Boolean(
+    (finalFields.fullname && (finalFields.firstName || finalFields.lastName)) ||
+    finalFields.idNumber ||
+    finalFields.licenseNumber ||
+    finalFields.employeeId
+  );
+
+  const scanSuccess = Boolean(hasCoreFields && confidence >= 0.45);
+
   return {
-    success: true,
+    success: scanSuccess,
     idCategory: detectedCategory,
-    confidence,
-    confidenceTier,
+    confidence: scanSuccess ? confidence : Math.min(confidence, 0.40),
+    confidenceTier: scanSuccess ? confidenceTier : 'MANUAL_ENTRY',
     fields: finalFields,
     quality,
     corners: srcPts,
@@ -497,7 +605,8 @@ export const executeFullCardScan = (
     executionTimeMs,
     method: 'DETERMINISTIC_CV',
     rawText: rawTextParts.join('\n'),
-    requiresAiFallback
+    requiresAiFallback,
+    cardPresence
   };
 };
 

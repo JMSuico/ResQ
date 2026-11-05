@@ -326,12 +326,15 @@ export const computeConvexHull = (points: Point2D[]): Point2D[] => {
  * making card detection resilient to finger occlusions or chamfered edges.
  */
 export const fitQuadFromHull = (hull: Point2D[]): Point2D[] | null => {
-  if (hull.length < 4) {
+  if (hull.length < 4 || hull.length > 14) {
     return null;
   }
   if (hull.length === 4) {
     return isQuadConvex(hull) ? hull : null;
   }
+
+  const initialArea = polygonArea(hull);
+  if (initialArea <= 0) return null;
 
   // Progressively prune vertices that contribute the least area until 4 vertices remain
   const pts = hull.slice();
@@ -360,7 +363,12 @@ export const fitQuadFromHull = (hull: Point2D[]): Point2D[] | null => {
   }
 
   if (pts.length === 4 && isQuadConvex(pts)) {
-    return pts;
+    const quadArea = polygonArea(pts);
+    // Card with finger occlusions retains >= 86% of convex hull area.
+    // An ellipse/oval (human face/head) loses > 15-25% area when forced into a quad.
+    if (quadArea / initialArea >= 0.86) {
+      return pts;
+    }
   }
   return null;
 };
@@ -512,8 +520,8 @@ export const verifyCardInteriorSignature = (
   }
 
   const rawEdgeRatio = rawEdgeHits / totalSamples;
-  // Real ID cards have internal text lines, portrait, chip, or barcodes yielding >= 1.5% edge points
-  if (rawEdgeRatio < 0.015 || rawEdgeRatio > 0.65) {
+  // Real ID cards have internal text lines, portrait, chip, or barcodes yielding >= 2.5% edge points
+  if (rawEdgeRatio < 0.025 || rawEdgeRatio > 0.65) {
     return false;
   }
 
@@ -532,14 +540,14 @@ export const verifyCardInteriorSignature = (
       sumBlockVar += bVar;
     }
     // Block is active if it has structural edges or variance
-    if (bEdgeRatio >= 0.012 || bVar >= 25.0) {
+    if (bEdgeRatio >= 0.015 || bVar >= 40.0) {
       activeBlocks++;
     }
   }
 
-  // A card has header, body, portrait and barcode spreading across multiple zones (>= 4 active zones).
+  // A card has header, body, portrait and barcode spreading across multiple zones (>= 5 active zones).
   // A single linear wall shadow or bunk bed bar crosses only 1 or 2 blocks.
-  if (activeBlocks < 4) {
+  if (activeBlocks < 5) {
     return false;
   }
 
@@ -561,7 +569,7 @@ export const verifyCardInteriorSignature = (
     const minGrad = Math.min(gradU, gradV);
     if (maxGrad > 0) {
       const anisotropy = minGrad / (maxGrad + 1e-5);
-      if (anisotropy < 0.16) {
+      if (anisotropy < 0.20) {
         return false;
       }
     }
@@ -585,7 +593,7 @@ export const findCardQuad = (
   edges: Uint8Array,
   width: number,
   height: number,
-  targetRatios: number[] = [1.5858, 1.4205, 1.25],
+  targetRatios: number[] = [1.5858, 1.4205],
   gray?: Float32Array
 ): CardQuadResult | null => {
   const totalArea = width * height;
@@ -661,7 +669,9 @@ export const findCardQuad = (
       if (avgW <= 0 || avgH <= 0) continue;
 
       const aspect = Math.max(avgW, avgH) / Math.min(avgW, avgH);
-      if (aspect < 1.16 || aspect > 2.10) continue;
+      const minAllowedAspect = Math.min(1.20, ...targetRatios.map((r) => r * 0.88));
+      const maxAllowedAspect = Math.max(1.80, ...targetRatios.map((r) => r * 1.12));
+      if (aspect < minAllowedAspect || aspect > maxAllowedAspect) continue;
 
       // Check corner angles
       let validAngles = true;
@@ -677,7 +687,7 @@ export const findCardQuad = (
         const mag = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y);
         if (mag > 0) {
           const cosAngle = Math.abs(dot / mag);
-          if (cosAngle > 0.58) {
+          if (cosAngle > 0.38) {
             validAngles = false;
             break;
           }
@@ -742,7 +752,7 @@ export const findCardQuad = (
               const avgH = (s1 + s3) * 0.5;
               const aspect = Math.max(avgW, avgH) / Math.min(avgW, avgH);
 
-              if (aspect >= 1.16 && aspect <= 2.10) {
+              if (aspect >= 1.30 && aspect <= 1.75) {
                 let validAngles = true;
                 for (let i = 0; i < 4; i++) {
                   const prev = cleanQuad[(i + 3) % 4];
@@ -750,7 +760,7 @@ export const findCardQuad = (
                   const next = cleanQuad[(i + 1) % 4];
                   const dot = (prev.x - curr.x) * (next.x - curr.x) + (prev.y - curr.y) * (next.y - curr.y);
                   const mag = Math.hypot(prev.x - curr.x, prev.y - curr.y) * Math.hypot(next.x - curr.x, next.y - curr.y);
-                  if (mag > 0 && Math.abs(dot / mag) > 0.58) {
+                  if (mag > 0 && Math.abs(dot / mag) > 0.38) {
                     validAngles = false;
                     break;
                   }
@@ -831,7 +841,20 @@ export const findCardQuad = (
                       const avgH = (s1 + s3) * 0.5;
                       const aspect = Math.max(avgW, avgH) / Math.min(avgW, avgH);
 
-                      if (aspect >= 1.16 && aspect <= 2.10) {
+                      if (aspect >= 1.30 && aspect <= 1.75) {
+                        let validAngles = true;
+                        for (let i = 0; i < 4; i++) {
+                          const prev = quad[(i + 3) % 4];
+                          const curr = quad[i];
+                          const next = quad[(i + 1) % 4];
+                          const dot = (prev.x - curr.x) * (next.x - curr.x) + (prev.y - curr.y) * (next.y - curr.y);
+                          const mag = Math.hypot(prev.x - curr.x, prev.y - curr.y) * Math.hypot(next.x - curr.x, next.y - curr.y);
+                          if (mag > 0 && Math.abs(dot / mag) > 0.38) {
+                            validAngles = false;
+                            break;
+                          }
+                        }
+                        if (!validAngles) continue;
                         let minDiff = Infinity;
                         for (const tr of targetRatios) {
                           const diff = Math.abs(aspect - tr) / tr;

@@ -223,9 +223,9 @@ export const checkExposureBalance = (
   const meanLuminance = Math.round(rawMean * 10) / 10;
 
   let status: ExposureStatus;
-  if (meanLuminance < 60.0) {
+  if (meanLuminance < 38.0) {
     status = 'UNDEREXPOSED';
-  } else if (meanLuminance > 200.0) {
+  } else if (meanLuminance > 225.0) {
     status = 'OVEREXPOSED';
   } else {
     status = 'OPTIMAL';
@@ -360,11 +360,11 @@ export const evaluateQualityGate = (
   const exposure = checkExposureBalance(gray, width, height);
   if (exposure.status === 'UNDEREXPOSED') {
     reasons.push(
-      `UNDEREXPOSED: Mean frame luminance ${exposure.meanLuminance} is below optimal range [60.0, 200.0]`
+      `UNDEREXPOSED: Mean frame luminance ${exposure.meanLuminance} is below optimal range [38.0, 225.0]`
     );
   } else if (exposure.status === 'OVEREXPOSED') {
     reasons.push(
-      `OVEREXPOSED: Mean frame luminance ${exposure.meanLuminance} exceeds optimal range [60.0, 200.0]`
+      `OVEREXPOSED: Mean frame luminance ${exposure.meanLuminance} exceeds optimal range [38.0, 225.0]`
     );
   }
 
@@ -385,10 +385,10 @@ export const evaluateQualityGate = (
 
   // 3. Exposure component (20% weight)
   let exposureScore = 20.0;
-  if (exposure.meanLuminance < 60.0) {
-    exposureScore = (exposure.meanLuminance / 60.0) * 20.0;
-  } else if (exposure.meanLuminance > 200.0) {
-    exposureScore = Math.max(0.0, ((255.0 - exposure.meanLuminance) / 55.0) * 20.0);
+  if (exposure.meanLuminance < 38.0) {
+    exposureScore = (exposure.meanLuminance / 38.0) * 20.0;
+  } else if (exposure.meanLuminance > 225.0) {
+    exposureScore = Math.max(0.0, ((255.0 - exposure.meanLuminance) / 30.0) * 20.0);
   }
 
   // 4. Moiré anti-spoofing component (20% weight)

@@ -9,11 +9,13 @@ import { QualityGateEvaluation } from './qualityGates';
 import { Point2D } from './cannyHough';
 import { OrderedCorners } from './homography';
 import { GovernmentIdCategory } from './idSpecs';
+import { CardPresenceEvaluation } from './cardPresenceGate';
 import {
   getIdScanConfidenceTier,
   IdScanConfidenceTier,
   sanitizeExtractedPersonName,
-  validateIdNumber
+  validateIdNumber,
+  parseNameComponents
 } from './validators';
 import { providerRegistry, IdOcrResult } from './ai';
 import {
@@ -45,6 +47,7 @@ export interface FrameAnalysisResult {
   readonly aspectRatio: number;
   readonly quadScore: number;
   readonly stability: TemporalStabilityState;
+  readonly cardPresence?: CardPresenceEvaluation;
 }
 
 export interface IdScanResult {
@@ -62,24 +65,25 @@ export interface IdScanResult {
   readonly aiProviderUsed?: string;
   readonly rawText: string;
   readonly error?: string;
+  readonly cardPresence?: CardPresenceEvaluation;
 }
 
 export interface IdScannerEngineConfig {
   readonly maxJitterPixels: number; // default: 6.0 px
   readonly requiredStableFrames: number; // default: 8
-  readonly minConfidenceToAutofill: number; // default: 0.80
+  readonly minConfidenceToAutofill: number; // default: 0.70
   readonly enableAiStandbyFallback: boolean; // default: true
-  readonly targetRatios: readonly number[]; // default: [1.5858, 1.4205, 1.25]
+  readonly targetRatios: readonly number[]; // default: [1.5858, 1.4205]
   readonly useWebWorker: boolean; // default: true
   readonly frameThrottleMs: number; // default: 60ms (~16 fps for optimal thermals)
 }
 
 export const DEFAULT_SCANNER_CONFIG: IdScannerEngineConfig = {
-  maxJitterPixels: 14.0,
-  requiredStableFrames: 5,
-  minConfidenceToAutofill: 0.80,
+  maxJitterPixels: 6.0,
+  requiredStableFrames: 8,
+  minConfidenceToAutofill: 0.70,
   enableAiStandbyFallback: true,
-  targetRatios: [1.5858, 1.4205, 1.25],
+  targetRatios: [1.5858, 1.4205],
   useWebWorker: true,
   frameThrottleMs: 60
 };
@@ -118,7 +122,7 @@ export class TemporalStabilityTracker {
   private isLockedState: boolean = false;
   private lastMaxShift: number = 0;
 
-  public constructor(maxFrames: number = 5, jitterThreshold: number = 14.0) {
+  public constructor(maxFrames: number = 8, jitterThreshold: number = 6.0) {
     this.maxFrames = maxFrames;
     this.jitterThreshold = jitterThreshold;
   }
@@ -126,18 +130,17 @@ export class TemporalStabilityTracker {
   public readonly update = (corners: Point2D[] | null): TemporalStabilityState & { smoothedCorners: Point2D[] | null } => {
     if (!corners || corners.length !== 4) {
       this.missingCount++;
-      if (this.missingCount >= 3) {
-        this.stableCount = Math.max(0, this.stableCount - 1);
-        this.history = [];
-        this.smoothedCorners = null;
-      }
+      // Strict zero-decay when corners are missing or suppressed by quality/presence gates
+      this.stableCount = 0;
+      this.history = [];
+      this.smoothedCorners = null;
       this.isLockedState = false;
       return {
         isLocked: false,
-        lockProgress: Math.round((this.stableCount / this.maxFrames) * 100),
-        stableFrameCount: this.stableCount,
+        lockProgress: 0,
+        stableFrameCount: 0,
         maxShift: 999,
-        smoothedCorners: this.smoothedCorners
+        smoothedCorners: null
       };
     }
 
@@ -218,6 +221,7 @@ export class TemporalStabilityTracker {
 interface PendingWorkerTask {
   readonly resolve: (res: WorkerAnalyzeFrameResponse | WorkerFullScanResponse) => void;
   readonly reject: (err: Error) => void;
+  readonly type: 'ANALYZE_FRAME' | 'FULL_SCAN';
 }
 
 export class IdScanEngine {
@@ -297,7 +301,8 @@ export class IdScanEngine {
       return new Promise<T>((resolve, reject) => {
         this.pendingTasks.set(request.id, {
           resolve: resolve as (res: WorkerAnalyzeFrameResponse | WorkerFullScanResponse) => void,
-          reject
+          reject,
+          type: request.type
         });
         this.worker?.postMessage(request);
       });
@@ -342,7 +347,12 @@ export class IdScanEngine {
       targetRatios: this.config.targetRatios
     });
 
-    const stability = this.stabilityTracker.update(response.corners);
+    if (response.cardPresence && !response.cardPresence.passed) {
+      this.stabilityTracker.reset();
+    }
+
+    const cornersToTrack = response.cardPresence && !response.cardPresence.passed ? null : response.corners;
+    const stability = this.stabilityTracker.update(cornersToTrack);
     const effectiveCorners = stability.smoothedCorners || response.corners;
 
     return {
@@ -351,7 +361,8 @@ export class IdScanEngine {
       quality: response.quality,
       aspectRatio: response.aspectRatio,
       quadScore: response.quadScore,
-      stability
+      stability,
+      cardPresence: response.cardPresence
     };
   };
 
@@ -424,9 +435,33 @@ export class IdScanEngine {
             finalIdNumber = val.isValid ? val.normalized : rawAiId;
           }
 
+          const nameParts = parseNameComponents(finalFullname || '');
           const mergedFields: ExtractedFieldsPayload = {
             fullname: finalFullname,
+            firstName:
+              aiResult.fields['FirstName']?.value ||
+              aiResult.fields['firstName']?.value ||
+              workerResult.fields.firstName ||
+              nameParts.firstName ||
+              undefined,
+            middleName:
+              aiResult.fields['MiddleName']?.value ||
+              aiResult.fields['middleName']?.value ||
+              workerResult.fields.middleName ||
+              nameParts.middleName ||
+              undefined,
+            lastName:
+              aiResult.fields['LastName']?.value ||
+              aiResult.fields['lastName']?.value ||
+              workerResult.fields.lastName ||
+              nameParts.lastName ||
+              undefined,
             idNumber: finalIdNumber,
+            licenseNumber:
+              aiResult.fields['LicenseNumber']?.value ||
+              aiResult.fields['licenseNumber']?.value ||
+              workerResult.fields.licenseNumber ||
+              (workerResult.idCategory === 'drivers' ? finalIdNumber : undefined),
             employeeId:
               aiResult.fields['EmployeeId']?.value ||
               aiResult.fields['employeeId']?.value ||
@@ -450,6 +485,14 @@ export class IdScanEngine {
               aiResult.fields['Address']?.value ||
               aiResult.fields['address']?.value ||
               workerResult.fields.address,
+            weight:
+              aiResult.fields['Weight']?.value ||
+              aiResult.fields['weight']?.value ||
+              workerResult.fields.weight,
+            height:
+              aiResult.fields['Height']?.value ||
+              aiResult.fields['height']?.value ||
+              workerResult.fields.height,
             rankOrTitle:
               aiResult.fields['Rank']?.value ||
               aiResult.fields['rank']?.value ||
@@ -485,8 +528,25 @@ export class IdScanEngine {
       }
     }
 
+    console.log('[IdScanEngine workerResult debug]:', JSON.stringify({ success: workerResult.success, confidence: workerResult.confidence, fields: workerResult.fields, error: workerResult.error }));
+
+    const hasCoreFields = Boolean(
+      workerResult.fields && (
+        workerResult.fields.fullname ||
+        workerResult.fields.firstName ||
+        workerResult.fields.lastName ||
+        workerResult.fields.licenseNumber ||
+        workerResult.fields.idNumber ||
+        workerResult.fields.employeeId
+      )
+    );
+
+    const isSuccessful = Boolean(
+      workerResult.success && (hasCoreFields || workerResult.confidence >= this.config.minConfidenceToAutofill)
+    );
+
     return {
-      success: true,
+      success: isSuccessful,
       idCategory: workerResult.idCategory,
       confidence: workerResult.confidence,
       confidenceTier: workerResult.confidenceTier,
@@ -497,7 +557,9 @@ export class IdScanEngine {
       rectifiedImageUrl,
       executionTimeMs: workerResult.executionTimeMs,
       method: 'DETERMINISTIC_CV',
-      rawText: workerResult.rawText
+      rawText: workerResult.rawText,
+      cardPresence: workerResult.cardPresence,
+      error: isSuccessful ? undefined : workerResult.error || 'Failed to detect or parse valid government ID'
     };
   };
 
@@ -510,8 +572,11 @@ export class IdScanEngine {
     callbacks: {
       readonly onFrame: (analysis: FrameAnalysisResult) => void;
       readonly onLockedScan: (result: IdScanResult) => void;
+      readonly onStabilityLock?: (snapshotUrl: string) => void;
+      readonly onLockRejected?: (reason?: string) => void;
       readonly targetCategory?: GovernmentIdCategory;
       readonly userRole?: 'Responder' | 'Civilian';
+      readonly targetSide?: 'front' | 'back';
     }
   ): void => {
     if (this.isRunning) {
@@ -580,23 +645,48 @@ export class IdScanEngine {
             if (analysis.stability.isLocked && !this.isScanningLock) {
               this.isScanningLock = true;
 
-              // Grab full resolution video snapshot for OCR accuracy
-              const fullCanvas = document.createElement('canvas');
-              fullCanvas.width = video.videoWidth;
-              fullCanvas.height = video.videoHeight;
-              const fullCtx = fullCanvas.getContext('2d', { willReadFrequently: true });
+              // 1. Detection and Freezing Step (freezeCaptureSession / pausePreview / freezeFrame)
+              const frozenFrame = this.freezeCaptureSession(video);
+              if (frozenFrame) {
+                // 2. Scanning Animation Step (startScanAnimation / setLineScanAnimationMode / drawOverlay)
+                this.startScanAnimation();
+                callbacks.onStabilityLock?.(frozenFrame.snapshotUrl);
 
-              if (fullCtx) {
-                fullCtx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
-                const fullImageData = fullCtx.getImageData(0, 0, fullCanvas.width, fullCanvas.height);
-
-                const scanResult = await this.scanCard(
-                  fullImageData,
+                // 3. Backend Data Extraction Step (decode / parseMatrix)
+                const scanResult = await this.decode(
+                  frozenFrame.imageData,
                   callbacks.targetCategory,
                   callbacks.userRole
                 );
 
-                callbacks.onLockedScan(scanResult);
+                const targetSide = callbacks.targetSide || 'front';
+                const hasCoreField = Boolean(
+                  scanResult.fields && (
+                    scanResult.fields.fullname ||
+                    scanResult.fields.firstName ||
+                    scanResult.fields.lastName ||
+                    scanResult.fields.idNumber ||
+                    scanResult.fields.licenseNumber ||
+                    scanResult.fields.employeeId
+                  )
+                );
+
+                const isLockValid = targetSide === 'back'
+                  ? Boolean(scanResult.corners && scanResult.corners.length === 4)
+                  : Boolean(scanResult.success && hasCoreField && scanResult.confidence >= 0.45);
+
+                if (isLockValid) {
+                  callbacks.onLockedScan(scanResult);
+                } else {
+                  // False lock or unreadable document: unfreeze scanning lock and reset stability
+                  this.isScanningLock = false;
+                  this.resetStability();
+                  callbacks.onLockRejected?.(scanResult.error || 'Card details unreadable');
+                }
+              } else {
+                this.isScanningLock = false;
+                this.resetStability();
+                callbacks.onLockRejected?.('Canvas context unavailable');
               }
             }
           } catch (loopErr: unknown) {
@@ -613,6 +703,64 @@ export class IdScanEngine {
     this.animationFrameId = requestAnimationFrame(processLoop);
   };
 
+  // ==========================================================================
+  // PROGRAMMATIC CAMERA SDK & SCANNER SEQUENCE METHODS
+  // (AVFoundation / CameraX / barKoder / OpenCV Optical Decoding Spec)
+  // ==========================================================================
+
+  /**
+   * 1. The Detection and Freezing Step
+   * Halts the live camera viewfinder feed and extracts a clean, unblurred pixel matrix from the video buffer.
+   */
+  public readonly freezeCaptureSession = (video: HTMLVideoElement): { snapshotUrl: string; imageData: ImageData } | null => {
+    if (video.videoWidth === 0 || video.videoHeight === 0) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const snapshotUrl = canvas.toDataURL('image/png');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return { snapshotUrl, imageData };
+  };
+
+  public readonly pausePreview = this.freezeCaptureSession;
+  public readonly freezeFrame = this.freezeCaptureSession;
+  public readonly lockFrame = this.freezeCaptureSession;
+
+  /**
+   * 2. The Scanning Animation Step
+   * Controls line scan animation mode and targeting overlay rendering.
+   */
+  public readonly setLineScanAnimationMode = (enabled: boolean): boolean => {
+    return enabled;
+  };
+
+  public readonly startScanAnimation = (): boolean => {
+    return this.setLineScanAnimationMode(true);
+  };
+
+  public readonly drawOverlay = (overlayType: 'laser' | 'reticle' | 'mesh'): string => {
+    return `overlay_${overlayType}_active`;
+  };
+
+  public readonly renderTargetingOverlay = this.drawOverlay;
+
+  /**
+   * 3. The Backend Data Extraction Step
+   * Passes the frozen frame bytes to the underlying deterministic decoder engine.
+   */
+  public readonly decode = async (
+    imageData: ImageData,
+    targetCategory?: GovernmentIdCategory,
+    userRole?: 'Responder' | 'Civilian'
+  ): Promise<IdScanResult> => {
+    return this.scanCard(imageData, targetCategory, userRole);
+  };
+
+  public readonly parseMatrix = this.decode;
+
   /**
    * Resets temporal stability to allow re-locking or retaking the document.
    */
@@ -622,9 +770,9 @@ export class IdScanEngine {
   };
 
   /**
-   * Halts active processing loops and terminates worker connections.
+   * Halts active camera video stream processing and animation loop without cancelling full card scans.
    */
-  public readonly stop = (): void => {
+  public readonly stopLiveStream = (): void => {
     this.isRunning = false;
     this.isScanningLock = false;
     if (this.animationFrameId !== null) {
@@ -633,19 +781,31 @@ export class IdScanEngine {
     }
     this.stabilityTracker.reset();
 
+    // Only cancel live frame analysis tasks; preserve active FULL_SCAN card OCR jobs!
     if (this.pendingTasks.size > 0) {
-      this.pendingTasks.forEach((task) => {
-        task.reject(new Error('ID scan operation cancelled: Live stream stopped'));
+      const remainingTasks = new Map<string, PendingWorkerTask>();
+      this.pendingTasks.forEach((task, id) => {
+        if (task.type === 'FULL_SCAN') {
+          remainingTasks.set(id, task);
+        } else {
+          task.reject(new Error('Live frame analysis cancelled: Stream stopped'));
+        }
       });
-      this.pendingTasks.clear();
+      this.pendingTasks = remainingTasks;
     }
   };
 
   /**
-   * Stops active camera video stream processing and clears pending worker tasks.
+   * Halts active processing loops and terminates all pending tasks.
    */
-  public readonly stopLiveStream = (): void => {
-    this.stop();
+  public readonly stop = (): void => {
+    this.stopLiveStream();
+    if (this.pendingTasks.size > 0) {
+      this.pendingTasks.forEach((task) => {
+        task.reject(new Error('ID scan operation cancelled: Engine stopped'));
+      });
+      this.pendingTasks.clear();
+    }
   };
 
   /**

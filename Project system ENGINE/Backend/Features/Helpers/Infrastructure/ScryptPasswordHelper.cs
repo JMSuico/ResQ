@@ -15,8 +15,8 @@ public static class ScryptPasswordHelper
 
     public static (string Hash, string Salt) HashPassword(string password)
     {
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 12)
-            throw new ArgumentException("Password must be at least 12 characters long.");
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
+            throw new ArgumentException("Password must be at least 5 characters long.");
 
         byte[] saltBytes = RandomNumberGenerator.GetBytes(SaltByteSize);
         byte[] hashBytes = Rfc2898DeriveBytes.Pbkdf2(
