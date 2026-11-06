@@ -444,10 +444,11 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     if (typeof centerLat === 'number' && typeof centerLng === 'number') {
-      mapInstanceRef.current.panTo([centerLat, centerLng], {
-        animate: true,
-        duration: PAN_DURATION_SECONDS
-      });
+      try {
+        mapInstanceRef.current.panTo([centerLat, centerLng], { animate: false });
+      } catch {
+        // Safe pan disposal
+      }
     }
   }, [centerLat, centerLng]);
 
@@ -458,10 +459,11 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     if (found) {
       setActivePointer(found);
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.panTo([found.lat, found.lng], {
-          animate: true,
-          duration: PAN_DURATION_SECONDS
-        });
+        try {
+          mapInstanceRef.current.panTo([found.lat, found.lng], { animate: false });
+        } catch {
+          // Safe pan disposal
+        }
       }
     }
   }, [selectedIncidentId, unifiedIncidents]);
@@ -550,10 +552,11 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         setActivePointer(inc);
         onSelectIncident?.(inc);
         if (mapInstanceRef.current) {
-          mapInstanceRef.current.panTo([inc.lat, inc.lng], {
-            animate: true,
-            duration: 0.55
-          });
+          try {
+            mapInstanceRef.current.panTo([inc.lat, inc.lng], { animate: false });
+          } catch {
+            // Safe pan disposal
+          }
         }
       });
 
