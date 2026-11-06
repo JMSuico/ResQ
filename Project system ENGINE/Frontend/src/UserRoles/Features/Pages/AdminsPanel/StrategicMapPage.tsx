@@ -266,12 +266,12 @@ export const StrategicMapPage: FC = () => {
   return (
     <div className="flex flex-col gap-4 w-full h-[calc(100vh-130px)] min-h-[580px] flex-1">
       {/* Top Header Bar */}
-      <div className="relative z-50 pointer-events-auto flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-700/70 backdrop-blur-md">
+      <div className="relative z-[500] pointer-events-auto flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-700/70 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => navigate('/admin/dashboard')}
-            className="p-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white transition-all flex items-center gap-1.5 text-xs font-mono font-bold cursor-pointer relative z-50 pointer-events-auto"
+            className="p-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white transition-all flex items-center gap-1.5 text-xs font-mono font-bold cursor-pointer relative z-[510] pointer-events-auto"
             title="Return to Executive Dashboard"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -402,6 +402,7 @@ export const StrategicMapPage: FC = () => {
               }}
               centerLat={activeCenter.lat}
               centerLng={activeCenter.lng}
+              onExpandMap={() => navigate('/admin/dashboard')}
               className="w-full h-full min-h-[580px] flex-1"
             />
           </div>

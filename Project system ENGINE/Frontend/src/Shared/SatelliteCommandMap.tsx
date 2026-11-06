@@ -42,6 +42,7 @@ import {
   calculateHaversineDistanceKm,
   calculateDynamicEtaMinutes
 } from '@/Libs/Map/mapAccuracy';
+import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
 
 export interface IncidentPinData {
   id: string;
@@ -178,6 +179,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   const [lightboxOpen, setLightboxOpen] = useState<boolean>(false);
   const [calloutPoint, setCalloutPoint] = useState<{ x: number; y: number } | null>(null);
 
+  const { isMobile, isTablet } = useFluidResposiveness();
   const effectiveExpanded = isExpanded !== undefined ? isExpanded : isExpandedFullscreen;
 
   // Real-time calculation of callout pixel position anchored to active pointer
@@ -223,11 +225,23 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   }, [updateCalloutPosition]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    const t1 = window.setTimeout(() => {
+      mapInstanceRef.current?.invalidateSize();
+      updateCalloutPosition();
+    }, 60);
+    const t2 = window.setTimeout(() => {
       mapInstanceRef.current?.invalidateSize();
       updateCalloutPosition();
     }, 220);
-    return () => window.clearTimeout(timer);
+    const t3 = window.setTimeout(() => {
+      mapInstanceRef.current?.invalidateSize();
+      updateCalloutPosition();
+    }, 600);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
+    };
   }, [effectiveExpanded, updateCalloutPosition]);
 
   // Sync medic pointer settings from localStorage / custom event
@@ -1047,12 +1061,14 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       {/* Tactical Cloud Message Box Callout (Speech bubble pointing directly at the UI pointer icon) */}
       {activePointer && activeCategoryMeta && calloutPoint && (() => {
         const containerW = mapContainerRef.current?.clientWidth || 700;
-        const cardW = 340;
+        const containerH = mapContainerRef.current?.clientHeight || 500;
+        const cardW = isMobile ? Math.min(300, containerW - 24) : 340;
         const halfW = cardW / 2;
 
-        const isAbove = calloutPoint.y > 270;
         const rawX = calloutPoint.x;
         const rawY = calloutPoint.y;
+        const isAbove = rawY > containerH * 0.45;
+        const pinClearance = 44;
 
         const clampX = Math.max(halfW + 12, Math.min(containerW - halfW - 12, rawX));
         const arrowOffset = Math.max(-halfW + 28, Math.min(halfW - 28, rawX - clampX));
@@ -1062,11 +1078,14 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             className="absolute z-[450] pointer-events-auto transition-transform duration-75"
             style={{
               left: `${clampX}px`,
-              top: `${isAbove ? rawY - 26 : rawY + 26}px`,
+              top: `${isAbove ? rawY - pinClearance : rawY + pinClearance}px`,
               transform: isAbove ? 'translate(-50%, -100%)' : 'translate(-50%, 0)'
             }}
           >
-            <div className="relative w-[320px] sm:w-[350px] max-h-[460px] overflow-y-auto bg-slate-950/95 border-2 border-sky-400/80 rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.95)] backdrop-blur-md overflow-hidden text-slate-100 flex flex-col animate-fadeIn">
+            <div
+              className="relative max-h-[min(480px,80vh)] overflow-y-auto bg-slate-950/95 border-2 border-sky-400/80 rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.95)] backdrop-blur-md overflow-hidden text-slate-100 flex flex-col animate-fadeIn"
+              style={{ width: `${cardW}px` }}
+            >
               {/* Cloud Message Box Header */}
               <div
                 className="px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between gap-2"
@@ -1284,12 +1303,17 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         ref={mapContainerRef}
         role="application"
         aria-label="Satellite map of Katipunan, Zamboanga del Norte"
-        className={`w-full h-full flex-1 min-h-[350px] ${className || ''}`}
-        style={
-          height && !isExpandedFullscreen
-            ? { height: typeof height === 'number' ? `${height}px` : height, width: '100%', minHeight: '100%' }
-            : { minHeight: '350px', height: '100%', width: '100%' }
-        }
+        className={`absolute inset-0 w-full h-full ${className || ''}`}
+        style={{
+          width: '100%',
+          height: '100%',
+          minHeight: '100%',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0
+        }}
       />
 
       {/* Multi-Media Evidence Lightbox */}

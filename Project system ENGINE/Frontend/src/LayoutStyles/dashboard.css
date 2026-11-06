@@ -179,17 +179,9 @@
 .iconbtn__dot.is-off { display: none; }
 
 .alerts__panel {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  z-index: 100001;
-  width: 340px;
-  max-height: min(66vh, 460px);
-  overflow: auto;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 11px;
-  background: var(--navy-900);
-  box-shadow: 0 22px 48px rgba(2, 10, 20, 0.55);
+  position: fixed;
+  z-index: 999999;
+  box-shadow: 0 22px 48px rgba(2, 10, 20, 0.75);
 }
 
 .alerts__panel[hidden] { display: none; }
@@ -386,6 +378,9 @@
 }
 
 .sidebar {
+  position: relative;
+  z-index: 600;
+  pointer-events: auto;
   flex: none;
   width: var(--side-w);
   padding-top: 8px;

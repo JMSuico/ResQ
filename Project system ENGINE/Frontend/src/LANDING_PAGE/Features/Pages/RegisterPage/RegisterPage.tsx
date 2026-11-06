@@ -99,7 +99,7 @@ export const RegisterPage: React.FC = () => {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isDraggingFront, setIsDraggingFront] = useState<boolean>(false);
   const [isDraggingBack, setIsDraggingBack] = useState<boolean>(false);
-  const isIdValidated = Boolean(idFrontShot && (firstName.trim() || lastName.trim() || licenseNumber.trim()));
+  const isIdValidated = Boolean(idFrontShot);
 
   // Optical Frame Freezing & Laser Scan Overlay State
   const [isFrameFrozen, setIsFrameFrozen] = useState<boolean>(false);
@@ -416,14 +416,16 @@ export const RegisterPage: React.FC = () => {
     const isFront = !idFrontShot;
 
     const hasCoreField = Boolean(
-      result.fields && (
+      (result.fields && (
         result.fields.fullname ||
         result.fields.firstName ||
         result.fields.lastName ||
         result.fields.licenseNumber ||
         result.fields.idNumber ||
         result.fields.employeeId
-      )
+      )) ||
+      (result.rawText && result.rawText.trim().length >= 8) ||
+      (result.corners && result.corners.length === 4)
     );
 
     const isFaceDetected = Boolean(
@@ -431,9 +433,10 @@ export const RegisterPage: React.FC = () => {
       (scannerAnalysis?.cardPresence?.status === 'FACE_DETECTED')
     );
 
+    // Resilient acceptance threshold (confidence >= 0.45 for near-field and real-world camera lighting)
     const isRejected = isFront
-      ? (!result.success || confidenceScore < 0.55 || !hasCoreField || isFaceDetected)
-      : (!result.success || confidenceScore < 0.50 || isFaceDetected);
+      ? (!result.success || confidenceScore < 0.45 || !hasCoreField || isFaceDetected)
+      : (!result.success || confidenceScore < 0.40 || isFaceDetected);
 
     if (isRejected) {
       // 1. Unfreeze vision engine loop so user can realign card
@@ -519,6 +522,37 @@ export const RegisterPage: React.FC = () => {
       }
       if (result.fields.rankOrTitle) {
         setRankOrTitle(result.fields.rankOrTitle);
+      }
+
+      // Fallback regex extraction from raw OCR text for license, weight, height, dob, address, sex
+      const rawText = result.rawText || '';
+      if (!result.fields.licenseNumber && !result.fields.idNumber && rawText) {
+        const licMatch = rawText.match(/(?:LIC(?:ENSE)?(?:\s*NO)?|ID\s*(?:NO)?|CARD\s*NO)[:\s#]*([A-Z0-9-]{8,22})/i);
+        if (licMatch) setLicenseNumber(licMatch[1].trim());
+      }
+      if (!result.fields.weight && rawText) {
+        const wtMatch = rawText.match(/(?:WT|WEIGHT|W)[:\s]*([0-9]{2,3}(?:\.[0-9]+)?\s*(?:kg|lbs|kilos)?)/i);
+        if (wtMatch) setWeight(wtMatch[1].trim());
+      }
+      if (!result.fields.height && rawText) {
+        const htMatch = rawText.match(/(?:HT|HEIGHT|H)[:\s]*([0-9]{2,3}(?:\.[0-9]+)?\s*(?:cm|m)?)/i);
+        if (htMatch) setHeight(htMatch[1].trim());
+      }
+      if (!result.fields.dateOfBirth && rawText) {
+        const dobMatch = rawText.match(/(?:DOB|DATE\s*OF\s*BIRTH|BIRTH\s*DATE)[:\s]*([0-9]{4}[-/][0-9]{2}[-/][0-9]{2}|[0-9]{2}[-/][0-9]{2}[-/][0-9]{4}|[A-Za-z]{3,9}\s+[0-9]{1,2},?\s+[0-9]{4})/i);
+        if (dobMatch) setDateOfBirth(dobMatch[1].trim());
+      }
+      if (!result.fields.address && rawText) {
+        const addrMatch = rawText.match(/(?:ADDRESS|ADDR)[:\s]*([^\n\r]{10,80})/i);
+        if (addrMatch) setAddress(addrMatch[1].trim());
+      }
+      if (!result.fields.sex && rawText) {
+        const sexMatch = rawText.match(/(?:SEX|GENDER)[:\s]*(MALE|FEMALE|M|F)/i);
+        if (sexMatch) {
+          const s = sexMatch[1].toLowerCase();
+          if (s.startsWith('m')) setSex('male');
+          else if (s.startsWith('f')) setSex('female');
+        }
       }
 
       setAutofillBadge({

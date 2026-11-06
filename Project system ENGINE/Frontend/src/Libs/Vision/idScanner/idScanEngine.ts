@@ -79,13 +79,13 @@ export interface IdScannerEngineConfig {
 }
 
 export const DEFAULT_SCANNER_CONFIG: IdScannerEngineConfig = {
-  maxJitterPixels: 6.0,
-  requiredStableFrames: 8,
-  minConfidenceToAutofill: 0.70,
+  maxJitterPixels: 10.5,
+  requiredStableFrames: 6,
+  minConfidenceToAutofill: 0.65,
   enableAiStandbyFallback: true,
   targetRatios: [1.5858, 1.4205],
   useWebWorker: true,
-  frameThrottleMs: 60
+  frameThrottleMs: 50
 };
 
 // ============================================================================
@@ -107,6 +107,50 @@ export const imageDataToDataUrl = (imageData: ImageData): string => {
 };
 
 // ============================================================================
+// Smart Capture: Ring Buffer for Best Frame Selection (Auto-Capture Sharpest Frame)
+// Evaluates Laplacian variance sharpness and border contrast across live stream frames.
+// ============================================================================
+
+export interface ScoredFrame {
+  readonly imageData: ImageData;
+  readonly snapshotUrl: string;
+  readonly score: number;
+}
+
+export class SmartCaptureRingBuffer {
+  private buffer: ScoredFrame[] = [];
+  private readonly maxFrames: number = 6;
+
+  public readonly push = (
+    imageData: ImageData,
+    snapshotUrl: string,
+    laplacianScore: number,
+    contrastScore: number
+  ): void => {
+    const score = laplacianScore * 0.7 + contrastScore * 0.3;
+    this.buffer.push({ imageData, snapshotUrl, score });
+    if (this.buffer.length > this.maxFrames) {
+      this.buffer.shift();
+    }
+  };
+
+  public readonly getBestFrame = (): { snapshotUrl: string; imageData: ImageData } | null => {
+    if (this.buffer.length === 0) return null;
+    let best = this.buffer[0];
+    for (let i = 1; i < this.buffer.length; i++) {
+      if (this.buffer[i].score > best.score) {
+        best = this.buffer[i];
+      }
+    }
+    return { snapshotUrl: best.snapshotUrl, imageData: best.imageData };
+  };
+
+  public readonly clear = (): void => {
+    this.buffer = [];
+  };
+}
+
+// ============================================================================
 // Temporal Stability Tracker
 // Enforces: Corner shift across consecutive frames must remain within jitter threshold.
 // Applies Exponential Moving Average (EMA) smoothing for jitter-free full-frame card tracking.
@@ -122,7 +166,7 @@ export class TemporalStabilityTracker {
   private isLockedState: boolean = false;
   private lastMaxShift: number = 0;
 
-  public constructor(maxFrames: number = 8, jitterThreshold: number = 6.0) {
+  public constructor(maxFrames: number = 6, jitterThreshold: number = 10.5) {
     this.maxFrames = maxFrames;
     this.jitterThreshold = jitterThreshold;
   }
@@ -130,17 +174,19 @@ export class TemporalStabilityTracker {
   public readonly update = (corners: Point2D[] | null): TemporalStabilityState & { smoothedCorners: Point2D[] | null } => {
     if (!corners || corners.length !== 4) {
       this.missingCount++;
-      // Strict zero-decay when corners are missing or suppressed by quality/presence gates
-      this.stableCount = 0;
-      this.history = [];
-      this.smoothedCorners = null;
-      this.isLockedState = false;
+      // Soft-decay when corners are briefly missing (e.g. handheld camera micro-tremors)
+      this.stableCount = Math.max(0, this.stableCount - 1);
+      if (this.stableCount === 0) {
+        this.history = [];
+        this.smoothedCorners = null;
+        this.isLockedState = false;
+      }
       return {
         isLocked: false,
-        lockProgress: 0,
-        stableFrameCount: 0,
+        lockProgress: Math.min(100, Math.round((this.stableCount / this.maxFrames) * 100)),
+        stableFrameCount: this.stableCount,
         maxShift: 999,
-        smoothedCorners: null
+        smoothedCorners: this.smoothedCorners
       };
     }
 
@@ -227,6 +273,7 @@ interface PendingWorkerTask {
 export class IdScanEngine {
   private config: IdScannerEngineConfig;
   private readonly stabilityTracker: TemporalStabilityTracker;
+  private readonly smartBuffer: SmartCaptureRingBuffer = new SmartCaptureRingBuffer();
   private worker: Worker | null = null;
   private isRunning: boolean = false;
   private isScanningLock: boolean = false;
@@ -586,6 +633,7 @@ export class IdScanEngine {
     this.isRunning = true;
     this.isScanningLock = false;
     this.stabilityTracker.reset();
+    this.smartBuffer.clear();
 
     // Prepare processing canvas (fixed downsample resolution 640x360 for high-efficiency 30fps Canny)
     if (!this.processingCanvas) {
@@ -641,12 +689,22 @@ export class IdScanEngine {
 
             callbacks.onFrame(normalizedAnalysis);
 
+            // Maintain rolling SmartCapture buffer of sharpest frames while card is present
+            if (normalizedAnalysis.cardPresence?.passed) {
+              const snap = this.freezeCaptureSession(video);
+              if (snap) {
+                const laplacian = normalizedAnalysis.quality?.details?.laplacian ?? 50;
+                const edgeContrast = normalizedAnalysis.cardPresence?.edgeContrast ?? 20;
+                this.smartBuffer.push(snap.imageData, snap.snapshotUrl, laplacian, edgeContrast);
+              }
+            }
+
             // Temporal stability lock condition met! Trigger full scan!
             if (analysis.stability.isLocked && !this.isScanningLock) {
               this.isScanningLock = true;
 
-              // 1. Detection and Freezing Step (freezeCaptureSession / pausePreview / freezeFrame)
-              const frozenFrame = this.freezeCaptureSession(video);
+              // 1. Detection and Freezing Step: Retrieve Smart Capture Best Frame (Sharpest unblurred snapshot)
+              const frozenFrame = this.smartBuffer.getBestFrame() || this.freezeCaptureSession(video);
               if (frozenFrame) {
                 // 2. Scanning Animation Step (startScanAnimation / setLineScanAnimationMode / drawOverlay)
                 this.startScanAnimation();
@@ -766,6 +824,7 @@ export class IdScanEngine {
    */
   public readonly resetStability = (): void => {
     this.stabilityTracker.reset();
+    this.smartBuffer.clear();
     this.isScanningLock = false;
   };
 
@@ -780,6 +839,7 @@ export class IdScanEngine {
       this.animationFrameId = null;
     }
     this.stabilityTracker.reset();
+    this.smartBuffer.clear();
 
     // Only cancel live frame analysis tasks; preserve active FULL_SCAN card OCR jobs!
     if (this.pendingTasks.size > 0) {

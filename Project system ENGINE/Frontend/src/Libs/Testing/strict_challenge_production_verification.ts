@@ -21,9 +21,9 @@ import { chromium } from 'playwright';
 import * as path from 'path';
 
 const API_BASE = 'http://127.0.0.1:5000';
-const ADMIN_PORTAL = 'http://localhost:5174';
-const RESPONDER_PORTAL = 'http://localhost:5173';
-const CIVILIAN_PORTAL = 'http://localhost:5175';
+const ADMIN_PORTAL = 'http://127.0.0.1:5174';
+const RESPONDER_PORTAL = 'http://127.0.0.1:5173';
+const CIVILIAN_PORTAL = 'http://127.0.0.1:5175';
 
 const ARTIFACT_DIR = 'C:\\Users\\provu\\.gemini\\antigravity-cli\\brain\\f4db8cc5-1635-43fd-94bb-ed301c4741f1';
 
@@ -293,7 +293,7 @@ export const runStrictChallenge = async () => {
     // 6.1: Admin Command Portal (:5174)
     logInfo('Verifying Admin Portal (:5174)...');
     const adminPage = await context.newPage();
-    await adminPage.goto(`${ADMIN_PORTAL}/`);
+    await adminPage.goto(`${ADMIN_PORTAL}/`, { waitUntil: 'domcontentloaded' });
     await adminPage.evaluate((sess) => {
       sessionStorage.setItem('resqtrack_token', sess.token);
       sessionStorage.setItem('resqtrack_session', JSON.stringify(sess.session));
@@ -303,8 +303,7 @@ export const runStrictChallenge = async () => {
       localStorage.setItem('resqtrack_user_5174', JSON.stringify(sess.session));
     }, admin);
 
-    await adminPage.goto(`${ADMIN_PORTAL}/admin/dashboard`);
-    await adminPage.waitForLoadState('networkidle');
+    await adminPage.goto(`${ADMIN_PORTAL}/admin/dashboard`, { waitUntil: 'domcontentloaded' });
     await adminPage.waitForTimeout(2000);
 
     // 6.1.1: Verify Notification Bell Stacking Context & Modal Overlay
@@ -339,9 +338,8 @@ export const runStrictChallenge = async () => {
     }
 
     // 6.1.3: Verify Strategic Map Navigation & Layout
-    await adminPage.goto(`${ADMIN_PORTAL}/admin/strategic-map`);
-    await adminPage.waitForLoadState('networkidle');
-    await adminPage.waitForTimeout(2500);
+    await adminPage.goto(`${ADMIN_PORTAL}/admin/strategic-map`, { waitUntil: 'domcontentloaded' });
+    await adminPage.waitForTimeout(2000);
 
     const leafletContainer = adminPage.locator('.leaflet-container').first();
     await leafletContainer.waitFor({ state: 'visible' });
@@ -370,8 +368,7 @@ export const runStrictChallenge = async () => {
     logPass("<- DASHBOARD Button successfully clicked: returned cleanly to /admin/dashboard.");
 
     // Return to Strategic Map and click sidebar link
-    await adminPage.goto(`${ADMIN_PORTAL}/admin/strategic-map`);
-    await adminPage.waitForLoadState('networkidle');
+    await adminPage.goto(`${ADMIN_PORTAL}/admin/strategic-map`, { waitUntil: 'domcontentloaded' });
     await adminPage.waitForTimeout(1500);
 
     const sidebarLink = adminPage.locator('aside.sidebar a[href*="incidents"]').first();
@@ -383,7 +380,7 @@ export const runStrictChallenge = async () => {
     // 6.2: Responders Portal (:5173)
     logInfo('\nVerifying Responders Portal (:5173)...');
     const respPage = await context.newPage();
-    await respPage.goto(`${RESPONDER_PORTAL}/`);
+    await respPage.goto(`${RESPONDER_PORTAL}/`, { waitUntil: 'domcontentloaded' });
     await respPage.evaluate((sess) => {
       sessionStorage.setItem('resqtrack_token', sess.token);
       sessionStorage.setItem('resqtrack_session', JSON.stringify(sess.session));
@@ -394,9 +391,8 @@ export const runStrictChallenge = async () => {
       localStorage.setItem('resqtrack_user_5173', JSON.stringify(sess.session));
     }, medic1);
 
-    await respPage.goto(`${RESPONDER_PORTAL}/responder/dashboard`);
-    await respPage.waitForLoadState('networkidle');
-    await respPage.waitForTimeout(2500);
+    await respPage.goto(`${RESPONDER_PORTAL}/responder/dashboard`, { waitUntil: 'domcontentloaded' });
+    await respPage.waitForTimeout(2000);
 
     const respLeaflet = respPage.locator('.leaflet-container').first();
     await respLeaflet.waitFor({ state: 'visible' });
@@ -409,7 +405,7 @@ export const runStrictChallenge = async () => {
     // 6.3: Civilian Portal (:5175)
     logInfo('\nVerifying Civilian Portal (:5175)...');
     const civPage = await context.newPage();
-    await civPage.goto(`${CIVILIAN_PORTAL}/`);
+    await civPage.goto(`${CIVILIAN_PORTAL}/`, { waitUntil: 'domcontentloaded' });
     await civPage.evaluate((sess) => {
       sessionStorage.setItem('resqtrack_token', sess.token);
       sessionStorage.setItem('resqtrack_session', JSON.stringify(sess.session));
@@ -419,9 +415,8 @@ export const runStrictChallenge = async () => {
       localStorage.setItem('resqtrack_user', JSON.stringify(sess.session));
     }, civilian1);
 
-    await civPage.goto(`${CIVILIAN_PORTAL}/civilian/live-map`);
-    await civPage.waitForLoadState('networkidle');
-    await civPage.waitForTimeout(2500);
+    await civPage.goto(`${CIVILIAN_PORTAL}/civilian/live-map`, { waitUntil: 'domcontentloaded' });
+    await civPage.waitForTimeout(2000);
 
     const civLeaflet = civPage.locator('.leaflet-container').first();
     await civLeaflet.waitFor({ state: 'visible' });

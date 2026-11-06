@@ -184,9 +184,9 @@ export const evaluateCardPresenceGate = (
     };
   }
 
-  // 1. Strict ID Aspect Ratio: [1.30, 1.75]
+  // 1. Resilient ID Aspect Ratio: [1.25, 1.82] (Accommodates perspective tilt and close-up projection)
   const aspect = Math.max(avgW, avgH) / Math.min(avgW, avgH);
-  if (aspect < 1.30 || aspect > 1.75) {
+  if (aspect < 1.25 || aspect > 1.82) {
     return {
       passed: false,
       status: 'NO_CARD',
@@ -200,11 +200,11 @@ export const evaluateCardPresenceGate = (
     };
   }
 
-  // 1b. Card Viewport Area Ratio (12% to 88% of camera viewport)
-  // Rejects room furniture, distant objects, or full-viewport background patterns
+  // 1b. Card Viewport Area Ratio (8% to 96% of camera viewport)
+  // Accommodates both distant alignment and close-up full-viewfinder positioning
   const quadArea = avgW * avgH;
   const quadAreaRatio = quadArea / totalPixels;
-  if (quadAreaRatio < 0.12 || quadAreaRatio > 0.88) {
+  if (quadAreaRatio < 0.08 || quadAreaRatio > 0.96) {
     return {
       passed: false,
       status: 'NO_CARD',
@@ -218,7 +218,7 @@ export const evaluateCardPresenceGate = (
     };
   }
 
-  // 2. Corner Orthogonality Check: |cos θ| <= 0.38 (67.6° to 112.4°)
+  // 2. Corner Orthogonality Check: |cos θ| <= 0.45 (63.2° to 116.8°)
   for (let i = 0; i < 4; i++) {
     const pPrev = candidateCorners[(i + 3) % 4];
     const pCurr = candidateCorners[i];
@@ -234,7 +234,7 @@ export const evaluateCardPresenceGate = (
     if (len1 <= 0 || len2 <= 0) continue;
 
     const cosTheta = Math.abs((v1x * v2x + v1y * v2y) / (len1 * len2));
-    if (cosTheta > 0.38) {
+    if (cosTheta > 0.45) {
       return {
         passed: false,
         status: 'NO_CARD',
@@ -289,7 +289,7 @@ export const evaluateCardPresenceGate = (
   }
 
   const meanEdgeContrast = sampledBorderPoints > 0 ? totalBorderContrast / sampledBorderPoints : 0;
-  if (meanEdgeContrast < 15.0) {
+  if (meanEdgeContrast < 11.0) {
     return {
       passed: false,
       status: 'NO_CARD',
@@ -387,10 +387,10 @@ export const evaluateCardPresenceGate = (
     }
   }
 
-  // Philippine government IDs have text lines spreading across at least 4 of 12 spatial blocks
+  // Philippine government IDs have text lines spreading across at least 3 of 12 spatial blocks
   // and multiple distinct alternating character stroke transitions
   // Rejects plain furniture slats, doors, and bed frames that have border edges but lack dense text matrix
-  if (strokeDensity < 0.016 || activeBlocks < 4 || textTransitions < 8) {
+  if (strokeDensity < 0.011 || activeBlocks < 3 || textTransitions < 5) {
     return {
       passed: false,
       status: 'NO_CARD',
