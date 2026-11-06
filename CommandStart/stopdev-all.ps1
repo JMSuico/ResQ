@@ -7,9 +7,9 @@ param(
 $killedCount = 0
 
 foreach ($port in $Ports) {
-    # Method 1: Get-NetTCPConnection
+    # Method 1: Get-NetTCPConnection (all states, including Listen, FIN_WAIT, CLOSE_WAIT)
     try {
-        $connections = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+        $connections = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
         if ($connections) {
             foreach ($conn in $connections) {
                 $targetPid = $conn.OwningProcess
@@ -28,9 +28,9 @@ foreach ($port in $Ports) {
         }
     } catch { }
 
-    # Method 2: netstat fallback
+    # Method 2: netstat fallback (all states)
     try {
-        $lines = netstat -ano | Select-String ":$port\s+.*LISTENING\s+(\d+)"
+        $lines = netstat -ano | Select-String ":$port\s+.*?(\d+)$"
         foreach ($line in $lines) {
             if ($line.Matches.Groups[1].Value) {
                 $targetPid = [int]$line.Matches.Groups[1].Value
@@ -49,6 +49,32 @@ foreach ($port in $Ports) {
         }
     } catch { }
 }
+
+# Terminate any lingering Backend binary processes locking Backend.exe
+try {
+    $backendProcs = Get-Process -Name "Backend" -ErrorAction SilentlyContinue
+    if ($backendProcs) {
+        foreach ($bp in $backendProcs) {
+            if ($bp.Id -ne $PID) {
+                Write-Host "  [!] Terminating lingering Backend process (PID: $($bp.Id))..." -ForegroundColor Yellow
+                Stop-Process -Id $bp.Id -Force -ErrorAction SilentlyContinue
+                $killedCount++
+            }
+        }
+    }
+} catch { }
+
+# Terminate any lingering Vite / node processes associated with the Frontend
+try {
+    $nodeProcs = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue
+    foreach ($np in $nodeProcs) {
+        if ($np.CommandLine -and ($np.CommandLine -match "vite" -or $np.CommandLine -match "INCIDENT AI SYSTEM DETECTION")) {
+            Write-Host "  [!] Terminating lingering Vite node process (PID: $($np.ProcessId))..." -ForegroundColor Yellow
+            Stop-Process -Id $np.ProcessId -Force -ErrorAction SilentlyContinue
+            $killedCount++
+        }
+    }
+} catch { }
 
 if ($IncludeDocker) {
     try {

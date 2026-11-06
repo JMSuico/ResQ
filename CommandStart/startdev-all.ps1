@@ -80,7 +80,10 @@ if (-not $sqlServerOnline -or $dbProvider -ieq "PostgreSql") {
 # 4. Synchronize Database Schema via EF Core
 Write-Host "[*] Synchronizing Database Schema via EF Core ($dbProvider)..." -ForegroundColor Magenta
 try {
-    & dotnet ef database update --project "$backendPath"
+    & dotnet ef database update --project "$backendPath" --no-build 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        & dotnet ef database update --project "$backendPath" 2>$null
+    }
     Write-Host "  [OK] Database schema is up to date." -ForegroundColor Green
 } catch {
     Write-Host "  [!] EF Core update note: $_" -ForegroundColor Yellow
@@ -101,8 +104,14 @@ while ($attempt -lt $maxAttempts) {
     $attempt++
     Start-Sleep -Seconds 1
     try {
-        $response = Invoke-WebRequest -Uri "http://localhost:5000/api/reports" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
-        if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
+        $response = Invoke-WebRequest -Uri "http://localhost:5000/api/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+        if ($response -and $response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
+            $backendReady = $true
+            break
+        }
+        # Fallback probe to reports
+        $altResp = Invoke-WebRequest -Uri "http://localhost:5000/api/reports" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+        if ($altResp -and $altResp.StatusCode -ge 200 -and $altResp.StatusCode -lt 500) {
             $backendReady = $true
             break
         }

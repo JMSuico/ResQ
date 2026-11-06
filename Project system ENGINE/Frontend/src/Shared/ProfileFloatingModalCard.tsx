@@ -103,7 +103,7 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
     <>
       {/* Invisible backdrop overlay to catch outside clicks */}
       <div
-        className="fixed inset-0 z-[99990] bg-black/20 backdrop-blur-[0.5px]"
+        className="fixed inset-0 z-[100000] bg-black/20 backdrop-blur-[0.5px]"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -111,7 +111,7 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
       {/* Floating Tactical Card */}
       <div
         ref={cardRef}
-        className="absolute top-[calc(100%+10px)] right-0 z-[99999] w-80 sm:w-88 rounded-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-rose-950/30 border border-slate-700/80 shadow-2xl p-4 text-slate-100 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
+        className="absolute top-[calc(100%+10px)] right-0 z-[100001] w-80 sm:w-88 rounded-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-rose-950/30 border border-slate-700/80 shadow-2xl p-4 text-slate-100 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
         style={{
           boxShadow: '0 24px 50px -6px rgba(0, 0, 0, 0.85), 0 0 1px 1px rgba(244, 63, 94, 0.25)'
         }}

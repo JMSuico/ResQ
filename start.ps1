@@ -7,7 +7,7 @@ param(
     [string[]]$RemainingArgs = @()
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $ScriptDir) { $ScriptDir = $PSScriptRoot }
 if (-not $ScriptDir) { $ScriptDir = (Get-Location).Path }

@@ -119,8 +119,8 @@ export interface SatelliteCommandMapProps {
 }
 
 const AREA_BOUNDS: [[number, number], [number, number]] = [
-  [8.32, 123.15],
-  [8.60, 123.40]
+  [7.80, 122.30],
+  [9.10, 124.20]
 ];
 const HOME_CENTER: [number, number] = [8.5147, 123.2842];
 const HOME_ZOOM = 12;
@@ -389,12 +389,12 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       zoomControl: false,
       minZoom: MIN_ZOOM,
       maxZoom: MAX_ZOOM,
-      maxBoundsViscosity: 1.0,
+      maxBoundsViscosity: 0.25,
       attributionControl: true
     }).setView(initialCenter, HOME_ZOOM);
 
     map.attributionControl.setPosition('bottomleft');
-    map.setMaxBounds(homeBounds.pad(0.05));
+    map.setMaxBounds(homeBounds.pad(0.20));
 
     L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -431,6 +431,12 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
     return () => {
       try {
+        const anyMap = map as unknown as { _panAnim?: { stop: () => void } };
+        if (anyMap._panAnim) {
+          anyMap._panAnim.stop();
+          anyMap._panAnim = undefined;
+        }
+        map.off();
         map.stop();
         map.remove();
       } catch {
@@ -1281,7 +1287,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         className={`w-full h-full flex-1 min-h-[350px] ${className || ''}`}
         style={
           height && !isExpandedFullscreen
-            ? { height: typeof height === 'number' ? `${height}px` : height, width: '100%' }
+            ? { height: typeof height === 'number' ? `${height}px` : height, width: '100%', minHeight: '100%' }
             : { minHeight: '350px', height: '100%', width: '100%' }
         }
       />
