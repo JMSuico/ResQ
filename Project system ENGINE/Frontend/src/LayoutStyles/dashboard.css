@@ -23,6 +23,8 @@
   background: var(--navy-950);
 }
 .topbar {
+  position: relative;
+  z-index: 5000;
   flex: none;
   display: flex;
   align-items: center;
@@ -180,7 +182,7 @@
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  z-index: 60;
+  z-index: 99999;
   width: 340px;
   max-height: min(66vh, 460px);
   overflow: auto;
@@ -1244,7 +1246,7 @@
 .camera {
   position: fixed;
   inset: 0;
-  z-index: 110;
+  z-index: 99999;
   display: grid;
   place-items: center;
   padding: 20px;

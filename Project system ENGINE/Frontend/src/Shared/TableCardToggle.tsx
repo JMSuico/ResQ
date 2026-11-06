@@ -2,8 +2,10 @@
 // TableCardToggle.tsx -- Universal view mode toggle (Table to Card & Card to Table)
 // Enables interactive switching between compact grid cards and data tables.
 // Connects with RadioButton and Button components.
+// Universal lambda expressions (=>).
 
 import React, { FC, useState } from 'react';
+import { Table, LayoutGrid } from 'lucide-react';
 import { Button } from './Button';
 import { RadioButton } from './RadioButton';
 
@@ -78,11 +80,8 @@ export const TableCardToggle: FC<TableCardToggleProps> = ({
           size="sm"
           onClick={() => onChange('table')}
           className="flex items-center gap-1.5"
+          icon={<Table className="w-3.5 h-3.5" />}
         >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 3h18v18H3z" />
-            <path d="M3 9h18M3 15h18M9 3v18" />
-          </svg>
           Table
         </Button>
         <Button
@@ -90,13 +89,8 @@ export const TableCardToggle: FC<TableCardToggleProps> = ({
           size="sm"
           onClick={() => onChange('card')}
           className="flex items-center gap-1.5"
+          icon={<LayoutGrid className="w-3.5 h-3.5" />}
         >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="7" height="7" />
-            <rect x="14" y="3" width="7" height="7" />
-            <rect x="14" y="14" width="7" height="7" />
-            <rect x="3" y="14" width="7" height="7" />
-          </svg>
           Cards
         </Button>
       </div>
@@ -120,10 +114,7 @@ export const TableCardToggle: FC<TableCardToggleProps> = ({
         }`}
         title="Switch to Table View (CardToTable)"
       >
-        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M3 3h18v18H3z" />
-          <path d="M3 9h18M3 15h18M9 3v18" />
-        </svg>
+        <Table className="w-3.5 h-3.5" />
         <span>TABLE</span>
       </button>
 
@@ -137,12 +128,7 @@ export const TableCardToggle: FC<TableCardToggleProps> = ({
         }`}
         title="Switch to Card Grid View (TableToCard)"
       >
-        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <rect x="3" y="3" width="7" height="7" />
-          <rect x="14" y="3" width="7" height="7" />
-          <rect x="14" y="14" width="7" height="7" />
-          <rect x="3" y="14" width="7" height="7" />
-        </svg>
+        <LayoutGrid className="w-3.5 h-3.5" />
         <span>CARDS</span>
       </button>
     </div>

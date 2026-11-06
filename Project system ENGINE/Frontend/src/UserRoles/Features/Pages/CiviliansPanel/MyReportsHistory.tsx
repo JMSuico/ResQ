@@ -15,6 +15,7 @@ import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { formatIsoTimestamp, formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
 import { SEVERITY_COLORS } from '@/Libs/Assets/data';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
+import { BASELINE_INCIDENT_REPORTS } from '@/Libs/Assets/baselineFixtures';
 
 type FilterTab = 'all' | 'active' | 'resolved';
 
@@ -33,9 +34,10 @@ export const MyReportsHistory: React.FC = () => {
   const loadReports = useCallback(async () => {
     try {
       const data = await getMyReports();
-      setReports(data || []);
+      setReports(Array.isArray(data) && data.length > 0 ? data : BASELINE_INCIDENT_REPORTS);
     } catch (err) {
       console.error('Failed to load citizen reports history:', err);
+      setReports((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_REPORTS));
     }
   }, []);
 

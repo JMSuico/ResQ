@@ -4,6 +4,18 @@
 // DO NOT mutate user email or unverified identity hashes.
 
 import React, { useEffect, useState } from 'react';
+import {
+  User,
+  MapPin,
+  Shield,
+  Award,
+  AlertTriangle,
+  Phone,
+  Stethoscope,
+  Flame,
+  ShieldAlert,
+  Building2,
+} from 'lucide-react';
 import { DefaultFloatingModalCard, Button } from '@/Shared';
 import { getUserDetail, updateUser, UserDetail, UserSummary, ResponderUnit, UpdateUserPayload } from '@/Endpoints/adminGovernanceApi';
 
@@ -255,10 +267,10 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
   };
 
   const tabs = [
-    { key: 'info', step: '01', label: 'Identity & Vitals', icon: '👤' },
-    { key: 'address', step: '02', label: 'Residence Sector', icon: '📍' },
-    { key: 'role', step: '03', label: 'Governance & Role', icon: '🛡️' },
-    { key: 'credentials', step: '04', label: 'Emergency Badges', icon: '📜' },
+    { key: 'info', step: '01', label: 'Identity & Vitals', icon: User },
+    { key: 'address', step: '02', label: 'Residence Sector', icon: MapPin },
+    { key: 'role', step: '03', label: 'Governance & Role', icon: Shield },
+    { key: 'credentials', step: '04', label: 'Emergency Badges', icon: Award },
   ] as const;
 
   return (
@@ -279,7 +291,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
 
         {errorText && (
           <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-600 text-rose-200 font-mono flex items-center gap-2">
-            <span>⚠️</span>
+            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
             <span>{errorText}</span>
           </div>
         )}
@@ -316,6 +328,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-[#1d3c5c] scrollbar-none bg-[#071522]/60 p-1 rounded-xl">
               {tabs.map((tab) => {
                 const isActive = activeTab === tab.key;
+                const TabIcon = tab.icon;
                 return (
                   <button
                     key={tab.key}
@@ -328,7 +341,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                     }`}
                   >
                     <span className="text-[10px] text-slate-500 font-bold">{tab.step}</span>
-                    <span>{tab.icon}</span>
+                    <TabIcon className="w-3.5 h-3.5" />
                     <span>{tab.label}</span>
                   </button>
                 );
@@ -483,7 +496,8 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
 
                 <div className="md:col-span-2 p-3.5 rounded-xl bg-[#0a1a2b]/80 border border-amber-900/60 shadow-md">
                   <h4 className="text-xs font-mono font-bold text-amber-300 mb-2.5 uppercase tracking-wider flex items-center gap-2">
-                    <span>🚨</span> Emergency Contact (Next of Kin)
+                    <Phone className="w-3.5 h-3.5 text-amber-400" />
+                    Emergency Contact (Next of Kin)
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
@@ -659,7 +673,8 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                 {formData.role === 'Responder' && formData.unit === 'RHU' && (
                   <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-600/70 space-y-3 shadow-lg">
                     <div className="text-emerald-300 font-mono font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                      <span>🚑</span> RHU Medical Badges & License
+                      <Stethoscope className="w-3.5 h-3.5 text-emerald-400" />
+                      RHU Medical Badges & License
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                       <div>
@@ -718,7 +733,8 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                 {formData.role === 'Responder' && formData.unit === 'FIRE' && (
                   <div className="p-4 rounded-xl bg-orange-950/20 border border-orange-600/70 space-y-3 shadow-lg">
                     <div className="text-orange-300 font-mono font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                      <span>🚒</span> Bureau of Fire Protection (BFP) Badges
+                      <Flame className="w-3.5 h-3.5 text-orange-400" />
+                      Bureau of Fire Protection (BFP) Badges
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                       <div>
@@ -770,7 +786,8 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                 {formData.role === 'Responder' && formData.unit === 'PNP' && (
                   <div className="p-4 rounded-xl bg-sky-950/20 border border-sky-600/70 space-y-3 shadow-lg">
                     <div className="text-sky-300 font-mono font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                      <span>👮</span> Philippine National Police (PNP) Badges
+                      <ShieldAlert className="w-3.5 h-3.5 text-sky-400" />
+                      Philippine National Police (PNP) Badges
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                       <div>
@@ -822,7 +839,8 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                 {formData.role === 'LDRRMO_Admin' && (
                   <div className="p-4 rounded-xl bg-rose-950/20 border border-amber-600/70 space-y-3 shadow-lg">
                     <div className="text-amber-300 font-mono font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                      <span>🏛️</span> LDRRMO Administrative Credentials
+                      <Building2 className="w-3.5 h-3.5 text-amber-400" />
+                      LDRRMO Administrative Credentials
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                       <div>

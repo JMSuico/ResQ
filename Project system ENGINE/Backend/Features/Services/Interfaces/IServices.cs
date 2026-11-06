@@ -30,12 +30,26 @@ public interface ITriageService
     Task<List<IncidentFixtureResponse>> GetActiveFixturesAsync(CancellationToken ct = default);
     Task<(bool Success, string? Error)> VerifyReportAsync(Guid reportId, Guid adminId, VerifyReportRequest request, CancellationToken ct = default);
     Task<(bool Success, string? Error)> AllocateUnitAsync(Guid reportId, Guid adminId, Guid unitId, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> UpdateReportSeverityAsync(Guid reportId, Guid adminId, IncidentSeverity severity, CancellationToken ct = default);
 }
 
-public interface IRespondersService
+public interface IResponderOpsService
 {
     Task<List<DutyUnitResponse>> GetRosterAsync(CancellationToken ct = default);
+    Task<List<DutyUnitResponse>> GetRosterAsync(ResponderUnitType? agency, CancellationToken ct = default);
+    Task<(bool Success, string? Error, DutyUnitResponse? Unit)> UpdateDutyStatusAsync(UpdateDutyStatusRequest request, Guid? userId = null, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateUnitStatusAsync(Guid unitId, DutyStatus status, CancellationToken ct = default);
+    Task<(bool Success, string? Error, PcrResponse? Pcr)> SubmitPcrAsync(CreatePcrRequest request, Guid? userId = null, CancellationToken ct = default);
+    Task<List<PcrResponse>> GetPcrRecordsAsync(Guid? reportId = null, CancellationToken ct = default);
+    Task<(bool Success, string? Error, BlotterResponse? Blotter)> FileBlotterAsync(CreateBlotterRequest request, Guid? userId = null, CancellationToken ct = default);
+    Task<List<BlotterResponse>> GetBlotterEntriesAsync(Guid? reportId = null, CancellationToken ct = default);
+    Task<(bool Success, string? Error, AlarmLevelResponse? Alarm)> SetAlarmLevelAsync(SetAlarmLevelRequest request, Guid? userId = null, CancellationToken ct = default);
+    Task<List<AlarmLevelResponse>> GetAlarmStatusesAsync(Guid? reportId = null, CancellationToken ct = default);
+    Task<List<HydrantResponse>> GetHydrantsAsync(CancellationToken ct = default);
+}
+
+public interface IRespondersService : IResponderOpsService
+{
 }
 
 public interface IUserGovernanceService
@@ -45,6 +59,7 @@ public interface IUserGovernanceService
     Task<UserDetailResponse?> GetUserDetailAsync(Guid id, CancellationToken ct = default);
     Task<(bool Success, string? Error, UserResponse? User)> CreateUserAsync(CreateUserRequest request, Guid adminId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateUserAsync(Guid id, UpdateUserRequest request, Guid adminId, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default);
     Task<(bool Success, string? Error)> DeleteUserAsync(Guid id, Guid adminId, string adminEmail, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateUserStatusAsync(Guid targetUserId, Guid adminId, AccountStatus status, CancellationToken ct = default);
     Task<string?> GetUserCapturePathAsync(Guid userId, CaptureKind kind, CancellationToken ct = default);

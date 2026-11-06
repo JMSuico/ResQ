@@ -1,5 +1,5 @@
 // [Layer: Backend/Api/Controllers]
-// Responsibility: Exposes administrative user governance, account approval/suspension, and biometric capture streaming using Universal Lambdas (=>).
+// Responsibility: Exposes administrative user governance, account approval/suspension, biometric capture streaming, and self-service profile modification using Universal Lambdas (=>).
 // DO NOT expose raw passwords or allow unauthorized non-admin access to captures.
 
 using Microsoft.AspNetCore.Mvc;
@@ -55,6 +55,14 @@ public class UsersController(IUserGovernanceService governanceService) : Control
                 ? Ok(new { message = "User updated successfully." })
                 : BadRequest(new { message = error });
 
+    [HttpPut("/api/profile")]
+    public async Task<IActionResult> UpdateSelfProfileAsync([FromBody] UpdateProfileRequest request, CancellationToken ct) =>
+        HttpContext.Items["UserId"] is not Guid userId || userId == Guid.Empty
+            ? Unauthorized(new { message = "Authentication required to update profile." })
+            : await governanceService.UpdateProfileAsync(userId, request, ct) is var (success, error) && success
+                ? Ok(new { message = "Profile updated successfully." })
+                : BadRequest(new { message = error });
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteUserAsync(Guid id, CancellationToken ct) =>
         !IsAdmin
@@ -77,9 +85,9 @@ public class UsersController(IUserGovernanceService governanceService) : Control
             ? ForbiddenNonAdmin("Access to biometric captures is restricted to administrators.")
             : kind.ToLowerInvariant() switch
             {
-                "id" => await ServeCaptureFileAsync(id, CaptureKind.Id, ct),
+                "id" or "front" or "back" => await ServeCaptureFileAsync(id, CaptureKind.Id, ct),
                 "face" => await ServeCaptureFileAsync(id, CaptureKind.Face, ct),
-                _ => BadRequest(new { message = "Invalid capture kind. Expected 'id' or 'face'." })
+                _ => BadRequest(new { message = "Invalid capture kind. Expected 'id', 'front', 'back', or 'face'." })
             };
 
     private async Task<IActionResult> ServeCaptureFileAsync(Guid id, CaptureKind kind, CancellationToken ct) =>

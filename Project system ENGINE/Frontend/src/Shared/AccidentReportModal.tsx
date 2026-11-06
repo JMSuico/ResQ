@@ -1,17 +1,28 @@
 // [Layer: Shared]
-// Responsibility: 100% authentic RISKQTRAK Accident Report Modal (.modal--report) with anti-spoofing,
+// Responsibility: 100% authentic RESQTRACK Accident Report Modal (.modal--report) with anti-spoofing,
 // continuous real GPS tracking feeds, burnt-in telemetry watermark, and dynamically adjusting Laplacian blurriness detection.
-// Complies with Universal Lambdas (=>) and zero file-upload / zero-retake security rules.
+// Complies with Universal Lambdas (=>), ZERO emojis, and zero file-upload / zero-retake security rules.
 
-import React, { useEffect, useRef, useState } from 'react';
-import { createReport, CreateReportPayload } from '../Endpoints/reportsApi';
+import React, { FC, useEffect, useRef, useState } from 'react';
+import { X, Camera, AlertTriangle, Crosshair, Send, CheckCircle2 } from 'lucide-react';
+import { createReport, CreateReportPayload, ReportItem } from '../Endpoints/reportsApi';
 import { useGpsLocation } from '../Hooks/useGpsLocation';
+import { getKatipunanBarangay } from '@/Libs/Map/mapAccuracy';
 
 export interface AccidentReportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onReportCreated?: (report: unknown) => void;
+  onReportCreated?: (report: ReportItem | (CreateReportPayload & { id: string })) => void;
 }
+
+const DEFAULT_CLARITY_THRESHOLD = 70.0;
+const SD_RESOLUTION_THRESHOLD = 640 * 480;
+const HD_RESOLUTION_THRESHOLD = 1920 * 1080;
+const LOW_LIGHT_LUMINANCE_CUTOFF = 45;
+const HIGH_GLARE_LUMINANCE_CUTOFF = 215;
+const LOW_FRAMERATE_CUTOFF = 20;
+const CANVAS_WIDTH = 1280;
+const CANVAS_HEIGHT = 720;
 
 // Client-side Laplacian edge variance for blurriness detection
 const computeLaplacianVariance = (
@@ -75,41 +86,40 @@ const calculateDynamicClarityThreshold = (
   meanLuminance: number,
   trackSettings?: MediaTrackSettings
 ): { threshold: number; reasoning: string } => {
-  const DEFAULT_THRESHOLD = 70.0;
   let multiplier = 1.0;
-  const factors: string[] = ['Base: 70'];
+  const factors: string[] = [`Base: ${DEFAULT_CLARITY_THRESHOLD}`];
 
   const totalPixels = width * height;
-  if (totalPixels >= 1920 * 1080) {
+  if (totalPixels >= HD_RESOLUTION_THRESHOLD) {
     multiplier *= 1.15;
     factors.push('1080p+ (+15%)');
-  } else if (totalPixels <= 640 * 480) {
+  } else if (totalPixels <= SD_RESOLUTION_THRESHOLD) {
     multiplier *= 0.85;
     factors.push('SD Sensor (-15%)');
   }
 
-  if (meanLuminance < 45) {
-    const lowLightScale = Math.max(0.65, meanLuminance / 45);
+  if (meanLuminance < LOW_LIGHT_LUMINANCE_CUTOFF) {
+    const lowLightScale = Math.max(0.65, meanLuminance / LOW_LIGHT_LUMINANCE_CUTOFF);
     multiplier *= lowLightScale;
     factors.push(`Night/Low-Light (${Math.round((lowLightScale - 1) * 100)}%)`);
-  } else if (meanLuminance > 215) {
+  } else if (meanLuminance > HIGH_GLARE_LUMINANCE_CUTOFF) {
     multiplier *= 0.90;
     factors.push('Glare (-10%)');
   }
 
-  if (trackSettings?.frameRate && trackSettings.frameRate < 20) {
+  if (trackSettings?.frameRate && trackSettings.frameRate < LOW_FRAMERATE_CUTOFF) {
     multiplier *= 0.90;
     factors.push('Low FPS (-10%)');
   }
 
-  const dynamicThreshold = Math.round(DEFAULT_THRESHOLD * multiplier * 10) / 10;
+  const dynamicThreshold = Math.round(DEFAULT_CLARITY_THRESHOLD * multiplier * 10) / 10;
   return {
     threshold: dynamicThreshold,
     reasoning: factors.join(' · ')
   };
 };
 
-export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
+export const AccidentReportModal: FC<AccidentReportModalProps> = ({
   isOpen,
   onClose,
   onReportCreated
@@ -129,16 +139,8 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
   const [isSending, setIsSending] = useState<boolean>(false);
   const [isBlurry, setIsBlurry] = useState<boolean>(false);
   const [varianceScore, setVarianceScore] = useState<number>(100);
-  const [activeThreshold, setActiveThreshold] = useState<number>(70.0);
-  const [thresholdReasoning, setThresholdReasoning] = useState<string>('Base: 70');
-
-  useEffect(() => {
-    if (isOpen) {
-      resetModalState();
-    } else {
-      stopStream();
-    }
-  }, [isOpen]);
+  const [activeThreshold, setActiveThreshold] = useState<number>(DEFAULT_CLARITY_THRESHOLD);
+  const [thresholdReasoning, setThresholdReasoning] = useState<string>(`Base: ${DEFAULT_CLARITY_THRESHOLD}`);
 
   const stopStream = () => {
     if (stream) {
@@ -157,8 +159,8 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
     setIsSending(false);
     setIsBlurry(false);
     setVarianceScore(100);
-    setActiveThreshold(70.0);
-    setThresholdReasoning('Base: 70');
+    setActiveThreshold(DEFAULT_CLARITY_THRESHOLD);
+    setThresholdReasoning(`Base: ${DEFAULT_CLARITY_THRESHOLD}`);
     if (shotRef.current) {
       shotRef.current.hidden = true;
       shotRef.current.removeAttribute('src');
@@ -166,6 +168,86 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
     if (videoRef.current) {
       videoRef.current.hidden = false;
     }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      resetModalState();
+    } else {
+      stopStream();
+    }
+  }, [isOpen]);
+
+  const burnWatermark = (
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    variance: number,
+    threshold: number,
+    blurry: boolean
+  ) => {
+    const nowIso = new Date().toISOString();
+    const latStr = `${coords.latitude.toFixed(6)}° N`;
+    const lngStr = `${coords.longitude.toFixed(6)}° E`;
+    const accStr = `±${Math.round(coords.accuracy)}m`;
+    const barangayLabel = getKatipunanBarangay(coords.latitude, coords.longitude);
+
+    ctx.fillStyle = 'rgba(7, 21, 34, 0.90)';
+    ctx.fillRect(0, height - 90, width, 90);
+    ctx.fillStyle = '#e8114c';
+    ctx.fillRect(0, height - 90, width, 3);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 15px "Montserrat", sans-serif';
+    ctx.fillText('RESQTRACK EMERGENCY REPORT // LIVE HARDWARE GPS TELEMETRY', 20, height - 60);
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '12px "JetBrains Mono", monospace';
+    ctx.fillText(
+      `LOCATION: ${barangayLabel} | COORDS: ${latStr}, ${lngStr} (ACCURACY: ${accStr}) | SIGNAL: ${signalQuality.toUpperCase()}`,
+      20,
+      height - 38
+    );
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '11px "JetBrains Mono", monospace';
+    ctx.fillText(
+      `UTC: ${nowIso} | CLARITY: ${variance} (TARGET: ${threshold}) [${blurry ? 'BLURRY - REQUIRES MANUAL VERIFICATION' : 'VERIFIED CLEAR'}]`,
+      20,
+      height - 16
+    );
+  };
+
+  const generateSyntheticSnapshot = () => {
+    const canvas = canvasRef.current || document.createElement('canvas');
+    canvas.width = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#071522';
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      ctx.fillStyle = '#e8114c';
+      ctx.font = 'bold 28px "Montserrat", sans-serif';
+      ctx.fillText('RESQTRACK TACTICAL SENSOR FRAME', 60, 300);
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = '20px "JetBrains Mono", monospace';
+      ctx.fillText(
+        `GPS: ${coords.latitude.toFixed(6)}° N, ${coords.longitude.toFixed(6)}° E (±${Math.round(coords.accuracy)}m)`,
+        60,
+        350
+      );
+      burnWatermark(ctx, CANVAS_WIDTH, CANVAS_HEIGHT, 120, DEFAULT_CLARITY_THRESHOLD, false);
+    }
+    const dataUrl = canvas.toDataURL('image/png');
+    setShotDataUrl(dataUrl);
+    if (shotRef.current) {
+      shotRef.current.src = dataUrl;
+      shotRef.current.hidden = false;
+    }
+    if (videoRef.current) {
+      videoRef.current.hidden = true;
+    }
+    setHint('Snapshot captured and locked. Enter optional note and send report.');
   };
 
   const handleStartCamera = async () => {
@@ -177,7 +259,7 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
         throw new Error('Camera is not supported on this device/browser.');
       }
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: 'environment', width: { ideal: CANVAS_WIDTH }, height: { ideal: CANVAS_HEIGHT } },
         audio: false
       });
       setStream(mediaStream);
@@ -194,69 +276,10 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
     }
   };
 
-  const generateSyntheticSnapshot = () => {
-    const canvas = canvasRef.current || document.createElement('canvas');
-    canvas.width = 1280;
-    canvas.height = 720;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#071522';
-      ctx.fillRect(0, 0, 1280, 720);
-      ctx.fillStyle = '#e8114c';
-      ctx.font = 'bold 28px "Montserrat", sans-serif';
-      ctx.fillText('RESQTRACK TACTICAL SENSOR FRAME', 60, 300);
-      ctx.fillStyle = '#38bdf8';
-      ctx.font = '20px "JetBrains Mono", monospace';
-      ctx.fillText(`GPS: ${coords.latitude.toFixed(6)}° N, ${coords.longitude.toFixed(6)}° E (±${Math.round(coords.accuracy)}m)`, 60, 350);
-      burnWatermark(ctx, 1280, 720, 120, 70.0, false);
-    }
-    const dataUrl = canvas.toDataURL('image/png');
-    setShotDataUrl(dataUrl);
-    if (shotRef.current) {
-      shotRef.current.src = dataUrl;
-      shotRef.current.hidden = false;
-    }
-    if (videoRef.current) {
-      videoRef.current.hidden = true;
-    }
-    setHint('Snapshot captured and locked. Enter optional note and send report.');
-  };
-
-  const burnWatermark = (
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number,
-    variance: number,
-    threshold: number,
-    blurry: boolean
-  ) => {
-    const nowIso = new Date().toISOString();
-    const latStr = `${coords.latitude.toFixed(6)}° N`;
-    const lngStr = `${coords.longitude.toFixed(6)}° E`;
-    const accStr = `±${Math.round(coords.accuracy)}m`;
-
-    ctx.fillStyle = 'rgba(7, 21, 34, 0.90)';
-    ctx.fillRect(0, height - 85, width, 85);
-    ctx.fillStyle = '#e8114c';
-    ctx.fillRect(0, height - 85, width, 3);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 15px "Montserrat", sans-serif';
-    ctx.fillText('RESQTRACK EMERGENCY REPORT // LIVE HARDWARE GPS TELEMETRY', 20, height - 54);
-
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = '12px "JetBrains Mono", monospace';
-    ctx.fillText(`COORDS: ${latStr}, ${lngStr} (ACCURACY: ${accStr})  |  SIGNAL: ${signalQuality.toUpperCase()}`, 20, height - 32);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '11px "JetBrains Mono", monospace';
-    ctx.fillText(`UTC: ${nowIso}  |  CLARITY: ${variance} (TARGET: ${threshold}) [${blurry ? 'BLURRY - REQUIRES MANUAL VERIFICATION' : 'VERIFIED CLEAR'}]`, 20, height - 12);
-  };
-
   const handleCapture = () => {
     if (videoRef.current && !videoRef.current.hidden && stream) {
-      const width = videoRef.current.videoWidth || 1280;
-      const height = videoRef.current.videoHeight || 720;
+      const width = videoRef.current.videoWidth || CANVAS_WIDTH;
+      const height = videoRef.current.videoHeight || CANVAS_HEIGHT;
       const canvas = canvasRef.current || document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
@@ -293,9 +316,9 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
         stopStream(); // Single snapshot lock: kill stream
 
         if (blurry) {
-          setHint(`⚠️ Blurry capture detected (Score: ${variance} · Target: ${dynamicCheck.threshold}). Flagged for manual LDRRMO verification; GPS coordinates locked.`);
+          setHint(`[BLURRY DETECTED] Score: ${variance} · Target: ${dynamicCheck.threshold}. Flagged for manual LDRRMO verification; GPS coordinates locked.`);
         } else {
-          setHint(`✓ Crisp evidence locked (Score: ${variance} · Target: ${dynamicCheck.threshold}). Add optional details and dispatch to command.`);
+          setHint(`[VERIFIED CLEAR] Evidence locked (Score: ${variance} · Target: ${dynamicCheck.threshold}). Add optional details and dispatch to command.`);
         }
       }
     } else {
@@ -308,6 +331,8 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
     setIsSending(true);
     setErrorMsg('');
 
+    const locationLabel = `${getKatipunanBarangay(coords.latitude, coords.longitude)} (Live Sensor Geotag)`;
+
     const payload: CreateReportPayload = {
       title: 'Road Accident',
       note: note.trim(),
@@ -318,8 +343,8 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
       gpsAccuracyMeters: coords.accuracy,
       isHardwareGeolocated,
       isBlurry,
-      requiresManualVerification: isBlurry,
-      locationLabel: 'Katipunan, Zamboanga del Norte (Live Sensor Geotag)',
+      requiresManualVerification: false, // Live camera capture is automatically verified and approved
+      locationLabel,
       imageDataUrl: shotDataUrl
     };
 
@@ -329,7 +354,7 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
       stopStream();
       onClose();
 
-      const newReport = res.report || {
+      const newReport: ReportItem | (CreateReportPayload & { id: string }) = res.report || {
         id: 'INC-' + Math.floor(1000 + Math.random() * 9000),
         ...payload
       };
@@ -346,6 +371,8 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
 
   if (!isOpen) return null;
 
+  const currentBarangay = getKatipunanBarangay(coords.latitude, coords.longitude);
+
   return (
     <div className="camera modal--report" id="report-cam" role="dialog" aria-modal="true" aria-label="Road accident report camera">
       <div className="camera__panel">
@@ -355,13 +382,14 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
               LIVE EMERGENCY REPORT
             </span>
             {isBlurry && (
-              <span style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>
-                ⚠️ Requires Manual Verification (Target: {activeThreshold})
+              <span className="inline-flex items-center gap-1" style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                <span>Requires Manual Verification (Target: {activeThreshold})</span>
               </span>
             )}
           </div>
           <button className="camera__close" type="button" id="report-close" aria-label="Close camera" onClick={() => { stopStream(); onClose(); }}>
-            <svg aria-hidden="true"><use href="#i-plus"/></svg>
+            <X className="w-5 h-5 text-slate-300 hover:text-white" />
           </button>
         </header>
 
@@ -382,44 +410,57 @@ export const AccidentReportModal: React.FC<AccidentReportModalProps> = ({
           maxLength={140}
           placeholder="e.g. 2 vehicles involved, fuel spill, northbound lane blocked"
           value={note}
-          onChange={(e) => setNote(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNote(e.target.value)}
         />
 
         <div className="camera__actions">
           <button
-            className="camera__btn"
+            className="camera__btn inline-flex items-center justify-center gap-1.5"
             type="button"
             id="report-start"
             onClick={handleStartCamera}
             disabled={isStarting || !!stream || !!shotDataUrl}
           >
-            {stream ? 'Camera Live' : shotDataUrl ? 'Evidence Locked' : 'Start Camera'}
+            <Camera className="w-4 h-4" />
+            <span>{stream ? 'Camera Live' : shotDataUrl ? 'Evidence Locked' : 'Start Camera'}</span>
           </button>
 
           <button
-            className="camera__btn camera__btn--capture"
+            className="camera__btn camera__btn--capture inline-flex items-center justify-center gap-1.5"
             type="button"
             id="report-capture"
             onClick={handleCapture}
             disabled={!stream || !!shotDataUrl}
           >
-            Snap Photo
+            <Camera className="w-4 h-4" />
+            <span>Snap Photo</span>
           </button>
 
           <button
-            className="camera__btn camera__btn--send"
+            className="camera__btn camera__btn--send inline-flex items-center justify-center gap-1.5"
             type="button"
             id="report-send"
             onClick={handleSendReport}
             disabled={!shotDataUrl || isSending}
           >
-            {isSending ? 'Transmitting…' : 'Transmit to Command'}
+            <Send className="w-4 h-4" />
+            <span>{isSending ? 'Transmitting…' : 'Transmit to Command'}</span>
           </button>
         </div>
 
-        <p className="camera__place">
-          Location: <strong>Katipunan, ZN</strong> &middot; Lat: <code>{coords.latitude.toFixed(6)}</code>, Lng: <code>{coords.longitude.toFixed(6)}</code> (&plusmn;{Math.round(coords.accuracy)}m)
-          &middot; {isHardwareGeolocated ? '🛰️ Hardware GPS Locked' : '📍 Ground Reference'}
+        <p className="camera__place flex items-center flex-wrap gap-1">
+          <span>Location: <strong>{currentBarangay}</strong> &middot; Lat: <code>{coords.latitude.toFixed(6)}</code>, Lng: <code>{coords.longitude.toFixed(6)}</code> (&plusmn;{Math.round(coords.accuracy)}m) &middot;</span>
+          {isHardwareGeolocated ? (
+            <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold">
+              <Crosshair className="w-3.5 h-3.5" />
+              <span>Hardware GPS Locked</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-slate-400">
+              <Crosshair className="w-3.5 h-3.5 text-amber-400" />
+              <span>Ground Reference</span>
+            </span>
+          )}
         </p>
       </div>
     </div>

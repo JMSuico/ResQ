@@ -1,8 +1,10 @@
 // [Layer: Shared]
 // ToggleDrawerSidebarMenu.tsx -- Drawer Sidebar open/close toggle system.
 // Supports collapsed icon-only mode and expanded icon+label mode with smooth transitions.
+// Universal lambda expressions (=>).
 
 import React, { createContext, useContext, useState, useEffect, FC } from 'react';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 interface DrawerSidebarContextType {
   isCollapsed: boolean;
@@ -69,19 +71,11 @@ export const ToggleDrawerSidebarMenu: FC<ToggleDrawerSidebarMenuProps> = ({ clas
       title={isCollapsed ? 'Expand Navigation Menu' : 'Collapse to Icons Only'}
       aria-label={isCollapsed ? 'Expand Navigation Menu' : 'Collapse to Icons Only'}
     >
-      <svg
-        className={`w-4 h-4 transition-transform duration-200 ${isCollapsed ? 'rotate-180' : ''}`}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-        <line x1="9" y1="3" x2="9" y2="21" />
-        <path d="M14 9l-3 3 3 3" />
-      </svg>
+      {isCollapsed ? (
+        <PanelLeftOpen className="w-4 h-4" />
+      ) : (
+        <PanelLeftClose className="w-4 h-4" />
+      )}
     </button>
   );
 };

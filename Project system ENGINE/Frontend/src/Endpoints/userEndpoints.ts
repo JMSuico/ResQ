@@ -18,7 +18,7 @@ export interface UserSummary {
   faceVerified: boolean;
   hasIdCapture: boolean;
   hasFaceCapture: boolean;
-  departmentOrBarangay: string;
+  departmentOrBarangay?: string;
   rankOrTitle: string;
   createdAt: string;
   fullAddress?: string;

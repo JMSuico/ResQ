@@ -108,9 +108,9 @@ public static class CliCommandRunner
         string fullName = args[3].Trim();
         ResponderUnitType unit = args.Length > 4 ? ParseUnit(args[4], UserRole.LDRRMO_Admin) : ResponderUnitType.LDRRMO;
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 12)
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
         {
-            Console.WriteLine("[CLI_ERROR] Password must be at least 12 characters long.");
+            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
             return;
         }
 
@@ -172,9 +172,9 @@ public static class CliCommandRunner
         ResponderUnitType unit = args.Length > 4 ? ParseUnit(args[4], UserRole.Responder) : ResponderUnitType.RHU;
         UserRole role = unit == ResponderUnitType.LDRRMO ? UserRole.LDRRMO_Admin : UserRole.Responder;
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 12)
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
         {
-            Console.WriteLine("[CLI_ERROR] Password must be at least 12 characters long.");
+            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
             return;
         }
 
@@ -237,9 +237,9 @@ public static class CliCommandRunner
         ResponderUnitType unit = args.Length > 5 ? ParseUnit(args[5], role) : ParseUnit(null, role);
         string employeeOrResidentId = args.Length > 6 ? args[6].Trim() : $"{role}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 12)
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
         {
-            Console.WriteLine("[CLI_ERROR] Password must be at least 12 characters long.");
+            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
             return;
         }
 
@@ -299,9 +299,9 @@ public static class CliCommandRunner
         string email = args[1].Trim();
         string newPassword = args[2];
 
-        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 12)
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 5)
         {
-            Console.WriteLine("[CLI_ERROR] Password must be at least 12 characters long.");
+            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
             return;
         }
 

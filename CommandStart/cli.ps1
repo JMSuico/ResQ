@@ -293,7 +293,7 @@ function Show-InteractiveMenu {
             }
             "2" {
                 $e = Read-Host "Email (e.g. ldrrmo.admin@resqtrack.gov.ph)"
-                $p = Read-Host "Password (min 12 chars)"
+                $p = Read-Host "Password (min 5 chars)"
                 $n = Read-Host "Full Name (e.g. Director Alejandro Ramos)"
                 $u = Read-Host "Unit [LDRRMO/RHU/FIRE/PNP/Security] (Default: LDRRMO)"
                 if (-not $u) { $u = "LDRRMO" }
@@ -301,7 +301,7 @@ function Show-InteractiveMenu {
             }
             "3" {
                 $e = Read-Host "Email"
-                $p = Read-Host "Password (min 12 chars)"
+                $p = Read-Host "Password (min 5 chars)"
                 $n = Read-Host "Full Name"
                 $u = Read-Host "Unit [LDRRMO/RHU/FIRE/PNP/Security] (Default: RHU)"
                 if (-not $u) { $u = "RHU" }
@@ -309,7 +309,7 @@ function Show-InteractiveMenu {
             }
             "4" {
                 $e = Read-Host "Email"
-                $p = Read-Host "Password (min 12 chars)"
+                $p = Read-Host "Password (min 5 chars)"
                 $n = Read-Host "Full Name"
                 $u = Read-Host "Unit [RHU/FIRE/PNP/Security] (Default: RHU)"
                 if (-not $u) { $u = "RHU" }
@@ -318,14 +318,14 @@ function Show-InteractiveMenu {
             }
             "5" {
                 $e = Read-Host "Email"
-                $p = Read-Host "Password (min 12 chars)"
+                $p = Read-Host "Password (min 5 chars)"
                 $n = Read-Host "Full Name"
                 $r = Read-Host "Resident ID (Optional)"
                 Invoke-CreateCivilian $e $p $n $r
             }
             "6" {
                 $e = Read-Host "Email"
-                $p = Read-Host "Password (min 12 chars)"
+                $p = Read-Host "Password (min 5 chars)"
                 $n = Read-Host "Full Name"
                 $ro = Read-Host "Role [LDRRMO_Admin/Responder/Civilian] (Default: Civilian)"
                 if (-not $ro) { $ro = "Civilian" }
@@ -336,7 +336,7 @@ function Show-InteractiveMenu {
             }
             "7" {
                 $e = Read-Host "Email of user"
-                $p = Read-Host "New Password (min 12 chars)"
+                $p = Read-Host "New Password (min 5 chars)"
                 Invoke-ResetPassword $e $p
             }
             "8" {

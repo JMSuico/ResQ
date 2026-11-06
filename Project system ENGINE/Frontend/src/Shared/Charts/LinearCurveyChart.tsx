@@ -1,32 +1,97 @@
 // [Layer: Shared/Charts]
 // Responsibility: SVG smooth curvey line chart for incident volume and triage response telemetry.
-// DO NOT import heavy charting libraries when self-contained SVG vectors provide deterministic rendering.
+// Self-contained SVG vectors provide deterministic rendering with zero-jitter interactive telemetry.
+// Universal lambda expressions (=>).
 
-import React, { useState } from 'react';
+import React, { FC, useState, useCallback } from 'react';
+import { TrendingUp } from 'lucide-react';
 
 export interface DataPoint {
   label: string;
   value: number;
 }
 
-export const LinearCurveyChart: React.FC<{
+export interface LinearCurveyChartProps {
   data: DataPoint[];
   title?: string;
   color?: string;
   height?: number;
-}> = ({ data, title = '24-Hour Incident Volume', color = '#0284c7', height = 180 }) => {
+}
+
+const DEFAULT_WIDTH = 500;
+const DEFAULT_HEIGHT = 180;
+const CHART_PADDING = 32;
+const MIN_SCALE_MAX = 10;
+const SURGE_CRITICAL_RATIO = 0.75;
+const SURGE_ELEVATED_RATIO = 0.45;
+const TOOLTIP_BOUND_MARGIN = 85;
+const TOP_BOUND_MARGIN = 65;
+
+interface SurgeStatus {
+  text: string;
+  badgeClass: string;
+  dotClass: string;
+  textColor: string;
+}
+
+const computeSurgeStatus = (value: number, max: number): SurgeStatus => {
+  if (value === 0) {
+    return {
+      text: 'ZERO INCIDENTS',
+      badgeClass: 'bg-slate-800/90 text-slate-300 border-slate-700/80',
+      dotClass: 'bg-slate-400',
+      textColor: 'text-slate-400'
+    };
+  }
+  if (value >= max * SURGE_CRITICAL_RATIO) {
+    return {
+      text: 'CRITICAL SURGE',
+      badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-500/50 shadow-[0_0_8px_rgba(244,63,94,0.3)]',
+      dotClass: 'bg-rose-500 animate-ping',
+      textColor: 'text-rose-400'
+    };
+  }
+  if (value >= max * SURGE_ELEVATED_RATIO) {
+    return {
+      text: 'ELEVATED ACTIVITY',
+      badgeClass: 'bg-amber-950/90 text-amber-300 border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.25)]',
+      dotClass: 'bg-amber-400',
+      textColor: 'text-amber-400'
+    };
+  }
+  return {
+    text: 'NOMINAL CADENCE',
+    badgeClass: 'bg-emerald-950/90 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.25)]',
+    dotClass: 'bg-emerald-400',
+    textColor: 'text-emerald-400'
+  };
+};
+
+export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
+  data,
+  title = '24-Hour Incident Volume',
+  color = '#0284c7',
+  height = DEFAULT_HEIGHT
+}) => {
   const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
-  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
-  if (!data || data.length === 0) return null;
+  const safeData = data && data.length > 0 ? data : [
+    { label: '00:00', value: 0 },
+    { label: '04:00', value: 0 },
+    { label: '08:00', value: 0 },
+    { label: '12:00', value: 0 },
+    { label: '16:00', value: 0 },
+    { label: '20:00', value: 0 }
+  ];
 
-  const maxValue = Math.max(...data.map((d) => d.value), 10);
-  const width = 500;
-  const padding = 32;
+  const totalVolume = safeData.reduce((acc, d) => acc + d.value, 0);
+  const maxValue = Math.max(...safeData.map((d) => d.value), MIN_SCALE_MAX);
+  const width = DEFAULT_WIDTH;
+  const padding = CHART_PADDING;
 
   // Compute SVG curve points
-  const points = data.map((d, i) => {
-    const x = data.length > 1 ? padding + (i / (data.length - 1)) * (width - padding * 2) : width / 2;
+  const points = safeData.map((d, i) => {
+    const x = safeData.length > 1 ? padding + (i / (safeData.length - 1)) * (width - padding * 2) : width / 2;
     const y = height - padding - (d.value / maxValue) * (height - padding * 2);
     return { x, y };
   });
@@ -40,94 +105,51 @@ export const LinearCurveyChart: React.FC<{
 
   const areaD = `${pathD} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`;
 
-  // Pointer position tracking across the SVG canvas
+  // Zero-jitter point calculation: only update index if nearest point changed
+  const updateNearestPoint = useCallback(
+    (clientX: number, targetRect: DOMRect) => {
+      const x = ((clientX - targetRect.left) / targetRect.width) * width;
+
+      let nearestIdx = 0;
+      let minDiff = Infinity;
+      points.forEach((p, idx) => {
+        const diff = Math.abs(p.x - x);
+        if (diff < minDiff) {
+          minDiff = diff;
+          nearestIdx = idx;
+        }
+      });
+
+      setActivePointIndex((prev) => (prev === nearestIdx ? prev : nearestIdx));
+    },
+    [points, width]
+  );
+
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * width;
-    const y = ((e.clientY - rect.top) / rect.height) * height;
-    setMousePos({ x, y });
-
-    // Find nearest data point along the X-axis
-    let nearestIdx = 0;
-    let minDiff = Infinity;
-    points.forEach((p, idx) => {
-      const diff = Math.abs(p.x - x);
-      if (diff < minDiff) {
-        minDiff = diff;
-        nearestIdx = idx;
-      }
-    });
-
-    setActivePointIndex(nearestIdx);
+    updateNearestPoint(e.clientX, rect);
   };
 
   const handleTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
     if (!e.touches[0]) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.touches[0].clientX - rect.left) / rect.width) * width;
-    const y = ((e.touches[0].clientY - rect.top) / rect.height) * height;
-    setMousePos({ x, y });
-
-    let nearestIdx = 0;
-    let minDiff = Infinity;
-    points.forEach((p, idx) => {
-      const diff = Math.abs(p.x - x);
-      if (diff < minDiff) {
-        minDiff = diff;
-        nearestIdx = idx;
-      }
-    });
-
-    setActivePointIndex(nearestIdx);
+    updateNearestPoint(e.touches[0].clientX, rect);
   };
 
   const handleMouseLeave = () => {
     setActivePointIndex(null);
-    setMousePos(null);
-  };
-
-  // Tactical Surge Status computation
-  const getSurgeStatus = (value: number, max: number) => {
-    if (value === 0) {
-      return {
-        text: 'ZERO INCIDENTS',
-        badgeClass: 'bg-slate-800/90 text-slate-300 border-slate-700/80',
-        dotClass: 'bg-slate-400',
-        textColor: 'text-slate-400'
-      };
-    }
-    if (value >= max * 0.75) {
-      return {
-        text: 'CRITICAL SURGE',
-        badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-500/50 shadow-[0_0_8px_rgba(244,63,94,0.3)]',
-        dotClass: 'bg-rose-500 animate-ping',
-        textColor: 'text-rose-400'
-      };
-    }
-    if (value >= max * 0.45) {
-      return {
-        text: 'ELEVATED ACTIVITY',
-        badgeClass: 'bg-amber-950/90 text-amber-300 border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.25)]',
-        dotClass: 'bg-amber-400',
-        textColor: 'text-amber-400'
-      };
-    }
-    return {
-      text: 'NOMINAL CADENCE',
-      badgeClass: 'bg-emerald-950/90 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.25)]',
-      dotClass: 'bg-emerald-400',
-      textColor: 'text-emerald-400'
-    };
   };
 
   const activePoint = activePointIndex !== null ? points[activePointIndex] : null;
-  const activeData = activePointIndex !== null ? data[activePointIndex] : null;
-  const activeSurge = activeData ? getSurgeStatus(activeData.value, maxValue) : null;
+  const activeData = activePointIndex !== null ? safeData[activePointIndex] : null;
+  const activeSurge = activeData ? computeSurgeStatus(activeData.value, maxValue) : null;
+  const percentageOfTotal =
+    activeData && totalVolume > 0 ? ((activeData.value / totalVolume) * 100).toFixed(1) : '0.0';
 
   // Tooltip positioning logic (bounded within container)
-  const isNearTop = activePoint ? activePoint.y < 65 : false;
-  const isNearLeft = activePoint ? activePoint.x < 85 : false;
-  const isNearRight = activePoint ? activePoint.x > width - 85 : false;
+  const isNearTop = activePoint ? activePoint.y < TOP_BOUND_MARGIN : false;
+  const isNearLeft = activePoint ? activePoint.x < TOOLTIP_BOUND_MARGIN : false;
+  const isNearRight = activePoint ? activePoint.x > width - TOOLTIP_BOUND_MARGIN : false;
 
   let tooltipLeftStyle: React.CSSProperties = {};
   if (activePoint) {
@@ -147,11 +169,18 @@ export const LinearCurveyChart: React.FC<{
     <div className="relative flex flex-col gap-2 p-4 bg-slate-900 border border-slate-800 rounded-xl select-none">
       {/* Header with live coordinate telemetry */}
       <div className="flex items-center justify-between min-h-[22px]">
-        {title && <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">{title}</h4>}
+        {title && (
+          <div className="flex items-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5 text-sky-400" />
+            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">{title}</h4>
+          </div>
+        )}
         {activeData && activeSurge && (
           <div className="flex items-center gap-2 text-[11px] font-mono transition-opacity duration-200">
             <span className="text-slate-400">{activeData.label}:</span>
-            <span className={`font-bold ${activeSurge.textColor}`}>{activeData.value} Incidents</span>
+            <span className={`font-bold ${activeSurge.textColor}`}>
+              {activeData.value} Incidents ({percentageOfTotal}%)
+            </span>
           </div>
         )}
       </div>
@@ -191,7 +220,7 @@ export const LinearCurveyChart: React.FC<{
 
           {/* Vertical Laser Guideline */}
           {activePoint && (
-            <g className="transition-all duration-200 ease-out pointer-events-none">
+            <g className="transition-all duration-150 ease-out pointer-events-none">
               <line
                 x1={activePoint.x}
                 y1={padding - 12}
@@ -202,7 +231,6 @@ export const LinearCurveyChart: React.FC<{
                 strokeWidth="1.5"
                 opacity="0.8"
                 filter="url(#laserGlow)"
-                className="transition-all duration-150"
               />
             </g>
           )}
@@ -245,7 +273,7 @@ export const LinearCurveyChart: React.FC<{
                   fill={isActive ? '#ff5c74' : '#0f172a'}
                   stroke={isActive ? '#ffffff' : color}
                   strokeWidth={isActive ? 2.5 : 2}
-                  className="transition-all duration-200 ease-out"
+                  className="transition-all duration-150 ease-out"
                   style={{
                     filter: isActive ? 'drop-shadow(0 0 8px #ff5c74)' : 'none'
                   }}
@@ -260,9 +288,9 @@ export const LinearCurveyChart: React.FC<{
                   fontSize="10"
                   fontFamily="monospace"
                   fontWeight={isActive ? 'bold' : 'normal'}
-                  className="transition-colors duration-200"
+                  className="transition-colors duration-150"
                 >
-                  {data[i].label}
+                  {safeData[i]?.label || ''}
                 </text>
               </g>
             );
@@ -282,13 +310,13 @@ export const LinearCurveyChart: React.FC<{
         {/* Floating Tactical HUD Tooltip */}
         {activePoint && activeData && activeSurge && (
           <div
-            className="absolute pointer-events-none z-30 transition-all duration-200 ease-out"
+            className="absolute pointer-events-none z-30 transition-all duration-150 ease-out"
             style={{
               top: `${(activePoint.y / height) * 100}%`,
               ...tooltipLeftStyle
             }}
           >
-            <div className="bg-slate-950/95 border border-slate-700/90 rounded-xl p-2.5 shadow-2xl backdrop-blur-md min-w-[170px] text-xs font-mono flex flex-col gap-1.5 transition-all duration-200 ease-out ring-1 ring-white/10">
+            <div className="bg-slate-950/95 border border-slate-700/90 rounded-xl p-2.5 shadow-2xl backdrop-blur-md min-w-[180px] text-xs font-mono flex flex-col gap-1.5 ring-1 ring-white/10">
               {/* X-axis coordinate / label */}
               <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 pb-1">
                 <span className="text-[10px] text-slate-400 uppercase tracking-wider">Temporal Coord</span>
@@ -304,9 +332,15 @@ export const LinearCurveyChart: React.FC<{
                 </span>
               </div>
 
+              {/* Share of total */}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-400">Period Share:</span>
+                <span className="text-slate-200 font-semibold text-xs">{percentageOfTotal}%</span>
+              </div>
+
               {/* Velocity / Surge Status Badge */}
               <div
-                className={`mt-0.5 inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors duration-200 ${activeSurge.badgeClass}`}
+                className={`mt-0.5 inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors duration-150 ${activeSurge.badgeClass}`}
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${activeSurge.dotClass}`} />
                 <span>{activeSurge.text}</span>
@@ -327,3 +361,5 @@ export const LinearCurveyChart: React.FC<{
     </div>
   );
 };
+
+export default LinearCurveyChart;

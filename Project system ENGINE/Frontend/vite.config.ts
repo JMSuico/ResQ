@@ -4,6 +4,8 @@ import { fileURLToPath, URL } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 // https://vite.dev/config/
+const backendTarget = process.env.BACKEND_URL || 'http://127.0.0.1:5000';
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -12,10 +14,15 @@ export default defineConfig({
     }
   },
   server: {
+    host: '0.0.0.0',
     port: 5173,
+    watch: {
+      usePolling: true,
+      interval: 800
+    },
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5000',
+        target: backendTarget,
         changeOrigin: true,
         secure: false,
         timeout: 30000,
@@ -25,8 +32,8 @@ export default defineConfig({
             const reqUrl = req?.url || '';
             const method = req?.method || 'GET';
             const errorCode = err?.code || 'UNKNOWN';
-            console.warn(`[Vite Proxy Error] ${method} ${reqUrl} -> http://127.0.0.1:5000 failed: [${errorCode}] ${err.message}. Ensure .NET backend is running.`);
-            console.info(`[Vite Proxy Retry Guidance] Requests will automatically route once the .NET backend is online on http://127.0.0.1:5000.`);
+            console.warn(`[Vite Proxy Error] ${method} ${reqUrl} -> ${backendTarget} failed: [${errorCode}] ${err.message}. Ensure .NET backend is running.`);
+            console.info(`[Vite Proxy Retry Guidance] Requests will automatically route once the .NET backend is online on ${backendTarget}.`);
             if (res && typeof res === 'object' && 'writeHead' in res && 'headersSent' in res) {
               const serverRes = res as ServerResponse;
               if (!serverRes.headersSent) {

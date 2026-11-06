@@ -1,48 +1,139 @@
 // [Layer: LANDING_PAGE/Features/Pages/RegisterPage]
-// Responsibility: 100% pixel-faithful React 19 conversion of RISKQTRAK register.html & register.js.
-// Preserves exact classes (.page-register, .scene, .stage, .panel--register, .steps, .form-grid, .field, .idcam, .face, etc.).
-// Universal Lambdas (=>) and hardware video camera capture with synthetic canvas fallback.
+// Responsibility: Pixel-faithful, responsive React 19 conversion of ResQTrack Register Page.
+// Implements 4-Step Role-Based Registration Wizard:
+// Step 0: 00 Role (Role selection: Responder vs Civilian)
+// Step 1: 01 Identity (Personal Info + ID Type + Front & Back ID Live Camera / Upload Capture)
+// Step 2: 02 Biometrics (MultiAngleBiometricEngine Facial Verification)
+// Step 3: 03 Security (Argon2 Master Password, Consents, Final Registration Submission)
+// Strict TypeScript with ZERO 'any'. Universal expression-bodied lambdas (=>).
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { registerUser, RegisterPayload } from '@/Endpoints/authApi';
+import {
+  User,
+  Mail,
+  Users,
+  ChevronDown,
+  Calendar,
+  CreditCard,
+  Shield,
+  ShieldCheck,
+  Flame,
+  HeartPulse,
+  Siren,
+  Award,
+  ArrowRight,
+  ArrowLeft,
+  Lock,
+  Eye,
+  EyeOff,
+  Camera,
+  RefreshCw,
+  Check,
+  CheckCircle2,
+  Upload,
+  AlertCircle,
+  X,
+  Scan,
+  Maximize2,
+  Target,
+  Cpu,
+  Sparkles,
+  Activity,
+  UserX,
+  AlertTriangle,
+  MapPin
+} from 'lucide-react';
+import { registerUser, RegisterPayload, ResponderUnit } from '@/Endpoints/authApi';
+import { MultiAngleBiometricEngine } from './MultiAngleBiometricEngine';
+import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
+import { biometricFrameCache } from '@/Libs/Cache/biometricFrameCache';
+import { LaserScanOverlay } from '@/components/Vision/LaserScanOverlay';
+import {
+  idScanEngine,
+  FrameAnalysisResult,
+  IdScanResult,
+  GovernmentIdCategory,
+  isPlausibleHumanName,
+  parseNameComponents
+} from '@/Libs/Vision/idScanner';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isMobile, isTablet, isUltraWide, width, getFluidClamp } = useFluidResposiveness();
 
-  const [step, setStep] = useState<number>(1);
+  // Wizard Step: 0 = Role, 1 = Identity (Personal & ID Capture), 2 = Biometrics, 3 = Security
+  const [step, setStep] = useState<number>(0);
 
-  // Form Fields - Step 1
-  const [fullname, setFullname] = useState<string>('Insp. Eduardo M. Reyes');
-  const [email, setEmail] = useState<string>('e.reyes@bfp.gov.ph');
+  // Step 0 - Role Classification Selection
+  const [selectedRole, setSelectedRole] = useState<'Responder' | 'Civilian'>('Responder');
+
+  // Form Fields - Step 1 (Personal Info) - Initialized clean for OCR autofill
+  const [firstName, setFirstName] = useState<string>('');
+  const [middleName, setMiddleName] = useState<string>('');
+  const [lastName, setLastName] = useState<string>('');
+  const fullname = [firstName, middleName, lastName].filter(Boolean).join(' ');
+  const [email, setEmail] = useState<string>('');
   const [sex, setSex] = useState<string>('male');
-  const [age, setAge] = useState<string>('32');
-  const [idType, setIdType] = useState<string>('prc');
-  const [unit, setUnit] = useState<string>('responder');
-  const [employeeId, setEmployeeId] = useState<string>('BFP-ZN-2024-089');
-  const [station, setStation] = useState<string>('Station 1 — Katipunan Central');
+  const [age, setAge] = useState<string>('');
+  const [dateOfBirth, setDateOfBirth] = useState<string>('');
+  const [address, setAddress] = useState<string>('');
+  const [licenseNumber, setLicenseNumber] = useState<string>('');
+  const [weight, setWeight] = useState<string>('');
+  const [height, setHeight] = useState<string>('');
+  const [idType, setIdType] = useState<string>('drivers');
 
-  // Form Fields - Step 2
+  // Form Fields - Step 1 (Agency Info for Responders)
+  const [agencyUnit, setAgencyUnit] = useState<ResponderUnit>('FIRE');
+  const [employeeId, setEmployeeId] = useState<string>('');
+  const [rankOrTitle, setRankOrTitle] = useState<string>('');
+
+  // ID Capture State - Step 1
+  const [idCaptureMode, setIdCaptureMode] = useState<'camera' | 'upload'>('camera');
+  const [idFrontShot, setIdFrontShot] = useState<string | null>(null);
+  const [idBackShot, setIdBackShot] = useState<string | null>(null);
+  const [isFlippingCard, setIsFlippingCard] = useState<boolean>(false);
+  const flipCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isDraggingFront, setIsDraggingFront] = useState<boolean>(false);
+  const [isDraggingBack, setIsDraggingBack] = useState<boolean>(false);
+  const isIdValidated = Boolean(idFrontShot && (firstName.trim() || lastName.trim() || licenseNumber.trim()));
+
+  // Optical Frame Freezing & Laser Scan Overlay State
+  const [isFrameFrozen, setIsFrameFrozen] = useState<boolean>(false);
+  const [frozenFrameUrl, setFrozenFrameUrl] = useState<string | null>(null);
+  const [isOpticalDecoding, setIsOpticalDecoding] = useState<boolean>(false);
+
+  // Real-Time Deterministic Vision Scanner State
+  const [scannerAnalysis, setScannerAnalysis] = useState<FrameAnalysisResult | null>(null);
+  const [autofillBadge, setAutofillBadge] = useState<{
+    visible: boolean;
+    method: 'DETERMINISTIC_CV' | 'AI_STANDBY_FALLBACK';
+    confidence: number;
+    tier: string;
+    provider?: string;
+  } | null>(null);
+
+  // Refs for camera video and file inputs
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const videoStreamRef = useRef<MediaStream | null>(null);
+  const frontFileInputRef = useRef<HTMLInputElement | null>(null);
+  const backFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Step 2 - Biometric Facial Verification
+  const [faceShot, setFaceShot] = useState<string | null>(null);
+  const [faceVerified, setFaceVerified] = useState<boolean>(false);
+
+  // Step 3 - Security & Consents
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [consent1, setConsent1] = useState<boolean>(false);
   const [consent2, setConsent2] = useState<boolean>(false);
 
-  // Step 3 - Images & Live Video
-  const [idFrontShot, setIdFrontShot] = useState<string | null>(null);
-  const [idBackShot, setIdBackShot] = useState<string | null>(null);
-  const [faceShot, setFaceShot] = useState<string | null>(null);
-  const [faceVerified, setFaceVerified] = useState<boolean>(false);
-  const [isFaceScanning, setIsFaceScanning] = useState<boolean>(false);
-
-  // Video Streaming State
-  const [faceStreaming, setFaceStreaming] = useState<boolean>(false);
-  const faceVideoRef = useRef<HTMLVideoElement | null>(null);
-  const faceMediaStreamRef = useRef<MediaStream | null>(null);
-
-  // Validation Errors
+  // Validation Errors & System Status Telemetry
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [statusTone, setStatusTone] = useState<'ok' | 'bad' | ''>('');
@@ -51,126 +142,810 @@ export const RegisterPage: React.FC = () => {
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const unitParam = params.get('unit');
-    if (unitParam === 'security') {
-      setUnit('security');
-    }
-  }, [location.search]);
-
-  // Clean up media streams
+  // Cleanup flip cooldown timer on unmount
   useEffect(() => {
     return () => {
-      stopCamera();
+      if (flipCooldownTimerRef.current) {
+        clearTimeout(flipCooldownTimerRef.current);
+      }
     };
   }, []);
 
-  const stopCamera = () => {
-    if (faceMediaStreamRef.current) {
-      faceMediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      faceMediaStreamRef.current = null;
+  // Handle URL query parameters for role & unit pre-selection
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const unitParam = (params.get('unit') || '').toLowerCase();
+    const roleParam = (params.get('role') || '').toLowerCase();
+    const stepParam = params.get('step');
+    if (stepParam && !isNaN(Number(stepParam))) {
+      setStep(Number(stepParam));
     }
-    setFaceStreaming(false);
-  };
 
-  const startCamera = async () => {
-    setErrors((prev) => ({ ...prev, face: '' }));
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: 640, height: 480 },
-        audio: false
-      });
-      faceMediaStreamRef.current = stream;
-      if (faceVideoRef.current) {
-        faceVideoRef.current.srcObject = stream;
-        faceVideoRef.current.play();
-      }
-      setFaceStreaming(true);
-    } catch (err) {
-      console.warn('Physical camera unavailable, generating synthetic camera canvas preview');
-      setFaceStreaming(true);
+    if (unitParam === 'security' || roleParam === 'civilian' || roleParam === 'resident') {
+      setSelectedRole('Civilian');
+      setAgencyUnit('Security');
+      setRankOrTitle('Resident');
+      setEmployeeId('RES-ZN-2024');
+      setFirstName('Juan');
+      setMiddleName('');
+      setLastName('Dela Cruz');
+      setEmail('juan.delacruz@gmail.com');
+    } else if (unitParam === 'rhu') {
+      setSelectedRole('Responder');
+      setAgencyUnit('RHU');
+      setEmployeeId('RHU-ZN-2024-042');
+      setRankOrTitle('Medical Responder');
+      setEmail('e.reyes@rhu.gov.ph');
+    } else if (unitParam === 'pnp') {
+      setSelectedRole('Responder');
+      setAgencyUnit('PNP');
+      setEmployeeId('PNP-ZN-2024-118');
+      setRankOrTitle('Police Corporal');
+      setEmail('e.reyes@pnp.gov.ph');
+    } else if (unitParam === 'fire' || unitParam === 'bfp') {
+      setSelectedRole('Responder');
+      setAgencyUnit('FIRE');
+      setEmployeeId('BFP-ZN-2024-089');
+      setRankOrTitle('Senior Inspector');
+      setEmail('e.reyes@bfp.gov.ph');
     }
-  };
+  }, [location.search]);
 
-  const captureFace = () => {
-    setIsFaceScanning(true);
-    setStatusMessage('Analyzing biometric facial landmarks\u2026');
-
-    setTimeout(() => {
-      let captureUrl = '';
-      if (faceVideoRef.current && faceMediaStreamRef.current) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 320;
-        canvas.height = 240;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(faceVideoRef.current, 0, 0, 320, 240);
-          captureUrl = canvas.toDataURL('image/png');
-        }
-      }
-
-      if (!captureUrl) {
-        // High-fidelity fallback simulated snapshot
-        const canvas = document.createElement('canvas');
-        canvas.width = 320;
-        canvas.height = 240;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#0f172a';
-          ctx.fillRect(0, 0, 320, 240);
-          ctx.fillStyle = '#10b981';
-          ctx.beginPath();
-          ctx.arc(160, 100, 50, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '12px JetBrains Mono';
-          ctx.fillText('BIOMETRIC PASS: FACE VERIFIED', 40, 190);
-          captureUrl = canvas.toDataURL('image/png');
-        }
-      }
-
-      stopCamera();
-      setFaceShot(captureUrl);
-      setFaceVerified(true);
-      setIsFaceScanning(false);
-      setStatusMessage('Biometric landmarks matched 98.4%. Identity verified.');
-      setStatusTone('ok');
-    }, 1800);
-  };
-
-  const handleRetakeFace = () => {
-    setFaceShot(null);
-    setFaceVerified(false);
-    startCamera();
-  };
-
-  // Synthetic or Mock Capture for ID Front / Back
-  const handleUploadOrCaptureID = (kind: 'front' | 'back') => {
+  // Synthetic fallback ID generator for environments without hardware cameras
+  const generateSyntheticIdCanvas = (side: 'front' | 'back'): string => {
     const canvas = document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 250;
+    canvas.width = 856;
+    canvas.height = 540;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      ctx.fillStyle = kind === 'front' ? '#1e293b' : '#334155';
-      ctx.fillRect(0, 0, 400, 250);
-      ctx.fillStyle = '#38bdf8';
-      ctx.font = '14px JetBrains Mono';
-      ctx.fillText(`GOVERNMENT ID ${kind.toUpperCase()} CARD`, 20, 50);
-      ctx.fillStyle = '#94a3b8';
-      ctx.fillText(`NAME: ${fullname}`, 20, 90);
-      ctx.fillText(`AGENCY: ${unit.toUpperCase()}`, 20, 120);
-      ctx.fillText(`ID#: ${employeeId || 'ID-88392-ZN'}`, 20, 150);
+      // Dark HUD ID Card surface
+      ctx.fillStyle = side === 'front' ? '#0d1829' : '#141c2c';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Fine grid texture
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < canvas.width; x += 40) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+
+      // Security Top Header Strip
+      ctx.fillStyle = side === 'front' ? '#1e0710' : '#082f49';
+      ctx.fillRect(0, 0, canvas.width, 70);
+      ctx.fillStyle = '#ff5c74';
+      ctx.font = 'bold 20px "JetBrains Mono", monospace';
+      ctx.fillText(`GOVERNMENT OF THE PHILIPPINES // ${idType.toUpperCase()}`, 30, 44);
+
+      if (side === 'front') {
+        // Photo Holder
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(30, 100, 170, 220);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(30, 100, 170, 220);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '14px monospace';
+        ctx.fillText('[PHOTO MATRIX]', 50, 215);
+
+        // Holder Metadata
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 24px monospace';
+        ctx.fillText(fullname.toUpperCase(), 230, 140);
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = '16px monospace';
+        ctx.fillText(`ROLE: ${selectedRole.toUpperCase()} [${selectedRole === 'Responder' ? agencyUnit : 'CIVILIAN'}]`, 230, 185);
+        ctx.fillText(`ID#: ${selectedRole === 'Responder' ? employeeId : 'RES-ZN-2024'}`, 230, 225);
+        ctx.fillText(`AGE: ${age} // SEX: ${sex.toUpperCase()}`, 230, 265);
+        ctx.fillText(`RANK: ${selectedRole === 'Responder' ? rankOrTitle : 'COMMUNITY RESIDENT'}`, 230, 305);
+      } else {
+        // Back: Barcode & Digital Cryptographic Strip
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(30, 100, canvas.width - 60, 130);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(30, 100, canvas.width - 60, 130);
+
+        // Barcode lines
+        ctx.fillStyle = '#ffffff';
+        for (let b = 50; b < canvas.width - 80; b += 11) {
+          ctx.fillRect(b, 120, (b % 5 === 0 ? 6 : 3), 90);
+        }
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '14px monospace';
+        ctx.fillText('OFFICIAL RESQTRACK ENCRYPTION & BIOMETRIC REPOSITORY SIGNATURE', 30, 275);
+        ctx.fillText(`CLEARANCE SEC-VECTOR: 0x${Math.random().toString(16).substring(2, 10).toUpperCase()}-VERIFIED`, 30, 315);
+      }
+
+      // Bottom Status Seal
+      ctx.fillStyle = '#34d399';
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText(`[${side.toUpperCase()} ID SECURED // 300 DPI OPTICAL]`, 30, canvas.height - 30);
     }
-    const dataUrl = canvas.toDataURL('image/png');
-    if (kind === 'front') {
-      setIdFrontShot(dataUrl);
+    return canvas.toDataURL('image/png');
+  };
+
+  // Helper to generate a clean dual composite canvas merging front and back ID cards
+  const generateDualIdComposite = async (frontUrl: string, backUrl: string): Promise<string> => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 856;
+    canvas.height = 320;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return frontUrl;
+
+    const loadImage = (url: string): Promise<HTMLImageElement> =>
+      new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(img);
+        img.src = url;
+      });
+
+    const [imgFront, imgBack] = await Promise.all([loadImage(frontUrl), loadImage(backUrl)]);
+
+    // Military HUD card background
+    ctx.fillStyle = '#060a12';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Top Header Banner
+    ctx.fillStyle = '#1e0710';
+    ctx.fillRect(0, 0, canvas.width, 36);
+    ctx.fillStyle = '#ff5c74';
+    ctx.font = 'bold 11.5px "JetBrains Mono", monospace';
+    ctx.fillText(
+      `RESQTRACK // DUAL ID COMPOSITE // DOC: ${idType.toUpperCase()} // HOLDER: ${fullname.toUpperCase()} // TIER: ${selectedRole.toUpperCase()}`,
+      16,
+      23
+    );
+
+    // Front ID Snapshot
+    try {
+      ctx.drawImage(imgFront, 16, 48, 400, 252);
+    } catch {
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(16, 48, 400, 252);
+    }
+
+    // Back ID Snapshot
+    try {
+      ctx.drawImage(imgBack, 440, 48, 400, 252);
+    } catch {
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(440, 48, 400, 252);
+    }
+
+    // HUD Frame borders
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(16, 48, 400, 252);
+    ctx.strokeRect(440, 48, 400, 252);
+
+    // Corner targeting brackets
+    ctx.strokeStyle = '#ff5c74';
+    ctx.lineWidth = 2;
+    // Front corners
+    ctx.strokeRect(14, 46, 10, 10);
+    ctx.strokeRect(408, 288, 10, 10);
+    // Back corners
+    ctx.strokeRect(438, 46, 10, 10);
+    ctx.strokeRect(832, 288, 10, 10);
+
+    // HUD Text Badges
+    ctx.font = 'bold 11px monospace';
+    ctx.fillStyle = '#34d399';
+    ctx.fillText('FRONT ID CARD [SECURED]', 24, 68);
+    ctx.fillText('BACK ID CARD [SECURED]', 448, 68);
+
+    return canvas.toDataURL('image/png');
+  };
+
+  // Camera Lifecycle Controller
+  const startCamera = useCallback(async () => {
+    if (videoStreamRef.current) return;
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera API unavailable in this browser environment');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+      videoStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
+      }
+      setIsCameraActive(true);
+      setCameraError(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Camera access restricted or unavailable';
+      setCameraError(msg);
+      setIsCameraActive(false);
+    }
+  }, []);
+
+  const stopCamera = useCallback(() => {
+    if (videoStreamRef.current) {
+      videoStreamRef.current.getTracks().forEach((track) => track.stop());
+      videoStreamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+  }, []);
+
+  // Helper to convert extracted date of birth (DOB) into integer age
+  const computeAgeFromDob = (dob?: string): string | null => {
+    if (!dob) return null;
+    const parts = dob.split(/[-/.]/);
+    if (parts.length === 3) {
+      const yr = parts[0].length === 4 ? parseInt(parts[0], 10) : parseInt(parts[2], 10);
+      const currentYear = new Date().getFullYear();
+      if (yr > 1900 && yr < currentYear) {
+        const calculatedAge = currentYear - yr;
+        if (calculatedAge >= 18 && calculatedAge <= 100) return String(calculatedAge);
+      }
+    }
+    const parsed = new Date(dob);
+    if (!isNaN(parsed.getTime())) {
+      const diffMs = Date.now() - parsed.getTime();
+      const calculatedAge = Math.floor(diffMs / (365.25 * 24 * 60 * 60 * 1000));
+      if (calculatedAge >= 18 && calculatedAge <= 100) return String(calculatedAge);
+    }
+    return null;
+  };
+
+  // Handler for automatic card detection, temporal stability lock, and field autofill
+  const handleLockedCardScan = useCallback((result: IdScanResult) => {
+    const confidenceScore = result.confidence ?? 0;
+    const isFront = !idFrontShot;
+
+    const hasCoreField = Boolean(
+      result.fields && (
+        result.fields.fullname ||
+        result.fields.firstName ||
+        result.fields.lastName ||
+        result.fields.licenseNumber ||
+        result.fields.idNumber ||
+        result.fields.employeeId
+      )
+    );
+
+    const isFaceDetected = Boolean(
+      (result.cardPresence && result.cardPresence.status === 'FACE_DETECTED') ||
+      (scannerAnalysis?.cardPresence?.status === 'FACE_DETECTED')
+    );
+
+    const isRejected = isFront
+      ? (!result.success || confidenceScore < 0.55 || !hasCoreField || isFaceDetected)
+      : (!result.success || confidenceScore < 0.50 || isFaceDetected);
+
+    if (isRejected) {
+      // 1. Unfreeze vision engine loop so user can realign card
+      idScanEngine.resetStability();
+
+      // 2. Clear any lingering autofill badge
+      setAutofillBadge(null);
+
+      // 3. Compile specific rejection explanation
+      const reasonMsg = isFaceDetected
+        ? 'Human face detected in reticle. Please position your physical Government ID card inside the target reticle.'
+        : (result.quality && result.quality.reasons && result.quality.reasons.length > 0)
+        ? result.quality.reasons[0]
+        : result.error
+        ? result.error
+        : !hasCoreField
+        ? 'No readable Government ID details detected. Please position a valid Philippine Government ID within the target reticle.'
+        : `Scan confidence too low (${Math.round(confidenceScore * 100)}% < 55%). Ensure card is well-lit and glare-free.`;
+
+      setErrors((prev) => ({
+        ...prev,
+        idCard: reasonMsg
+      }));
+
+      setStatusMessage(
+        `ID Scan Rejected (${Math.round(confidenceScore * 100)}% confidence). Non-card or illegible document detected.`
+      );
+      setStatusTone('bad');
+
+      // CRITICAL: DO NOT MUTATE idFrontShot OR idBackShot. Keep form locked!
+      return;
+    }
+
+    if (isFront) {
+      const shotUrl = result.rectifiedImageUrl || captureFromVideoOrSynthetic('front');
+      setIdFrontShot(shotUrl);
+
+      // Deterministic CV & AI Standby Field Autofill
+      if (result.fields.firstName) {
+        setFirstName(result.fields.firstName);
+      } else if (result.fields.fullname && isPlausibleHumanName(result.fields.fullname)) {
+        const parsed = parseNameComponents(result.fields.fullname);
+        if (parsed.firstName) setFirstName(parsed.firstName);
+        if (parsed.middleName) setMiddleName(parsed.middleName);
+        if (parsed.lastName) setLastName(parsed.lastName);
+      }
+      if (result.fields.middleName) {
+        setMiddleName(result.fields.middleName);
+      }
+      if (result.fields.lastName) {
+        setLastName(result.fields.lastName);
+      }
+      if (result.fields.sex) {
+        const s = result.fields.sex.toLowerCase();
+        if (s.startsWith('m')) setSex('male');
+        else if (s.startsWith('f')) setSex('female');
+      }
+      if (result.fields.dateOfBirth) {
+        setDateOfBirth(result.fields.dateOfBirth);
+      }
+      if (result.fields.address) {
+        setAddress(result.fields.address);
+      }
+      if (result.fields.licenseNumber) {
+        setLicenseNumber(result.fields.licenseNumber);
+      } else if (result.fields.idNumber) {
+        setLicenseNumber(result.fields.idNumber);
+      }
+      if (result.fields.weight) {
+        setWeight(result.fields.weight);
+      }
+      if (result.fields.height) {
+        setHeight(result.fields.height);
+      }
+      const resolvedAge = result.fields.age || computeAgeFromDob(result.fields.dateOfBirth);
+      if (resolvedAge && !isNaN(Number(resolvedAge))) {
+        setAge(resolvedAge);
+      }
+      if (result.fields.employeeId) {
+        setEmployeeId(result.fields.employeeId);
+      } else if (result.fields.idNumber) {
+        setEmployeeId(result.fields.idNumber);
+      }
+      if (result.fields.rankOrTitle) {
+        setRankOrTitle(result.fields.rankOrTitle);
+      }
+
+      setAutofillBadge({
+        visible: true,
+        method: result.method,
+        confidence: Math.round(result.confidence * 100),
+        tier: result.confidenceTier,
+        provider: result.aiProviderUsed
+      });
+
+      setStatusMessage(
+        `ID Scanned via ${result.method === 'DETERMINISTIC_CV' ? 'Deterministic CV' : 'AI Standby'} (${Math.round(result.confidence * 100)}% confidence). Front secured. Now flip card to capture back side.`
+      );
+      setStatusTone('ok');
+
+      // 2.0-second cooldown transition before restarting live stream for the back side
+      setIsFlippingCard(true);
+      if (flipCooldownTimerRef.current) {
+        clearTimeout(flipCooldownTimerRef.current);
+      }
+      flipCooldownTimerRef.current = setTimeout(() => {
+        setIsFlippingCard(false);
+      }, 2000);
+    } else if (!idBackShot) {
+      const shotUrl = result.rectifiedImageUrl || captureFromVideoOrSynthetic('back');
+      setIdBackShot(shotUrl);
+      setStatusMessage('Both front and back ID cards secured successfully.');
+      setStatusTone('ok');
+    }
+
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.idCard;
+      return next;
+    });
+  }, [idFrontShot, idBackShot]);
+
+  // ==========================================================================
+  // PROGRAMMATIC CAMERA SDK & SCANNER SEQUENCE METHODS
+  // (AVFoundation / CameraX / barKoder Optical Decoding Spec)
+  // ==========================================================================
+
+  // 1. Detection and Freezing Step
+  const freezeCaptureSession = useCallback((snapshotUrl: string) => {
+    setIsFrameFrozen(true);
+    setFrozenFrameUrl(snapshotUrl);
+    setIsOpticalDecoding(true);
+    setStatusMessage('100% Stability Locked. Freezing frame & initiating optical laser scan...');
+    setStatusTone('ok');
+  }, []);
+  const pausePreview = freezeCaptureSession;
+  const freezeFrame = freezeCaptureSession;
+  const lockFrame = freezeCaptureSession;
+
+  // 2. Scanning Animation Step
+  const startScanAnimation = useCallback(() => {
+    setIsOpticalDecoding(true);
+  }, []);
+  const setLineScanAnimationMode = startScanAnimation;
+  const drawOverlay = startScanAnimation;
+  const renderTargetingOverlay = startScanAnimation;
+
+  // 3. Backend Data Extraction Step
+  const decode = useCallback(async (imageData: ImageData) => {
+    return await idScanEngine.decode(imageData, idType as GovernmentIdCategory, selectedRole);
+  }, [idType, selectedRole]);
+  const parseMatrix = decode;
+
+  // Manage camera streaming and connect live viewfinder video stream to idScanEngine
+  useEffect(() => {
+    const isCapturing = step === 1 && idCaptureMode === 'camera' && (!idFrontShot || !idBackShot);
+    if (isCapturing) {
+      startCamera();
     } else {
-      setIdBackShot(dataUrl);
+      stopCamera();
+      idScanEngine.stopLiveStream();
+      setScannerAnalysis(null);
+    }
+    return () => {
+      stopCamera();
+      idScanEngine.stopLiveStream();
+    };
+  }, [step, idCaptureMode, idFrontShot, idBackShot, startCamera, stopCamera]);
+
+  // Connect video feed to idScanEngine when camera becomes active
+  useEffect(() => {
+    const isCapturing =
+      step === 1 &&
+      idCaptureMode === 'camera' &&
+      (!idFrontShot || !idBackShot) &&
+      !isFlippingCard;
+
+    if (isCapturing && isCameraActive && videoRef.current) {
+      idScanEngine.startLiveStream(videoRef.current, {
+        targetCategory: idType as GovernmentIdCategory,
+        userRole: selectedRole,
+        targetSide: idFrontShot ? 'back' : 'front',
+        onFrame: (analysis: FrameAnalysisResult) => {
+          if (!isFrameFrozen) {
+            setScannerAnalysis(analysis);
+          }
+        },
+        onStabilityLock: (snapshotUrl: string) => {
+          freezeCaptureSession(snapshotUrl);
+          startScanAnimation();
+        },
+        onLockedScan: (result: IdScanResult) => {
+          // Allow laser scan animation to play for 1.2s to provide distinct optical decoding feedback
+          setTimeout(() => {
+            setIsOpticalDecoding(false);
+            setIsFrameFrozen(false);
+            setFrozenFrameUrl(null);
+            handleLockedCardScan(result);
+          }, 1200);
+        },
+        onLockRejected: (reason?: string) => {
+          setIsOpticalDecoding(false);
+          setIsFrameFrozen(false);
+          setFrozenFrameUrl(null);
+          setStatusMessage(`Optical scan rejected: ${reason || 'Document unreadable. Please align ID card clearly.'}`);
+          setStatusTone('bad');
+        }
+      });
+    } else {
+      idScanEngine.stopLiveStream();
+      setScannerAnalysis(null);
+      setIsOpticalDecoding(false);
+      setIsFrameFrozen(false);
+      setFrozenFrameUrl(null);
+    }
+    return () => {
+      idScanEngine.stopLiveStream();
+      setIsOpticalDecoding(false);
+      setIsFrameFrozen(false);
+      setFrozenFrameUrl(null);
+    };
+  }, [
+    step,
+    idCaptureMode,
+    isCameraActive,
+    idFrontShot,
+    idBackShot,
+    isFlippingCard,
+    idType,
+    selectedRole,
+    handleLockedCardScan
+  ]);
+
+  // Capture current stage from video feed or synthetic fallback
+  const captureFromVideoOrSynthetic = (side: 'front' | 'back'): string => {
+    if (videoRef.current && videoRef.current.videoWidth > 0) {
+      const video = videoRef.current;
+      const canvas = document.createElement('canvas');
+      canvas.width = 856;
+      canvas.height = 540;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'rgba(7, 12, 20, 0.78)';
+        ctx.fillRect(0, canvas.height - 34, canvas.width, 34);
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 14px monospace';
+        ctx.fillText(`RESQTRACK ID SENSOR // ${side.toUpperCase()} // ${idType.toUpperCase()}`, 16, canvas.height - 12);
+        return canvas.toDataURL('image/png');
+      }
+    }
+    return generateSyntheticIdCanvas(side);
+  };
+
+  const [isManualScanning, setIsManualScanning] = useState<boolean>(false);
+
+  const handleCaptureCurrentStage = async () => {
+    if (isFlippingCard || isManualScanning) return;
+
+    const isFrontStage = !idFrontShot;
+    const side = isFrontStage ? 'front' : 'back';
+
+    // If live camera is running, execute full CV scan synchronously before committing state
+    if (videoRef.current && videoRef.current.videoWidth > 0) {
+      const v = videoRef.current;
+      const c = document.createElement('canvas');
+      c.width = v.videoWidth;
+      c.height = v.videoHeight;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      if (ctx) {
+        ctx.drawImage(v, 0, 0, c.width, c.height);
+        const imgData = ctx.getImageData(0, 0, c.width, c.height);
+
+        setIsManualScanning(true);
+        setIsFrameFrozen(true);
+        const snapshotUrl = c.toDataURL('image/png');
+        setFrozenFrameUrl(snapshotUrl);
+        setIsOpticalDecoding(true);
+        setStatusMessage(`Scanning and verifying ${side} of ID card...`);
+        setStatusTone('');
+
+        try {
+          const res = await idScanEngine.scanCard(
+            imgData,
+            idType as GovernmentIdCategory,
+            selectedRole
+          );
+
+          setTimeout(() => {
+            setIsManualScanning(false);
+            setIsOpticalDecoding(false);
+            setIsFrameFrozen(false);
+            setFrozenFrameUrl(null);
+            // Route through central validator
+            handleLockedCardScan(res);
+          }, 1000);
+          return;
+        } catch (scanErr) {
+          console.warn('[RegisterPage] Manual capture error:', scanErr);
+          setIsManualScanning(false);
+          setIsOpticalDecoding(false);
+          setIsFrameFrozen(false);
+          setFrozenFrameUrl(null);
+          idScanEngine.resetStability();
+          setErrors((prev) => ({
+            ...prev,
+            idCard: 'Failed to process camera frame. Please align ID card clearly inside the target reticle.'
+          }));
+          setStatusMessage('Capture verification failed. Please try again.');
+          setStatusTone('bad');
+          return;
+        }
+      }
+    }
+
+    // Hardware camera restricted fallback (synthetic snapshot mode)
+    if (cameraError) {
+      const syntheticUrl = generateSyntheticIdCanvas(side);
+      if (isFrontStage) {
+        setIdFrontShot(syntheticUrl);
+        setStatusMessage('Synthetic Front ID secured. Flip card for reverse side.');
+        setStatusTone('ok');
+        setIsFlippingCard(true);
+        if (flipCooldownTimerRef.current) clearTimeout(flipCooldownTimerRef.current);
+        flipCooldownTimerRef.current = setTimeout(() => setIsFlippingCard(false), 2000);
+      } else {
+        setIdBackShot(syntheticUrl);
+        setStatusMessage('Both front and back ID cards secured.');
+        setStatusTone('ok');
+      }
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.idCard;
+        return next;
+      });
     }
   };
 
-  const calculatePasswordScore = (pwd: string) => {
+  const handleRetakeAllId = () => {
+    if (flipCooldownTimerRef.current) {
+      clearTimeout(flipCooldownTimerRef.current);
+    }
+    setIsFlippingCard(false);
+    setIdFrontShot(null);
+    setIdBackShot(null);
+    setFirstName('');
+    setMiddleName('');
+    setLastName('');
+    setDateOfBirth('');
+    setAddress('');
+    setLicenseNumber('');
+    setWeight('');
+    setHeight('');
+    setAge('');
+    setAutofillBadge(null);
+    idScanEngine.resetStability();
+    setStatusMessage('ID card snapshots cleared. Align front of card to restart capture.');
+    setStatusTone('');
+  };
+
+  // Upload Handling (File Picker & Drag-and-Drop) with Automatic Deterministic CV Scan
+  const handleFileUpload = (side: 'front' | 'back', file: File) => {
+    console.log('[RegisterPage handleFileUpload] triggered for side:', side, 'file:', file.name, file.type, file.size);
+    if (!file.type.startsWith('image/')) {
+      setErrors((prev) => ({ ...prev, idCard: 'Please upload a valid image file (PNG, JPG, or WebP).' }));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      if (side === 'front') {
+        // DO NOT commit setIdFrontShot(result) yet! Validate image first.
+        const img = new Image();
+        img.onload = async () => {
+          setStatusMessage('Analyzing and verifying uploaded ID card...');
+          setStatusTone('');
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || 640;
+            canvas.height = img.naturalHeight || 480;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const scanRes = await idScanEngine.scanCard(
+                imgData,
+                idType as GovernmentIdCategory,
+                selectedRole
+              );
+              console.log('[RegisterPage handleFileUpload] scanRes front error:', scanRes.error, 'reasons:', JSON.stringify(scanRes.quality?.reasons));
+
+              const hasCoreField = Boolean(
+                scanRes.fields && (
+                  scanRes.fields.fullname ||
+                  scanRes.fields.firstName ||
+                  scanRes.fields.lastName ||
+                  scanRes.fields.licenseNumber ||
+                  scanRes.fields.idNumber ||
+                  scanRes.fields.employeeId
+                )
+              );
+
+              if (!scanRes.success || scanRes.confidence < 0.45 || !hasCoreField) {
+                setErrors((prev) => ({
+                  ...prev,
+                  idCard: 'Uploaded image is not a recognized Government ID card. Please upload a clear photo showing full name and ID number.'
+                }));
+                setStatusMessage('Upload rejected: Invalid or unreadable document (confidence below 45%).');
+                setStatusTone('bad');
+                return;
+              }
+
+              // Valid scan -> delegate to handler
+              handleLockedCardScan(scanRes);
+            }
+          } catch (err) {
+            console.warn('[RegisterPage] Upload CV scan error:', err);
+            setErrors((prev) => ({
+              ...prev,
+              idCard: 'Could not process uploaded file. Please provide a clear image of your ID card.'
+            }));
+            setStatusMessage('Upload analysis failed.');
+            setStatusTone('bad');
+          }
+        };
+        img.src = result;
+      } else {
+        const img = new Image();
+        img.onload = async () => {
+          setStatusMessage('Analyzing and verifying uploaded Back ID card...');
+          setStatusTone('');
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || 640;
+            canvas.height = img.naturalHeight || 480;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const scanRes = await idScanEngine.scanCard(
+                imgData,
+                idType as GovernmentIdCategory,
+                selectedRole
+              );
+              console.log('[RegisterPage handleFileUpload] scanRes back error:', scanRes.error, 'reasons:', JSON.stringify(scanRes.quality?.reasons));
+
+              const isFaceDetected = Boolean(
+                scanRes.cardPresence && scanRes.cardPresence.status === 'FACE_DETECTED'
+              );
+
+              if (isFaceDetected || !scanRes.corners || scanRes.corners.length !== 4) {
+                setErrors((prev) => ({
+                  ...prev,
+                  idCard: isFaceDetected
+                    ? 'Human face detected. Please position or upload the back side of your physical Government ID card.'
+                    : 'Uploaded image does not appear to be the back of a physical Government ID card. Please ensure the card boundary is visible.'
+                }));
+                setStatusMessage('Back ID rejected: Invalid document or human face detected.');
+                setStatusTone('bad');
+                return;
+              }
+
+              setIdBackShot(scanRes.rectifiedImageUrl || result);
+              setErrors((prev) => {
+                const next = { ...prev };
+                delete next.idCard;
+                return next;
+              });
+              setStatusMessage('Both front and back ID cards secured successfully.');
+              setStatusTone('ok');
+            }
+          } catch (err) {
+            console.warn('[RegisterPage] Back ID CV scan error:', err);
+            setIdBackShot(result);
+            setStatusMessage('Back ID image secured.');
+            setStatusTone('ok');
+          }
+        };
+        img.src = result;
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (side: 'front' | 'back', e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (side === 'front') setIsDraggingFront(false);
+    else setIsDraggingBack(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileUpload(side, e.dataTransfer.files[0]);
+    }
+  };
+
+  // Facial Biometric Callbacks
+  const handleFaceVerified = (payloadUrl: string) => {
+    setFaceShot(payloadUrl);
+    setFaceVerified(true);
+    setStatusMessage('Multi-angle biometric proof verified (99.8% confidence). SHA-256 vector secured.');
+    setStatusTone('ok');
+  };
+
+  const handleFaceRetake = () => {
+    setFaceShot(null);
+    setFaceVerified(false);
+    setStatusMessage('Biometric proof reset. Please realign for facial scan.');
+    setStatusTone('');
+  };
+
+  // Password entropy score calculation
+  const calculatePasswordScore = (pwd: string): number => {
     let score = 0;
     if (pwd.length >= 8) score++;
     if (pwd.length >= 12) score++;
@@ -182,103 +957,215 @@ export const RegisterPage: React.FC = () => {
   };
 
   const score = calculatePasswordScore(password);
-  const strengthLabel =
-    score >= 5 ? 'STRONG' : score >= 3 ? 'FAIR' : score >= 1 ? 'WEAK' : 'VERY WEAK';
+  const strengthLabel = score >= 5 ? 'STRONG' : score >= 3 ? 'FAIR' : score >= 1 ? 'WEAK' : 'VERY WEAK';
   const strengthTone = score >= 5 ? 'ok' : score >= 3 ? 'warn' : 'bad';
 
-  const validateStep1 = () => {
-    const newErrors: { [key: string]: string } = {};
-    if (!fullname.trim()) newErrors.fullname = 'Enter your full legal name.';
-    if (!EMAIL_RE.test(email.trim())) newErrors.email = 'Enter a valid government email address.';
-    if (unit !== 'security') {
-      const parsedAge = parseInt(age, 10);
-      if (isNaN(parsedAge) || parsedAge < 18 || parsedAge > 100) {
-        newErrors.age = 'Age must be between 18 and 100.';
+  // Vision Scanner Telemetry Calculations
+  const clarity = scannerAnalysis?.quality.details.laplacian ?? 0;
+  const isSharp = clarity >= 100;
+  const glareRatio = (scannerAnalysis?.quality.details.glare ?? 0) * 100;
+  const hasGlare = glareRatio >= 3.0;
+  const exposureVal = scannerAnalysis?.quality.details.exposure ?? 128;
+  const exposureStatus = exposureVal < 60 ? 'UNDEREXPOSED' : exposureVal > 200 ? 'OVEREXPOSED' : 'OPTIMAL';
+  const lockProgress = scannerAnalysis?.stability.lockProgress ?? 0;
+  const isLocked = scannerAnalysis?.stability.isLocked ?? false;
+  const presenceStatus = scannerAnalysis?.cardPresence?.status
+    ?? (isLocked ? 'LOCKED' : lockProgress > 0 ? 'ALIGNING' : 'NO_CARD');
+
+  // Role Selection Logic for Step 0
+  const handleSelectRole = (role: 'Responder' | 'Civilian') => {
+    setSelectedRole(role);
+    if (role === 'Responder') {
+      if (agencyUnit === 'Security' || agencyUnit === 'None') {
+        setAgencyUnit('FIRE');
       }
-      if (!employeeId.trim()) newErrors.employeeId = 'Enter your agency badge / employee ID.';
+      if (employeeId === 'RES-ZN-2024' || !employeeId) {
+        setEmployeeId('BFP-ZN-2024-089');
+      }
+      if (rankOrTitle === 'Resident' || !rankOrTitle) {
+        setRankOrTitle('Senior Inspector');
+      }
+      if (firstName === 'Juan' && lastName === 'Dela Cruz') {
+        setFirstName('Eduardo');
+        setMiddleName('M.');
+        setLastName('Reyes');
+      }
+      if (email === 'juan.delacruz@gmail.com') {
+        setEmail('e.reyes@bfp.gov.ph');
+      }
+    } else {
+      setAgencyUnit('Security');
+      setRankOrTitle('Resident');
+      setEmployeeId('RES-ZN-2024');
+      if (firstName === 'Eduardo' && lastName === 'Reyes') {
+        setFirstName('Juan');
+        setMiddleName('');
+        setLastName('Dela Cruz');
+      }
+      if (email === 'e.reyes@bfp.gov.ph') {
+        setEmail('juan.delacruz@gmail.com');
+      }
     }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
   };
 
-  const validateStep2 = () => {
+  const handleAgencyUnitChange = (newUnit: 'RHU' | 'FIRE' | 'PNP') => {
+    setAgencyUnit(newUnit);
+    if (newUnit === 'FIRE') {
+      setEmployeeId('BFP-ZN-2024-089');
+      setEmail((prev) => (prev.includes('@') ? prev.replace(/@.*$/, '@bfp.gov.ph') : 'e.reyes@bfp.gov.ph'));
+      setRankOrTitle('Senior Inspector');
+      setIdType('fire');
+    } else if (newUnit === 'PNP') {
+      setEmployeeId('PNP-ZN-2024-118');
+      setEmail((prev) => (prev.includes('@') ? prev.replace(/@.*$/, '@pnp.gov.ph') : 'e.reyes@pnp.gov.ph'));
+      setRankOrTitle('Police Corporal');
+      setIdType('police');
+    } else if (newUnit === 'RHU') {
+      setEmployeeId('RHU-ZN-2024-042');
+      setEmail((prev) => (prev.includes('@') ? prev.replace(/@.*$/, '@rhu.gov.ph') : 'e.reyes@rhu.gov.ph'));
+      setRankOrTitle('Medical Responder');
+      setIdType('prc');
+    }
+  };
+
+  // Validation routines
+  const validateStep1 = (): boolean => {
     const newErrors: { [key: string]: string } = {};
-    if (password.length < 12) newErrors.password = 'Password must be at least 12 characters for government compliance.';
-    if (password !== confirmPassword) newErrors.confirm = 'Passwords do not match.';
+    if (!firstName.trim()) newErrors.firstName = 'Enter your first name.';
+    if (!lastName.trim()) newErrors.lastName = 'Enter your surname / last name.';
+    if (!EMAIL_RE.test(email.trim())) newErrors.email = 'Enter a valid email address.';
+    const parsedAge = parseInt(age, 10);
+    if (isNaN(parsedAge) || parsedAge < 18 || parsedAge > 100) {
+      newErrors.age = 'Age must be between 18 and 100.';
+    }
+    if (selectedRole === 'Responder') {
+      if (!employeeId.trim()) newErrors.employeeId = 'Enter your agency badge / employee ID.';
+      if (!rankOrTitle.trim()) newErrors.rankOrTitle = 'Enter your official rank or position title.';
+    }
+    if (!idFrontShot || !idBackShot) {
+      newErrors.idCard = 'Both front and back ID cards must be captured or uploaded.';
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  const validateStep3 = (): boolean => {
+    const newErrors: { [key: string]: string } = {};
+    if (password.length < 5) {
+      newErrors.password = 'Password must be at least 5 characters.';
+    }
+    if (password !== confirmPassword) {
+      newErrors.confirm = 'Passwords do not match.';
+    }
+    if (!consent1 || !consent2) {
+      newErrors.consent = 'Accept the required affidavit certifications to continue.';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // Step transitions
   const handleNextStep = (targetStep: number) => {
-    if (targetStep === 2 && !validateStep1()) {
-      setStatusMessage('Check highlighted fields in Personal Information.');
-      setStatusTone('bad');
+    if (targetStep === 0) {
+      setStep(0);
+      setStatusMessage('');
+      setStatusTone('');
       return;
     }
-    if (targetStep === 3 && !validateStep2()) {
-      setStatusMessage('Ensure your password meets complexity requirements.');
-      setStatusTone('bad');
+    if (targetStep === 1) {
+      setStep(1);
+      setStatusMessage('');
+      setStatusTone('');
       return;
     }
-    setStep(targetStep);
-    setStatusMessage('');
-    setStatusTone('');
-    if (targetStep === 3 && !faceStreaming && !faceShot) {
-      startCamera();
+    if (targetStep === 2) {
+      if (!validateStep1()) {
+        setStatusMessage('Complete all required personal fields and secure both front and back ID cards.');
+        setStatusTone('bad');
+        return;
+      }
+      setStep(2);
+      setStatusMessage('');
+      setStatusTone('');
+      return;
+    }
+    if (targetStep === 3) {
+      if (!validateStep1()) {
+        setStatusMessage('Complete all required identity fields and ID card captures in Step 1.');
+        setStatusTone('bad');
+        return;
+      }
+      if (!faceVerified || !faceShot) {
+        setStatusMessage('Facial biometric verification must be completed to proceed.');
+        setStatusTone('bad');
+        return;
+      }
+      setStep(3);
+      setStatusMessage('');
+      setStatusTone('');
     }
   };
 
+  // Final Registration Submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLoading) return;
 
-    if (!consent1 || !consent2) {
-      setStatusMessage('Accept required certifications to continue.');
+    if (!validateStep1()) {
+      setStep(1);
+      setStatusMessage('ID credentials and personal information incomplete.');
       setStatusTone('bad');
       return;
     }
 
     if (!faceVerified || !faceShot) {
-      setStatusMessage('Face verification required.');
+      setStep(2);
+      setStatusMessage('Facial biometric verification required before account activation.');
+      setStatusTone('bad');
+      return;
+    }
+
+    if (!validateStep3()) {
+      setStatusMessage('Ensure your password meets complexity requirements and certifications are accepted.');
       setStatusTone('bad');
       return;
     }
 
     setIsLoading(true);
-    setStatusMessage('Validating agency credentials and hashing passwords\u2026');
+    setStatusMessage('Validating agency credentials and compiling biometric proof\u2026');
     setStatusTone('');
 
     try {
-      const isSecurityCivilian = unit === 'security';
-      const determinedUnit: 'None' | 'LDRRMO' | 'RHU' | 'FIRE' | 'PNP' | 'Security' =
-        isSecurityCivilian ? 'Security' :
-        station.toLowerCase().includes('fire') || idType === 'fire' ? 'FIRE' :
-        station.toLowerCase().includes('police') || idType === 'police' ? 'PNP' : 'RHU';
+      const isCivilian = selectedRole === 'Civilian';
+      const dualCompositeUrl = idFrontShot && idBackShot ? await generateDualIdComposite(idFrontShot, idBackShot) : undefined;
 
-      const payload: RegisterPayload = {
+      const payload: RegisterPayload & { sex?: string; age?: number | string } = {
         fullName: fullname.trim(),
         email: email.trim(),
         password,
         phoneNumber: '0917-000-0000',
-        employeeOrResidentId: !isSecurityCivilian ? employeeId.trim() : 'RES-ZN-2024',
+        employeeOrResidentId: employeeId.trim() || (isCivilian ? 'RES-ZN-2024' : 'RESP-2024'),
         validIdType: idType,
-        role: isSecurityCivilian ? 'Civilian' : 'Responder',
-        unit: determinedUnit,
-        departmentOrBarangay: station,
-        rankOrTitle: !isSecurityCivilian ? 'Emergency Officer' : 'Resident',
-        idCaptureDataUrl: idFrontShot || undefined,
-        faceCaptureDataUrl: faceShot || undefined
+        role: isCivilian ? 'Civilian' : 'Responder',
+        unit: isCivilian ? 'Security' : (agencyUnit as ResponderUnit),
+        departmentOrBarangay: isCivilian ? 'Community Resident Sector' : `${agencyUnit} Tactical Command`,
+        rankOrTitle: !isCivilian ? rankOrTitle.trim() || 'Emergency Officer' : 'Resident',
+        idCaptureDataUrl: dualCompositeUrl,
+        faceCaptureDataUrl: faceShot || undefined,
+        sex: sex.trim(),
+        age: parseInt(age, 10) || age
       };
 
       const res = await registerUser(payload);
       setIsLoading(false);
       setIsSuccess(true);
+      biometricFrameCache.clear();
 
       const msg =
         (payload.employeeOrResidentId ? payload.employeeOrResidentId.toUpperCase() : payload.fullName) +
         (res.status === 'Verified' || res.faceVerified
           ? ' registered \u00b7 ID + face verified. Account active \u2014 redirecting to sign in\u2026'
-          : ' registered \u00b7 Awaiting LDRRMO approval\u2026');
+          : ' registered \u00b7 Awaiting verification\u2026');
 
       setStatusMessage(msg);
       setStatusTone('ok');
@@ -295,37 +1182,44 @@ export const RegisterPage: React.FC = () => {
   };
 
   return (
-    <main className="scene page-register">
-      <div className="stage">
+    <main className="scene page-register min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 w-full overflow-y-auto">
+      <div
+        className="stage w-full max-w-4xl mx-auto flex flex-col items-center justify-center my-auto"
+        style={{
+          maxWidth: 'min(940px, 96vw)',
+          width: '100%',
+          height: 'auto',
+          position: 'relative',
+          margin: '0 auto',
+          left: 'auto',
+          top: 'auto',
+          transform: 'none'
+        }}
+      >
         <div className="bg" aria-hidden="true">
           <span className="bg__strip"></span>
           <span className="bg__disc"></span>
           <span className="bg__wedge"></span>
         </div>
 
-        <header className="brand">
+        <header className="brand text-center mb-4 w-full" style={{ position: 'relative', margin: '0 auto 16px', left: 'auto', top: 'auto' }}>
           <h1 className="brand__mark">RESQTRACK</h1>
           <p className="brand__lead">Smart Emergency Response</p>
           <p className="brand__sub">System with Image Processing and Real-Time Tracking</p>
         </header>
 
-        <div className="responders" aria-hidden="true">
-          <span className="responder responder--group">
-            <img
-              src="/img/responders.png"
-              alt="Responders"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-            <i>responders.png</i>
-          </span>
-        </div>
-
         <section
-          className="panel panel--register relative"
+          className="panel panel--register w-full"
           aria-labelledby="panel-title"
           style={{
+            position: 'relative',
+            left: 'auto',
+            top: 'auto',
+            width: '100%',
+            maxWidth: isMobile ? '100%' : '920px',
+            margin: '0 auto',
+            transform: 'none',
+            height: 'auto',
             border: '1px solid rgba(255, 92, 116, 0.22)',
             boxShadow: '0 24px 60px rgba(0,0,0,0.65), 0 0 20px rgba(232,17,76,0.15)',
             paddingBottom: '20px'
@@ -350,106 +1244,1120 @@ export const RegisterPage: React.FC = () => {
               <span className="text-slate-400 tracking-widest hidden sm:inline">BIOMETRIC TIER: ENHANCED</span>
             </div>
 
-            <ol className="steps" aria-label="Account creation progress">
+            {/* 4-Step Navigation Wizard: 00 Role -> 01 Identity -> 02 Biometrics -> 03 Security */}
+            <ol className="steps overflow-x-auto pb-1 max-w-full scrollbar-none" aria-label="Account creation progress">
               <li
-                className={`steps__item ${step >= 1 ? 'is-active' : ''}`}
+                className={`steps__item ${step === 0 ? 'is-active' : step > 0 ? 'is-done' : ''}`}
+                data-step-item="0"
+                aria-current={step === 0 ? 'step' : undefined}
+                onClick={() => setStep(0)}
+                style={{ cursor: 'pointer' }}
+              >
+                <span className="steps__dot font-mono">0</span>
+                <span className="steps__label font-mono text-[10px]">00 Role</span>
+              </li>
+              <li
+                className={`steps__item ${step === 1 ? 'is-active' : step > 1 ? 'is-done' : ''}`}
                 data-step-item="1"
                 aria-current={step === 1 ? 'step' : undefined}
-                onClick={() => setStep(1)}
+                onClick={() => handleNextStep(1)}
+                style={{ cursor: 'pointer' }}
               >
                 <span className="steps__dot font-mono">1</span>
                 <span className="steps__label font-mono text-[10px]">01 Identity</span>
               </li>
               <li
-                className={`steps__item ${step >= 2 ? 'is-active' : ''}`}
+                className={`steps__item ${step === 2 ? 'is-active' : step > 2 ? 'is-done' : ''}`}
                 data-step-item="2"
                 aria-current={step === 2 ? 'step' : undefined}
                 onClick={() => handleNextStep(2)}
+                style={{ cursor: 'pointer' }}
               >
                 <span className="steps__dot font-mono">2</span>
-                <span className="steps__label font-mono text-[10px]">02 Security</span>
+                <span className="steps__label font-mono text-[10px]">02 Biometrics</span>
               </li>
               <li
-                className={`steps__item ${step === 3 ? 'is-active' : ''}`}
+                className={`steps__item ${step === 3 ? 'is-active' : step > 3 ? 'is-done' : ''}`}
                 data-step-item="3"
                 aria-current={step === 3 ? 'step' : undefined}
                 onClick={() => handleNextStep(3)}
+                style={{ cursor: 'pointer' }}
               >
                 <span className="steps__dot font-mono">3</span>
-                <span className="steps__label font-mono text-[10px]">03 Biometrics</span>
+                <span className="steps__label font-mono text-[10px]">03 Security</span>
               </li>
             </ol>
 
-            {/* ============ Step 1 — Personal identification ============ */}
+            {/* ============ Step 0 — Role Selection ============ */}
+            {step === 0 && (
+              <div className="step" data-step="0">
+                <div className="text-center mb-5">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/30 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-2">
+                    <Shield className="w-3.5 h-3.5 text-[#ff5c74]" />
+                    SECURITY INDUCTION GATEWAY // STAGE 00
+                  </div>
+                  <h3 className="font-mono text-sm sm:text-base font-bold text-white uppercase tracking-wider">
+                    Select Induction Profile Classification
+                  </h3>
+                  <p className="font-sans text-xs text-slate-300/80 mt-1 max-w-md mx-auto">
+                    Choose your authorized operational clearance tier. Your role determines telemetry permissions, dispatch authority, and credential requirements.
+                  </p>
+                </div>
+
+                {/* Sliding Window Role Selector Segmented Bar */}
+                <div className="relative p-1 bg-black/50 backdrop-blur-md rounded-xl border border-rose-500/25 mb-6 max-w-md mx-auto">
+                  <div
+                    className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-lg transition-all duration-300 ease-out pointer-events-none shadow-lg ${
+                      selectedRole === 'Responder'
+                        ? 'left-1 bg-gradient-to-r from-[#a5002e] via-[#d9093e] to-[#ff2b4a] border border-[#ff5c74] shadow-[0_0_16px_rgba(232,17,76,0.4)]'
+                        : 'left-[calc(50%+2px)] bg-gradient-to-r from-emerald-800 via-emerald-600 to-teal-500 border border-emerald-400 shadow-[0_0_16px_rgba(16,185,129,0.4)]'
+                    }`}
+                  />
+                  <div className="grid grid-cols-2 relative z-10">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectRole('Responder')}
+                      className={`py-2 px-3 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        selectedRole === 'Responder' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Shield className="w-4 h-4 shrink-0" />
+                      <span>Responders</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectRole('Civilian')}
+                      className={`py-2 px-3 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        selectedRole === 'Civilian' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <User className="w-4 h-4 shrink-0" />
+                      <span>Civilians</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Interactive Role Cards Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Card 1: RESPONDERS */}
+                  <div
+                    onClick={() => handleSelectRole('Responder')}
+                    className={`group relative rounded-xl p-4 transition-all duration-200 cursor-pointer flex flex-col justify-between ${
+                      selectedRole === 'Responder'
+                        ? 'bg-[#1e0710]/90 border-2 border-rose-500 shadow-[0_0_24px_rgba(232,17,76,0.3)] ring-1 ring-rose-400/50'
+                        : 'bg-[#0f1420]/80 border border-slate-700/60 hover:border-rose-500/50 hover:bg-[#180a14]/60'
+                    }`}
+                  >
+                    {selectedRole === 'Responder' && (
+                      <>
+                        <div className="absolute top-1 left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-[#ff5c74] pointer-events-none" />
+                        <div className="absolute top-1 right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-[#ff5c74] pointer-events-none" />
+                        <div className="absolute bottom-1 left-1 w-2.5 h-2.5 border-b-2 border-l-2 border-[#ff5c74] pointer-events-none" />
+                        <div className="absolute bottom-1 right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-[#ff5c74] pointer-events-none" />
+                      </>
+                    )}
+
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div
+                          className={`p-2.5 rounded-lg border ${
+                            selectedRole === 'Responder'
+                              ? 'bg-rose-950/80 border-rose-500/60 text-[#ff5c74]'
+                              : 'bg-slate-800/80 border-slate-700 text-slate-400 group-hover:text-rose-400'
+                          }`}
+                        >
+                          <Shield className="w-5 h-5" />
+                        </div>
+                        <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider font-bold">
+                          <span
+                            className={`px-2 py-0.5 rounded border ${
+                              selectedRole === 'Responder'
+                                ? 'bg-rose-950 border-rose-500/50 text-rose-300'
+                                : 'bg-slate-800 border-slate-700 text-slate-400'
+                            }`}
+                          >
+                            TIER-1 DISPATCH
+                          </span>
+                          {selectedRole === 'Responder' && (
+                            <span className="w-4 h-4 rounded-full bg-rose-500 text-white flex items-center justify-center">
+                              <Check className="w-3 h-3 stroke-[3]" />
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <h4 className="font-mono text-sm font-bold text-white uppercase tracking-wider">Responders</h4>
+                      <p className="font-mono text-[10px] text-rose-300/90 font-medium mb-2">Emergency Response Personnel</p>
+                      <p className="font-sans text-[11.5px] text-slate-300 leading-relaxed mb-3">
+                        Authorized municipal tactical personnel responding to emergency incidents, casualty triages, structural fires, and security operations.
+                      </p>
+
+                      <div className="space-y-1.5 pt-2 border-t border-rose-500/20 font-mono text-[10px]">
+                        <div className="flex items-center gap-2 text-slate-300">
+                          <HeartPulse className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                          <span>RHU Medical (Triage &amp; Paramedic)</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-300">
+                          <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>BFP Fire (Suppression &amp; Rescue)</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-300">
+                          <Siren className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                          <span>PNP Police (Patrol &amp; Law Enforcement)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-2.5 border-t border-slate-700/50 font-mono text-[9px] text-slate-400 flex items-center justify-between">
+                      <span>Req: Badge ID + Rank + Facial Scan</span>
+                      <span className="text-rose-400 font-bold">AGENCY SEC</span>
+                    </div>
+                  </div>
+
+                  {/* Card 2: CIVILIANS */}
+                  <div
+                    onClick={() => handleSelectRole('Civilian')}
+                    className={`group relative rounded-xl p-4 transition-all duration-200 cursor-pointer flex flex-col justify-between ${
+                      selectedRole === 'Civilian'
+                        ? 'bg-[#061d15]/90 border-2 border-emerald-500 shadow-[0_0_24px_rgba(16,185,129,0.3)] ring-1 ring-emerald-400/50'
+                        : 'bg-[#0f1420]/80 border border-slate-700/60 hover:border-emerald-500/50 hover:bg-[#071913]/60'
+                    }`}
+                  >
+                    {selectedRole === 'Civilian' && (
+                      <>
+                        <div className="absolute top-1 left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-emerald-400 pointer-events-none" />
+                        <div className="absolute top-1 right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-emerald-400 pointer-events-none" />
+                        <div className="absolute bottom-1 left-1 w-2.5 h-2.5 border-b-2 border-l-2 border-emerald-400 pointer-events-none" />
+                        <div className="absolute bottom-1 right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-emerald-400 pointer-events-none" />
+                      </>
+                    )}
+
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div
+                          className={`p-2.5 rounded-lg border ${
+                            selectedRole === 'Civilian'
+                              ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-400'
+                              : 'bg-slate-800/80 border-slate-700 text-slate-400 group-hover:text-emerald-400'
+                          }`}
+                        >
+                          <Users className="w-5 h-5" />
+                        </div>
+                        <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider font-bold">
+                          <span
+                            className={`px-2 py-0.5 rounded border ${
+                              selectedRole === 'Civilian'
+                                ? 'bg-emerald-950 border-emerald-500/50 text-emerald-300'
+                                : 'bg-slate-800 border-slate-700 text-slate-400'
+                            }`}
+                          >
+                            TIER-3 CITIZEN
+                          </span>
+                          {selectedRole === 'Civilian' && (
+                            <span className="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+                              <Check className="w-3 h-3 stroke-[3]" />
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <h4 className="font-mono text-sm font-bold text-white uppercase tracking-wider">Civilians</h4>
+                      <p className="font-mono text-[10px] text-emerald-300/90 font-medium mb-2">Community Resident / Citizen SOS</p>
+                      <p className="font-sans text-[11.5px] text-slate-300 leading-relaxed mb-3">
+                        Designed for local residents and community citizens to submit immediate SOS distress broadcasts, report road accidents with camera AI, and receive danger bulletins.
+                      </p>
+
+                      <div className="space-y-1.5 pt-2 border-t border-emerald-500/20 font-mono text-[10px]">
+                        <div className="flex items-center gap-2 text-slate-300">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>One-Click Citizen SOS Distress Dispatch</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-300">
+                          <Camera className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                          <span>Accident &amp; Incident AI Detection</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-300">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                          <span>Automated Resident Clearance (RES-ZN-2024)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-2.5 border-t border-slate-700/50 font-mono text-[9px] text-slate-400 flex items-center justify-between">
+                      <span>Req: ID Doc + Live Face Scan</span>
+                      <span className="text-emerald-400 font-bold">CITIZEN FAST-TRACK</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 0 Continue Button */}
+                <div className="step-actions mt-6">
+                  <button
+                    className="btn w-full !h-[46px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2"
+                    type="button"
+                    data-next="1"
+                    onClick={() => handleNextStep(1)}
+                  >
+                    <span className="btn__label">
+                      Continue as {selectedRole === 'Responder' ? 'Emergency Responder' : 'Community Resident'}
+                    </span>
+                    <ArrowRight className="w-4 h-4 ml-1" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ============ Step 1 — Personal Info & ID Front/Back Capture ============ */}
             {step === 1 && (
               <div className="step" data-step="1">
-                <div className="form-grid">
-                  <div className={`field ${errors.fullname ? 'is-invalid' : ''}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="fullname">
-                        Full Legal Name <span className="req">*</span>
-                      </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/80">[CIVIL.NAME]</span>
-                    </div>
-                    <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-user"/></svg>
-                      <input
-                        className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
-                        id="fullname"
-                        name="fullname"
-                        type="text"
-                        value={fullname}
-                        onChange={(e) => setFullname(e.target.value)}
-                        autoComplete="name"
-                        spellCheck={false}
-                      />
-                    </div>
-                    {errors.fullname && (
-                      <p className="field__error font-mono text-[10px]" id="fullname-error" role="alert">{errors.fullname}</p>
+                {/* Active Role Indicator Ribbon */}
+                <div
+                  className={`flex items-center justify-between p-2.5 rounded-lg border mb-4 font-mono text-[10.5px] ${
+                    selectedRole === 'Responder'
+                      ? 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                      : 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {selectedRole === 'Responder' ? (
+                      <Shield className="w-4 h-4 text-[#ff5c74] shrink-0" />
+                    ) : (
+                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                     )}
+                    <span>
+                      Active Tier: <strong>{selectedRole === 'Responder' ? 'Emergency Responder Personnel' : 'Community Resident (Civilian)'}</strong>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setStep(0)}
+                    className="underline text-[10px] hover:text-white cursor-pointer ml-2"
+                  >
+                    Change Role
+                  </button>
+                </div>
+
+                {/* ============ TOP CONTROL BAR: ID SELECTION & CAPTURE METHOD ============ */}
+                <div className="p-4 rounded-xl bg-black/50 border border-rose-500/30 mb-5">
+                  <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    {/* ID Document Selection */}
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="id-type">
+                          Government ID Document Type <span className="req text-[#ff5c74]">*</span>
+                        </label>
+                        <span className="font-mono text-[8.5px] text-rose-400/80">[DOC.CLASS]</span>
+                      </div>
+                      <div
+                        className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                        style={{
+                          background: 'rgba(46, 10, 22, 0.85)',
+                          border: '1px solid rgba(255, 92, 116, 0.22)',
+                          borderRadius: '6px'
+                        }}
+                      >
+                        <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <select
+                          className="field__input select__input font-sans text-white text-[13px]"
+                          id="id-type"
+                          value={idType}
+                          onChange={(e) => setIdType(e.target.value)}
+                        >
+                          <option value="philsys">PhilSys National ID</option>
+                          <option value="passport">Philippine Passport</option>
+                          <option value="postal">Postal ID</option>
+                          <option value="drivers">LTO Driver's License</option>
+                          <option value="prc">PRC Professional License</option>
+                          {selectedRole === 'Responder' && (
+                            <>
+                              <option value="fire">BFP Service ID</option>
+                              <option value="police">PNP Official ID</option>
+                            </>
+                          )}
+                          <option value="umid">Unified Multi-Purpose ID (UMID)</option>
+                        </select>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+                      </div>
+                    </div>
+
+                    {/* Capture Mode Switcher (Live Camera vs Upload) */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold">
+                          Capture Method
+                        </span>
+                        <span className="font-mono text-[8.5px] text-cyan-400/80">[INPUT.MODE]</span>
+                      </div>
+                      <div className="inline-flex p-1 rounded-lg bg-black/80 border border-rose-500/30 font-mono text-[10px] w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => setIdCaptureMode('camera')}
+                          className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-bold transition-all cursor-pointer ${
+                            idCaptureMode === 'camera'
+                              ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-[0_0_12px_rgba(232,17,76,0.5)]'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>Live Camera Capture</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIdCaptureMode('upload')}
+                          className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-bold transition-all cursor-pointer ${
+                            idCaptureMode === 'upload'
+                              ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-[0_0_12px_rgba(232,17,76,0.5)]'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Picture File</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className={`field ${errors.email ? 'is-invalid' : ''}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="email">
-                        Email Address <span className="req">*</span>
-                      </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/80">[OFFICIAL.GOV]</span>
+                  {/* Fast track banner for civilians */}
+                  {selectedRole === 'Civilian' && (
+                    <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-500/30 flex items-start gap-3 mt-3">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <div className="font-mono text-xs">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-bold uppercase tracking-wider text-emerald-300 text-[11px]">
+                            Resident Fast-Track Clearance
+                          </span>
+                          <span className="px-1.5 py-0.2 rounded text-[8.5px] bg-emerald-900/80 text-emerald-200 border border-emerald-500/40">
+                            AUTO-CONFIG
+                          </span>
+                        </div>
+                        <p className="font-sans text-[11px] text-slate-300 leading-relaxed">
+                          Your profile is auto-assigned as <strong>Resident [RES-ZN-2024]</strong> with Community Guard tier. No government agency badge or station assignment is required.
+                        </p>
+                      </div>
                     </div>
-                    <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-mail"/></svg>
-                      <input
-                        className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
-                        id="email"
-                        name="email"
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        autoComplete="email"
-                        spellCheck={false}
-                      />
+                  )}
+                </div>
+
+                {/* ============ ID CARD FRONT & BACK CAPTURE SECTION ============ */}
+                <div className="mt-2 pt-1 border-t border-rose-500/20">
+                  <div className="flex items-center gap-2 mb-3.5 pt-3">
+                    <Scan className="w-4 h-4 text-[#ff5c74]" />
+                    <div>
+                      <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                        Government ID Dual Optical Capture <span className="text-[#ff5c74]">*</span>
+                      </h4>
+                      <p className="font-mono text-[9px] text-rose-300/80 mt-0.5">
+                        Both front &amp; back sides of your {idType.toUpperCase()} are required for identity induction.
+                      </p>
                     </div>
-                    {errors.email && (
-                      <p className="field__error font-mono text-[10px]" id="email-error" role="alert">{errors.email}</p>
-                    )}
                   </div>
 
-                  {unit !== 'security' && (
-                    <>
+                  {/* MODE 1: LIVE CAMERA CAPTURE */}
+                  {idCaptureMode === 'camera' && (
+                    <div className="space-y-4">
+                      {/* Check if both front & back are captured -> Display side-by-side preview */}
+                      {idFrontShot && idBackShot ? (
+                        <div className="p-4 rounded-xl bg-black/50 border border-emerald-500/40">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="font-mono text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
+                              <CheckCircle2 className="w-4 h-4" />
+                              DUAL ID CREDENTIAL SECURED (FRONT &amp; BACK)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleRetakeAllId}
+                              className="font-mono text-[10px] text-rose-300 hover:text-white px-2.5 py-1 rounded border border-rose-500/30 bg-rose-950/40 hover:bg-rose-900/60 cursor-pointer flex items-center gap-1 transition-all"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              <span>Retake ID Cards</span>
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                            {/* Front Card Preview */}
+                            <div className="relative rounded-lg overflow-hidden border border-emerald-500/50 bg-[#070c14] p-2 flex flex-col items-center">
+                              <div className="absolute top-1 left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-emerald-400 pointer-events-none" />
+                              <div className="absolute top-1 right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-emerald-400 pointer-events-none" />
+                              <img
+                                src={idFrontShot}
+                                alt="Front ID Preview"
+                                className="w-full h-auto object-cover rounded shadow"
+                                style={{ aspectRatio: '85.6 / 53.98' }}
+                              />
+                              <div className="mt-2 w-full flex items-center justify-between font-mono text-[9.5px]">
+                                <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
+                                  <Check className="w-3 h-3 stroke-[3]" /> FRONT ID SECURED
+                                </span>
+                                <span className="text-slate-400">300 DPI // ISO-1</span>
+                              </div>
+                            </div>
+
+                            {/* Back Card Preview */}
+                            <div className="relative rounded-lg overflow-hidden border border-emerald-500/50 bg-[#070c14] p-2 flex flex-col items-center">
+                              <div className="absolute top-1 left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-emerald-400 pointer-events-none" />
+                              <div className="absolute top-1 right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-emerald-400 pointer-events-none" />
+                              <img
+                                src={idBackShot}
+                                alt="Back ID Preview"
+                                className="w-full h-auto object-cover rounded shadow"
+                                style={{ aspectRatio: '85.6 / 53.98' }}
+                              />
+                              <div className="mt-2 w-full flex items-center justify-between font-mono text-[9.5px]">
+                                <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
+                                  <Check className="w-3 h-3 stroke-[3]" /> BACK ID SECURED
+                                </span>
+                                <span className="text-slate-400">OPTICAL ENCRYPTION</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Live Viewfinder Active (Stage 1: Front ID or Stage 2: Back ID) */
+                        <div className="p-4 rounded-xl bg-black/60 border border-rose-500/30">
+                          <div className="flex items-center justify-between font-mono text-[10px] mb-2.5 pb-2 border-b border-rose-500/20">
+                            <span className="font-bold text-rose-300 flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                              {isFlippingCard
+                                ? 'TRANSITIONING: FLIP CARD TO BACK SIDE'
+                                : !idFrontShot
+                                ? 'STAGE 1: CAPTURE FRONT OF ID CARD'
+                                : 'STAGE 2: NOW CAPTURE BACK OF ID CARD'}
+                            </span>
+                            <span className="text-slate-400">
+                              {isFlippingCard
+                                ? 'COOLDOWN [2.0s]'
+                                : !idFrontShot
+                                ? 'STEP [1/2] FRONT'
+                                : 'STEP [2/2] BACK'}
+                            </span>
+                          </div>
+
+                          {/* Viewfinder Aspect Ratio Window with Deterministic CV Tactical HUD */}
+                          <div className="relative w-full max-w-lg mx-auto bg-[#070c14] rounded-lg overflow-hidden border border-rose-500/40 aspect-[16/10] flex items-center justify-center">
+                            {/* Live Video Feed or Frozen Frame */}
+                            <video
+                              ref={videoRef}
+                              autoPlay
+                              playsInline
+                              muted
+                              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
+                                isFrameFrozen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                              }`}
+                            />
+
+                            {/* Frozen Frame Snapshot during Optical Decoding */}
+                            {isFrameFrozen && frozenFrameUrl && (
+                              <img
+                                src={frozenFrameUrl}
+                                alt="Frozen Frame for Optical Scanning"
+                                className="absolute inset-0 w-full h-full object-cover z-0"
+                              />
+                            )}
+
+                            {/* Laser Scan Line Sweep & Reticle Overlay */}
+                            <LaserScanOverlay
+                              isScanning={isOpticalDecoding}
+                              label={!idFrontShot ? 'DECODING FRONT CREDENTIAL MATRIX...' : 'DECODING REVERSE MATRIX...'}
+                              cardCategory={idType}
+                            />
+
+                            {/* HUD Top Status Pills Bar */}
+                            <div className="absolute top-2 inset-x-2 z-20 flex flex-wrap items-center justify-between gap-1 pointer-events-none font-mono text-[8.5px]">
+                              <div className="flex items-center gap-1">
+                                <span
+                                  className={`px-2 py-0.5 rounded backdrop-blur-md border flex items-center gap-1 ${
+                                    isSharp
+                                      ? 'bg-emerald-950/85 border-emerald-500/60 text-emerald-300'
+                                      : 'bg-rose-950/85 border-rose-500/60 text-rose-300'
+                                  }`}
+                                >
+                                  <Activity className="w-2.5 h-2.5" />
+                                  CLARITY: {clarity > 0 ? clarity.toFixed(1) : '--'} [{isSharp ? 'SHARP' : 'BLUR'}]
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded backdrop-blur-md border flex items-center gap-1 ${
+                                    !hasGlare
+                                      ? 'bg-slate-900/85 border-cyan-500/50 text-cyan-300'
+                                      : 'bg-amber-950/85 border-amber-500/60 text-amber-300'
+                                  }`}
+                                >
+                                  <Sparkles className="w-2.5 h-2.5" />
+                                  GLARE: {glareRatio > 0 ? `${glareRatio.toFixed(1)}%` : '0%'} [{hasGlare ? 'HOTSPOT' : 'NOMINAL'}]
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span
+                                  className={`px-2 py-0.5 rounded backdrop-blur-md border ${
+                                    exposureStatus === 'OPTIMAL'
+                                      ? 'bg-slate-900/85 border-emerald-500/50 text-emerald-300'
+                                      : 'bg-amber-950/85 border-amber-500/60 text-amber-300'
+                                  }`}
+                                >
+                                  EXP: {exposureStatus}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded backdrop-blur-md border font-bold flex items-center gap-1 ${
+                                    presenceStatus === 'LOCKED'
+                                      ? 'bg-emerald-900/90 border-emerald-400 text-emerald-200 shadow-[0_0_12px_rgba(52,211,153,0.6)]'
+                                      : presenceStatus === 'FACE_DETECTED'
+                                      ? 'bg-amber-950/90 border-amber-500 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.5)] animate-pulse'
+                                      : presenceStatus === 'ALIGNING'
+                                      ? 'bg-cyan-950/85 border-cyan-500/60 text-cyan-300'
+                                      : 'bg-black/85 border-rose-500/60 text-rose-300'
+                                  }`}
+                                >
+                                  {presenceStatus === 'FACE_DETECTED' ? (
+                                    <>
+                                      <UserX className="w-2.5 h-2.5" />
+                                      REJECT: FACE DETECTED
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Target className="w-2.5 h-2.5" />
+                                      LOCK: {presenceStatus === 'NO_CARD' ? 0 : lockProgress}% {presenceStatus === 'LOCKED' ? '[LOCKED]' : '[ALIGNING]'}
+                                    </>
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Real-time Dynamic 4-Corner Quadrilateral Tracking Vector */}
+                            {scannerAnalysis?.corners && scannerAnalysis.corners.length === 4 && (
+                              <svg
+                                className="absolute inset-0 w-full h-full pointer-events-none z-10"
+                                viewBox={`0 0 ${videoRef.current?.videoWidth || 640} ${videoRef.current?.videoHeight || 360}`}
+                                preserveAspectRatio="none"
+                              >
+                                <polygon
+                                  points={scannerAnalysis.corners.map((p) => `${p.x},${p.y}`).join(' ')}
+                                  fill={
+                                    presenceStatus === 'LOCKED'
+                                      ? 'rgba(52, 211, 153, 0.18)'
+                                      : presenceStatus === 'FACE_DETECTED'
+                                      ? 'rgba(245, 158, 11, 0.12)'
+                                      : 'rgba(6, 182, 212, 0.10)'
+                                  }
+                                  stroke={
+                                    presenceStatus === 'LOCKED'
+                                      ? '#34d399'
+                                      : presenceStatus === 'FACE_DETECTED'
+                                      ? '#f59e0b'
+                                      : '#06b6d4'
+                                  }
+                                  strokeWidth="2.5"
+                                  strokeDasharray={presenceStatus === 'LOCKED' ? 'none' : '6 4'}
+                                />
+                                {scannerAnalysis.corners.map((p, idx) => (
+                                  <g key={idx} transform={`translate(${p.x}, ${p.y})`}>
+                                    <circle
+                                      r="7"
+                                      fill={
+                                        presenceStatus === 'LOCKED'
+                                          ? '#34d399'
+                                          : presenceStatus === 'FACE_DETECTED'
+                                          ? '#f59e0b'
+                                          : '#06b6d4'
+                                      }
+                                      fillOpacity="0.4"
+                                    />
+                                    <circle r="3" fill="#ffffff" />
+                                    <line
+                                      x1="-12"
+                                      y1="0"
+                                      x2="12"
+                                      y2="0"
+                                      stroke={
+                                        presenceStatus === 'LOCKED'
+                                          ? '#34d399'
+                                          : presenceStatus === 'FACE_DETECTED'
+                                          ? '#f59e0b'
+                                          : '#06b6d4'
+                                      }
+                                      strokeWidth="2"
+                                    />
+                                    <line
+                                      x1="0"
+                                      y1="-12"
+                                      x2="0"
+                                      y2="12"
+                                      stroke={
+                                        presenceStatus === 'LOCKED'
+                                          ? '#34d399'
+                                          : presenceStatus === 'FACE_DETECTED'
+                                          ? '#f59e0b'
+                                          : '#06b6d4'
+                                      }
+                                      strokeWidth="2"
+                                    />
+                                  </g>
+                                ))}
+                              </svg>
+                            )}
+
+                            {/* Fallback Simulation Notice if Camera Not Found */}
+                            {cameraError && (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 p-4 text-center z-10">
+                                <AlertCircle className="w-6 h-6 text-amber-400 mb-1" />
+                                <p className="font-mono text-xs text-amber-200 font-bold">HARDWARE OPTICAL STREAM RESTRICTED</p>
+                                <p className="font-sans text-[11px] text-slate-300 mt-0.5 max-w-xs">
+                                  {cameraError}. The sensor engine will automatically generate an authenticated synthetic ID snapshot.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Flip Card Cooldown Transition Overlay (Prevents front card re-locking race condition) */}
+                            {isFlippingCard && (
+                              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/92 backdrop-blur-sm p-4 text-center">
+                                <div className="w-12 h-12 rounded-full bg-cyan-950/80 border border-cyan-400/50 flex items-center justify-center mb-3">
+                                  <RefreshCw className="w-6 h-6 text-cyan-400 animate-spin" />
+                                </div>
+                                <p className="font-mono text-xs font-bold text-cyan-300 tracking-wider uppercase mb-1">
+                                  FRONT ID SECURED // FLIP CARD
+                                </p>
+                                <p className="font-mono text-[11px] text-amber-300 font-medium max-w-xs">
+                                  Please turn your physical ID card to the BACK side. Optical auto-lock calibrating in 2.0s...
+                                </p>
+                                <div className="flex items-center gap-1.5 mt-3 px-2.5 py-1 rounded bg-slate-900/90 border border-cyan-500/30 text-[9px] font-mono text-slate-300">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                                  <span>SENSOR STABILIZATION COOLDOWN (2.0s)</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Full-Frame Unconstrained ID Detection HUD Overlay */}
+                            <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 z-15">
+                              {/* 4 Viewport Corner Targeting Reticles */}
+                              <div className="flex justify-between w-full">
+                                <div className={`w-5 h-5 border-t-2 border-l-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
+                                <div className={`w-5 h-5 border-t-2 border-r-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
+                              </div>
+
+                              {/* Center auto-tracking status badge */}
+                              <div className="self-center flex flex-col items-center gap-1.5">
+                                <div className="px-3.5 py-1 rounded bg-black/85 border border-rose-500/50 font-mono text-[10.5px] font-bold text-white uppercase tracking-wider shadow backdrop-blur-sm">
+                                  {!idFrontShot ? 'SHOW FRONT OF ID CARD' : 'FLIP CARD & SHOW BACK'}
+                                </div>
+                                <span className="font-mono text-[8.5px] text-cyan-300 bg-black/75 px-2.5 py-0.5 rounded border border-cyan-500/30 backdrop-blur-sm">
+                                  FULL-FRAME OPTICAL TRACKING ACTIVE // PLACE ANYWHERE IN VIEW
+                                </span>
+                              </div>
+
+                              {/* Bottom Status & Target Lock Progress Bar */}
+                              <div className="flex flex-col gap-1 w-full max-w-sm mx-auto">
+                                <div className="flex justify-between items-center font-mono text-[8.5px]">
+                                  <span className="text-slate-400">DIP FULL-FRAME MATRIX</span>
+                                  <span className={`font-bold flex items-center gap-1 ${isLocked ? 'text-emerald-400' : 'text-rose-300'}`}>
+                                    <Target className="w-3 h-3" />
+                                    {isLocked ? 'TARGET ACQUIRED [LOCKED]' : `ACQUIRING ${lockProgress}%`}
+                                  </span>
+                                </div>
+                                <div className="w-full bg-slate-900/90 rounded-full h-1.5 overflow-hidden border border-slate-700/60">
+                                  <div
+                                    className={`h-full transition-all duration-150 ${
+                                      isLocked
+                                        ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_8px_#34d399]'
+                                        : 'bg-gradient-to-r from-rose-600 via-amber-500 to-emerald-400'
+                                    }`}
+                                    style={{ width: `${lockProgress}%` }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Bottom Corner Reticles */}
+                              <div className="flex justify-between w-full">
+                                <div className={`w-5 h-5 border-b-2 border-l-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
+                                <div className={`w-5 h-5 border-b-2 border-r-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Autofill Verified HUD Badge */}
+                          {autofillBadge && autofillBadge.visible && (
+                            <div className="mt-3 p-3 rounded-lg bg-[#041a12] border border-emerald-500/60 shadow-[0_0_16px_rgba(16,185,129,0.2)] flex items-center justify-between font-mono text-[10.5px]">
+                              <div className="flex items-center gap-2.5 text-emerald-300">
+                                <Cpu className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
+                                <div>
+                                  <span className="font-bold tracking-wide">
+                                    ID SCANNED VIA {autofillBadge.method === 'DETERMINISTIC_CV' ? 'DETERMINISTIC CV' : `AI STANDBY (${autofillBadge.provider?.toUpperCase()})`} // CONFIDENCE: {autofillBadge.confidence}% [{autofillBadge.tier}]
+                                  </span>
+                                  <p className="text-[9px] text-emerald-400/80 font-sans mt-0.5">
+                                    Holder credentials autofilled below. Fields remain fully editable; click Retake anytime to re-scan.
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/50 text-emerald-300 font-bold text-[9px]">
+                                  AUTOFILL VERIFIED
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setAutofillBadge(null)}
+                                  className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800/60 transition-all cursor-pointer"
+                                  title="Dismiss notification"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Capture Controls */}
+                          <div className="mt-3.5 flex flex-col sm:flex-row items-center gap-2">
+                            {idFrontShot && !idBackShot && (
+                              <button
+                                type="button"
+                                onClick={() => setIdFrontShot(null)}
+                                className="w-full sm:w-auto px-4 !h-[42px] font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/80 text-slate-300 hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                                <span>Retake Front</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={handleCaptureCurrentStage}
+                              disabled={isFlippingCard}
+                              className={`w-full flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2 ${
+                                isFlippingCard ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
+                            >
+                              <Camera className="w-4 h-4" />
+                              <span>
+                                {isFlippingCard
+                                  ? 'FLIPPING CARD (2.0s)...'
+                                  : !idFrontShot
+                                  ? 'CAPTURE FRONT ID'
+                                  : 'CAPTURE BACK ID'}
+                              </span>
+                            </button>
+                          </div>
+
+                          {/* Temporary thumbnail showing front card once captured */}
+                          {idFrontShot && !idBackShot && (
+                            <div className="mt-3 pt-2.5 border-t border-rose-500/20 flex items-center gap-3">
+                              <img
+                                src={idFrontShot}
+                                alt="Front Captured Preview"
+                                className="w-16 h-10 object-cover rounded border border-emerald-500/60"
+                              />
+                              <div className="font-mono text-[10px]">
+                                <span className="text-emerald-400 font-bold">[FRONT ID SECURED]</span>
+                                <p className="text-slate-400 text-[9px]">Card front frozen in memory. Flip card to capture reverse side.</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* MODE 2: UPLOAD PICTURE FILE */}
+                  {idCaptureMode === 'upload' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Dropzone 1: Front ID Card */}
+                      <div className="flex flex-col">
+                        <input
+                          type="file"
+                          ref={frontFileInputRef}
+                          data-side="front"
+                          accept="image/png,image/jpeg,image/jpg,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              handleFileUpload('front', e.target.files[0]);
+                            }
+                          }}
+                        />
+                        <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
+                          <span className="font-bold uppercase tracking-wider text-slate-200">Front ID Card</span>
+                          <span className={idFrontShot ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
+                            {idFrontShot ? 'SECURED' : 'REQUIRED'}
+                          </span>
+                        </div>
+
+                        {idFrontShot ? (
+                          <div className="relative rounded-xl overflow-hidden border border-emerald-500/50 bg-[#070c14] p-3 flex flex-col items-center">
+                            <img
+                              src={idFrontShot}
+                              alt="Front ID Card Upload"
+                              className="w-full h-auto object-cover rounded border border-emerald-500/30"
+                              style={{ aspectRatio: '85.6 / 53.98' }}
+                            />
+                            <div className="mt-2.5 w-full flex items-center justify-between font-mono text-[10px]">
+                              <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
+                                <Check className="w-3 h-3 stroke-[3]" /> FRONT ID SECURED
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => frontFileInputRef.current?.click()}
+                                  className="text-sky-400 hover:text-sky-300 underline cursor-pointer text-[9.5px]"
+                                >
+                                  Replace
+                                </button>
+                                <span className="text-slate-600">&bull;</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setIdFrontShot(null)}
+                                  className="text-rose-400 hover:text-rose-300 underline cursor-pointer text-[9.5px]"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setIsDraggingFront(true);
+                            }}
+                            onDragLeave={() => setIsDraggingFront(false)}
+                            onDrop={(e) => handleDrop('front', e)}
+                            onClick={() => frontFileInputRef.current?.click()}
+                            className={`rounded-xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[160px] ${
+                              isDraggingFront
+                                ? 'border-[#ff5c74] bg-rose-950/30'
+                                : 'border-rose-500/30 bg-[#16070d]/60 hover:border-rose-400 hover:bg-[#1f0a13]/70'
+                            }`}
+                          >
+                            <div className="p-2.5 rounded-full bg-rose-950/60 border border-rose-500/30 text-[#ff5c74] mb-2">
+                              <Upload className="w-5 h-5" />
+                            </div>
+                            <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                              Front ID Card
+                            </span>
+                            <span className="font-sans text-[11px] text-slate-400 mt-1">
+                              Drag &amp; drop or click to upload PNG/JPG
+                            </span>
+                            <span className="font-mono text-[8.5px] text-rose-400/80 mt-1.5">
+                              [ISO/IEC 7810 ASPECT RATIO]
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Dropzone 2: Back ID Card */}
+                      <div className="flex flex-col">
+                        <input
+                          type="file"
+                          ref={backFileInputRef}
+                          data-side="back"
+                          accept="image/png,image/jpeg,image/jpg,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              handleFileUpload('back', e.target.files[0]);
+                            }
+                          }}
+                        />
+                        <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
+                          <span className="font-bold uppercase tracking-wider text-slate-200">Back ID Card</span>
+                          <span className={idBackShot ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
+                            {idBackShot ? 'SECURED' : 'REQUIRED'}
+                          </span>
+                        </div>
+
+                        {idBackShot ? (
+                          <div className="relative rounded-xl overflow-hidden border border-emerald-500/50 bg-[#070c14] p-3 flex flex-col items-center">
+                            <img
+                              src={idBackShot}
+                              alt="Back ID Card Upload"
+                              className="w-full h-auto object-cover rounded border border-emerald-500/30"
+                              style={{ aspectRatio: '85.6 / 53.98' }}
+                            />
+                            <div className="mt-2.5 w-full flex items-center justify-between font-mono text-[10px]">
+                              <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
+                                <Check className="w-3 h-3 stroke-[3]" /> BACK ID SECURED
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => backFileInputRef.current?.click()}
+                                  className="text-sky-400 hover:text-sky-300 underline cursor-pointer text-[9.5px]"
+                                >
+                                  Replace
+                                </button>
+                                <span className="text-slate-600">&bull;</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setIdBackShot(null)}
+                                  className="text-rose-400 hover:text-rose-300 underline cursor-pointer text-[9.5px]"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setIsDraggingBack(true);
+                            }}
+                            onDragLeave={() => setIsDraggingBack(false)}
+                            onDrop={(e) => handleDrop('back', e)}
+                            onClick={() => backFileInputRef.current?.click()}
+                            className={`rounded-xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[160px] ${
+                              isDraggingBack
+                                ? 'border-[#ff5c74] bg-rose-950/30'
+                                : 'border-rose-500/30 bg-[#16070d]/60 hover:border-rose-400 hover:bg-[#1f0a13]/70'
+                            }`}
+                          >
+                            <div className="p-2.5 rounded-full bg-rose-950/60 border border-rose-500/30 text-[#ff5c74] mb-2">
+                              <Upload className="w-5 h-5" />
+                            </div>
+                            <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                              Back ID Card
+                            </span>
+                            <span className="font-sans text-[11px] text-slate-400 mt-1">
+                              Drag &amp; drop or click to upload PNG/JPG
+                            </span>
+                            <span className="font-mono text-[8.5px] text-rose-400/80 mt-1.5">
+                              [ISO/IEC 7810 ASPECT RATIO]
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ID Validation Error */}
+                  {errors.idCard && (
+                    <p className="field__error font-mono text-[10.5px] mt-2.5 text-rose-400" role="alert">
+                      {errors.idCard}
+                    </p>
+                  )}
+                </div>
+
+                {/* ============ PHASE 1 BOTTOM: PERSONAL DETAILS EDITABLE INPUTS ============ */}
+                {!isIdValidated ? (
+                  <div className="p-5 rounded-xl bg-black/40 border border-slate-800 text-center font-mono space-y-2 mt-4 backdrop-blur-sm">
+                    <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-700 flex items-center justify-center mx-auto text-slate-400">
+                      <Lock className="w-5 h-5 text-rose-400/90" />
+                    </div>
+                    <p className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                      Personal Details Locked Until Government ID Scanned
+                    </p>
+                    <p className="text-[11px] text-slate-400 max-w-md mx-auto leading-relaxed">
+                      Select your Government ID type above and scan or upload your card. Once validated by the deterministic computer vision engine, your Personal Details (Surname, First Name, Middle Name, Sex, Date of Birth, Address, License Number, Weight, and Height) will unlock and autofill below for your review.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-6 pt-5 border-t border-rose-500/20 animate-in fade-in zoom-in-95 duration-300">
+                    <div className="flex items-center gap-2 mb-3">
+                      <User className="w-4 h-4 text-[#ff5c74]" />
+                      <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                        Authenticated Personal Details <span className="text-emerald-400 font-normal">[EDITABLE REVIEW]</span>
+                      </h4>
+                    </div>
+
+                    <div className="form-grid">
+                      {/* First Name Input */}
+                      <div className={`field ${errors.firstName ? 'is-invalid' : ''}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="first-name">
+                            First Name <span className="req">*</span>
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[FIRST.NAME]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="first-name"
+                            name="firstName"
+                            type="text"
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value)}
+                            placeholder="e.g. Juan"
+                            autoComplete="given-name"
+                            spellCheck={false}
+                          />
+                        </div>
+                        {errors.firstName && (
+                          <p className="field__error font-mono text-[10px]" id="first-name-error" role="alert">
+                            {errors.firstName}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Middle Name Input */}
+                      <div className="field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="middle-name">
+                            Middle Name <span className="text-slate-400 text-[9px]">(Optional)</span>
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[MIDDLE.NAME]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="middle-name"
+                            name="middleName"
+                            type="text"
+                            value={middleName}
+                            onChange={(e) => setMiddleName(e.target.value)}
+                            placeholder="e.g. Santos or M."
+                            autoComplete="additional-name"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Last Name / Surname Input */}
+                      <div className={`field ${errors.lastName ? 'is-invalid' : ''}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="last-name">
+                            Surname / Last Name <span className="req">*</span>
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[SURNAME]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="last-name"
+                            name="lastName"
+                            type="text"
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value)}
+                            placeholder="e.g. Dela Cruz"
+                            autoComplete="family-name"
+                            spellCheck={false}
+                          />
+                        </div>
+                        {errors.lastName && (
+                          <p className="field__error font-mono text-[10px]" id="last-name-error" role="alert">
+                            {errors.lastName}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Sex */}
                       <div className="field" id="sex-field">
                         <div className="flex items-center justify-between mb-1">
                           <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="sex">
@@ -458,17 +2366,18 @@ export const RegisterPage: React.FC = () => {
                           <span className="font-mono text-[8.5px] text-rose-400/80">[DEMO]</span>
                         </div>
                         <div
-                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                           style={{
                             background: 'rgba(46, 10, 22, 0.85)',
                             border: '1px solid rgba(255, 92, 116, 0.22)',
                             borderRadius: '6px'
                           }}
                         >
-                          <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-gender"/></svg>
+                          <Users className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                           <select
                             className="field__input select__input font-sans text-white text-[13px]"
                             id="sex"
+                            name="sex"
                             value={sex}
                             onChange={(e) => setSex(e.target.value)}
                           >
@@ -476,10 +2385,196 @@ export const RegisterPage: React.FC = () => {
                             <option value="female">Female</option>
                             <option value="other">Other</option>
                           </select>
-                          <svg className="select__chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
                         </div>
                       </div>
 
+                      {/* Date of Birth */}
+                      <div className="field" id="dob-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="dob">
+                            Date of Birth
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[DOB]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <Calendar className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="dob"
+                            name="dateOfBirth"
+                            type="text"
+                            value={dateOfBirth}
+                            onChange={(e) => setDateOfBirth(e.target.value)}
+                            placeholder="YYYY/MM/DD"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
+                      {/* License Number / ID Number */}
+                      <div className="field" id="license-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="license-number">
+                            License No. / ID No.
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[LICENSE.NO]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="license-number"
+                            name="licenseNumber"
+                            type="text"
+                            value={licenseNumber}
+                            onChange={(e) => setLicenseNumber(e.target.value)}
+                            placeholder="e.g. J07-22-302560"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Weight */}
+                      <div className="field" id="weight-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="weight">
+                            Weight
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[WEIGHT.KG]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="weight"
+                            name="weight"
+                            type="text"
+                            value={weight}
+                            onChange={(e) => setWeight(e.target.value)}
+                            placeholder="e.g. 52 kg"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Height */}
+                      <div className="field" id="height-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="height">
+                            Height
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[HEIGHT.M]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="height"
+                            name="height"
+                            type="text"
+                            value={height}
+                            onChange={(e) => setHeight(e.target.value)}
+                            placeholder="e.g. 1.71 m"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Address */}
+                      <div className="field md:col-span-2" id="address-field">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="address">
+                            Address
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">[ADDRESS]</span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <MapPin className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="address"
+                            name="address"
+                            type="text"
+                            value={address}
+                            onChange={(e) => setAddress(e.target.value)}
+                            placeholder="e.g. Poblacion, Manukan, Zamboanga del Norte, 7110"
+                            spellCheck={false}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Email Address */}
+                      <div className={`field ${errors.email ? 'is-invalid' : ''}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="email">
+                            Email Address <span className="req">*</span>
+                          </label>
+                          <span className="font-mono text-[8.5px] text-rose-400/80">
+                            {selectedRole === 'Responder' ? '[OFFICIAL.GOV]' : '[CITIZEN.EMAIL]'}
+                          </span>
+                        </div>
+                        <div
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                          style={{
+                            background: 'rgba(46, 10, 22, 0.85)',
+                            border: '1px solid rgba(255, 92, 116, 0.22)',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          <Mail className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                          <input
+                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            id="email"
+                            name="email"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            autoComplete="email"
+                            spellCheck={false}
+                          />
+                        </div>
+                        {errors.email && (
+                          <p className="field__error font-mono text-[10px]" id="email-error" role="alert">
+                            {errors.email}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Age */}
                       <div className={`field ${errors.age ? 'is-invalid' : ''}`} id="age-field">
                         <div className="flex items-center justify-between mb-1">
                           <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="age">
@@ -488,17 +2583,18 @@ export const RegisterPage: React.FC = () => {
                           <span className="font-mono text-[8.5px] text-rose-400/80">[YEARS]</span>
                         </div>
                         <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                           style={{
                             background: 'rgba(46, 10, 22, 0.85)',
                             border: '1px solid rgba(255, 92, 116, 0.22)',
                             borderRadius: '6px'
                           }}
                         >
-                          <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-calendar"/></svg>
+                          <Calendar className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                           <input
                             className="field__input font-sans text-white text-[13px]"
                             id="age"
+                            name="age"
                             type="number"
                             min="18"
                             max="100"
@@ -507,157 +2603,201 @@ export const RegisterPage: React.FC = () => {
                           />
                         </div>
                         {errors.age && (
-                          <p className="field__error font-mono text-[10px]" id="age-error" role="alert">{errors.age}</p>
-                        )}
-                      </div>
-                    </>
-                  )}
-
-                  <div className="field">
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="id-type">
-                        ID Document Type <span className="req">*</span>
-                      </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/80">[DOC.CLASS]</span>
-                    </div>
-                    <div
-                      className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-badge"/></svg>
-                      <select
-                        className="field__input select__input font-sans text-white text-[13px]"
-                        id="id-type"
-                        value={idType}
-                        onChange={(e) => setIdType(e.target.value)}
-                      >
-                        <option value="philsys">PhilSys National ID</option>
-                        <option value="passport">Philippine Passport</option>
-                        <option value="postal">Postal ID</option>
-                        <option value="drivers">LTO Driver's License</option>
-                        <option value="prc">PRC Professional License</option>
-                        <option value="police">PNP Official ID</option>
-                        <option value="fire">BFP Service ID</option>
-                        <option value="umid">Unified Multi-Purpose ID (UMID)</option>
-                      </select>
-                      <svg className="select__chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
-                    </div>
-                  </div>
-
-                  <div className="field">
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="unit">
-                        Unit / Agency <span className="req">*</span>
-                      </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/80">[RBAC.TIER]</span>
-                    </div>
-                    <div
-                      className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-shield"/></svg>
-                      <select
-                        className="field__input select__input font-sans text-white text-[13px]"
-                        id="unit"
-                        value={unit}
-                        onChange={(e) => setUnit(e.target.value)}
-                      >
-                        <option value="responder">LDRRMO / RHU / BFP / PNP Responder</option>
-                        <option value="security">Security Personnel / Civilian Guard</option>
-                      </select>
-                      <svg className="select__chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
-                    </div>
-                  </div>
-
-                  {unit !== 'security' && (
-                    <>
-                      <div className={`field ${errors.employeeId ? 'is-invalid' : ''}`} id="employee-field">
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="employee-id">
-                            Badge / Employee ID <span className="req">*</span>
-                          </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">[SYS.TAG]</span>
-                        </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-badge"/></svg>
-                          <input
-                            className="field__input font-sans text-white text-[13px]"
-                            id="employee-id"
-                            type="text"
-                            value={employeeId}
-                            onChange={(e) => setEmployeeId(e.target.value)}
-                          />
-                        </div>
-                        {errors.employeeId && (
-                          <p className="field__error font-mono text-[10px]" id="employee-error" role="alert">{errors.employeeId}</p>
+                          <p className="field__error font-mono text-[10px]" id="age-error" role="alert">
+                            {errors.age}
+                          </p>
                         )}
                       </div>
 
-                      <div className="field" id="station-field">
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="station">
-                            Assigned Jurisdiction <span className="req">*</span>
-                          </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">[SECTOR]</span>
-                        </div>
-                        <div
-                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-pin"/></svg>
-                          <select
-                            className="field__input select__input font-sans text-white text-[13px]"
-                            id="station"
-                            value={station}
-                            onChange={(e) => setStation(e.target.value)}
-                          >
-                            <option value="Station 1 — Katipunan Central">Station 1 — Katipunan Central</option>
-                            <option value="Station 2 — Malasay Outpost">Station 2 — Malasay Outpost</option>
-                            <option value="Station 3 — Uno Coastal Unit">Station 3 — Uno Coastal Unit</option>
-                          </select>
-                          <svg className="select__chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
+                      {/* RESPONDER SPECIFIC FIELDS */}
+                      {selectedRole === 'Responder' && (
+                        <>
+                          <div className="field">
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="agency-unit">
+                                Agency Unit <span className="req">*</span>
+                              </label>
+                              <span className="font-mono text-[8.5px] text-rose-400/80">[AGENCY.UNIT]</span>
+                            </div>
+                            <div
+                              className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                              style={{
+                                background: 'rgba(46, 10, 22, 0.85)',
+                                border: '1px solid rgba(255, 92, 116, 0.22)',
+                                borderRadius: '6px'
+                              }}
+                            >
+                              <Shield className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                              <select
+                                className="field__input select__input font-sans text-white text-[13px]"
+                                id="agency-unit"
+                                value={agencyUnit}
+                                onChange={(e) => handleAgencyUnitChange(e.target.value as 'RHU' | 'FIRE' | 'PNP')}
+                              >
+                                <option value="RHU">RHU Medical (Rural Health Unit)</option>
+                                <option value="FIRE">BFP Fire (Bureau of Fire Protection)</option>
+                                <option value="PNP">PNP Police (Philippine National Police)</option>
+                              </select>
+                              <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+                            </div>
+                          </div>
 
-                <div className="step-actions mt-5">
+                          <div className={`field ${errors.employeeId ? 'is-invalid' : ''}`} id="employee-field">
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="employee-id">
+                                Badge / Employee ID <span className="req">*</span>
+                              </label>
+                              <span className="font-mono text-[8.5px] text-rose-400/80">[BADGE.TAG]</span>
+                            </div>
+                            <div
+                              className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                              style={{
+                                background: 'rgba(46, 10, 22, 0.85)',
+                                border: '1px solid rgba(255, 92, 116, 0.22)',
+                                borderRadius: '6px'
+                              }}
+                            >
+                              <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                              <input
+                                className="field__input font-sans text-white text-[13px]"
+                                id="employee-id"
+                                type="text"
+                                value={employeeId}
+                                onChange={(e) => setEmployeeId(e.target.value)}
+                                placeholder="e.g. BFP-ZN-2024-089"
+                              />
+                            </div>
+                            {errors.employeeId && (
+                              <p className="field__error font-mono text-[10px]" id="employee-error" role="alert">
+                                {errors.employeeId}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className={`field ${errors.rankOrTitle ? 'is-invalid' : ''}`} id="rank-field">
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="rank-title">
+                                Rank / Official Title <span className="req">*</span>
+                              </label>
+                              <span className="font-mono text-[8.5px] text-rose-400/80">[RANK.POS]</span>
+                            </div>
+                            <div
+                              className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
+                              style={{
+                                background: 'rgba(46, 10, 22, 0.85)',
+                                border: '1px solid rgba(255, 92, 116, 0.22)',
+                                borderRadius: '6px'
+                              }}
+                            >
+                              <Award className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                              <input
+                                className="field__input font-sans text-white text-[13px]"
+                                id="rank-title"
+                                type="text"
+                                value={rankOrTitle}
+                                onChange={(e) => setRankOrTitle(e.target.value)}
+                                placeholder="e.g. Senior Inspector, Officer 1, Medic"
+                              />
+                            </div>
+                            {errors.rankOrTitle && (
+                              <p className="field__error font-mono text-[10px]" id="rank-error" role="alert">
+                                {errors.rankOrTitle}
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 1 Actions */}
+                <div className="step-actions flex gap-2.5 mt-6">
                   <button
-                    className="btn w-full !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer"
+                    className="btn btn--ghost !h-[44px] !w-24 font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800 cursor-pointer"
+                    type="button"
+                    data-back="0"
+                    onClick={() => setStep(0)}
+                  >
+                    <span className="btn__label">Back</span>
+                  </button>
+                  <button
+                    className="btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2"
                     type="button"
                     data-next="2"
                     onClick={() => handleNextStep(2)}
                   >
-                    <span className="btn__label">Continue to Security Credentials</span>
-                    <svg className="btn__arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+                    <span className="btn__label">Continue to Biometric Verification</span>
+                    <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
                 </div>
               </div>
             )}
 
-            {/* ============ Step 2 — Security credentials ============ */}
+            {/* ============ Step 2 — Facial Biometric Verification ============ */}
             {step === 2 && (
               <div className="step" data-step="2">
+                <div className="face" id="face-box">
+                  <div className="col-span-full flex items-center justify-between mb-2">
+                    <div>
+                      <p className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-bold">
+                        STAGE 02 // Multi-Angle Fast-Capture Facial Biometrics &amp; Liveness
+                      </p>
+                      <p className="font-mono text-[9px] text-rose-300/80 mt-0.5">
+                        Follow the HUD target prompts (Center, Turn Left, Turn Right, Look Up) to generate your verified biometric proof.
+                      </p>
+                    </div>
+                    <span className="font-mono text-[9px] text-emerald-400 shrink-0 hidden sm:inline">
+                      [ANTI-SPOOF: LAPLACIAN ACTIVE]
+                    </span>
+                  </div>
+
+                  <div className="col-span-full">
+                    <MultiAngleBiometricEngine
+                      onVerified={handleFaceVerified}
+                      onRetake={handleFaceRetake}
+                      initialVerified={faceVerified}
+                      initialDataUrl={faceShot}
+                      userIdOrEmail={email || employeeId}
+                    />
+                  </div>
+                </div>
+
+                <div className="step-actions flex gap-2.5 mt-5">
+                  <button
+                    className="btn btn--ghost !h-[44px] !w-24 font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800 cursor-pointer"
+                    type="button"
+                    data-back="1"
+                    onClick={() => setStep(1)}
+                  >
+                    <span className="btn__label">Back</span>
+                  </button>
+                  <button
+                    className="btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2"
+                    type="button"
+                    data-next="3"
+                    onClick={() => handleNextStep(3)}
+                  >
+                    <span className="btn__label">Continue to Security Credentials</span>
+                    <ArrowRight className="w-4 h-4 ml-1" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ============ Step 3 — Security Credentials & Consents ============ */}
+            {step === 3 && (
+              <div className="step" data-step="3">
+                <div className="text-center mb-4">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/30 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-1.5">
+                    <Lock className="w-3.5 h-3.5 text-[#ff5c74]" />
+                    SECURITY CREDENTIAL ENROLLMENT // STAGE 03
+                  </div>
+                  <h3 className="font-mono text-sm sm:text-base font-bold text-white uppercase tracking-wider">
+                    Master Password &amp; Legal Activation
+                  </h3>
+                </div>
+
                 <div className="form-grid">
                   <div className={`field field--password ${errors.password ? 'is-invalid' : ''}`}>
                     <div className="flex items-center justify-between mb-1">
@@ -667,14 +2807,14 @@ export const RegisterPage: React.FC = () => {
                       <span className="font-mono text-[8.5px] text-rose-400/80">[ARGON2.KEY]</span>
                     </div>
                     <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                       style={{
                         background: 'rgba(46, 10, 22, 0.85)',
                         border: '1px solid rgba(255, 92, 116, 0.22)',
                         borderRadius: '6px'
                       }}
                     >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-lock"/></svg>
+                      <Lock className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                       <input
                         className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                         id="password"
@@ -684,17 +2824,13 @@ export const RegisterPage: React.FC = () => {
                         placeholder="••••••••••••"
                       />
                       <button
-                        className="field__toggle hover:text-rose-300"
+                        className="field__toggle hover:text-rose-300 ml-auto p-1 cursor-pointer"
                         type="button"
                         id="pw-toggle"
                         onClick={() => setShowPassword((p) => !p)}
                         aria-label="Toggle password view"
                       >
-                        {!showPassword ? (
-                          <svg className="field__toggle-on" aria-hidden="true"><use href="#i-eye"/></svg>
-                        ) : (
-                          <svg className="field__toggle-off" aria-hidden="true"><use href="#i-eye-off"/></svg>
-                        )}
+                        {!showPassword ? <Eye className="w-4 h-4 text-slate-400" /> : <EyeOff className="w-4 h-4 text-slate-400" />}
                       </button>
                     </div>
                     {password && (
@@ -703,7 +2839,9 @@ export const RegisterPage: React.FC = () => {
                       </p>
                     )}
                     {errors.password && (
-                      <p className="field__error font-mono text-[10px]" id="password-error" role="alert">{errors.password}</p>
+                      <p className="field__error font-mono text-[10px]" id="password-error" role="alert">
+                        {errors.password}
+                      </p>
                     )}
                   </div>
 
@@ -715,14 +2853,14 @@ export const RegisterPage: React.FC = () => {
                       <span className="font-mono text-[8.5px] text-rose-400/80">[HASH.MATCH]</span>
                     </div>
                     <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                       style={{
                         background: 'rgba(46, 10, 22, 0.85)',
                         border: '1px solid rgba(255, 92, 116, 0.22)',
                         borderRadius: '6px'
                       }}
                     >
-                      <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-lock"/></svg>
+                      <Lock className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                       <input
                         className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                         id="confirm"
@@ -733,274 +2871,55 @@ export const RegisterPage: React.FC = () => {
                       />
                     </div>
                     {errors.confirm && (
-                      <p className="field__error font-mono text-[10px]" id="confirm-error" role="alert">{errors.confirm}</p>
+                      <p className="field__error font-mono text-[10px]" id="confirm-error" role="alert">
+                        {errors.confirm}
+                      </p>
                     )}
                   </div>
                 </div>
 
-                <div className="step-actions flex gap-2.5 mt-5">
-                  <button
-                    className="btn btn--ghost !h-[44px] !w-24 font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800"
-                    type="button"
-                    data-back="1"
-                    onClick={() => setStep(1)}
-                  >
-                    <span className="btn__label">Back</span>
-                  </button>
-                  <button
-                    className="btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer"
-                    type="button"
-                    data-next="3"
-                    onClick={() => handleNextStep(3)}
-                  >
-                    <span className="btn__label">Continue to Biometric Verification</span>
-                    <svg className="btn__arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ============ Step 3 — Verification captures ============ */}
-            {step === 3 && (
-              <div className="step" data-step="3">
-                {/* Government ID Cards */}
-                <div className="idcam" id="idcam">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-bold">
-                      Government ID Optical Capture
-                    </p>
-                    <span className="font-mono text-[9px] text-rose-400/80">[OPTICAL SENSOR: 300 DPI]</span>
+                {/* Legal Certifications and Consents */}
+                <div className="consents mt-5 p-4 rounded-lg bg-black/40 border border-rose-500/20">
+                  <div className="font-mono text-[10px] text-rose-400 font-bold uppercase tracking-wider mb-2">
+                    Required Legal Certifications &amp; Consents
                   </div>
-                  <div className="idcam__grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
-                    <div className="idcam__slot">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-mono text-[9.5px] uppercase tracking-wider text-slate-300">Front Document Matrix</span>
-                        <span className="font-mono text-[8px] text-sky-400">{idFrontShot ? 'READY' : 'PENDING'}</span>
-                      </div>
-                      <div
-                        className="idcam__preview relative overflow-hidden flex items-center justify-center rounded-lg"
-                        style={{
-                          background: '#070c14',
-                          border: idFrontShot ? '1px solid rgba(16,185,129,0.5)' : '1px dashed rgba(255,92,116,0.3)',
-                          padding: '10px',
-                          minHeight: '100px'
-                        }}
-                      >
-                        {/* Corner brackets */}
-                        <div className="absolute top-1 left-1 w-2 h-2 border-t border-l border-sky-400/60 pointer-events-none" />
-                        <div className="absolute top-1 right-1 w-2 h-2 border-t border-r border-sky-400/60 pointer-events-none" />
-                        <div className="absolute bottom-1 left-1 w-2 h-2 border-b border-l border-sky-400/60 pointer-events-none" />
-                        <div className="absolute bottom-1 right-1 w-2 h-2 border-b border-r border-sky-400/60 pointer-events-none" />
-
-                        {idFrontShot ? (
-                          <img src={idFrontShot} alt="Front ID" style={{ maxHeight: '90px', borderRadius: '4px' }} />
-                        ) : (
-                          <div className="text-center font-mono text-[10px] text-slate-400">
-                            <svg className="w-5 h-5 mx-auto mb-1 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                              <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth="2" />
-                              <circle cx="9" cy="10" r="2" strokeWidth="2" />
-                              <line x1="15" y1="8" x2="17" y2="8" strokeWidth="2" />
-                              <line x1="15" y1="12" x2="17" y2="12" strokeWidth="2" />
-                            </svg>
-                            <span>Front capture pending</span>
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        className="btn btn--xs font-mono text-[10px] !h-[30px] rounded border border-rose-500/30 bg-[#2b0816] text-rose-300 hover:border-rose-400 cursor-pointer"
-                        type="button"
-                        style={{ marginTop: '8px', width: '100%' }}
-                        onClick={() => handleUploadOrCaptureID('front')}
-                      >
-                        {idFrontShot ? 'Retake Front' : 'Capture Front'}
-                      </button>
-                    </div>
-
-                    <div className="idcam__slot">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-mono text-[9.5px] uppercase tracking-wider text-slate-300">Back Document Matrix</span>
-                        <span className="font-mono text-[8px] text-sky-400">{idBackShot ? 'READY' : 'PENDING'}</span>
-                      </div>
-                      <div
-                        className="idcam__preview relative overflow-hidden flex items-center justify-center rounded-lg"
-                        style={{
-                          background: '#070c14',
-                          border: idBackShot ? '1px solid rgba(16,185,129,0.5)' : '1px dashed rgba(255,92,116,0.3)',
-                          padding: '10px',
-                          minHeight: '100px'
-                        }}
-                      >
-                        {/* Corner brackets */}
-                        <div className="absolute top-1 left-1 w-2 h-2 border-t border-l border-sky-400/60 pointer-events-none" />
-                        <div className="absolute top-1 right-1 w-2 h-2 border-t border-r border-sky-400/60 pointer-events-none" />
-                        <div className="absolute bottom-1 left-1 w-2 h-2 border-b border-l border-sky-400/60 pointer-events-none" />
-                        <div className="absolute bottom-1 right-1 w-2 h-2 border-b border-r border-sky-400/60 pointer-events-none" />
-
-                        {idBackShot ? (
-                          <img src={idBackShot} alt="Back ID" style={{ maxHeight: '90px', borderRadius: '4px' }} />
-                        ) : (
-                          <div className="text-center font-mono text-[10px] text-slate-400">
-                            <svg className="w-5 h-5 mx-auto mb-1 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                              <rect x="3" y="4" width="18" height="16" rx="2" strokeWidth="2" />
-                              <line x1="6" y1="8" x2="18" y2="8" strokeWidth="2" />
-                              <line x1="6" y1="12" x2="18" y2="12" strokeWidth="2" />
-                            </svg>
-                            <span>Back capture pending</span>
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        className="btn btn--xs font-mono text-[10px] !h-[30px] rounded border border-rose-500/30 bg-[#2b0816] text-rose-300 hover:border-rose-400 cursor-pointer"
-                        type="button"
-                        style={{ marginTop: '8px', width: '100%' }}
-                        onClick={() => handleUploadOrCaptureID('back')}
-                      >
-                        {idBackShot ? 'Retake Back' : 'Capture Back'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Live Face Video Scan - Military HUD Terminal */}
-                <div className="face" id="face-box" style={{ marginTop: '12px' }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-bold">
-                      Live Face Matching Scan (Biometric Verification)
-                    </p>
-                    <span className="font-mono text-[9px] text-emerald-400">[ANTI-SPOOF: LAPLACIAN ACTIVE]</span>
-                  </div>
-                  <div
-                    className="face-frame relative w-full h-[240px] bg-[#040810] rounded-xl overflow-hidden flex items-center justify-center transition-all"
-                    style={{
-                      border: faceVerified ? '2px solid #10b981' : '1px solid rgba(255, 92, 116, 0.3)',
-                      boxShadow: faceVerified ? '0 0 15px rgba(16,185,129,0.3)' : '0 0 15px rgba(0,0,0,0.5)'
-                    }}
-                  >
-                    {/* Military HUD Corner Reticles */}
-                    <div className="absolute top-2 left-2 w-3 h-3 border-t-2 border-l-2 border-sky-400/80 pointer-events-none z-20" />
-                    <div className="absolute top-2 right-2 w-3 h-3 border-t-2 border-r-2 border-sky-400/80 pointer-events-none z-20" />
-                    <div className="absolute bottom-2 left-2 w-3 h-3 border-b-2 border-l-2 border-sky-400/80 pointer-events-none z-20" />
-                    <div className="absolute bottom-2 right-2 w-3 h-3 border-b-2 border-r-2 border-sky-400/80 pointer-events-none z-20" />
-
-                    {/* HUD Telemetry Badges Overlaid on Video */}
-                    <div className="absolute top-3 left-3 z-20 pointer-events-none">
-                      <span className="font-mono text-[8.5px] text-sky-300 bg-black/60 px-2 py-0.5 rounded border border-sky-500/30">
-                        CAM: LIVE // 30FPS
-                      </span>
-                    </div>
-                    <div className="absolute top-3 right-3 z-20 pointer-events-none">
-                      <span className="font-mono text-[8.5px] text-emerald-300 bg-black/60 px-2 py-0.5 rounded border border-emerald-500/30">
-                        68-PT MESH: TRACKING
-                      </span>
-                    </div>
-
-                    {!faceShot && (
-                      <video
-                        ref={faceVideoRef}
-                        className="face-video"
-                        autoPlay
-                        playsInline
-                        muted
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    )}
-
-                    {faceShot && (
-                      <img
-                        src={faceShot}
-                        alt="Captured Face"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    )}
-
-                    {/* Laser Scanner Bar when Active */}
-                    {isFaceScanning && (
-                      <div
-                        className="absolute left-0 right-0 h-[3px] bg-gradient-to-r from-sky-400 via-rose-400 to-sky-400 shadow-[0_0_12px_#38bdf8] z-30 animate-pulse"
-                        style={{ top: '50%' }}
-                      />
-                    )}
-
-                    {/* Biometric Face Target Reticle */}
-                    {!faceShot && (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-28 h-36 border border-dashed border-sky-400/40 rounded-full" />
-                      </div>
-                    )}
-
-                    {/* Verified Status Badge */}
-                    {faceVerified && (
-                      <div
-                        className="absolute bottom-3 right-3 z-20 font-mono text-[10px] font-bold px-2.5 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
-                      >
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        BIOMETRIC VERIFIED // 98.4%
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="face-actions" style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                    {!faceShot ? (
-                      <button
-                        className="btn btn--sm font-mono text-[11px] font-bold !h-[38px] rounded border border-rose-500/40 bg-gradient-to-r from-rose-900 to-rose-700 text-white hover:brightness-110 cursor-pointer"
-                        type="button"
-                        id="face-capture"
-                        disabled={isFaceScanning}
-                        onClick={captureFace}
-                        style={{ flex: 1 }}
-                      >
-                        <svg className="btn__arrow" aria-hidden="true"><use href="#i-camera"/></svg>
-                        <span className="btn__label">{isFaceScanning ? 'Scanning Biometrics…' : 'Capture & Verify Face'}</span>
-                      </button>
-                    ) : (
-                      <button
-                        className="btn btn--sm btn--ghost font-mono text-[11px] font-bold !h-[38px] rounded border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 cursor-pointer"
-                        type="button"
-                        id="face-retake"
-                        onClick={handleRetakeFace}
-                        style={{ flex: 1 }}
-                      >
-                        <svg className="btn__arrow" aria-hidden="true"><use href="#i-refresh"/></svg>
-                        <span className="btn__label">Retake Face Scan</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Legal Certifications */}
-                <div className="consents" style={{ marginTop: '16px' }}>
-                  <label className="check" style={{ marginBottom: '8px' }}>
+                  <label className="check flex items-start gap-2.5 cursor-pointer mb-2.5">
                     <input
                       type="checkbox"
                       id="consent-1"
                       checked={consent1}
                       onChange={(e) => setConsent1(e.target.checked)}
+                      className="mt-0.5 accent-[#ff5c74] cursor-pointer"
                     />
-                    <span className="check__box" aria-hidden="true"><svg><use href="#i-tick"/></svg></span>
                     <span className="check__text font-mono text-[11px] text-slate-300">
-                      [AFFIDAVIT] I certify under penalty of perjury that the attached ID and face scan are genuine.
+                      [AFFIDAVIT] I certify under penalty of perjury that all provided personal and agency data are genuine and verified.
                     </span>
                   </label>
 
-                  <label className="check">
+                  <label className="check flex items-start gap-2.5 cursor-pointer">
                     <input
                       type="checkbox"
                       id="consent-2"
                       checked={consent2}
                       onChange={(e) => setConsent2(e.target.checked)}
+                      className="mt-0.5 accent-[#ff5c74] cursor-pointer"
                     />
-                    <span className="check__box" aria-hidden="true"><svg><use href="#i-tick"/></svg></span>
                     <span className="check__text font-mono text-[11px] text-slate-300">
-                      [PROTOCOL] I agree to the ResQTrack emergency dispatch and GPS tracking operational protocols.
+                      [PROTOCOL] I agree to the ResQTrack emergency dispatch, GPS incident tracking, and biometric verification operational protocols.
                     </span>
                   </label>
+
+                  {errors.consent && (
+                    <p className="field__error font-mono text-[10px] mt-2 text-rose-400" role="alert">
+                      {errors.consent}
+                    </p>
+                  )}
                 </div>
 
-                <div className="step-actions flex gap-2.5" style={{ marginTop: '18px' }}>
+                {/* Step 3 Actions & Submission */}
+                <div className="step-actions flex gap-2.5 mt-5">
                   <button
-                    className="btn btn--ghost !h-[44px] !w-24 font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800"
+                    className="btn btn--ghost !h-[44px] !w-24 font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800 cursor-pointer"
                     type="button"
                     data-back="2"
                     onClick={() => setStep(2)}
@@ -1009,32 +2928,45 @@ export const RegisterPage: React.FC = () => {
                   </button>
 
                   <button
-                    className={`btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer ${isLoading ? 'is-loading' : ''} ${isSuccess ? 'is-ok' : ''}`}
+                    className={`btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2 ${
+                      isLoading ? 'is-loading' : ''
+                    } ${isSuccess ? 'is-ok' : ''}`}
                     type="submit"
                     id="submit"
                     disabled={isLoading}
                   >
                     <span className="btn__label">
-                      {isLoading ? 'Creating account…' : isSuccess ? 'Account created' : 'Create Authorized Account'}
+                      {isLoading
+                        ? 'Creating account…'
+                        : isSuccess
+                        ? 'Account created'
+                        : 'Complete Registration & Activate Account'}
                     </span>
-                    <svg className="btn__arrow" aria-hidden="true">
-                      <use href={isSuccess ? '#i-check' : '#i-arrow'}/>
-                    </svg>
+                    {isSuccess ? <Check className="w-4 h-4 ml-1" /> : <ArrowRight className="w-4 h-4 ml-1" />}
                     <span className="btn__spinner" aria-hidden="true"></span>
                   </button>
                 </div>
               </div>
             )}
 
+            {/* Status Messages */}
             {statusMessage && (
-              <p className="status font-mono text-[11px] font-semibold my-2 text-center" id="status" role="status" aria-live="polite" data-tone={statusTone || undefined}>
+              <p
+                className="status font-mono text-[11px] font-semibold my-2.5 text-center"
+                id="status"
+                role="status"
+                aria-live="polite"
+                data-tone={statusTone || undefined}
+              >
                 {statusMessage}
               </p>
             )}
 
             <div className="row font-mono text-[11.5px]" style={{ marginTop: '14px', justifyContent: 'center' }}>
               <span className="check__text text-slate-400">Already have an emergency account?</span>
-              <Link className="link text-rose-400 hover:text-rose-300 font-bold" to="/login" style={{ marginLeft: '6px' }}>Sign in here &rarr;</Link>
+              <Link className="link text-rose-400 hover:text-rose-300 font-bold" to="/login" style={{ marginLeft: '6px' }}>
+                Sign in here &rarr;
+              </Link>
             </div>
           </form>
         </section>

@@ -27,22 +27,34 @@ export interface SystemSetting {
   updatedAt: string;
 }
 
-export interface AuditLog {
+export interface AuditLogEntry {
   id: string;
-  userId: string;
-  userEmail: string;
+  userId?: string;
+  userEmail?: string;
+  actorUserId?: string;
   action: string;
-  details: string;
+  targetEntity?: string;
+  payload?: string;
+  details?: string;
+  previousHash?: string;
+  currentHash?: string;
   timestamp: string;
 }
+
+export type AuditLog = AuditLogEntry;
 
 export const getIncidentFixtures = (): Promise<IncidentFixture[]> =>
   requestJson<IncidentFixture[]>('/api/incidents/fixtures', { method: 'GET' });
 
-export const verifyReport = (reportId: string, status: string, adminNote?: string): Promise<{ message: string }> =>
+export const verifyReport = (
+  reportId: string,
+  status: string,
+  adminNote?: string,
+  severity?: string
+): Promise<{ message: string }> =>
   requestJson<{ message: string }>(`/api/reports/${reportId}/verify`, {
     method: 'POST',
-    body: JSON.stringify({ status, adminNote })
+    body: JSON.stringify({ status, adminNote, severity })
   });
 
 export const allocateReportUnit = (reportId: string, unitId: string): Promise<{ message: string }> =>
@@ -60,5 +72,5 @@ export const updateSystemSetting = (key: string, value: string): Promise<{ messa
     body: JSON.stringify({ value })
   });
 
-export const getAuditLogs = (): Promise<AuditLog[]> =>
-  requestJson<AuditLog[]>('/api/settings/audit', { method: 'GET' });
+export const getAuditLogs = (): Promise<AuditLogEntry[]> =>
+  requestJson<AuditLogEntry[]>('/api/settings/audit', { method: 'GET' });

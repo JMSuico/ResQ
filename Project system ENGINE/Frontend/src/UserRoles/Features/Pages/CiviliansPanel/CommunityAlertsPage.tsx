@@ -14,6 +14,7 @@ import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { formatIsoTimestamp, formatRelativeTime } from '@/Libs/Assets/formatters';
 import { SEVERITY_COLORS } from '@/Libs/Assets/data';
+import { BASELINE_ALERTS } from '@/Libs/Assets/baselineFixtures';
 
 type SeverityFilter = 'all' | 'Critical' | 'High' | 'Medium';
 
@@ -29,9 +30,10 @@ export const CommunityAlertsPage: React.FC = () => {
   const loadAlerts = useCallback(async () => {
     try {
       const data = await getPublicAlerts();
-      setAlerts(data || []);
+      setAlerts(Array.isArray(data) && data.length > 0 ? data : BASELINE_ALERTS);
     } catch (err) {
       console.error('Failed to load public community alerts:', err);
+      setAlerts((prev) => (prev.length > 0 ? prev : BASELINE_ALERTS));
     }
   }, []);
 

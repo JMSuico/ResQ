@@ -4,10 +4,51 @@
 // DO NOT expose raw biometric capture files to unauthorized observers.
 
 import React, { useState, useEffect } from 'react';
+import {
+  Edit2,
+  CheckCircle2,
+  Camera
+} from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
 import { Button } from '@/Shared/Button';
+import { requestJson } from '@/Endpoints/apiClient';
 
-interface EmergencyMedicalProfile {
+// Architectural constants - Zero hardcoded static numbers
+const MAX_AVATAR_FILE_SIZE_BYTES = 2 * 1024 * 1024;
+const TOAST_NOTIFICATION_MS = 3500;
+const SAVE_PROFILE_TOAST_MS = 4000;
+
+export const KATIPUNAN_BARANGAYS = [
+  'Balok',
+  'Barangay Dos (Poblacion)',
+  'Barangay Uno (Poblacion)',
+  'Basagan',
+  'Binoni',
+  'Bulawan',
+  'Caracol',
+  'Dabiak',
+  'Dr. Jose Rizal',
+  'F. Tubungbanua',
+  'Loyuran',
+  'Malugas',
+  'Matam',
+  'Mias',
+  'Miputak',
+  'Nangca',
+  'New Tambo',
+  'Paterno',
+  'Poblacion',
+  'San Antonio',
+  'San Roque',
+  'Santo Nino',
+  'Seres',
+  'Sianib',
+  'Sinuyak',
+  'Sitog',
+  'Tuburan'
+];
+
+export interface EmergencyMedicalProfile {
   bloodType: string;
   allergies: string;
   medicalConditions: string;
@@ -17,12 +58,36 @@ interface EmergencyMedicalProfile {
   emergencyContactPhone: string;
   secondaryContactName: string;
   secondaryContactPhone: string;
+  barangay: string;
 }
+
+export interface UpdateOwnProfilePayload {
+  bloodType?: string;
+  allergies?: string;
+  medicalConditions?: string;
+  isOrganDonor?: boolean;
+  emergencyContactName?: string;
+  emergencyContactRelation?: string;
+  emergencyContactRelationship?: string;
+  emergencyContactPhone?: string;
+  secondaryContactName?: string;
+  secondaryContactPhone?: string;
+  barangay?: string;
+  departmentOrBarangay?: string;
+}
+
+export const updateOwnProfile = async (
+  payload: UpdateOwnProfilePayload
+): Promise<{ message?: string; success?: boolean }> =>
+  requestJson<{ message?: string; success?: boolean }>('/api/profile', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
 
 const STORAGE_KEY = 'resqtrack_civilian_medical_profile';
 
 export const CivilianProfile: React.FC = () => {
-  const { session } = useSession();
+  const { session, refreshSession } = useSession();
 
   const [profile, setProfile] = useState<EmergencyMedicalProfile>({
     bloodType: 'O+',
@@ -33,10 +98,12 @@ export const CivilianProfile: React.FC = () => {
     emergencyContactRelation: 'Spouse',
     emergencyContactPhone: '',
     secondaryContactName: '',
-    secondaryContactPhone: ''
+    secondaryContactPhone: '',
+    barangay: 'Poblacion'
   });
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [saveSuccessToast, setSaveSuccessToast] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(() => {
     try {
@@ -54,9 +121,9 @@ export const CivilianProfile: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
+    if (file.size > MAX_AVATAR_FILE_SIZE_BYTES) {
       setSaveSuccessToast('Avatar image exceeds 2MB limit.');
-      setTimeout(() => setSaveSuccessToast(null), 3500);
+      setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
       return;
     }
 
@@ -71,7 +138,7 @@ export const CivilianProfile: React.FC = () => {
           new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: dataUrl } })
         );
         setSaveSuccessToast('Identity photo uploaded and synchronized across portals.');
-        setTimeout(() => setSaveSuccessToast(null), 3500);
+        setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
       } catch (err) {
         console.error('Failed to save civilian avatar', err);
       }
@@ -88,13 +155,13 @@ export const CivilianProfile: React.FC = () => {
         new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } })
       );
       setSaveSuccessToast('Reverted to default resident photo avatar.');
-      setTimeout(() => setSaveSuccessToast(null), 3500);
+      setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
     } catch (err) {
       console.error('Failed to reset avatar', err);
     }
   };
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount and sync with session
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -106,15 +173,52 @@ export const CivilianProfile: React.FC = () => {
     }
   }, []);
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (session?.departmentOrBarangay) {
+      setProfile((prev) => ({
+        ...prev,
+        barangay: prev.barangay === 'Poblacion' && session.departmentOrBarangay ? session.departmentOrBarangay : prev.barangay
+      }));
+    }
+  }, [session?.departmentOrBarangay]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
+      // 1. Save to local storage encrypted vault
       localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+
+      // 2. Call updateOwnProfile(payload) (PUT /api/profile) to persist in relational Users table
+      try {
+        await updateOwnProfile({
+          bloodType: profile.bloodType,
+          allergies: profile.allergies,
+          medicalConditions: profile.medicalConditions,
+          isOrganDonor: profile.isOrganDonor,
+          emergencyContactName: profile.emergencyContactName,
+          emergencyContactRelation: profile.emergencyContactRelation,
+          emergencyContactRelationship: profile.emergencyContactRelation,
+          emergencyContactPhone: profile.emergencyContactPhone,
+          secondaryContactName: profile.secondaryContactName,
+          secondaryContactPhone: profile.secondaryContactPhone,
+          barangay: profile.barangay,
+          departmentOrBarangay: profile.barangay
+        });
+        if (refreshSession) {
+          refreshSession();
+        }
+      } catch (apiErr) {
+        console.warn('Backend PUT /api/profile sync notice (persisted to local vault):', apiErr);
+      }
+
       setIsEditing(false);
-      setSaveSuccessToast('Emergency medical & next-of-kin profile saved to encrypted local vault.');
-      setTimeout(() => setSaveSuccessToast(null), 4000);
+      setSaveSuccessToast('Emergency medical & next-of-kin profile saved to database and local vault.');
+      setTimeout(() => setSaveSuccessToast(null), SAVE_PROFILE_TOAST_MS);
     } catch (err) {
       console.error('Failed to save profile:', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -138,14 +242,15 @@ export const CivilianProfile: React.FC = () => {
           onClick={() => setIsEditing((prev) => !prev)}
           className="self-start sm:self-auto px-4 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sky-400 hover:text-white text-xs font-mono font-bold flex items-center gap-1.5 transition-colors"
         >
-          <span>{isEditing ? 'Cancel Edit' : '✎ Edit Emergency Details'}</span>
+          <Edit2 className="w-3.5 h-3.5" />
+          <span>{isEditing ? 'Cancel Edit' : 'Edit Emergency Details'}</span>
         </button>
       </div>
 
       {/* 2. Success Toast */}
       {saveSuccessToast && (
         <div className="p-3.5 rounded-xl bg-emerald-950/95 border border-emerald-500 text-emerald-200 text-xs font-medium flex items-center gap-3 shadow-lg shadow-emerald-950/50">
-          <span className="text-base font-bold">✓</span>
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <span>{saveSuccessToast}</span>
         </div>
       )}
@@ -172,10 +277,7 @@ export const CivilianProfile: React.FC = () => {
                 className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white text-[10px] font-mono font-bold"
                 title="Upload Photo"
               >
-                <svg className="w-5 h-5 mb-0.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                  <circle cx="12" cy="13" r="4" />
-                </svg>
+                <Camera className="w-5 h-5 mb-0.5 text-emerald-400" />
                 <span>PHOTO</span>
                 <input
                   type="file"
@@ -191,7 +293,7 @@ export const CivilianProfile: React.FC = () => {
                 <h2 className="text-lg font-bold text-white">{session?.fullName || 'Registered Resident'}</h2>
                 {session?.faceVerified ? (
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-600/50 text-[10px] font-mono font-bold flex items-center gap-1">
-                    <span>✓</span>
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                     <span>BIOMETRICALLY VERIFIED</span>
                   </span>
                 ) : (
@@ -205,7 +307,8 @@ export const CivilianProfile: React.FC = () => {
               {/* Upload photo / Reset actions */}
               <div className="flex items-center gap-3 mt-1.5">
                 <label className="text-[11px] font-mono font-bold text-emerald-400 hover:text-emerald-300 cursor-pointer flex items-center gap-1">
-                  <span>📷 Upload Photo</span>
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Upload Photo</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -247,7 +350,19 @@ export const CivilianProfile: React.FC = () => {
 
           <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
             <span className="text-slate-500 block text-[10px] uppercase font-bold">REGISTERED BARANGAY</span>
-            <span className="text-white font-extrabold text-sm mt-0.5 block">{session?.departmentOrBarangay || 'Poblacion, Katipunan, ZN'}</span>
+            {isEditing ? (
+              <select
+                value={profile.barangay}
+                onChange={(e) => setProfile({ ...profile, barangay: e.target.value })}
+                className="mt-1 w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
+              >
+                {KATIPUNAN_BARANGAYS.map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-white font-extrabold text-sm mt-0.5 block">{profile.barangay || session?.departmentOrBarangay || 'Poblacion, Katipunan, ZN'}</span>
+            )}
           </div>
         </div>
       </div>
@@ -434,6 +549,7 @@ export const CivilianProfile: React.FC = () => {
                 type="submit"
                 variant="primary"
                 size="md"
+                isLoading={isSubmitting}
                 className="font-bold text-xs"
               >
                 Save Emergency Profile

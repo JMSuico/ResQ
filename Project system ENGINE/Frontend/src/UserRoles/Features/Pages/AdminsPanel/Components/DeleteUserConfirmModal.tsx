@@ -4,6 +4,7 @@
 // DO NOT hard delete emergency user records to preserve incident telemetry and audit logs.
 
 import React, { useState } from 'react';
+import { AlertTriangle, ShieldAlert, Trash2 } from 'lucide-react';
 import { DefaultFloatingModalCard, Button } from '@/Shared';
 import { deleteUser, UserDetail, UserSummary } from '@/Endpoints/adminGovernanceApi';
 
@@ -53,15 +54,15 @@ export const DeleteUserConfirmModal: React.FC<DeleteUserConfirmModalProps> = ({
       <div className="space-y-4 text-xs text-slate-200">
         {errorMessage && (
           <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-600 text-rose-200 font-mono flex items-center gap-2">
-            <span>⚠️</span>
+            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
             <span>{errorMessage}</span>
           </div>
         )}
 
         {/* Tactical Emergency Hazard Banner */}
         <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-800/80 flex items-start gap-3 shadow-[0_0_15px_rgba(244,63,94,0.2)]">
-          <div className="w-10 h-10 rounded-xl bg-rose-900/60 border border-rose-700/80 flex items-center justify-center text-lg flex-shrink-0 text-rose-300 shadow-inner">
-            ⚠️
+          <div className="w-10 h-10 rounded-xl bg-rose-900/60 border border-rose-700/80 flex items-center justify-center flex-shrink-0 text-rose-300 shadow-inner">
+            <ShieldAlert className="w-5 h-5 text-rose-400" />
           </div>
           <div className="space-y-1">
             <h4 className="font-bold text-rose-300 text-xs font-mono uppercase tracking-wider">
@@ -118,7 +119,7 @@ export const DeleteUserConfirmModal: React.FC<DeleteUserConfirmModalProps> = ({
               </>
             ) : (
               <>
-                <span>⛔</span> Confirm Soft-Delete
+                <Trash2 className="w-3.5 h-3.5" /> Confirm Soft-Delete
               </>
             )}
           </button>

@@ -2,9 +2,11 @@
 // ProfileFloatingModalCard.tsx -- Floating tactical profile modal card styled with ResQTrack dark command aesthetic.
 // Features: Enlarged avatar photo, online glowing pulse, full identity telemetry, biometric verification status,
 // and role-tailored route navigation to profile/settings page.
+// Universal lambda expressions (=>).
 
 import React, { FC, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { X, Settings, ShieldCheck, AlertTriangle, User, Mail } from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
 
 export interface ProfileFloatingModalCardProps {
@@ -101,7 +103,7 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
     <>
       {/* Invisible backdrop overlay to catch outside clicks */}
       <div
-        className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[0.5px]"
+        className="fixed inset-0 z-[99990] bg-black/20 backdrop-blur-[0.5px]"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -109,14 +111,14 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
       {/* Floating Tactical Card */}
       <div
         ref={cardRef}
-        className="absolute top-[calc(100%+10px)] right-0 z-50 w-80 sm:w-88 rounded-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-rose-950/30 border border-slate-700/80 shadow-2xl p-4 text-slate-100 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
+        className="absolute top-[calc(100%+10px)] right-0 z-[99999] w-80 sm:w-88 rounded-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-rose-950/30 border border-slate-700/80 shadow-2xl p-4 text-slate-100 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
         style={{
           boxShadow: '0 24px 50px -6px rgba(0, 0, 0, 0.85), 0 0 1px 1px rgba(244, 63, 94, 0.25)'
         }}
         role="dialog"
         aria-modal="true"
         aria-label="Tactical User Profile"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
       >
         {/* Tactical Header Accent */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
@@ -132,9 +134,7 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
             className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
             aria-label="Close profile card"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -167,8 +167,9 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
             <h3 className="text-sm font-black text-white tracking-tight truncate leading-tight">
               {fullName}
             </h3>
-            <span className="text-[11px] font-mono text-slate-400 truncate mt-0.5">
-              {email}
+            <span className="text-[11px] font-mono text-slate-400 truncate mt-0.5 flex items-center gap-1">
+              <Mail className="w-3 h-3 text-slate-500 flex-shrink-0" />
+              <span className="truncate">{email}</span>
             </span>
 
             {/* Badges: Role and Agency Unit */}
@@ -192,8 +193,9 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
         <div className="flex flex-col gap-2 pt-1 text-xs font-mono">
           {/* Credential ID */}
           <div className="px-3 py-2 bg-slate-950/80 rounded-xl border border-slate-800 flex items-center justify-between">
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
-              OPERATOR / CITIZEN ID
+            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider flex items-center gap-1">
+              <User className="w-3 h-3 text-slate-500" />
+              <span>OPERATOR / CITIZEN ID</span>
             </span>
             <span className="font-bold text-sky-400 tracking-wider">
               {employeeOrResidentId}
@@ -202,17 +204,18 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
 
           {/* Verification Status */}
           <div className="px-3 py-2 bg-slate-950/80 rounded-xl border border-slate-800 flex items-center justify-between">
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
-              AUTHENTICATION
+            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider flex items-center gap-1">
+              <ShieldCheck className="w-3 h-3 text-slate-500" />
+              <span>AUTHENTICATION</span>
             </span>
             {isVerified ? (
               <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
-                <span>✓</span>
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                 <span>BIOMETRICALLY VERIFIED</span>
               </span>
             ) : (
               <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1">
-                <span>⚠</span>
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                 <span>PENDING SCAN</span>
               </span>
             )}
@@ -225,18 +228,7 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
           onClick={handleOpenSettings}
           className="w-full mt-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 via-rose-700 to-red-700 hover:from-rose-500 hover:to-rose-600 active:scale-[0.98] text-white font-mono font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-950/50 flex items-center justify-center gap-2 border border-rose-500/50 transition-all cursor-pointer"
         >
-          <svg
-            className="w-4 h-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
+          <Settings className="w-4 h-4" />
           <span>Open Profile Settings</span>
         </button>
       </div>

@@ -1,0 +1,55 @@
+# ==============================================================================
+# ResQTrack Incident AI System Detection -- Standby Relational Database Service
+# Engine: PostgreSQL 16 on Alpine Linux (postgres:16-alpine)
+# Primary Relational Engine: Microsoft SQL Server (SSMS 19)
+# Standby Relational Engine: PostgreSQL (Docker Compose Alpine)
+# ==============================================================================
+
+services:
+  resqtrack-postgres:
+    image: postgres:16-alpine
+    container_name: resqtrack-postgres-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ResQTrackDb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: YourPassword123!
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - resqtrack_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ResQTrackDb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - resqtrack-network
+
+  resqtrack-pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: resqtrack-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@resqtrack.gov.ph
+      PGADMIN_DEFAULT_PASSWORD: AdminPostgres2026!
+    ports:
+      - "5050:80"
+    depends_on:
+      resqtrack-postgres:
+        condition: service_healthy
+    networks:
+      - resqtrack-network
+    profiles:
+      - tools
+
+networks:
+  resqtrack-network:
+    name: resqtrack-network
+    driver: bridge
+
+volumes:
+  resqtrack_postgres_data:
+    name: resqtrack_postgres_data

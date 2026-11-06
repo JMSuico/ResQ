@@ -135,3 +135,143 @@ public class AuditLog
 
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 }
+
+public class PatientCareRecord
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [Required, MaxLength(50)]
+    public string PcrReference { get; set; } = string.Empty;
+
+    public Guid? ReportId { get; set; }
+
+    public Guid? ResponderUserId { get; set; }
+
+    [Required, MaxLength(120)]
+    public string MedicName { get; set; } = string.Empty;
+
+    [Required, MaxLength(50)]
+    public string UnitCode { get; set; } = string.Empty;
+
+    [Required, MaxLength(120)]
+    public string PatientName { get; set; } = string.Empty;
+
+    public int Age { get; set; }
+
+    [Required, MaxLength(20)]
+    public string Gender { get; set; } = string.Empty;
+
+    public double WeightKg { get; set; }
+
+    [Required, MaxLength(50)]
+    public string LevelOfConsciousness { get; set; } = "Alert";
+
+    public int BloodPressureSystolic { get; set; }
+
+    public int BloodPressureDiastolic { get; set; }
+
+    public int HeartRateBpm { get; set; }
+
+    public int RespiratoryRate { get; set; }
+
+    public int SpO2Percent { get; set; }
+
+    public int BloodGlucoseMgDl { get; set; }
+
+    public double TemperatureCelsius { get; set; }
+
+    public string InterventionsJson { get; set; } = "[]";
+
+    public string AnatomicalInjuriesJson { get; set; } = "[]";
+
+    [MaxLength(500)]
+    public string ChiefComplaint { get; set; } = string.Empty;
+
+    public string Narrative { get; set; } = string.Empty;
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class PoliceBlotterEntry
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [Required, MaxLength(50)]
+    public string BlotterNumber { get; set; } = string.Empty;
+
+    public Guid? ReportId { get; set; }
+
+    [Required, MaxLength(150)]
+    public string IncidentClassification { get; set; } = string.Empty;
+
+    [Required, MaxLength(120)]
+    public string ComplainantName { get; set; } = string.Empty;
+
+    [MaxLength(50)]
+    public string? ComplainantContact { get; set; }
+
+    [MaxLength(250)]
+    public string? ComplainantAddress { get; set; }
+
+    [MaxLength(120)]
+    public string? SuspectName { get; set; }
+
+    [MaxLength(500)]
+    public string? SuspectDescription { get; set; }
+
+    [MaxLength(250)]
+    public string? Witnesses { get; set; }
+
+    [Required]
+    public string NarrativeStatement { get; set; } = string.Empty;
+
+    [Required, MaxLength(250)]
+    public string IncidentLocation { get; set; } = string.Empty;
+
+    public DateTime IncidentDateTime { get; set; } = DateTime.UtcNow;
+
+    [Required, MaxLength(120)]
+    public string InvestigatingOfficerName { get; set; } = string.Empty;
+
+    [Required, MaxLength(50)]
+    public string InvestigatingOfficerBadge { get; set; } = string.Empty;
+
+    [Required, MaxLength(100)]
+    public string Station { get; set; } = "Dipolog City Police Station";
+
+    [Required, MaxLength(128)]
+    public string CryptographicSeal { get; set; } = string.Empty;
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class FireAlarmStatusRecord
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid? ReportId { get; set; }
+
+    [Required, MaxLength(80)]
+    public string AlarmLevel { get; set; } = "1st Alarm";
+
+    [Required, MaxLength(100)]
+    public string BuildingType { get; set; } = "Residential";
+
+    public int TrappedOccupantsCount { get; set; }
+
+    [Required, MaxLength(120)]
+    public string CommanderName { get; set; } = string.Empty;
+
+    [Required, MaxLength(50)]
+    public string ReportingUnit { get; set; } = "BFP-ALPHA";
+
+    [MaxLength(500)]
+    public string Remarks { get; set; } = string.Empty;
+
+    public int WaterSupplyGallons { get; set; }
+
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}

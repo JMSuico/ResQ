@@ -5,6 +5,7 @@
 // DO NOT put feature-specific or API business logic here.
 
 import React, { FC, useEffect, useRef } from 'react';
+import { Check, Minus } from 'lucide-react';
 
 export interface CheckboxProps {
   checked?: boolean;
@@ -68,29 +69,13 @@ export const Checkbox: FC<CheckboxProps> = ({
           } ${disabled ? 'bg-slate-800 border-slate-700' : ''}`}
         >
           {indeterminate ? (
-            <svg
-              style={{ width: '10px', height: '10px', maxWidth: '10px', maxHeight: '10px', display: 'block' }}
-              className="w-2.5 h-2.5 text-white"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              viewBox="0 0 24 24"
-            >
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
+            <Minus className="w-2.5 h-2.5 text-white stroke-[2.5]" />
           ) : (
-            <svg
-              style={{ width: '12px', height: '12px', maxWidth: '12px', maxHeight: '12px', display: 'block' }}
-              className={`w-3 h-3 text-white transition-transform duration-150 ${
+            <Check
+              className={`w-3 h-3 text-white stroke-[2.5] transition-transform duration-150 ${
                 checked ? 'scale-100' : 'scale-0'
               }`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              viewBox="0 0 24 24"
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
+            />
           )}
         </div>
       </div>

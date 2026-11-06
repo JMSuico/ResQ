@@ -17,6 +17,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Settings> Settings => Set<Settings>();
     public DbSet<AlertReadState> AlertReadStates => Set<AlertReadState>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<PatientCareRecord> PatientCareRecords => Set<PatientCareRecord>();
+    public DbSet<PoliceBlotterEntry> PoliceBlotterEntries => Set<PoliceBlotterEntry>();
+    public DbSet<FireAlarmStatusRecord> FireAlarmStatuses => Set<FireAlarmStatusRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -106,6 +109,29 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<AuditLog>(entity =>
         {
             entity.HasIndex(a => a.Timestamp);
+        });
+
+        // PatientCareRecord index
+        modelBuilder.Entity<PatientCareRecord>(entity =>
+        {
+            entity.HasIndex(p => p.PcrReference).IsUnique();
+            entity.HasIndex(p => p.ReportId);
+            entity.HasIndex(p => p.CreatedAt);
+        });
+
+        // PoliceBlotterEntry index
+        modelBuilder.Entity<PoliceBlotterEntry>(entity =>
+        {
+            entity.HasIndex(b => b.BlotterNumber).IsUnique();
+            entity.HasIndex(b => b.ReportId);
+            entity.HasIndex(b => b.CreatedAt);
+        });
+
+        // FireAlarmStatusRecord index
+        modelBuilder.Entity<FireAlarmStatusRecord>(entity =>
+        {
+            entity.HasIndex(f => f.ReportId);
+            entity.HasIndex(f => f.UpdatedAt);
         });
     }
 }

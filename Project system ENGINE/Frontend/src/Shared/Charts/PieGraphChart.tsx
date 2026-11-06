@@ -1,8 +1,11 @@
 // [Layer: Shared/Charts]
 // Responsibility: Interactive SVG Donut chart representing multi-agency workload distribution (RHU, FIRE, PNP).
 // Pure React + SVG architecture with radial slice expansion, dynamic center hole, and tactical HUD tooltips.
+// Provides smooth interactive hover states, displaying precise coordinate values and percentages upon mouse movement with zero jitter.
+// Universal lambda expressions (=>).
 
-import React, { useState, useRef } from 'react';
+import React, { FC, useState, useRef, useCallback } from 'react';
+import { PieChart } from 'lucide-react';
 
 export interface PieChartItem {
   label: string;
@@ -10,28 +13,84 @@ export interface PieChartItem {
   color: string;
 }
 
-export const PieGraphChart: React.FC<{
+export interface PieGraphChartProps {
   data: PieChartItem[];
   title?: string;
-}> = ({ data, title = 'Agency Workload Distribution' }) => {
+}
+
+const DONUT_RADIUS = 60;
+const CENTER_X = 100;
+const CENTER_Y = 100;
+const INNER_HOLE_RADIUS = 35;
+const SLICE_EXPANSION_OFFSET = 8;
+const MAX_SAFE_ANGLE = 359.999;
+const FULL_CIRCLE_DEGREES = 360;
+
+interface TacticalStatus {
+  label: string;
+  color: string;
+  badge: string;
+}
+
+const computeTacticalStatus = (value: number, totalVal: number): TacticalStatus => {
+  const share = totalVal > 0 ? value / totalVal : 0;
+  if (share >= 0.40) {
+    return {
+      label: 'PRIMARY DISPATCH LOAD',
+      color: 'text-amber-400',
+      badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+    };
+  }
+  if (share >= 0.25) {
+    return {
+      label: 'ACTIVE RESPONSE VOLUME',
+      color: 'text-sky-400',
+      badge: 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+    };
+  }
+  if (share >= 0.15) {
+    return {
+      label: 'TACTICAL SUPPORT SQUAD',
+      color: 'text-indigo-400',
+      badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+    };
+  }
+  return {
+    label: 'STANDBY READY',
+    color: 'text-emerald-400',
+    badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+  };
+};
+
+export const PieGraphChart: FC<PieGraphChartProps> = ({
+  data,
+  title = 'Agency Workload Distribution'
+}) => {
   const [hoveredSliceIndex, setHoveredSliceIndex] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
+  const safeData = data && data.length > 0 ? data : [
+    { label: 'RHU Medical', value: 0, color: '#0284c7' },
+    { label: 'BFP Fire Rescue', value: 0, color: '#ea580c' },
+    { label: 'PNP Police Force', value: 0, color: '#3b82f6' }
+  ];
+
+  const total = safeData.reduce((sum, d) => sum + d.value, 0) || 1;
+  const realTotal = safeData.reduce((sum, d) => sum + d.value, 0);
   let accumulatedAngle = 0;
 
-  const slices = data.map((d) => {
-    const angle = (d.value / total) * 360;
+  const slices = safeData.map((d) => {
+    const angle = realTotal > 0 ? (d.value / total) * FULL_CIRCLE_DEGREES : 0;
     const startAngle = accumulatedAngle;
     accumulatedAngle += angle;
 
-    const r = 60;
-    const cx = 100;
-    const cy = 100;
+    const r = DONUT_RADIUS;
+    const cx = CENTER_X;
+    const cy = CENTER_Y;
 
     // Prevent arc collapse when a single slice occupies 360 degrees
-    const safeAngle = Math.min(angle, 359.999);
+    const safeAngle = Math.min(angle, MAX_SAFE_ANGLE);
 
     const x1 = cx + r * Math.cos((Math.PI * startAngle) / 180);
     const y1 = cy + r * Math.sin((Math.PI * startAngle) / 180);
@@ -43,10 +102,10 @@ export const PieGraphChart: React.FC<{
 
     const midAngle = startAngle + angle / 2;
     const rad = (midAngle * Math.PI) / 180;
-    const dx = Math.cos(rad) * 8;
-    const dy = Math.sin(rad) * 8;
+    const dx = Math.cos(rad) * SLICE_EXPANSION_OFFSET;
+    const dy = Math.sin(rad) * SLICE_EXPANSION_OFFSET;
 
-    const percentage = ((d.value / total) * 100).toFixed(1);
+    const percentage = realTotal > 0 ? ((d.value / total) * 100).toFixed(1) : '0.0';
 
     return {
       pathD,
@@ -62,48 +121,22 @@ export const PieGraphChart: React.FC<{
     };
   });
 
-  const getTacticalStatus = (value: number, totalVal: number) => {
-    const share = totalVal > 0 ? value / totalVal : 0;
-    if (share >= 0.40) {
-      return {
-        label: 'PRIMARY DISPATCH LOAD',
-        color: 'text-amber-400',
-        badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-      };
-    }
-    if (share >= 0.25) {
-      return {
-        label: 'ACTIVE RESPONSE VOLUME',
-        color: 'text-sky-400',
-        badge: 'bg-sky-500/20 text-sky-300 border-sky-500/40'
-      };
-    }
-    if (share >= 0.15) {
-      return {
-        label: 'TACTICAL SUPPORT SQUAD',
-        color: 'text-indigo-400',
-        badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
-      };
-    }
-    return {
-      label: 'STANDBY READY',
-      color: 'text-emerald-400',
-      badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-    };
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
-      setMousePos({
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
+      const nextX = e.clientX - rect.left;
+      const nextY = e.clientY - rect.top;
+      setMousePos((prev) => {
+        if (prev && Math.abs(prev.x - nextX) < 2 && Math.abs(prev.y - nextY) < 2) {
+          return prev;
+        }
+        return { x: nextX, y: nextY };
       });
     }
-  };
+  }, []);
 
   const activeSlice = hoveredSliceIndex !== null ? slices[hoveredSliceIndex] : null;
-  const activeStatus = activeSlice ? getTacticalStatus(activeSlice.value, total) : null;
+  const activeStatus = activeSlice ? computeTacticalStatus(activeSlice.value, total) : null;
 
   return (
     <div
@@ -117,7 +150,12 @@ export const PieGraphChart: React.FC<{
     >
       {/* Title & Status Indicator */}
       <div className="flex items-center justify-between">
-        {title && <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">{title}</h4>}
+        {title && (
+          <div className="flex items-center gap-1.5">
+            <PieChart className="w-3.5 h-3.5 text-sky-400" />
+            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">{title}</h4>
+          </div>
+        )}
         <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           RADAR ACTIVE
@@ -128,11 +166,24 @@ export const PieGraphChart: React.FC<{
         {/* SVG Donut Chart */}
         <div className="relative flex items-center justify-center">
           <svg
-            viewBox="0 0 200 200"
+            viewBox={`0 0 ${CENTER_X * 2} ${CENTER_Y * 2}`}
             className="w-40 h-40 overflow-visible drop-shadow-md"
           >
+            {/* Empty state donut ring when zero calls */}
+            {realTotal === 0 && (
+              <circle
+                cx={CENTER_X}
+                cy={CENTER_Y}
+                r={(DONUT_RADIUS + INNER_HOLE_RADIUS) / 2}
+                fill="none"
+                stroke="#1e293b"
+                strokeWidth={DONUT_RADIUS - INNER_HOLE_RADIUS}
+                className="opacity-70"
+              />
+            )}
+
             {/* Pie Slices */}
-            {slices.map((s, i) => {
+            {realTotal > 0 && slices.map((s, i) => {
               const isHovered = hoveredSliceIndex === i;
               const isDimmed = hoveredSliceIndex !== null && !isHovered;
 
@@ -145,12 +196,12 @@ export const PieGraphChart: React.FC<{
                   strokeWidth={isHovered ? 1.5 : 0.5}
                   style={{
                     transform: isHovered ? `translate(${s.dx}px, ${s.dy}px)` : 'translate(0px, 0px)',
-                    transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease-out, filter 300ms ease-out',
+                    transition: 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out, filter 200ms ease-out',
                     opacity: isDimmed ? 0.35 : 1,
                     filter: isHovered ? 'drop-shadow(0 0 8px rgba(255,255,255,0.3))' : 'none',
-                    transformOrigin: '100px 100px'
+                    transformOrigin: `${CENTER_X}px ${CENTER_Y}px`
                   }}
-                  className="transition-all duration-300 ease-out cursor-pointer"
+                  className="transition-all duration-200 ease-out cursor-pointer"
                   onMouseEnter={() => setHoveredSliceIndex(i)}
                   onMouseLeave={() => setHoveredSliceIndex(null)}
                 />
@@ -159,9 +210,9 @@ export const PieGraphChart: React.FC<{
 
             {/* Donut Center Hole */}
             <circle
-              cx="100"
-              cy="100"
-              r="35"
+              cx={CENTER_X}
+              cy={CENTER_Y}
+              r={INNER_HOLE_RADIUS}
               fill="#090d16"
               stroke="#1e293b"
               strokeWidth="2"
@@ -170,10 +221,10 @@ export const PieGraphChart: React.FC<{
 
             {/* Dynamic Center Donut Content */}
             {hoveredSliceIndex === null ? (
-              <g className="pointer-events-none select-none transition-all duration-300">
+              <g className="pointer-events-none select-none transition-all duration-200">
                 <text
-                  x="100"
-                  y="97"
+                  x={CENTER_X}
+                  y={CENTER_Y - 3}
                   textAnchor="middle"
                   fill="#f8fafc"
                   fontSize="16"
@@ -183,8 +234,8 @@ export const PieGraphChart: React.FC<{
                   {total}
                 </text>
                 <text
-                  x="100"
-                  y="112"
+                  x={CENTER_X}
+                  y={CENTER_Y + 12}
                   textAnchor="middle"
                   fill="#64748b"
                   fontSize="8"
@@ -195,10 +246,10 @@ export const PieGraphChart: React.FC<{
                 </text>
               </g>
             ) : (
-              <g className="pointer-events-none select-none transition-all duration-300">
+              <g className="pointer-events-none select-none transition-all duration-200">
                 <text
-                  x="100"
-                  y="88"
+                  x={CENTER_X}
+                  y={CENTER_Y - 12}
                   textAnchor="middle"
                   fill={slices[hoveredSliceIndex].color}
                   fontSize="8"
@@ -210,8 +261,8 @@ export const PieGraphChart: React.FC<{
                     : slices[hoveredSliceIndex].label}
                 </text>
                 <text
-                  x="100"
-                  y="103"
+                  x={CENTER_X}
+                  y={CENTER_Y + 3}
                   textAnchor="middle"
                   fill="#f8fafc"
                   fontSize="13"
@@ -221,8 +272,8 @@ export const PieGraphChart: React.FC<{
                   {slices[hoveredSliceIndex].percentage}%
                 </text>
                 <text
-                  x="100"
-                  y="116"
+                  x={CENTER_X}
+                  y={CENTER_Y + 16}
                   textAnchor="middle"
                   fill="#94a3b8"
                   fontSize="8"
@@ -246,7 +297,7 @@ export const PieGraphChart: React.FC<{
                 key={i}
                 onMouseEnter={() => setHoveredSliceIndex(i)}
                 onMouseLeave={() => setHoveredSliceIndex(null)}
-                className={`flex items-center justify-between gap-3 px-2.5 py-1.5 rounded-lg border cursor-pointer transition-all duration-200 ${
+                className={`flex items-center justify-between gap-3 px-2.5 py-1.5 rounded-lg border cursor-pointer transition-all duration-150 ${
                   isHovered
                     ? 'bg-slate-800/90 border-slate-600 shadow-md ring-1 ring-sky-500/50 translate-x-1'
                     : isDimmed
@@ -256,7 +307,7 @@ export const PieGraphChart: React.FC<{
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0 transition-transform duration-200"
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0 transition-transform duration-150"
                     style={{
                       backgroundColor: d.color,
                       transform: isHovered ? 'scale(1.25)' : 'scale(1)',
@@ -284,7 +335,7 @@ export const PieGraphChart: React.FC<{
       {/* Floating Tactical HUD Tooltip */}
       {hoveredSliceIndex !== null && activeSlice && activeStatus && (
         <div
-          className="pointer-events-none absolute z-30 transition-all duration-150 ease-out"
+          className="pointer-events-none absolute z-30 transition-all duration-100 ease-out"
           style={{
             left: mousePos
               ? `${Math.max(100, Math.min(mousePos.x, (containerRef.current?.clientWidth || 300) - 100))}px`
@@ -321,7 +372,7 @@ export const PieGraphChart: React.FC<{
 
       {/* Persistent Status Telemetry Pill */}
       {activeSlice && activeStatus ? (
-        <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs transition-all duration-200">
+        <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs transition-all duration-150">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="w-2 h-2 rounded-full flex-shrink-0 animate-ping" style={{ backgroundColor: activeSlice.color }} />
             <span className="font-semibold text-slate-200 truncate">{activeSlice.label} Focus</span>
@@ -344,3 +395,5 @@ export const PieGraphChart: React.FC<{
     </div>
   );
 };
+
+export default PieGraphChart;

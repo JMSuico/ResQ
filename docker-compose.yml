@@ -1,0 +1,224 @@
+# ==============================================================================
+# ResQTrack Incident AI System Detection -- Master Multi-Container Topology
+# Services:
+#   1. resqtrack-backend     (:5000) - .NET 10 Web API Core Engine
+#   2. resqtrack-admin       (:5174) - LDRRMO Admin Executive Command Center
+#   3. resqtrack-responders  (:5173) - Emergency Responders (RHU / Fire / PNP)
+#   4. resqtrack-civilian    (:5175) - Civilian SOS Emergency Incident Portal
+#   5. resqtrack-cache       (:6379) - Redis 7 Alpine Caching & Session Store
+#   6. resqtrack-db-primary  (:5432) - PostgreSQL 16 Alpine Primary Relational DB
+#   7. resqtrack-db-replica  (:5433) - PostgreSQL 16 Alpine Standby Read Replica
+#   8. resqtrack-pgadmin     (:5050) - Visual DB Management Console (tools profile)
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Distributed In-Memory Cache (Redis 7 on Alpine)
+  # ----------------------------------------------------------------------------
+  resqtrack-cache:
+    image: redis:7-alpine
+    container_name: resqtrack-redis-cache
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - resqtrack_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - resqtrack-network
+
+  # ----------------------------------------------------------------------------
+  # 2. Primary Relational Database (PostgreSQL 16 on Alpine Linux)
+  # ----------------------------------------------------------------------------
+  resqtrack-db-primary:
+    image: postgres:16-alpine
+    container_name: resqtrack-postgres-primary
+    restart: unless-stopped
+    command: >
+      postgres 
+      -c wal_level=replica 
+      -c max_wal_senders=10 
+      -c max_replication_slots=10 
+      -c hot_standby=on
+    environment:
+      POSTGRES_DB: ResQTrackDb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: YourPassword123!
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - resqtrack_postgres_primary_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ResQTrackDb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - resqtrack-network
+
+  # ----------------------------------------------------------------------------
+  # 3. Standby Read-Replica Relational Database (PostgreSQL 16 on Alpine Linux)
+  # ----------------------------------------------------------------------------
+  resqtrack-db-replica:
+    image: postgres:16-alpine
+    container_name: resqtrack-postgres-replica
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ResQTrackDb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: YourPassword123!
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - resqtrack_postgres_replica_data:/var/lib/postgresql/data
+    depends_on:
+      resqtrack-db-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ResQTrackDb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - resqtrack-network
+
+  # ----------------------------------------------------------------------------
+  # 4. Backend Core Engine (.NET 10 Web API)
+  # ----------------------------------------------------------------------------
+  resqtrack-backend:
+    build:
+      context: ./Project system ENGINE/Backend
+      dockerfile: Dockerfile
+    container_name: resqtrack-api-backend
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:5000
+      ASPNETCORE_ENVIRONMENT: Production
+      DatabaseProvider: PostgreSql
+      ConnectionStrings__PostgreSqlConnection: Host=resqtrack-db-primary;Port=5432;Database=ResQTrackDb;Username=postgres;Password=YourPassword123!;
+      ConnectionStrings__PostgreSqlConnection_Replica: Host=resqtrack-db-replica;Port=5432;Database=ResQTrackDb;Username=postgres;Password=YourPassword123!;
+      RedisConnection: resqtrack-cache:6379
+    ports:
+      - "5000:5000"
+    depends_on:
+      resqtrack-db-primary:
+        condition: service_healthy
+      resqtrack-cache:
+        condition: service_healthy
+    networks:
+      - resqtrack-network
+
+  # ----------------------------------------------------------------------------
+  # 5. Dedicated LDRRMO Admin Executive Command Center (:5174)
+  # ----------------------------------------------------------------------------
+  resqtrack-admin:
+    build:
+      context: ./Project system ENGINE/Frontend
+      dockerfile: Dockerfile.admin
+    container_name: resqtrack-admin-ui
+    restart: unless-stopped
+    environment:
+      PORT: 5174
+      BACKEND_URL: http://resqtrack-backend:5000
+    ports:
+      - "5174:5174"
+    volumes:
+      - "./Project system ENGINE/Frontend/src:/app/src"
+      - "./Project system ENGINE/Frontend/index.html:/app/index.html"
+      - "./Project system ENGINE/Frontend/vite.config.ts:/app/vite.config.ts"
+    depends_on:
+      - resqtrack-backend
+    networks:
+      - resqtrack-network
+
+  # ----------------------------------------------------------------------------
+  # 6. Dedicated Emergency Responders Portal (:5173) (RHU / Fire / PNP)
+  # ----------------------------------------------------------------------------
+  resqtrack-responders:
+    build:
+      context: ./Project system ENGINE/Frontend
+      dockerfile: Dockerfile.responder
+    container_name: resqtrack-responders-ui
+    restart: unless-stopped
+    environment:
+      PORT: 5173
+      BACKEND_URL: http://resqtrack-backend:5000
+    ports:
+      - "5173:5173"
+    volumes:
+      - "./Project system ENGINE/Frontend/src:/app/src"
+      - "./Project system ENGINE/Frontend/index.html:/app/index.html"
+      - "./Project system ENGINE/Frontend/vite.config.ts:/app/vite.config.ts"
+    depends_on:
+      - resqtrack-backend
+    networks:
+      - resqtrack-network
+
+  # ----------------------------------------------------------------------------
+  # 7. Dedicated Civilian Emergency SOS Portal (:5175)
+  # ----------------------------------------------------------------------------
+  resqtrack-civilian:
+    build:
+      context: ./Project system ENGINE/Frontend
+      dockerfile: Dockerfile.civilian
+    container_name: resqtrack-civilian-ui
+    restart: unless-stopped
+    environment:
+      PORT: 5175
+      BACKEND_URL: http://resqtrack-backend:5000
+    ports:
+      - "5175:5175"
+    volumes:
+      - "./Project system ENGINE/Frontend/src:/app/src"
+      - "./Project system ENGINE/Frontend/index.html:/app/index.html"
+      - "./Project system ENGINE/Frontend/vite.config.ts:/app/vite.config.ts"
+    depends_on:
+      - resqtrack-backend
+    networks:
+      - resqtrack-network
+
+  # ----------------------------------------------------------------------------
+  # 8. Optional Visual Database Management Console (tools profile)
+  # ----------------------------------------------------------------------------
+  resqtrack-pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: resqtrack-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@resqtrack.gov.ph
+      PGADMIN_DEFAULT_PASSWORD: AdminPostgres2026!
+    ports:
+      - "5050:80"
+    depends_on:
+      resqtrack-db-primary:
+        condition: service_healthy
+    networks:
+      - resqtrack-network
+    profiles:
+      - tools
+
+# ------------------------------------------------------------------------------
+# Networks & Persistent Volumes Definition
+# ------------------------------------------------------------------------------
+networks:
+  resqtrack-network:
+    name: resqtrack-network
+    driver: bridge
+
+volumes:
+  resqtrack_redis_data:
+    name: resqtrack_redis_data
+  resqtrack_postgres_primary_data:
+    name: resqtrack_postgres_primary_data
+  resqtrack_postgres_replica_data:
+    name: resqtrack_postgres_replica_data

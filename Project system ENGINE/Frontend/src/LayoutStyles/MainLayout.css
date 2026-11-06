@@ -1,10 +1,28 @@
-/* MainLayout.css - RISKQTRAK Core Shell & Global Theme Extensions */
+@import './tacticalHuds.css';
+
+/* MainLayout.css - ResQTrack Core Shell & Global Theme Extensions */
 :root {
   --brand-primary: #00d2ff;
   --brand-secondary: #3a7bd5;
   --bg-dark: #0b0f19;
   --surface-dark: rgba(18, 24, 38, 0.7);
   --border-glass: rgba(255, 255, 255, 0.08);
+
+  /* Tactical HUD Theme Reference Tokens */
+  --hud-theme-rhu-base: #0a192f;
+  --hud-theme-rhu-primary: #0284c7;
+  --hud-theme-rhu-border: #38bdf8;
+  --hud-theme-rhu-glow: rgba(2, 132, 199, 0.4);
+
+  --hud-theme-bfp-base: #1a0f0a;
+  --hud-theme-bfp-primary: #ea580c;
+  --hud-theme-bfp-border: #f97316;
+  --hud-theme-bfp-glow: rgba(234, 88, 12, 0.4);
+
+  --hud-theme-pnp-base: #0a1128;
+  --hud-theme-pnp-primary: #1d4ed8;
+  --hud-theme-pnp-border: #3b82f6;
+  --hud-theme-pnp-glow: rgba(29, 78, 216, 0.4);
 }
 
 .main-layout-container {

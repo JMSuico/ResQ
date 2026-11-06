@@ -17,11 +17,13 @@ public static class DatabaseSeeder
         await db.Database.EnsureCreatedAsync();
 
         // Idempotent column check for SQL Server (SSMS 19)
-        try
+        if (db.Database.IsSqlServer())
         {
-            await db.Database.ExecuteSqlRawAsync(@"
-                IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'ValidIdType')
-                    ALTER TABLE [Users] ADD [ValidIdType] NVARCHAR(50) NULL;
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(@"
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'ValidIdType')
+                        ALTER TABLE [Users] ADD [ValidIdType] NVARCHAR(50) NULL;
 
                 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FirstName')
                     ALTER TABLE [Users] ADD [FirstName] NVARCHAR(80) NOT NULL CONSTRAINT DF_Users_FirstName DEFAULT '';
@@ -154,9 +156,79 @@ public static class DatabaseSeeder
 
                 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Reports') AND name = 'RecommendedAgencyUnit')
                     ALTER TABLE [Reports] ADD [RecommendedAgencyUnit] NVARCHAR(50) NULL;
+
+                IF OBJECT_ID(N'dbo.PatientCareRecords', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [PatientCareRecords] (
+                        [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        [PcrReference] NVARCHAR(50) NOT NULL,
+                        [ReportId] UNIQUEIDENTIFIER NULL,
+                        [ResponderUserId] UNIQUEIDENTIFIER NULL,
+                        [MedicName] NVARCHAR(120) NOT NULL,
+                        [UnitCode] NVARCHAR(50) NOT NULL,
+                        [PatientName] NVARCHAR(120) NOT NULL,
+                        [Age] INT NOT NULL,
+                        [Gender] NVARCHAR(20) NOT NULL,
+                        [WeightKg] FLOAT NOT NULL,
+                        [LevelOfConsciousness] NVARCHAR(50) NOT NULL,
+                        [BloodPressureSystolic] INT NOT NULL,
+                        [BloodPressureDiastolic] INT NOT NULL,
+                        [HeartRateBpm] INT NOT NULL,
+                        [RespiratoryRate] INT NOT NULL,
+                        [SpO2Percent] INT NOT NULL,
+                        [BloodGlucoseMgDl] INT NOT NULL,
+                        [TemperatureCelsius] FLOAT NOT NULL,
+                        [InterventionsJson] NVARCHAR(MAX) NOT NULL,
+                        [AnatomicalInjuriesJson] NVARCHAR(MAX) NOT NULL,
+                        [ChiefComplaint] NVARCHAR(500) NOT NULL,
+                        [Narrative] NVARCHAR(MAX) NOT NULL,
+                        [CreatedAt] DATETIME2 NOT NULL
+                    );
+                END
+
+                IF OBJECT_ID(N'dbo.PoliceBlotterEntries', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [PoliceBlotterEntries] (
+                        [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        [BlotterNumber] NVARCHAR(50) NOT NULL,
+                        [ReportId] UNIQUEIDENTIFIER NULL,
+                        [IncidentClassification] NVARCHAR(150) NOT NULL,
+                        [ComplainantName] NVARCHAR(120) NOT NULL,
+                        [ComplainantContact] NVARCHAR(50) NULL,
+                        [ComplainantAddress] NVARCHAR(250) NULL,
+                        [SuspectName] NVARCHAR(120) NULL,
+                        [SuspectDescription] NVARCHAR(500) NULL,
+                        [Witnesses] NVARCHAR(250) NULL,
+                        [NarrativeStatement] NVARCHAR(MAX) NOT NULL,
+                        [IncidentLocation] NVARCHAR(250) NOT NULL,
+                        [IncidentDateTime] DATETIME2 NOT NULL,
+                        [InvestigatingOfficerName] NVARCHAR(120) NOT NULL,
+                        [InvestigatingOfficerBadge] NVARCHAR(50) NOT NULL,
+                        [Station] NVARCHAR(100) NOT NULL,
+                        [CryptographicSeal] NVARCHAR(128) NOT NULL,
+                        [CreatedAt] DATETIME2 NOT NULL
+                    );
+                END
+
+                IF OBJECT_ID(N'dbo.FireAlarmStatuses', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [FireAlarmStatuses] (
+                        [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        [ReportId] UNIQUEIDENTIFIER NULL,
+                        [AlarmLevel] NVARCHAR(80) NOT NULL,
+                        [BuildingType] NVARCHAR(100) NOT NULL,
+                        [TrappedOccupantsCount] INT NOT NULL,
+                        [CommanderName] NVARCHAR(120) NOT NULL,
+                        [ReportingUnit] NVARCHAR(50) NOT NULL,
+                        [Remarks] NVARCHAR(500) NOT NULL,
+                        [WaterSupplyGallons] INT NOT NULL,
+                        [UpdatedAt] DATETIME2 NOT NULL
+                    );
+                END
             ");
         }
         catch { /* Fallback for InMemory or non-SQL Server providers */ }
+        }
 
         // Ensure capture and reports folders exist with fallback images
         string capturesDir = Path.Combine(env.ContentRootPath, "server-data", "uploads", "captures");
@@ -461,18 +533,28 @@ public static class DatabaseSeeder
         }
 
         // Seed Settings
-        if (!await db.Settings.AnyAsync())
+        var platformSettings = new List<Settings>
         {
-            var settings = new List<Settings>
-            {
-                new() { Key = "EMERGENCY_BROADCAST_TICKER", Value = "NORMAL ADVISORY: All municipal response units active and on high alert.", Category = "Advisory", Description = "Public ticker displayed on civilian dashboard." },
-                new() { Key = "AUTO_DISPATCH_PROXIMITY_KM", Value = "5.0", Category = "Triage", Description = "Maximum radius in kilometers for primary unit allocation recommendations." },
-                new() { Key = "AUDIT_HASH_CHAINING_ENABLED", Value = "true", Category = "Security", Description = "Enforces cryptographic SHA-256 hash chains across audit records." }
-            };
+            new() { Key = "EMERGENCY_BROADCAST_TICKER", Value = "NORMAL ADVISORY: All municipal response units active and on high alert.", Category = "Advisory", Description = "Public ticker displayed on civilian dashboard." },
+            new() { Key = "AUTO_DISPATCH_PROXIMITY_KM", Value = "5.0", Category = "Triage", Description = "Maximum radius in kilometers for primary unit allocation recommendations." },
+            new() { Key = "AUDIT_HASH_CHAINING_ENABLED", Value = "true", Category = "Security", Description = "Enforces cryptographic SHA-256 hash chains across audit records." },
+            new() { Key = "broadcastRadius", Value = "5000", Category = "Platform", Description = "Emergency broadcast radius in meters." },
+            new() { Key = "laplacianThreshold", Value = "100.0", Category = "Vision", Description = "Laplacian blur variance threshold for anti-spoofing quality gate." },
+            new() { Key = "autoDispatchMode", Value = "semi-automatic", Category = "Dispatch", Description = "Incident unit auto-dispatch recommendation mode." },
+            new() { Key = "audioChimesEnabled", Value = "true", Category = "Audio", Description = "Sound notification chimes for tactical incoming alarms." },
+            new() { Key = "refreshIntervalSec", Value = "10", Category = "UI", Description = "Tactical dashboard and radar map polling cadence in seconds." },
+            new() { Key = "highContrastHud", Value = "false", Category = "Accessibility", Description = "High-contrast HUD skin for field display visibility." }
+        };
 
-            await db.Settings.AddRangeAsync(settings);
-            await db.SaveChangesAsync();
+        foreach (var s in platformSettings)
+        {
+            var existing = await db.Settings.FirstOrDefaultAsync(x => x.Key == s.Key);
+            if (existing == null)
+            {
+                await db.Settings.AddAsync(s);
+            }
         }
+        await db.SaveChangesAsync();
 
         // Seed Initial Incident Report
         if (!await db.Reports.AnyAsync())

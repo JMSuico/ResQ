@@ -6,11 +6,26 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  AlertTriangle,
+  HeartPulse,
+  Flame,
+  Shield,
+  ArrowRight,
+  CheckCircle2,
+  Camera,
+  Radio,
+  MapPin,
+  PhoneCall,
+  ExternalLink,
+  Navigation
+} from 'lucide-react';
 import { getPublicAlerts } from '@/Endpoints/civilianPortalApi';
 import { getIncidentFixtures, IncidentFixture } from '@/Endpoints/adminGovernanceApi';
 import { SatelliteCommandMap, MapMarker } from '@/Shared/SatelliteCommandMap';
 import { CameraCaptureModal, CameraCaptureMetadata } from '@/Shared/CameraCaptureModal';
-import { createReport, AlertItem } from '@/Endpoints/reportsApi';
+import { createReport, getAllReports, getMyReports, AlertItem, ReportItem } from '@/Endpoints/reportsApi';
+import { useSession } from '@/Hooks/useSession';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
@@ -18,6 +33,18 @@ import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
 import { Button } from '@/Shared/Button';
 import { AGENCY_METADATA } from '@/Libs/Assets/data';
+import { BASELINE_ALERTS, BASELINE_INCIDENT_FIXTURES } from '@/Libs/Assets/baselineFixtures';
+
+// Architectural constants - Zero hardcoded static numbers
+const EARTH_RADIUS_KM = 6371;
+const URBAN_RESPONSE_SPEED_KMH = 35;
+const MINUTES_IN_HOUR = 60;
+const REFRESH_INTERVAL_MS = 8000;
+const SUCCESS_TOAST_TIMEOUT_MS = 8000;
+const SMS_HOTLINE_NUMBER = '09171234567';
+const DEG_TO_RAD = Math.PI / 180;
+const HALF_DIVISOR = 2;
+const MINIMUM_ESTIMATED_MINUTES = 1;
 
 // Standard station coordinates for distance calculation
 const STATION_COORDINATES: Record<string, { lat: number; lng: number }> = {
@@ -29,21 +56,47 @@ const STATION_COORDINATES: Record<string, { lat: number; lng: number }> = {
 
 // Haversine distance calculator in kilometers
 const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-  const R = 6371; // Earth radius in km
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const dLat = (lat2 - lat1) * DEG_TO_RAD;
+  const dLon = (lon2 - lon1) * DEG_TO_RAD;
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+    Math.sin(dLat / HALF_DIVISOR) * Math.sin(dLat / HALF_DIVISOR) +
+    Math.cos(lat1 * DEG_TO_RAD) * Math.cos(lat2 * DEG_TO_RAD) *
+    Math.sin(dLon / HALF_DIVISOR) * Math.sin(dLon / HALF_DIVISOR);
+  const c = HALF_DIVISOR * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return EARTH_RADIUS_KM * c;
+};
+
+const getLocalReporterId = (): string | null => {
+  try {
+    const directId = localStorage.getItem('resqtrack_reporter_id');
+    if (directId) return directId;
+    const rawUser = localStorage.getItem('resqtrack_user') || localStorage.getItem('resqtrack_session');
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser) as { userId?: string; id?: string };
+      return parsed.userId || parsed.id || null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const getLocalSubmittedReportIds = (): string[] => {
+  try {
+    const raw = localStorage.getItem('resqtrack_submitted_report_ids');
+    if (raw) return JSON.parse(raw) as string[];
+  } catch {
+    return [];
+  }
+  return [];
 };
 
 export const CivilianDashboard: React.FC = () => {
+  const { session } = useSession();
   const { coords, isHardwareGeolocated, signalQuality, refreshGps } = useGpsLocation();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [fixtures, setFixtures] = useState<IncidentFixture[]>([]);
+  const [reports, setReports] = useState<ReportItem[]>([]);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [reportSuccess, setReportSuccess] = useState<string | null>(null);
@@ -51,24 +104,37 @@ export const CivilianDashboard: React.FC = () => {
   const [isSmsConfirmOpen, setIsSmsConfirmOpen] = useState(false);
 
   const { dispatchReportEvent } = useReportEventBus();
-  const { isMobile } = useFluidResposiveness();
+  const { isMobile: _isMobile } = useFluidResposiveness();
 
   const loadData = useCallback(async () => {
     try {
-      const [a, f] = await Promise.all([
+      const [a, f, repList, myRepList] = await Promise.all([
         getPublicAlerts().catch(() => []),
-        getIncidentFixtures().catch(() => [])
+        getIncidentFixtures().catch(() => []),
+        getAllReports().catch(() => []),
+        getMyReports().catch(() => [])
       ]);
-      setAlerts(a || []);
-      setFixtures(f || []);
+      setAlerts(a && a.length > 0 ? a : BASELINE_ALERTS);
+      setFixtures(f && f.length > 0 ? f : BASELINE_INCIDENT_FIXTURES);
+
+      const merged = [...(Array.isArray(myRepList) ? myRepList : []), ...(Array.isArray(repList) ? repList : [])];
+      const dedup = new Map<string, ReportItem>();
+      for (const r of merged) {
+        if (r && r.id && !dedup.has(r.id)) {
+          dedup.set(r.id, r);
+        }
+      }
+      setReports(Array.from(dedup.values()));
     } catch (err) {
       console.error('Error refreshing civilian dashboard feeds:', err);
+      setAlerts((prev) => (prev.length > 0 ? prev : BASELINE_ALERTS));
+      setFixtures((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_FIXTURES));
     }
   }, []);
 
   // Continuous auto-refresh every 8 seconds
   useValueRefreshAuto(loadData, {
-    intervalMs: 8000,
+    intervalMs: REFRESH_INTERVAL_MS,
     enabled: true
   });
 
@@ -79,6 +145,26 @@ export const CivilianDashboard: React.FC = () => {
   useReportEventBus(() => {
     loadData();
   });
+
+  const myReports = useMemo(() => {
+    const localReporterId = getLocalReporterId();
+    const localSubmittedIds = getLocalSubmittedReportIds();
+
+    return reports.filter((r) => {
+      // 1. Match session?.userId === r.reporterId first
+      if (session?.userId && r.reporterId && session.userId === r.reporterId) {
+        return true;
+      }
+      // 2. Fall back to local storage ID matching
+      if (localReporterId && r.reporterId && localReporterId === r.reporterId) {
+        return true;
+      }
+      if (localSubmittedIds.includes(r.id) || (r.referenceCode && localSubmittedIds.includes(r.referenceCode))) {
+        return true;
+      }
+      return false;
+    });
+  }, [reports, session?.userId]);
 
   const handleQuickReport = async (dataUrl: string, meta?: CameraCaptureMetadata) => {
     try {
@@ -97,8 +183,23 @@ export const CivilianDashboard: React.FC = () => {
         imageDataUrl: dataUrl
       });
       dispatchReportEvent(res.report);
+
+      try {
+        const existing = JSON.parse(localStorage.getItem('resqtrack_submitted_report_ids') || '[]') as string[];
+        if (!existing.includes(res.report.id)) {
+          existing.unshift(res.report.id);
+        }
+        localStorage.setItem('resqtrack_submitted_report_ids', JSON.stringify(existing));
+        if (res.report.reporterId) {
+          localStorage.setItem('resqtrack_reporter_id', res.report.reporterId);
+        }
+      } catch {
+        // Storage access safeguard
+      }
+
+      setReports((prev) => [res.report, ...prev]);
       setReportSuccess(`Incident logged with reference: ${res.report.referenceCode}. Emergency responders notified.`);
-      setTimeout(() => setReportSuccess(null), 8000);
+      setTimeout(() => setReportSuccess(null), SUCCESS_TOAST_TIMEOUT_MS);
     } catch (err: unknown) {
       console.error('Failed to submit accident report:', err);
     }
@@ -120,8 +221,17 @@ export const CivilianDashboard: React.FC = () => {
       type: 'fixture' as const,
       category: f.category,
       agency: f.assignedUnitType
+    })),
+    ...myReports.map((r) => ({
+      id: `my-report-${r.id}`,
+      lat: r.latitude,
+      lng: r.longitude,
+      title: `Your SOS: ${r.title} (${r.status || 'Active'})`,
+      type: 'incident' as const,
+      category: r.category,
+      agency: r.recommendedAgencyUnit || undefined
     }))
-  ], [coords.latitude, coords.longitude, fixtures]);
+  ], [coords.latitude, coords.longitude, fixtures, myReports]);
 
   // Clean phone dialer parser for click-to-call
   const getDialNumber = (hotline: string): string => {
@@ -133,7 +243,7 @@ export const CivilianDashboard: React.FC = () => {
   const stationDistances = useMemo(() => {
     return Object.entries(STATION_COORDINATES).map(([code, pos]) => {
       const distKm = calculateDistanceKm(coords.latitude, coords.longitude, pos.lat, pos.lng);
-      const estMinutes = Math.max(1, Math.round((distKm / 35) * 60)); // ~35 km/h urban emergency response speed
+      const estMinutes = Math.max(MINIMUM_ESTIMATED_MINUTES, Math.round((distKm / URBAN_RESPONSE_SPEED_KMH) * MINUTES_IN_HOUR));
       return {
         code,
         distKm: distKm.toFixed(2),
@@ -153,35 +263,18 @@ export const CivilianDashboard: React.FC = () => {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  // Agency specific icons and visual badges
+  // Agency specific icons and visual badges using Lucide
   const getAgencyIcon = (shortCode: string) => {
     switch (shortCode) {
       case 'LDRRMO':
-        return (
-          <svg className="w-5 h-5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        );
+        return <AlertTriangle className="w-5 h-5 text-rose-500" />;
       case 'RHU':
-        return (
-          <svg className="w-5 h-5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-          </svg>
-        );
+        return <HeartPulse className="w-5 h-5 text-sky-400" />;
       case 'FIRE':
-        return (
-          <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" />
-          </svg>
-        );
+        return <Flame className="w-5 h-5 text-orange-500" />;
       case 'PNP':
       default:
-        return (
-          <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-          </svg>
-        );
+        return <Shield className="w-5 h-5 text-blue-400" />;
     }
   };
 
@@ -242,9 +335,10 @@ export const CivilianDashboard: React.FC = () => {
           </div>
           <Link
             to="/civilian/alerts"
-            className="text-xs font-mono font-bold text-amber-400 hover:text-amber-300 underline whitespace-nowrap"
+            className="text-xs font-mono font-bold text-amber-400 hover:text-amber-300 underline whitespace-nowrap flex items-center gap-1"
           >
-            View All ({alerts.length}) →
+            <span>View All ({alerts.length})</span>
+            <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
       )}
@@ -252,8 +346,8 @@ export const CivilianDashboard: React.FC = () => {
       {/* 2. Success Notification Toast */}
       {reportSuccess && (
         <div className="p-4 rounded-xl bg-emerald-950/95 border border-emerald-500 text-emerald-200 text-xs font-medium flex items-center gap-3 shadow-xl shadow-emerald-950/50 animate-fadeIn">
-          <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-emerald-300 font-bold text-base flex-shrink-0">
-            ✓
+          <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center flex-shrink-0">
+            <CheckCircle2 className="w-5 h-5 text-emerald-300" />
           </div>
           <div className="flex flex-col">
             <span className="font-bold text-sm text-white">Emergency Broadcast Transmitted</span>
@@ -315,10 +409,22 @@ export const CivilianDashboard: React.FC = () => {
             {/* Quad Agency Simultaneous Dispatch Indicators */}
             <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px] font-mono">
               <span className="text-slate-400 font-semibold uppercase tracking-wider mr-1">Direct to:</span>
-              <span className="px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-600/40 font-bold">LDRRMO</span>
-              <span className="px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-600/40 font-bold">RHU MEDIC 🚑</span>
-              <span className="px-2 py-0.5 rounded bg-orange-950/80 text-orange-300 border border-orange-600/40 font-bold">BFP FIRE 🚒</span>
-              <span className="px-2 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-600/40 font-bold">PNP POLICE 🚓</span>
+              <span className="px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-600/40 font-bold flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 text-rose-400" />
+                LDRRMO
+              </span>
+              <span className="px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-600/40 font-bold flex items-center gap-1">
+                <HeartPulse className="w-3 h-3 text-sky-400" />
+                RHU MEDIC
+              </span>
+              <span className="px-2 py-0.5 rounded bg-orange-950/80 text-orange-300 border border-orange-600/40 font-bold flex items-center gap-1">
+                <Flame className="w-3 h-3 text-orange-400" />
+                BFP FIRE
+              </span>
+              <span className="px-2 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-600/40 font-bold flex items-center gap-1">
+                <Shield className="w-3 h-3 text-blue-400" />
+                PNP POLICE
+              </span>
             </div>
           </div>
 
@@ -339,10 +445,7 @@ export const CivilianDashboard: React.FC = () => {
                 aria-label="One-Tap Emergency Accident SOS Trigger"
               >
                 <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 border border-white/20">
-                  <svg className="w-7 h-7 text-white animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <circle cx="12" cy="13" r="3" strokeWidth="2.2" />
-                  </svg>
+                  <Camera className="w-7 h-7 text-white animate-pulse" />
                 </div>
                 <div className="flex flex-col text-left">
                   <span className="font-extrabold text-base tracking-wider leading-none">ONE-TAP SOS</span>
@@ -359,7 +462,10 @@ export const CivilianDashboard: React.FC = () => {
               className="w-full sm:w-80 py-2.5 px-4 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-slate-500 text-xs font-semibold tracking-wide transition-all text-center flex items-center justify-center gap-2 shadow-sm min-h-[42px]"
             >
               <span>Need written details?</span>
-              <span className="text-sky-400 font-bold hover:underline">Stepped Form →</span>
+              <span className="text-sky-400 font-bold hover:underline flex items-center gap-1">
+                <span>Stepped Form</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </span>
             </Link>
 
             {/* Offline SMS SOS Fallback Link */}
@@ -368,11 +474,61 @@ export const CivilianDashboard: React.FC = () => {
               onClick={() => setIsSmsConfirmOpen(true)}
               className="w-full sm:w-80 py-2 px-3 rounded-lg bg-slate-950/90 hover:bg-slate-900 text-amber-400 hover:text-amber-300 border border-amber-600/40 text-[11px] font-mono font-bold flex items-center justify-center gap-2 transition-all shadow-sm"
             >
-              <span>📶 No Internet? Send SMS SOS Fallback</span>
+              <Radio className="w-3.5 h-3.5 text-amber-400" />
+              <span>No Internet? Send SMS SOS Fallback</span>
             </button>
           </div>
         </div>
       </div>
+
+      {/* 3.1 ACTIVE CITIZEN SUBMITTED REPORTS LIVE DISPATCH TRACKER */}
+      {myReports.length > 0 && (
+        <div className="p-4 rounded-xl bg-slate-900/90 border border-sky-600/40 flex flex-col gap-3 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-ping" />
+              <span className="text-xs font-mono font-bold uppercase text-white tracking-wider">
+                My Active Emergency Submissions ({myReports.length})
+              </span>
+            </div>
+            <Link
+              to="/civilian/my-reports"
+              className="text-xs font-mono font-bold text-sky-400 hover:text-sky-300 underline flex items-center gap-1"
+            >
+              <span>View Full Response Progression</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {myReports.slice(0, 3).map((r) => (
+              <div
+                key={r.id}
+                className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex flex-col justify-between gap-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-mono font-black text-sky-400">#{r.referenceCode}</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase border bg-sky-950/80 text-sky-300 border-sky-600/40">
+                    {r.status || 'REPORTED'}
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white truncate">{r.title}</h4>
+                  <span className="text-[10px] font-mono text-slate-400 block mt-0.5 truncate">
+                    {r.locationLabel || 'Katipunan Sector'}
+                  </span>
+                </div>
+                {r.allocatedUnitCode && (
+                  <div className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+                    <span>Dispatched:</span>
+                    <strong className="text-white">{r.allocatedUnitCode}</strong>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 4. NEAREST EMERGENCY STATIONS & PROXIMITY MATRIX */}
       <div className="tactical-card p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col gap-3">
@@ -410,7 +566,7 @@ export const CivilianDashboard: React.FC = () => {
                   className="mt-2 text-[10px] font-mono text-sky-400 hover:text-sky-300 font-bold underline text-left flex items-center gap-1"
                 >
                   <span>Route Map</span>
-                  <span>↗</span>
+                  <ExternalLink className="w-3 h-3" />
                 </button>
               </div>
             );
@@ -477,7 +633,10 @@ export const CivilianDashboard: React.FC = () => {
 
                     {distInfo && (
                       <div className="mt-2.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-950/80 border border-slate-800 text-[10px] font-mono text-slate-300">
-                        <span>📍 {distInfo.distKm} km</span>
+                        <span className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-slate-400" />
+                          <span>{distInfo.distKm} km</span>
+                        </span>
                         <span className="text-slate-600">|</span>
                         <span className="text-sky-400 font-bold">~{distInfo.estMinutes} min ETA</span>
                       </div>
@@ -496,9 +655,7 @@ export const CivilianDashboard: React.FC = () => {
                       className={`w-full min-h-[44px] py-2 px-3 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98] ${styles.btnBg}`}
                       aria-label={`Call ${meta.short} Emergency Hotline at ${dialNumber}`}
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                      </svg>
+                      <PhoneCall className="w-4 h-4" />
                       <span>Instant Call: {dialNumber}</span>
                     </a>
                   </div>
@@ -513,7 +670,7 @@ export const CivilianDashboard: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-sky-950/80 border border-sky-600/40 flex items-center justify-center text-sky-400 font-bold">
-              🗺️
+              <Navigation className="w-4 h-4 text-sky-400" />
             </div>
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -535,7 +692,10 @@ export const CivilianDashboard: React.FC = () => {
               onClick={() => setIsMapModalOpen(true)}
               className="text-xs font-mono font-bold"
             >
-              Enlarge Map ↗
+              <span className="flex items-center gap-1">
+                <span>Enlarge Map</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </span>
             </Button>
           </div>
         </div>
@@ -587,7 +747,10 @@ export const CivilianDashboard: React.FC = () => {
       >
         <div className="flex flex-col gap-4">
           <div className="p-3.5 rounded-xl bg-amber-950/80 border border-amber-600/50 text-xs text-amber-200">
-            <p className="font-bold mb-1">📶 Offline Cellular Protocol</p>
+            <p className="font-bold mb-1 flex items-center gap-1.5">
+              <Radio className="w-3.5 h-3.5 text-amber-400" />
+              <span>Offline Cellular Protocol</span>
+            </p>
             <p className="text-[11px] text-slate-300 leading-relaxed">
               If mobile data or Wi-Fi is unavailable in remote barangays, your phone will open your default SMS messaging app with pre-filled coordinates addressed directly to the municipal command dispatcher hotline.
             </p>
@@ -600,11 +763,11 @@ export const CivilianDashboard: React.FC = () => {
 
           <div className="flex items-center gap-3 pt-2">
             <a
-              href={`sms:09171234567?body=${smsBody}`}
+              href={`sms:${SMS_HOTLINE_NUMBER}?body=${smsBody}`}
               className="flex-1 min-h-[44px] py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider text-center flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-950/60"
             >
               <span>Launch Phone SMS App</span>
-              <span>↗</span>
+              <ExternalLink className="w-3.5 h-3.5" />
             </a>
             <Button
               variant="outline"

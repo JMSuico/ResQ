@@ -6,6 +6,7 @@
 
 import React, { useState, FC } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Shield, Lock, Eye, EyeOff, Check, ArrowRight } from 'lucide-react';
 import { loginUser } from '@/Endpoints/authApi';
 import { Button, Checkbox } from '@/Shared';
 import { useFluidResposiveness } from '@/Hooks';
@@ -84,8 +85,22 @@ export const AdminLoginPage: FC = () => {
       });
 
       if (res?.token) {
+        const currentPort = typeof window !== 'undefined' ? (window.location.port || '5174') : '5174';
+        sessionStorage.setItem('resqtrack_token', res.token);
+        if (res.session) {
+          sessionStorage.setItem('resqtrack_user', JSON.stringify(res.session));
+          sessionStorage.setItem('resqtrack_session', JSON.stringify(res.session));
+        }
+        localStorage.setItem(`resqtrack_token_${currentPort}`, res.token);
+        if (res.session) {
+          localStorage.setItem(`resqtrack_user_${currentPort}`, JSON.stringify(res.session));
+          localStorage.setItem(`resqtrack_session_${currentPort}`, JSON.stringify(res.session));
+        }
         localStorage.setItem('resqtrack_token', res.token);
-        if (res.session) localStorage.setItem('resqtrack_user', JSON.stringify(res.session));
+        if (res.session) {
+          localStorage.setItem('resqtrack_user', JSON.stringify(res.session));
+          localStorage.setItem('resqtrack_session', JSON.stringify(res.session));
+        }
       }
 
       setIsLoading(false);
@@ -193,14 +208,14 @@ export const AdminLoginPage: FC = () => {
                 </label>
               </div>
               <div
-                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                 style={{
                   background: 'rgba(32, 6, 15, 0.85)',
                   border: '1px solid rgba(255, 92, 116, 0.28)',
                   borderRadius: '6px'
                 }}
               >
-                <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-shield"/></svg>
+                <Shield className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                 <input
                   className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                   id="admin-email"
@@ -237,14 +252,14 @@ export const AdminLoginPage: FC = () => {
                 </label>
               </div>
               <div
-                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all"
+                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
                 style={{
                   background: 'rgba(32, 6, 15, 0.85)',
                   border: '1px solid rgba(255, 92, 116, 0.28)',
                   borderRadius: '6px'
                 }}
               >
-                <svg className="field__icon" aria-hidden="true" style={{ stroke: '#ff5c74' }}><use href="#i-lock"/></svg>
+                <Lock className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
                 <input
                   className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
                   id="admin-password"
@@ -265,7 +280,7 @@ export const AdminLoginPage: FC = () => {
                   style={{ color: '#ffffff' }}
                 />
                 <button
-                  className="field__toggle hover:text-rose-300"
+                  className="field__toggle hover:text-rose-300 ml-auto p-1"
                   type="button"
                   id="admin-pw-toggle"
                   aria-pressed={showPassword}
@@ -274,9 +289,9 @@ export const AdminLoginPage: FC = () => {
                   onClick={() => setShowPassword((prev) => !prev)}
                 >
                   {!showPassword ? (
-                    <svg className="field__toggle-on" aria-hidden="true"><use href="#i-eye"/></svg>
+                    <Eye className="w-4 h-4 text-slate-400" />
                   ) : (
-                    <svg className="field__toggle-off" aria-hidden="true"><use href="#i-eye-off"/></svg>
+                    <EyeOff className="w-4 h-4 text-slate-400" />
                   )}
                 </button>
               </div>
@@ -348,14 +363,9 @@ export const AdminLoginPage: FC = () => {
                 iconPosition="right"
                 icon={
                   isSuccess ? (
-                    <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
+                    <Check className="w-4 h-4 ml-1" />
                   ) : (
-                    <svg className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                      <polyline points="12 5 19 12 12 19" />
-                    </svg>
+                    <ArrowRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
                   )
                 }
                 className="!h-[48px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-black !tracking-widest !uppercase !shadow-lg !shadow-[#e8114c]/40 active:!scale-[0.99] transition-all rounded-lg group cursor-pointer border border-[#ff5c74]/50"

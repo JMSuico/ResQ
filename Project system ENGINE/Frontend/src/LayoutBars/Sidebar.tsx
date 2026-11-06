@@ -1,9 +1,39 @@
 // [Layer: LayoutBars]
-// Responsibility: Role-tailored dynamic sidebar navigation for LDRRMO Admin, RHU, FIRE, PNP, and Civilians.
+// Responsibility: Role-tailored dynamic sidebar navigation for LDRRMO Admin, RHU Medic, BFP Fire, PNP Police, and Civilians.
 // 100% CSS class integrity with .sidebar, .nav, .nav__item, and .is-active via NavLink.
+// Universal Lucide icon standard with strict typing (ZERO any) and universal arrow syntax.
 
 import React from 'react';
 import { NavLink } from 'react-router-dom';
+import type { LucideIcon } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Map,
+  AlertTriangle,
+  Users,
+  BarChart3,
+  Settings,
+  ShieldCheck,
+  HeartPulse,
+  Flame,
+  Radio,
+  FileText,
+  Building2,
+  Truck,
+  ShieldAlert,
+  Award,
+  Lock,
+  Compass,
+  MapPin,
+  Home,
+  Camera,
+  PhoneCall,
+  User,
+  Shield,
+  Bell,
+  Send,
+  FileCheck
+} from 'lucide-react';
 import { useDrawerSidebar, ToggleDrawerSidebarMenu } from '@/Shared/ToggleDrawerSidebarMenu';
 
 export interface SidebarProps {
@@ -14,13 +44,27 @@ export interface SidebarProps {
 interface NavMenuItem {
   to: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
   badge?: string;
 }
 
+interface AgencyIdentity {
+  badge: string;
+  name: string;
+  color: string;
+  border: string;
+  glow: string;
+  category: string;
+}
+
+const COLLAPSED_SIDEBAR_WIDTH = '72px';
+const EXPANDED_SIDEBAR_VAR = 'var(--side-w, 260px)';
+const DEFAULT_USER_ROLE = 'LDRRMO_Admin';
+const DEFAULT_USER_UNIT = 'LDRRMO';
+
 export const Sidebar: React.FC<SidebarProps> = ({
-  userRole = 'LDRRMO_Admin',
-  userUnit = 'LDRRMO'
+  userRole = DEFAULT_USER_ROLE,
+  userUnit = DEFAULT_USER_UNIT
 }) => {
   const { isCollapsed } = useDrawerSidebar();
   const normRole = (userRole || '').toLowerCase();
@@ -32,9 +76,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     normUnit === 'LDRRMO';
 
   const isResponder = normRole === 'responder';
-  const isCivilian = normRole === 'civilian' || (!isLdrrmoAdmin && !isResponder);
 
-  let agencyInfo = {
+  let agencyInfo: AgencyIdentity = {
     badge: 'LDRRMO C2',
     name: 'Executive Command',
     color: '#dc2626',
@@ -54,18 +97,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       glow: 'rgba(220, 38, 38, 0.35)',
       category: 'EXECUTIVE DISPATCH'
     };
-    // 3.1 Super Admin (LDRRMO) — Port 5174
     menuItems = [
-      { to: '/admin/dashboard', label: 'Dashboard', icon: '#i-grid' },
-      { to: '/admin/strategic-map', label: 'Strategic Map', icon: '#i-pin' },
-      { to: '/admin/incidents', label: 'Incident Operations & Triage Dispatch', icon: '#i-alert' },
-      { to: '/admin/roster', label: 'Agency Fleet Roster', icon: '#i-people' },
-      { to: '/admin/analytics', label: 'Analytics & Reports', icon: '#i-chart' },
-      { to: '/admin/users', label: 'User Governance', icon: '#i-shield-check' },
-      { to: '/admin/alerts', label: 'Emergency Broadcasts', icon: '#i-bell' },
-      { to: '/admin/settings', label: 'System Settings', icon: '#i-sliders' }
+      { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/admin/strategic-map', label: 'Strategic Map', icon: Map },
+      { to: '/admin/incidents', label: 'Incident Operations & Triage Dispatch', icon: AlertTriangle },
+      { to: '/admin/submitted-reports', label: 'Submitted Reports', icon: FileCheck },
+      { to: '/admin/roster', label: 'Agency Fleet Roster', icon: Users },
+      { to: '/admin/analytics', label: 'Analytics & Reports', icon: BarChart3 },
+      { to: '/admin/users', label: 'User Governance', icon: ShieldCheck },
+      { to: '/admin/alerts', label: 'Emergency Broadcasts', icon: Bell },
+      { to: '/admin/settings', label: 'System Settings', icon: Settings }
     ];
-  } else if (isResponder && normUnit === 'RHU') {
+  } else if (isResponder && (normUnit === 'RHU' || normUnit === 'MEDIC')) {
     agencyInfo = {
       badge: 'RHU // MEDIC CORPS',
       name: 'EMS & Trauma Unit',
@@ -74,14 +117,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       glow: 'rgba(2, 132, 199, 0.35)',
       category: 'MEDICAL TRIAGE'
     };
-    // 3.2 RHU Medical Responder — Port 5173
     menuItems = [
-      { to: '/responder/dashboard', label: 'EMS Trauma Board', icon: '#i-medical' },
-      { to: '/responder/incidents', label: 'Casualty Dispatches', icon: '#i-alert' },
-      { to: '/responder/roster', label: 'Ambulance Crew', icon: '#i-people' },
-      { to: '/responder/my-reports', label: 'Patient Logs', icon: '#i-badge' },
-      { to: '/responder/alerts', label: 'Hospital ER Alarms', icon: '#i-bell' },
-      { to: '/responder/profile', label: 'Medic Credentials', icon: '#i-user' }
+      { to: '/responder', label: 'EMS TRAUMA BOARD', icon: HeartPulse },
+      { to: '/responder/incidents', label: 'CASUALTY DISPATCHES', icon: AlertTriangle },
+      { to: '/responder/request-deploy', label: 'REQUEST & DEPLOY', icon: Send },
+      { to: '/responder/roster', label: 'AMBULANCE CREW', icon: Users },
+      { to: '/responder/reports', label: 'INCIDENT LOGS', icon: FileText },
+      { to: '/responder/profile', label: 'PROFILE SETTINGS', icon: User }
     ];
   } else if (isResponder && normUnit === 'FIRE') {
     agencyInfo = {
@@ -92,14 +134,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       glow: 'rgba(234, 88, 12, 0.35)',
       category: 'FIRE & HAZMAT'
     };
-    // 3.3 FIRE (BFP) Responder — Port 5173
     menuItems = [
-      { to: '/responder/dashboard', label: 'Fire Command Hub', icon: '#i-flame' },
-      { to: '/responder/incidents', label: 'Hazmat & 2-Alarm', icon: '#i-alert' },
-      { to: '/responder/roster', label: 'Engine Apparatus', icon: '#i-people' },
-      { to: '/responder/my-reports', label: 'After-Action Logs', icon: '#i-badge' },
-      { to: '/responder/alerts', label: 'Station Alarms', icon: '#i-bell' },
-      { to: '/responder/profile', label: 'Officer Profile', icon: '#i-user' }
+      { to: '/responder/dashboard', label: 'Fire Command Hub', icon: Flame },
+      { to: '/responder/incidents', label: 'Hazmat & 2-Alarm', icon: AlertTriangle },
+      { to: '/responder/roster', label: 'Engine Apparatus', icon: Truck },
+      { to: '/responder/my-reports', label: 'After-Action Logs', icon: FileText },
+      { to: '/responder/alerts', label: 'Station Alarms', icon: Bell },
+      { to: '/responder/profile', label: 'Officer Profile', icon: User }
     ];
   } else if (isResponder && (normUnit === 'PNP' || normUnit === 'SECURITY')) {
     agencyInfo = {
@@ -110,14 +151,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       glow: 'rgba(59, 130, 246, 0.35)',
       category: 'LAW ENFORCEMENT'
     };
-    // 3.4 PNP Police Responder — Port 5173
     menuItems = [
-      { to: '/responder/dashboard', label: 'Sector Patrol Hub', icon: '#i-shield' },
-      { to: '/responder/incidents', label: 'Blotter & Dispatches', icon: '#i-alert' },
-      { to: '/responder/roster', label: 'Patrol Beat Roster', icon: '#i-people' },
-      { to: '/responder/my-reports', label: 'Police Action Logs', icon: '#i-badge' },
-      { to: '/responder/alerts', label: 'Distress Alarms', icon: '#i-bell' },
-      { to: '/responder/profile', label: 'Officer Credentials', icon: '#i-user' }
+      { to: '/responder/dashboard', label: 'Sector Patrol Hub', icon: Shield },
+      { to: '/responder/incidents', label: 'Blotter & Dispatches', icon: AlertTriangle },
+      { to: '/responder/roster', label: 'Patrol Beat Roster', icon: Users },
+      { to: '/responder/my-reports', label: 'Police Action Logs', icon: FileText },
+      { to: '/responder/alerts', label: 'Distress Alarms', icon: Bell },
+      { to: '/responder/profile', label: 'Officer Credentials', icon: User }
     ];
   } else if (isResponder) {
     agencyInfo = {
@@ -129,12 +169,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       category: 'FIRST RESPONSE'
     };
     menuItems = [
-      { to: '/responder/dashboard', label: 'Unit Dispatch Hub', icon: '#i-grid' },
-      { to: '/responder/incidents', label: 'Unit Incidents', icon: '#i-alert' },
-      { to: '/responder/roster', label: 'Duty Roster', icon: '#i-people' },
-      { to: '/responder/my-reports', label: 'My Action Reports', icon: '#i-badge' },
-      { to: '/responder/alerts', label: 'Unit Alerts', icon: '#i-bell' },
-      { to: '/responder/profile', label: 'Responder Profile', icon: '#i-user' }
+      { to: '/responder/dashboard', label: 'Unit Dispatch Hub', icon: LayoutDashboard },
+      { to: '/responder/incidents', label: 'Unit Incidents', icon: AlertTriangle },
+      { to: '/responder/roster', label: 'Duty Roster', icon: Users },
+      { to: '/responder/my-reports', label: 'My Action Reports', icon: FileText },
+      { to: '/responder/alerts', label: 'Unit Alerts', icon: Bell },
+      { to: '/responder/profile', label: 'Responder Profile', icon: User }
     ];
   } else {
     agencyInfo = {
@@ -145,25 +185,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
       glow: 'rgba(139, 92, 246, 0.35)',
       category: 'CITIZEN SERVICES'
     };
-    // 3.5 Civilian / Resident — Port 5173
     menuItems = [
-      { to: '/civilian/dashboard', label: 'Emergency Hub', icon: '#i-grid' },
-      { to: '/civilian/report', label: 'Report Incident (SOS)', icon: '#i-cam' },
-      { to: '/civilian/my-reports', label: 'My Reports Feed', icon: '#i-alert' },
-      { to: '/civilian/alerts', label: 'Municipal Warnings', icon: '#i-bell' },
-      { to: '/civilian/hotlines', label: 'Emergency Hotlines', icon: '#i-people' },
-      { to: '/civilian/profile', label: 'PhilSys Identity', icon: '#i-user' }
+      { to: '/civilian/dashboard', label: 'Emergency Hub', icon: Home },
+      { to: '/civilian/live-map', label: 'Tactical Live Map', icon: Map },
+      { to: '/civilian/report', label: 'Report Incident (SOS)', icon: Camera },
+      { to: '/civilian/my-reports', label: 'My Reports Feed', icon: AlertTriangle },
+      { to: '/civilian/alerts', label: 'Municipal Warnings', icon: Bell },
+      { to: '/civilian/hotlines', label: 'Emergency Hotlines', icon: PhoneCall },
+      { to: '/civilian/profile', label: 'PhilSys Identity', icon: User }
     ];
   }
 
   return (
     <aside
-      className={`sidebar transition-all duration-200 select-none border-r border-rose-950/80 shadow-2xl shadow-black/80 z-20 flex flex-col flex-shrink-0 ${
+      className={`sidebar transition-all duration-200 select-none border-r border-rose-950/80 shadow-2xl shadow-black/80 z-40 relative flex flex-col flex-shrink-0 ${
         isCollapsed ? 'is-collapsed w-[72px] min-w-[72px] max-w-[72px]' : 'w-[260px] min-w-[260px] max-w-[260px]'
       }`}
       style={{
-        width: isCollapsed ? '72px' : 'var(--side-w, 260px)',
-        minWidth: isCollapsed ? '72px' : 'var(--side-w, 260px)'
+        width: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : EXPANDED_SIDEBAR_VAR,
+        minWidth: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : EXPANDED_SIDEBAR_VAR
       }}
       aria-label="Role Navigation Sidebar"
     >
@@ -206,28 +246,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <nav className="nav flex flex-col gap-1 px-1" aria-label="Primary Role Navigation">
-        {menuItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              `nav__item flex items-center transition-all rounded-md ${
-                isCollapsed ? 'justify-center px-0 h-10 w-full' : 'gap-3 px-3 h-10'
-              } ${isActive ? 'is-active' : ''}`
-            }
-            title={item.label}
-          >
-            <svg className="nav__icon flex-shrink-0" aria-hidden="true">
-              <use href={item.icon} />
-            </svg>
-            {!isCollapsed && (
-              <>
-                <span className="nav__label truncate flex-1">{item.label}</span>
-                {item.badge && <span className="nav__badge">{item.badge}</span>}
-              </>
-            )}
-          </NavLink>
-        ))}
+        {menuItems.map((item) => {
+          const IconComponent = item.icon;
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === '/responder'}
+              className={({ isActive }) => {
+                const activeMatch =
+                  isActive ||
+                  (item.to === '/responder' &&
+                    typeof window !== 'undefined' &&
+                    window.location.pathname === '/responder/dashboard');
+                return `nav__item group flex items-center transition-all rounded-md ${
+                  isCollapsed ? 'justify-center px-0 h-10 w-full' : 'gap-3 px-3 h-10'
+                } ${activeMatch ? 'is-active' : ''}`;
+              }}
+              title={item.label}
+            >
+              <IconComponent
+                className="nav__icon flex-shrink-0 w-5 h-5 text-slate-400 group-hover:text-white transition-colors"
+                aria-hidden="true"
+              />
+              {!isCollapsed && (
+                <>
+                  <span className="nav__label truncate flex-1 text-sm font-medium">{item.label}</span>
+                  {item.badge && <span className="nav__badge text-[10px] font-mono px-1.5 py-0.5 rounded">{item.badge}</span>}
+                </>
+              )}
+            </NavLink>
+          );
+        })}
       </nav>
     </aside>
   );

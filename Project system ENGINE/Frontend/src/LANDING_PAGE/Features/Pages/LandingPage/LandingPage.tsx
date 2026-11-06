@@ -5,6 +5,21 @@
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  ExternalLink,
+  Menu,
+  X,
+  User,
+  HeartPulse,
+  Camera,
+  AlertTriangle,
+  MapPin,
+  Radio,
+  ArrowRight,
+  ShieldCheck,
+  Zap,
+  Activity
+} from 'lucide-react';
 import { Button } from '@/Shared/Button';
 import { AGENCY_METADATA } from '@/Libs/Assets/data';
 import { InkOrbitFeatures } from '@/components/ui';
@@ -80,7 +95,7 @@ export const LandingPage: React.FC = () => {
                 className="px-4 py-1.5 rounded-lg font-mono text-xs font-black text-white bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 border border-rose-400/50 shadow-[0_0_16px_rgba(225,29,72,0.4)] hover:shadow-[0_0_22px_rgba(225,29,72,0.6)] active:scale-95 transition-all flex items-center gap-1.5"
               >
                 <span>SIGN UP</span>
-                <span className="text-[10px] opacity-80">↗</span>
+                <ExternalLink className="w-3 h-3 opacity-80" />
               </button>
             </Link>
           </div>
@@ -93,13 +108,7 @@ export const LandingPage: React.FC = () => {
               className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white"
               aria-label="Toggle navigation menu"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {mobileMenuOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-                )}
-              </svg>
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
@@ -204,7 +213,10 @@ export const LandingPage: React.FC = () => {
                 className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-mono font-bold text-sm uppercase tracking-wider text-slate-200 bg-slate-900/90 hover:bg-slate-800 border border-slate-700 hover:border-rose-500/70 hover:text-white transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
               >
                 <span>SIGN IN TO OPERATIONAL PORTAL</span>
-                <span className="text-xs text-sky-400 font-mono">RBAC ↗</span>
+                <span className="text-xs text-sky-400 font-mono flex items-center gap-1">
+                  <span>RBAC</span>
+                  <ExternalLink className="w-3 h-3" />
+                </span>
               </button>
             </Link>
           </div>
@@ -292,24 +304,26 @@ export const LandingPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setActivePathway('civilian')}
-              className={`px-5 py-2 rounded-lg font-bold transition-all ${
+              className={`px-5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 ${
                 activePathway === 'civilian'
                   ? 'bg-rose-600 text-white shadow-[0_0_12px_rgba(225,29,72,0.5)]'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              👥 FOR MUNICIPAL CIVILIANS
+              <User className="w-3.5 h-3.5" />
+              <span>FOR MUNICIPAL CIVILIANS</span>
             </button>
             <button
               type="button"
               onClick={() => setActivePathway('responder')}
-              className={`px-5 py-2 rounded-lg font-bold transition-all ${
+              className={`px-5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 ${
                 activePathway === 'responder'
                   ? 'bg-sky-600 text-white shadow-[0_0_12px_rgba(2,132,199,0.5)]'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              🚑 FOR EMERGENCY RESPONDERS
+              <HeartPulse className="w-3.5 h-3.5" />
+              <span>FOR EMERGENCY RESPONDERS</span>
             </button>
           </div>
         </div>
@@ -339,7 +353,7 @@ export const LandingPage: React.FC = () => {
 
               <div className="mt-6 space-y-3 font-mono text-xs">
                 <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-start gap-3">
-                  <span className="text-lg">📸</span>
+                  <Camera className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <strong className="text-white block font-sans">1-Tap Camera Accident Report</strong>
                     <span className="text-slate-400">
@@ -349,7 +363,7 @@ export const LandingPage: React.FC = () => {
                 </div>
 
                 <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-start gap-3">
-                  <span className="text-lg">🚨</span>
+                  <AlertTriangle className="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" />
                   <div>
                     <strong className="text-white block font-sans">Tactile SOS Pulsing Beacon</strong>
                     <span className="text-slate-400">
@@ -359,7 +373,7 @@ export const LandingPage: React.FC = () => {
                 </div>
 
                 <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-start gap-3">
-                  <span className="text-lg">📍</span>
+                  <MapPin className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <strong className="text-white block font-sans">Real-Time Station Proximity</strong>
                     <span className="text-slate-400">
@@ -369,7 +383,7 @@ export const LandingPage: React.FC = () => {
                 </div>
 
                 <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-start gap-3">
-                  <span className="text-lg">📢</span>
+                  <Radio className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <strong className="text-white block font-sans">Official Public Advisories</strong>
                     <span className="text-slate-400">
@@ -383,8 +397,9 @@ export const LandingPage: React.FC = () => {
             {/* Civilian Quick Actions */}
             <div className="mt-8 pt-6 border-t border-slate-800 flex flex-wrap items-center gap-3">
               <Link to="/register" className="flex-1">
-                <Button variant="danger" size="md" className="w-full text-xs font-mono font-bold">
-                  REGISTER AS CITIZEN ↗
+                <Button variant="danger" size="md" className="w-full text-xs font-mono font-bold flex items-center justify-center gap-1">
+                  <span>REGISTER AS CITIZEN</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               </Link>
               <Link to="/login" className="flex-1">
@@ -418,7 +433,7 @@ export const LandingPage: React.FC = () => {
 
               <div className="mt-6 space-y-3 font-mono text-xs">
                 <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-start gap-3">
-                  <span className="text-lg">🛡️</span>
+                  <ShieldCheck className="w-5 h-5 text-sky-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <strong className="text-white block font-sans">4-State Tactile Status Toggles</strong>
                     <span className="text-slate-400">
@@ -428,7 +443,7 @@ export const LandingPage: React.FC = () => {
                 </div>
 
                 <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-start gap-3">
-                  <span className="text-lg">⚡</span>
+                  <Zap className="w-5 h-5 text-sky-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <strong className="text-white block font-sans">Agency-Filtered Dispatch Feed</strong>
                     <span className="text-slate-400">
@@ -438,7 +453,7 @@ export const LandingPage: React.FC = () => {
                 </div>
 
                 <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-start gap-3">
-                  <span className="text-lg">🛰️</span>
+                  <Radio className="w-5 h-5 text-sky-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <strong className="text-white block font-sans">GPS Direct Turn-by-Turn Routing</strong>
                     <span className="text-slate-400">
@@ -448,7 +463,7 @@ export const LandingPage: React.FC = () => {
                 </div>
 
                 <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-start gap-3">
-                  <span className="text-lg">📋</span>
+                  <Activity className="w-5 h-5 text-sky-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <strong className="text-white block font-sans">Shift Handover & Apparatus Logging</strong>
                     <span className="text-slate-400">
@@ -593,9 +608,10 @@ export const LandingPage: React.FC = () => {
             <Link to="/register">
               <button
                 type="button"
-                className="px-6 py-2.5 rounded-lg font-mono font-bold text-xs uppercase bg-rose-600 hover:bg-rose-500 text-white border border-rose-400/40 shadow-lg shadow-rose-950/60 transition-colors"
+                className="px-6 py-2.5 rounded-lg font-mono font-bold text-xs uppercase bg-rose-600 hover:bg-rose-500 text-white border border-rose-400/40 shadow-lg shadow-rose-950/60 transition-colors flex items-center gap-1.5"
               >
-                SIGN UP (REGISTER) ↗
+                <span>SIGN UP (REGISTER)</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </Link>
             <Link to="/login">
@@ -649,3 +665,5 @@ export const LandingPage: React.FC = () => {
     </div>
   );
 };
+
+export default LandingPage;

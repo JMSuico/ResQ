@@ -63,13 +63,20 @@ C:\Users\provu\Desktop\INCIDENT AI SYSTEM DETECTION\
 |           |-- GRAPH_REPORT.md                     # God-nodes, surprising connections, community summary
 |           `-- cache/                              # SHA-256 content-addressed extraction cache
 |
-|-- Obsidian Memory Engine/                         # OBSIDIAN VAULT (P.A.R.A. + ZETTELKASTEN KNOWLEDGE BASE)
-|   |-- 00_Inbox/                                   # Unprocessed field captures & raw triage notes
-|   |-- 01_Projects/                                # Active sprint & feature delivery notes
-|   |-- 02_Areas/                                   # Ongoing governance areas (Security, Geospatial, Triage, RBAC)
-|   |-- 03_Resources/                               # Reference architectures, formulas, & standards
-|   |-- 04_Archive/                                 # Completed & historical records
-|   `-- Zettelkasten/                               # Atomic permanent notes with [[Wikilinks]], YAML frontmatter & .base views
+|-- Obsidian Memory Engine/                         # OBSIDIAN VAULT (P.A.R.A. + ZETTELKASTEN + DIAGRAM VAULT)
+|   |-- index.md / Home.md / README.md              # Master Vault Index, Dashboard & Diagram Pointer Guide
+|   |-- log.md                                      # Chronological Operational Log (Milestones 01–09+)
+|   |-- Diagram/                                    # AUTHORITATIVE /diagram-design MARKDOWN DIAGRAM VAULT
+|   |   |-- README.md                               # Diagram & Flowchain Vault Index
+|   |   |-- FORMULAS_RHU_TELEMETRY.md               # Mathematical & TypeScript telemetry formulas + 5-min timer
+|   |   |-- FLOWCHAIN_RHU_MEDIC_ARCHITECTURE.md     # Architecture flowcharts, sequence flows & state machines
+|   |   |-- RADAR_16_POINTER_CATEGORIES_AND_5MIN_TIMER.md # 16 Incident Category Pointers (9 Non-Medic + 7 Medic)
+|   |   `-- CRUD_BUTTONS_VALUES_AND_FUNCTIONS_MATRIX.md   # Complete CRUD buttons, values & API/DB connectivity matrix
+|   |-- 00 - Inbox/                                 # Unprocessed field captures & raw triage notes
+|   |-- 10 - Projects/                              # Active sprint, Tasks/ & Session-Notes/
+|   |-- 20 - Areas/                                 # Ongoing governance areas (Security, Geospatial, Triage, RBAC)
+|   |-- 30 - Resources/Zettelkasten/                # Atomic permanent notes with [[Wikilinks]], YAML frontmatter & .base views
+|   `-- 40 - Archive/                               # Completed & historical records
 |
 `-- Project system ENGINE/                          # FULL-STACK PRODUCTION SOURCE CODE (FRONTEND + BACKEND)
     |-- FRONTEND/                                   # TypeScript + React 19 + Vite + Tailwind CSS
@@ -142,9 +149,18 @@ The workspace implements a 3-pillar cognitive memory architecture:
 
 | Pillar | Role | Storage Location | Core Mechanism |
 |---|---|---|---|
-| **1. Obsidian as Memory** | Persistent human + agent knowledge vault | `Obsidian Memory Engine\` | P.A.R.A. folders (`00_Inbox` to `04_Archive`) + `Zettelkasten/` atomic notes, `[[Wikilinks]]`, YAML frontmatter (`id`, `title`, `type`, `layer`, `Status`, `tags`, `created`), and `.base` views |
+| **1. Obsidian as Memory** | Persistent human + agent knowledge vault | `Obsidian Memory Engine\` | P.A.R.A. folders (`00 - Inbox` to `40 - Archive`) + `Zettelkasten/` atomic notes, `Diagram/` (`/diagram-design` vault), `[[Wikilinks]]`, YAML frontmatter, and `.base` views |
 | **2. Graphify as Connections** | Structural & semantic knowledge graph | `Md data\MemoryCache\graphify-out\` *(strictly outside Obsidian vault)* | 22-chunk parallel subagent extraction (`nodes`, `edges`, `hyperedges`, `input_tokens`, `output_tokens`), Tree-sitter AST + doc/media ingestion, Leiden community clustering, god-node detection, SHA-256 caching |
 | **3. ICM as Directions** | Interpretable Context Methodology routing | `Md data\CLAUDE.md` & `Md data\GEMINI.md` | "One Home Per Fact" routing table preventing context bloat and hallucination |
+
+### 6.1 Authoritative `/diagram-design` Vault (`Obsidian Memory Engine/Diagram/`)
+
+All `/diagram-design` structure flowcharts, flowchains, sequence flows, state machines, mathematical telemetry formulas, 16-pointer category specifications, and CRUD function connectivity matrices live strictly inside **`Obsidian Memory Engine/Diagram/`**:
+- **[`Obsidian Memory Engine/Diagram/README.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Obsidian%20Memory%20Engine/Diagram/README.md)**: Master index of the `/diagram-design` diagram vault.
+- **[`Obsidian Memory Engine/Diagram/FORMULAS_RHU_TELEMETRY.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Obsidian%20Memory%20Engine/Diagram/FORMULAS_RHU_TELEMETRY.md)**: Mathematical & TypeScript formulas for Responder Identity Banner (`Dr. Maria Clara Santos MD [Medical Officer III]`), 4-State Field Readiness Selector & Confirmation Modal, 6 Telemetry KPI Blocks ($N=0$ safe), 5-Minute Verification Auto-Close Timer ($T_{\text{close}} = 300\text{s}$), and `INCIDENT LOGS` Lifetime Metrics.
+- **[`Obsidian Memory Engine/Diagram/FLOWCHAIN_RHU_MEDIC_ARCHITECTURE.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Obsidian%20Memory%20Engine/Diagram/FLOWCHAIN_RHU_MEDIC_ARCHITECTURE.md)**: End-to-End RHU Medic System Architecture Flowchart, Field Readiness Confirmation Modal Sequence Diagram, Radar Pointer $\rightarrow$ `REQUEST & DEPLOY` $\rightarrow$ `RESPONDED` Green Pin $\rightarrow$ 5-Minute Timer Sequence Diagram, and Dual-Direction Deployment State Machine.
+- **[`Obsidian Memory Engine/Diagram/RADAR_16_POINTER_CATEGORIES_AND_5MIN_TIMER.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Obsidian%20Memory%20Engine/Diagram/RADAR_16_POINTER_CATEGORIES_AND_5MIN_TIMER.md)**: Complete 16 Incident Category Pointers specification (9 Non-Medic View-Only + 7 Medic-Allowed), `SORT / ALL` vs `SORT / FOR MEDICS`, Pale Color Filter, Profile Settings Radio Switch Hide Filter, Dynamic Centered Pointer Modal, and 5-Minute Closing Timer.
+- **[`Obsidian Memory Engine/Diagram/CRUD_BUTTONS_VALUES_AND_FUNCTIONS_MATRIX.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Obsidian%20Memory%20Engine/Diagram/CRUD_BUTTONS_VALUES_AND_FUNCTIONS_MATRIX.md)**: Complete button-by-button, value display, global `@/Shared` & `@/Hooks` import, and Backend API/SQL table connectivity matrix across all 7 RHU Medic areas (`EMS TRAUMA BOARD`, `CASUALTY FIELD DISPATCHES`, `REQUEST & DEPLOY`, `AMBULANCE CREW`, `INCIDENT LOGS`, `HEADER NOTIFICATION BELL`, and `PROFILE SETTINGS`).
 
 ---
 
@@ -369,6 +385,9 @@ The **`CommandStart/`** directory is the central operational command hub for run
 
 - **Architecture Skill:** [`Md data/SKILL.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/SKILL.md)
 - **Agent Behavior Contract:** [`Md data/AGENTS.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/AGENTS.md)
+- **Project Engine Agent Pointer:** [`Project system ENGINE/AGENTS.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Project%20system%20ENGINE/AGENTS.md)
+- **Obsidian Vault Index & Log:** [`Obsidian Memory Engine/index.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Obsidian%20Memory%20Engine/index.md) | [`Obsidian Memory Engine/log.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Obsidian%20Memory%20Engine/log.md)
+- **Obsidian `/diagram-design` Vault:** [`Obsidian Memory Engine/Diagram/README.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Obsidian%20Memory%20Engine/Diagram/README.md)
 - **Claude ICM Router:** [`Md data/CLAUDE.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/CLAUDE.md)
 - **Gemini ICM Router:** [`Md data/GEMINI.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/GEMINI.md)
 - **Plans Index:** [`Md data/Plans/README_PLANS_INDEX.md`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/Plans/README_PLANS_INDEX.md)
