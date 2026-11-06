@@ -1,4 +1,11 @@
 @echo off
-title ResQTrack Incident AI System Master Controller
+setlocal enabledelayedexpansion
+title ResQTrack Incident AI Management Console
+
+cd /d "%~dp0"
+
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0manage.ps1" %*
-pause
+
+if "%~1"=="" (
+    pause
+)

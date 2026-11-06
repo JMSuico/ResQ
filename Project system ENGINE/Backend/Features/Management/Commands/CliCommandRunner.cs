@@ -19,7 +19,8 @@ public static class CliCommandRunner
         !args[0].StartsWith("/") &&
         args[0].TrimStart('-').ToLowerInvariant() switch
         {
-            "createsuperadmin" or "createcustomsuperadmin" or "adduser" or
+            "createsuperadmin" or "createcustomsuperadmin" or "createresponder" or
+            "createcivilian" or "adduser" or "edituser" or
             "resetpassword" or "listcliusers" or "deletecliuser" or
             "deletesuperadmin" or "deleteallcliusers" => true,
             _ => false
@@ -53,8 +54,20 @@ public static class CliCommandRunner
                     await HandleCreateCustomSuperAdminAsync(args, db);
                     break;
 
+                case "createresponder":
+                    await HandleCreateResponderAsync(args, db);
+                    break;
+
+                case "createcivilian":
+                    await HandleCreateCivilianAsync(args, db);
+                    break;
+
                 case "adduser":
                     await HandleAddUserAsync(args, db);
+                    break;
+
+                case "edituser":
+                    await HandleEditUserAsync(args, db);
                     break;
 
                 case "resetpassword":
@@ -97,15 +110,15 @@ public static class CliCommandRunner
 
     private static async Task HandleCreateSuperAdminAsync(string[] args, AppDbContext db)
     {
-        if (args.Length < 4)
+        if (args.Length < 3)
         {
-            Console.WriteLine("[CLI_ERROR] Usage: createsuperadmin <email> <password> <fullName> [unit]");
+            Console.WriteLine("[CLI_ERROR] Usage: createsuperadmin <email> <password> [fullName] [unit]");
             return;
         }
 
         string email = args[1].Trim();
         string password = args[2];
-        string fullName = args[3].Trim();
+        string fullName = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3].Trim() : "LDRRMO Executive Admin";
         ResponderUnitType unit = args.Length > 4 ? ParseUnit(args[4], UserRole.LDRRMO_Admin) : ResponderUnitType.LDRRMO;
 
         if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
@@ -160,16 +173,16 @@ public static class CliCommandRunner
 
     private static async Task HandleCreateCustomSuperAdminAsync(string[] args, AppDbContext db)
     {
-        if (args.Length < 4)
+        if (args.Length < 3)
         {
-            Console.WriteLine("[CLI_ERROR] Usage: createcustomsuperadmin <email> <password> <fullName> [unit]");
+            Console.WriteLine("[CLI_ERROR] Usage: createcustomsuperadmin <email> <password> [unit] [fullName]");
             return;
         }
 
         string email = args[1].Trim();
         string password = args[2];
-        string fullName = args[3].Trim();
-        ResponderUnitType unit = args.Length > 4 ? ParseUnit(args[4], UserRole.Responder) : ResponderUnitType.RHU;
+        ResponderUnitType unit = args.Length > 3 ? ParseUnit(args[3], UserRole.Responder) : ResponderUnitType.RHU;
+        string fullName = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? args[4].Trim() : $"{unit} Unit Administrator";
         UserRole role = unit == ResponderUnitType.LDRRMO ? UserRole.LDRRMO_Admin : UserRole.Responder;
 
         if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
@@ -220,6 +233,186 @@ public static class CliCommandRunner
             await db.SaveChangesAsync();
             Console.WriteLine($"[CLI] Custom Admin user '{email}' (Role: {role}, Unit: {unit}) created successfully.");
         }
+    }
+
+    private static async Task HandleCreateResponderAsync(string[] args, AppDbContext db)
+    {
+        if (args.Length < 4)
+        {
+            Console.WriteLine("[CLI_ERROR] Usage: createresponder <email> <password> <unit> [fullName]");
+            return;
+        }
+
+        string email = args[1].Trim();
+        string password = args[2];
+        ResponderUnitType unit = ParseUnit(args[3], UserRole.Responder);
+        if (unit == ResponderUnitType.None || unit == ResponderUnitType.LDRRMO)
+        {
+            unit = ResponderUnitType.RHU;
+        }
+        string fullName = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? args[4].Trim() : $"{unit} Duty Responder";
+
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
+        {
+            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
+            return;
+        }
+
+        var (hash, salt) = ScryptPasswordHelper.HashPassword(password);
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower());
+
+        if (user != null)
+        {
+            user.FullName = fullName;
+            user.PasswordHash = hash;
+            user.PasswordSalt = salt;
+            user.Role = UserRole.Responder;
+            user.Unit = unit;
+            user.Status = AccountStatus.Verified;
+            user.FaceVerified = true;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            db.Users.Update(user);
+            await db.SaveChangesAsync();
+            Console.WriteLine($"[CLI] Responder user '{email}' ({unit}) updated successfully.");
+        }
+        else
+        {
+            user = new User
+            {
+                Id = Guid.NewGuid(),
+                Email = email,
+                FullName = fullName,
+                EmployeeOrResidentId = $"{unit}-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
+                PasswordHash = hash,
+                PasswordSalt = salt,
+                Role = UserRole.Responder,
+                Unit = unit,
+                Status = AccountStatus.Verified,
+                FaceVerified = true,
+                DepartmentOrBarangay = $"{unit} Operations Branch",
+                RankOrTitle = $"{unit} Field Officer",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await db.Users.AddAsync(user);
+            await db.SaveChangesAsync();
+            Console.WriteLine($"[CLI] Responder user '{email}' ({unit}) created successfully.");
+        }
+    }
+
+    private static async Task HandleCreateCivilianAsync(string[] args, AppDbContext db)
+    {
+        if (args.Length < 3)
+        {
+            Console.WriteLine("[CLI_ERROR] Usage: createcivilian <email> <password> [fullName]");
+            return;
+        }
+
+        string email = args[1].Trim();
+        string password = args[2];
+        string fullName = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3].Trim() : "Resident Citizen";
+
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
+        {
+            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
+            return;
+        }
+
+        var (hash, salt) = ScryptPasswordHelper.HashPassword(password);
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower());
+
+        if (user != null)
+        {
+            user.FullName = fullName;
+            user.PasswordHash = hash;
+            user.PasswordSalt = salt;
+            user.Role = UserRole.Civilian;
+            user.Unit = ResponderUnitType.None;
+            user.Status = AccountStatus.Verified;
+            user.FaceVerified = true;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            db.Users.Update(user);
+            await db.SaveChangesAsync();
+            Console.WriteLine($"[CLI] Civilian user '{email}' updated successfully.");
+        }
+        else
+        {
+            user = new User
+            {
+                Id = Guid.NewGuid(),
+                Email = email,
+                FullName = fullName,
+                EmployeeOrResidentId = "CIV-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
+                PasswordHash = hash,
+                PasswordSalt = salt,
+                Role = UserRole.Civilian,
+                Unit = ResponderUnitType.None,
+                Status = AccountStatus.Verified,
+                FaceVerified = true,
+                DepartmentOrBarangay = "Katipunan Municipality",
+                RankOrTitle = "Resident Citizen",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await db.Users.AddAsync(user);
+            await db.SaveChangesAsync();
+            Console.WriteLine($"[CLI] Civilian user '{email}' created successfully.");
+        }
+    }
+
+    private static async Task HandleEditUserAsync(string[] args, AppDbContext db)
+    {
+        if (args.Length < 2)
+        {
+            Console.WriteLine("[CLI_ERROR] Usage: edituser <currentEmail> [newPassword] [newEmail]");
+            return;
+        }
+
+        string currentEmail = args[1].Trim();
+        string? newPassword = args.Length > 2 && args[2] != "-" && !args[2].Equals("keep", StringComparison.OrdinalIgnoreCase) ? args[2] : null;
+        string? newEmail = args.Length > 3 && args[3] != "-" && !args[3].Equals("keep", StringComparison.OrdinalIgnoreCase) ? args[3].Trim() : null;
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == currentEmail.ToLower());
+        if (user == null)
+        {
+            Console.WriteLine($"[CLI_ERROR] User with email '{currentEmail}' not found.");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(newPassword))
+        {
+            if (newPassword.Length < 5)
+            {
+                Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
+                return;
+            }
+            var (hash, salt) = ScryptPasswordHelper.HashPassword(newPassword);
+            user.PasswordHash = hash;
+            user.PasswordSalt = salt;
+        }
+
+        if (!string.IsNullOrWhiteSpace(newEmail) && !newEmail.Equals(currentEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            var exists = await db.Users.AnyAsync(u => u.Email.ToLower() == newEmail.ToLower() && u.Id != user.Id);
+            if (exists)
+            {
+                Console.WriteLine($"[CLI_ERROR] Email '{newEmail}' is already taken by another account.");
+                return;
+            }
+            user.Email = newEmail;
+        }
+
+        user.UpdatedAt = DateTime.UtcNow;
+
+        var sessions = await db.Sessions.Where(s => s.UserId == user.Id && !s.IsRevoked).ToListAsync();
+        foreach (var s in sessions) s.IsRevoked = true;
+
+        await db.SaveChangesAsync();
+        Console.WriteLine($"[CLI] User '{currentEmail}' updated successfully. (Active Email: '{user.Email}')");
     }
 
     private static async Task HandleAddUserAsync(string[] args, AppDbContext db)
@@ -493,9 +686,12 @@ public static class CliCommandRunner
     private static void PrintUsage()
     {
         Console.WriteLine("ResQTrack Backend CLI Management Commands:");
-        Console.WriteLine("  createsuperadmin <email> <password> <fullName> [unit]");
-        Console.WriteLine("  createcustomsuperadmin <email> <password> <fullName> [unit]");
+        Console.WriteLine("  createsuperadmin <email> <password> [fullName] [unit]");
+        Console.WriteLine("  createcustomsuperadmin <email> <password> [unit] [fullName]");
+        Console.WriteLine("  createresponder <email> <password> <RHU|FIRE|PNP> [fullName]");
+        Console.WriteLine("  createcivilian <email> <password> [fullName]");
         Console.WriteLine("  adduser <email> <password> <fullName> <role> [unit] [employeeOrResidentId]");
+        Console.WriteLine("  edituser <email> [newPassword] [newEmail]");
         Console.WriteLine("  resetpassword <email> <newPassword>");
         Console.WriteLine("  listcliusers");
         Console.WriteLine("  deletecliuser <email>");
