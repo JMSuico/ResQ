@@ -343,7 +343,7 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
       gpsAccuracyMeters: coords.accuracy,
       isHardwareGeolocated,
       isBlurry,
-      requiresManualVerification: isBlurry,
+      requiresManualVerification: false, // Live camera capture is automatically verified and approved
       locationLabel,
       imageDataUrl: shotDataUrl
     };

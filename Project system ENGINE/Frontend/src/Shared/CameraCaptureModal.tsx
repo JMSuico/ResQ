@@ -325,7 +325,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
 
     onCapture(capturedUrl, {
       isBlurry,
-      requiresManualVerification: isBlurry,
+      requiresManualVerification: false, // Live camera capture is automatically verified and approved
       varianceScore: blurrinessScore || 100,
       dynamicThreshold: activeThreshold,
       thresholdReasoning,

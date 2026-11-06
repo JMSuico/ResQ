@@ -147,8 +147,8 @@ export const StrategicMapPage: FC = () => {
   const markers: MapMarker[] = useMemo(() => [
     ...fixtures.map((fix) => ({
       id: fix.id,
-      lat: fix.latitude,
-      lng: fix.longitude,
+      lat: Number(fix.latitude),
+      lng: Number(fix.longitude),
       title: fix.title,
       type: 'fixture' as const,
       category: fix.category,
@@ -157,13 +157,13 @@ export const StrategicMapPage: FC = () => {
     ...reports
       .filter((r) => {
         if (filterAgency === 'ALL') return true;
-        const assigned = (r.allocatedUnitCode || r.recommendedAgencyUnit || '').toUpperCase();
+        const assigned = (r.allocatedUnitCode || r.recommendedAgencyUnit || r.category || '').toUpperCase();
         return assigned.includes(filterAgency);
       })
       .map((rep) => ({
         id: rep.id,
-        lat: rep.latitude,
-        lng: rep.longitude,
+        lat: Number(rep.latitude),
+        lng: Number(rep.longitude),
         title: rep.title,
         status: rep.status || 'Reported',
         type: 'incident' as const,
@@ -179,14 +179,16 @@ export const StrategicMapPage: FC = () => {
       })),
     ...roster
       .filter((u) => {
-        if (typeof u.baseLatitude !== 'number' || typeof u.baseLongitude !== 'number') return false;
+        const lat = Number(u.baseLatitude);
+        const lng = Number(u.baseLongitude);
+        if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return false;
         if (filterAgency === 'ALL') return true;
         return (u.agency || '').toUpperCase() === filterAgency;
       })
       .map((u) => ({
         id: `unit-${u.id}`,
-        lat: u.baseLatitude,
-        lng: u.baseLongitude,
+        lat: Number(u.baseLatitude),
+        lng: Number(u.baseLongitude),
         title: `${u.unitCode} (${u.agency}) - ${u.status}`,
         type: 'gps' as const,
         agency: u.agency,
@@ -264,7 +266,7 @@ export const StrategicMapPage: FC = () => {
   return (
     <div className="flex flex-col gap-4 w-full h-[calc(100vh-130px)] min-h-[580px] flex-1">
       {/* Top Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-700/70 backdrop-blur-md">
+      <div className="relative z-30 flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-700/70 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -310,7 +312,7 @@ export const StrategicMapPage: FC = () => {
       {/* Main Grid: Enlarge Map + 4-Pane Live Command Deck */}
       <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-4 flex-1 min-h-0 w-full">
         {/* Full Enlarged Map (Takes 2 Cols on lg, 3 Cols on xl) */}
-        <div className="lg:col-span-2 xl:col-span-3 rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950/90 shadow-2xl relative flex flex-col">
+        <div className="lg:col-span-2 xl:col-span-3 rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950/90 shadow-2xl relative flex flex-col flex-1 h-full min-h-[520px]">
           <div className="absolute top-3 left-3 z-10 flex items-center gap-2 bg-slate-950/85 px-3 py-1.5 rounded-lg border border-slate-700/80 text-[11px] font-mono text-slate-300 backdrop-blur-md">
             <Crosshair className="w-3.5 h-3.5 text-rose-400" />
             <span className="text-rose-400 font-bold">{markers.length}</span> Coordinates Plotted
@@ -379,15 +381,15 @@ export const StrategicMapPage: FC = () => {
             </div>
           )}
 
-          <div className="flex-1 w-full h-full min-h-[420px]">
+          <div className="flex-1 w-full h-full min-h-[520px] flex flex-col">
             <SatelliteCommandMap
               markers={markers}
               responders={roster.map((u) => ({
                 id: u.id,
                 unitCode: u.unitCode,
                 name: u.unitName || u.unitCode,
-                lat: u.baseLatitude,
-                lng: u.baseLongitude,
+                lat: Number(u.baseLatitude),
+                lng: Number(u.baseLongitude),
                 status: u.status,
                 agency: u.agency
               }))}
@@ -400,7 +402,7 @@ export const StrategicMapPage: FC = () => {
               }}
               centerLat={activeCenter.lat}
               centerLng={activeCenter.lng}
-              className="w-full h-full min-h-[420px]"
+              className="w-full h-full min-h-[520px] flex-1"
             />
           </div>
         </div>

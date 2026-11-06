@@ -650,7 +650,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
   };
 
   return (
-    <header className="topbar select-none" role="banner">
+    <header className="topbar select-none relative z-[5000]" role="banner">
       <div
         className="brandbar flex items-center justify-between transition-all duration-200 border-r border-white/5 pr-3 overflow-hidden"
         style={{
@@ -715,7 +715,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           {/* Consolidated Hospital ER Alarms & 6-Category Responder Notification Bell Popover */}
           {isAlertsOpen && (
             <section
-              className="alerts__panel absolute right-0 mt-2 w-[380px] sm:w-[480px] md:w-[540px] z-50 border border-slate-700/90 shadow-2xl rounded-2xl bg-slate-950/98 backdrop-blur-xl overflow-hidden"
+              className="alerts__panel absolute right-0 mt-2 w-[380px] sm:w-[480px] md:w-[540px] z-[99999] border border-slate-700/90 shadow-2xl rounded-2xl bg-slate-950/98 backdrop-blur-xl overflow-hidden"
               id="alerts-panel"
               aria-label="Hospital ER Alarms and Tactical Notifications"
               role="region"

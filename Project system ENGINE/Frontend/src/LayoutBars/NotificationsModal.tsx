@@ -187,7 +187,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
 
   return (
     <section
-      className="alerts__panel z-50 border border-white/10 shadow-2xl rounded-xl bg-slate-950 overflow-hidden"
+      className="alerts__panel z-[99999] border border-white/10 shadow-2xl rounded-xl bg-slate-950 overflow-hidden"
       id="alerts-panel"
       aria-label="Emergency Alerts and Notifications"
       role="region"

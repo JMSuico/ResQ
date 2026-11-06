@@ -271,8 +271,8 @@ export const AdminDashboard: FC = () => {
     })),
     ...reports.map((rep) => ({
       id: rep.id,
-      lat: rep.latitude,
-      lng: rep.longitude,
+      lat: Number(rep.latitude),
+      lng: Number(rep.longitude),
       title: rep.title,
       status: rep.status || 'Reported',
       type: 'incident' as const,

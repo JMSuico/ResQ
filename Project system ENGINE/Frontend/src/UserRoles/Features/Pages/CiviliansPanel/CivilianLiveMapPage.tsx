@@ -205,8 +205,8 @@ export const CivilianLiveMapPage: React.FC = () => {
       myReports.forEach((r) => {
         list.push({
           id: `my-report-${r.id}`,
-          lat: r.latitude,
-          lng: r.longitude,
+          lat: Number(r.latitude),
+          lng: Number(r.longitude),
           title: `Your SOS: ${r.title} [${(r.status || 'Reported').toUpperCase()}]`,
           status: r.status || 'Reported',
           type: 'incident' as const,
@@ -230,8 +230,8 @@ export const CivilianLiveMapPage: React.FC = () => {
         .forEach((r) => {
           list.push({
             id: `community-report-${r.id}`,
-            lat: r.latitude,
-            lng: r.longitude,
+            lat: Number(r.latitude),
+            lng: Number(r.longitude),
             title: `Community Alert: ${r.title}`,
             status: r.status || 'Verified',
             type: 'incident' as const,

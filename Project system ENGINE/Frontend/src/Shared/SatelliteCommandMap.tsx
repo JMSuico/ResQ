@@ -211,6 +211,18 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   }, [updateCalloutPosition]);
 
   useEffect(() => {
+    if (!mapContainerRef.current) return;
+    const observer = new ResizeObserver(() => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+        updateCalloutPosition();
+      }
+    });
+    observer.observe(mapContainerRef.current);
+    return () => observer.disconnect();
+  }, [updateCalloutPosition]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       mapInstanceRef.current?.invalidateSize();
       updateCalloutPosition();
@@ -295,14 +307,18 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       markers.forEach((m) => {
         if (m.type === 'gps') return;
         if (!combined.some((inc) => inc.id === m.id)) {
+          const lat = Number(m.lat);
+          const lng = Number(m.lng);
+          if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
+
           combined.push({
             id: m.id,
             type: m.title,
             status: m.status || (m.severity === 'critical' ? 'critical' : 'active'),
             statusLabel: m.status || m.severity || 'Active',
             place: m.description || m.category || 'Katipunan Tactical Sector',
-            lat: m.lat,
-            lng: m.lng,
+            lat,
+            lng,
             category: m.category,
             pointerCategory: m.pointerCategory,
             severity: m.severity,
@@ -346,24 +362,6 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   // Filter pointers based on SORT mode & Medic Pointer Settings
   const visibleIncidents = useMemo(() => {
     return unifiedIncidents.filter((inc) => {
-      const verifiedStart =
-        verifiedTimestamps[inc.id] ||
-        (inc.verifiedAt ? new Date(inc.verifiedAt).getTime() : null);
-
-      // Hide pointer once 5-minute countdown completes ONLY IF marked responded or resolved
-      const isResolvedOrResponded =
-        Boolean(respondedIds[inc.id]) ||
-        inc.status?.toLowerCase() === 'responded' ||
-        inc.status?.toLowerCase() === 'resolved' ||
-        inc.status?.toLowerCase() === 'closed';
-
-      if (isResolvedOrResponded && verifiedStart) {
-        const remaining = getRemainingCloseSeconds(verifiedStart);
-        if (remaining <= 0) {
-          return false;
-        }
-      }
-
       if (sortMode === 'FOR_MEDICS') {
         return inc.categoryMeta.isMedicAllowed;
       }
@@ -374,7 +372,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
       return true;
     });
-  }, [unifiedIncidents, sortMode, pointerSettings.hideNonMedicOnSort, verifiedTimestamps, tickNow]);
+  }, [unifiedIncidents, sortMode, pointerSettings.hideNonMedicOnSort]);
 
   // Initialize Leaflet map
   useEffect(() => {
@@ -478,7 +476,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     circlesLayer.clearLayers();
 
     visibleIncidents.forEach((inc) => {
-      if (typeof inc.lat !== 'number' || typeof inc.lng !== 'number') return;
+      const lat = Number(inc.lat);
+      const lng = Number(inc.lng);
+      if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
 
       const meta = inc.categoryMeta;
       const isResponded =
@@ -569,7 +569,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     respondersLayer.clearLayers();
 
     allResponderUnits.forEach((unit) => {
-      if (typeof unit.lat !== 'number' || typeof unit.lng !== 'number') return;
+      const lat = Number(unit.lat);
+      const lng = Number(unit.lng);
+      if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
 
       const agencyUpper = (unit.agency || '').toUpperCase();
       let agencyColor = '#0284c7'; // default sky
@@ -833,7 +835,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
   return (
     <div
-      className={`relative w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-950 transition-all duration-300 ${
+      className={`relative w-full h-full min-h-0 flex-1 flex flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 transition-all duration-300 ${
         effectiveExpanded
           ? 'fixed inset-2 md:inset-4 z-[9999] h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] border-2 border-emerald-500/80 shadow-[0_0_60px_rgba(0,0,0,0.95)]'
           : ''
@@ -1051,7 +1053,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             className="absolute z-[450] pointer-events-auto transition-transform duration-75"
             style={{
               left: `${clampX}px`,
-              top: `${isAbove ? rawY - 20 : rawY + 20}px`,
+              top: `${isAbove ? rawY - 26 : rawY + 26}px`,
               transform: isAbove ? 'translate(-50%, -100%)' : 'translate(-50%, 0)'
             }}
           >
@@ -1271,14 +1273,13 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       {/* Underlying Leaflet Map Canvas */}
       <div
         ref={mapContainerRef}
-        id="map"
         role="application"
         aria-label="Satellite map of Katipunan, Zamboanga del Norte"
-        className={className}
+        className={`w-full h-full flex-1 min-h-[350px] ${className || ''}`}
         style={
           height && !isExpandedFullscreen
             ? { height: typeof height === 'number' ? `${height}px` : height, width: '100%' }
-            : { minHeight: '420px', height: '100%', width: '100%' }
+            : { minHeight: '350px', height: '100%', width: '100%' }
         }
       />
 

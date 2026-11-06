@@ -67,7 +67,7 @@ export const DefaultFloatingModalCard: FC<DefaultFloatingModalCardProps> = ({
     (resolvedSize.startsWith('max-w-') ? resolvedSize : `max-w-[${resolvedSize}]`);
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fadeIn">
       <div
         className={`w-full ${maxWidthClass} bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${className}`}
         onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}

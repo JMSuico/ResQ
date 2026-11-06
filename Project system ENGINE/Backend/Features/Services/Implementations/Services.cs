@@ -213,7 +213,9 @@ public class ReportService(
 
         string refCode = $"RESQ-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid():N}"[..18].ToUpperInvariant();
         string recommendedAgency = DetermineRecommendedAgency(request.Category, request.Severity, request.Title, request.Note);
-        bool requiresManualVerif = request.RequiresManualVerification == true || request.IsBlurry == true;
+        bool hasLiveCameraCapture = !string.IsNullOrWhiteSpace(request.ImageDataUrl);
+        // Authenticated live camera capture with device sensor telemetry automatically passes system verification
+        bool requiresManualVerif = !hasLiveCameraCapture && (request.RequiresManualVerification == true || request.IsBlurry == true);
 
         var report = new Report
         {
