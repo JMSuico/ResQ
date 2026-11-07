@@ -105,6 +105,8 @@ export const RegisterPage: React.FC = () => {
   const [isFrameFrozen, setIsFrameFrozen] = useState<boolean>(false);
   const [frozenFrameUrl, setFrozenFrameUrl] = useState<string | null>(null);
   const [isOpticalDecoding, setIsOpticalDecoding] = useState<boolean>(false);
+  const isFrameFrozenRef = useRef<boolean>(false);
+  const frozenFrameUrlRef = useRef<string | null>(null);
 
   // Real-Time Deterministic Vision Scanner State
   const [scannerAnalysis, setScannerAnalysis] = useState<FrameAnalysisResult | null>(null);
@@ -411,7 +413,7 @@ export const RegisterPage: React.FC = () => {
   };
 
   // Handler for automatic card detection, temporal stability lock, and field autofill
-  const handleLockedCardScan = useCallback((result: IdScanResult) => {
+  const handleLockedCardScan = useCallback((result: IdScanResult, fallbackSnapshotUrl?: string | null) => {
     const confidenceScore = result.confidence ?? 0;
     const isFront = !idFrontShot;
 
@@ -471,7 +473,11 @@ export const RegisterPage: React.FC = () => {
     }
 
     if (isFront) {
-      const shotUrl = result.rectifiedImageUrl || captureFromVideoOrSynthetic('front');
+      const shotUrl =
+        result.rectifiedImageUrl ||
+        fallbackSnapshotUrl ||
+        frozenFrameUrlRef.current ||
+        captureFromVideoOrSynthetic('front');
       setIdFrontShot(shotUrl);
 
       // Deterministic CV & AI Standby Field Autofill
@@ -577,7 +583,11 @@ export const RegisterPage: React.FC = () => {
         setIsFlippingCard(false);
       }, 2000);
     } else if (!idBackShot) {
-      const shotUrl = result.rectifiedImageUrl || captureFromVideoOrSynthetic('back');
+      const shotUrl =
+        result.rectifiedImageUrl ||
+        fallbackSnapshotUrl ||
+        frozenFrameUrlRef.current ||
+        captureFromVideoOrSynthetic('back');
       setIdBackShot(shotUrl);
       setStatusMessage('Both front and back ID cards secured successfully.');
       setStatusTone('ok');
@@ -597,6 +607,8 @@ export const RegisterPage: React.FC = () => {
 
   // 1. Detection and Freezing Step
   const freezeCaptureSession = useCallback((snapshotUrl: string) => {
+    isFrameFrozenRef.current = true;
+    frozenFrameUrlRef.current = snapshotUrl;
     setIsFrameFrozen(true);
     setFrozenFrameUrl(snapshotUrl);
     setIsOpticalDecoding(true);
@@ -651,7 +663,7 @@ export const RegisterPage: React.FC = () => {
         userRole: selectedRole,
         targetSide: idFrontShot ? 'back' : 'front',
         onFrame: (analysis: FrameAnalysisResult) => {
-          if (!isFrameFrozen) {
+          if (!isFrameFrozenRef.current) {
             setScannerAnalysis(analysis);
           }
         },
@@ -663,13 +675,18 @@ export const RegisterPage: React.FC = () => {
           // Allow laser scan animation to play for 1.2s to provide distinct optical decoding feedback
           setTimeout(() => {
             setIsOpticalDecoding(false);
+            const capturedSnapshot = frozenFrameUrlRef.current;
+            handleLockedCardScan(result, capturedSnapshot);
+            isFrameFrozenRef.current = false;
+            frozenFrameUrlRef.current = null;
             setIsFrameFrozen(false);
             setFrozenFrameUrl(null);
-            handleLockedCardScan(result);
           }, 1200);
         },
         onLockRejected: (reason?: string) => {
           setIsOpticalDecoding(false);
+          isFrameFrozenRef.current = false;
+          frozenFrameUrlRef.current = null;
           setIsFrameFrozen(false);
           setFrozenFrameUrl(null);
           setStatusMessage(`Optical scan rejected: ${reason || 'Document unreadable. Please align ID card clearly.'}`);
@@ -679,12 +696,16 @@ export const RegisterPage: React.FC = () => {
     } else {
       idScanEngine.stopLiveStream();
       setScannerAnalysis(null);
+      isFrameFrozenRef.current = false;
+      frozenFrameUrlRef.current = null;
       setIsOpticalDecoding(false);
       setIsFrameFrozen(false);
       setFrozenFrameUrl(null);
     }
     return () => {
       idScanEngine.stopLiveStream();
+      isFrameFrozenRef.current = false;
+      frozenFrameUrlRef.current = null;
       setIsOpticalDecoding(false);
       setIsFrameFrozen(false);
       setFrozenFrameUrl(null);
@@ -806,6 +827,23 @@ export const RegisterPage: React.FC = () => {
     }
   };
 
+  const handleRetakeFront = useCallback(() => {
+    if (flipCooldownTimerRef.current) {
+      clearTimeout(flipCooldownTimerRef.current);
+    }
+    setIsFlippingCard(false);
+    setIdFrontShot(null);
+    isFrameFrozenRef.current = false;
+    frozenFrameUrlRef.current = null;
+    setIsFrameFrozen(false);
+    setFrozenFrameUrl(null);
+    setIsOpticalDecoding(false);
+    setScannerAnalysis(null);
+    idScanEngine.resetStability();
+    setStatusMessage('Front ID snapshot cleared. Align front of card to re-capture.');
+    setStatusTone('');
+  }, []);
+
   const handleRetakeAllId = () => {
     if (flipCooldownTimerRef.current) {
       clearTimeout(flipCooldownTimerRef.current);
@@ -813,6 +851,12 @@ export const RegisterPage: React.FC = () => {
     setIsFlippingCard(false);
     setIdFrontShot(null);
     setIdBackShot(null);
+    isFrameFrozenRef.current = false;
+    frozenFrameUrlRef.current = null;
+    setIsFrameFrozen(false);
+    setFrozenFrameUrl(null);
+    setIsOpticalDecoding(false);
+    setScannerAnalysis(null);
     setFirstName('');
     setMiddleName('');
     setLastName('');
@@ -2040,7 +2084,7 @@ export const RegisterPage: React.FC = () => {
                             {idFrontShot && !idBackShot && (
                               <button
                                 type="button"
-                                onClick={() => setIdFrontShot(null)}
+                                onClick={handleRetakeFront}
                                 className="w-full sm:w-auto px-4 !h-[42px] font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/80 text-slate-300 hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
                               >
                                 <RefreshCw className="w-3.5 h-3.5" />

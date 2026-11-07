@@ -113,7 +113,7 @@ export const imageDataToDataUrl = (imageData: ImageData): string => {
 
 export interface ScoredFrame {
   readonly imageData: ImageData;
-  readonly snapshotUrl: string;
+  readonly snapshotUrl?: string;
   readonly score: number;
 }
 
@@ -123,10 +123,24 @@ export class SmartCaptureRingBuffer {
 
   public readonly push = (
     imageData: ImageData,
-    snapshotUrl: string,
-    laplacianScore: number,
-    contrastScore: number
+    arg2: number | string,
+    arg3: number,
+    arg4?: number | string
   ): void => {
+    let snapshotUrl: string | undefined;
+    let laplacianScore: number;
+    let contrastScore: number;
+
+    if (typeof arg2 === 'string') {
+      snapshotUrl = arg2;
+      laplacianScore = arg3;
+      contrastScore = typeof arg4 === 'number' ? arg4 : 20;
+    } else {
+      laplacianScore = arg2;
+      contrastScore = arg3;
+      snapshotUrl = typeof arg4 === 'string' ? arg4 : undefined;
+    }
+
     const score = laplacianScore * 0.7 + contrastScore * 0.3;
     this.buffer.push({ imageData, snapshotUrl, score });
     if (this.buffer.length > this.maxFrames) {
@@ -142,7 +156,8 @@ export class SmartCaptureRingBuffer {
         best = this.buffer[i];
       }
     }
-    return { snapshotUrl: best.snapshotUrl, imageData: best.imageData };
+    const snapshotUrl = best.snapshotUrl || imageDataToDataUrl(best.imageData);
+    return { snapshotUrl, imageData: best.imageData };
   };
 
   public readonly clear = (): void => {
@@ -284,6 +299,8 @@ export class IdScanEngine {
   // Shared processing offscreen canvas for frame capture
   private processingCanvas: HTMLCanvasElement | null = null;
   private processingCtx: CanvasRenderingContext2D | null = null;
+  private captureCanvas: HTMLCanvasElement | null = null;
+  private captureCtx: CanvasRenderingContext2D | null = null;
 
   public constructor(config: Partial<IdScannerEngineConfig> = {}) {
     this.config = { ...DEFAULT_SCANNER_CONFIG, ...config };
@@ -690,12 +707,26 @@ export class IdScanEngine {
             callbacks.onFrame(normalizedAnalysis);
 
             // Maintain rolling SmartCapture buffer of sharpest frames while card is present
+            // Store raw ImageData only; avoid per-frame synchronous canvas.toDataURL encoding!
             if (normalizedAnalysis.cardPresence?.passed) {
-              const snap = this.freezeCaptureSession(video);
-              if (snap) {
-                const laplacian = normalizedAnalysis.quality?.details?.laplacian ?? 50;
-                const edgeContrast = normalizedAnalysis.cardPresence?.edgeContrast ?? 20;
-                this.smartBuffer.push(snap.imageData, snap.snapshotUrl, laplacian, edgeContrast);
+              const fullW = video.videoWidth;
+              const fullH = video.videoHeight;
+              if (fullW > 0 && fullH > 0) {
+                if (!this.captureCanvas) {
+                  this.captureCanvas = document.createElement('canvas');
+                }
+                if (this.captureCanvas.width !== fullW || this.captureCanvas.height !== fullH) {
+                  this.captureCanvas.width = fullW;
+                  this.captureCanvas.height = fullH;
+                  this.captureCtx = this.captureCanvas.getContext('2d', { willReadFrequently: true });
+                }
+                if (this.captureCtx) {
+                  this.captureCtx.drawImage(video, 0, 0, fullW, fullH);
+                  const fullImageData = this.captureCtx.getImageData(0, 0, fullW, fullH);
+                  const laplacian = normalizedAnalysis.quality?.details?.laplacian ?? 50;
+                  const edgeContrast = normalizedAnalysis.cardPresence?.edgeContrast ?? 20;
+                  this.smartBuffer.push(fullImageData, laplacian, edgeContrast);
+                }
               }
             }
 
@@ -711,11 +742,17 @@ export class IdScanEngine {
                 callbacks.onStabilityLock?.(frozenFrame.snapshotUrl);
 
                 // 3. Backend Data Extraction Step (decode / parseMatrix)
-                const scanResult = await this.decode(
+                const rawScanResult = await this.decode(
                   frozenFrame.imageData,
                   callbacks.targetCategory,
                   callbacks.userRole
                 );
+
+                // Ensure the 100% frozen frame snapshot is always preserved as rectifiedImageUrl fallback
+                const scanResult: IdScanResult = {
+                  ...rawScanResult,
+                  rectifiedImageUrl: rawScanResult.rectifiedImageUrl || frozenFrame.snapshotUrl
+                };
 
                 const targetSide = callbacks.targetSide || 'front';
                 const hasCoreField = Boolean(
@@ -734,6 +771,8 @@ export class IdScanEngine {
                   : Boolean(scanResult.success && hasCoreField && scanResult.confidence >= 0.45);
 
                 if (isLockValid) {
+                  // Release scanning lock flag so future retakes or side transitions are never blocked
+                  this.isScanningLock = false;
                   callbacks.onLockedScan(scanResult);
                 } else {
                   // False lock or unreadable document: unfreeze scanning lock and reset stability

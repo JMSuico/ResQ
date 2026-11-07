@@ -120,8 +120,8 @@ export interface SatelliteCommandMapProps {
 }
 
 const AREA_BOUNDS: [[number, number], [number, number]] = [
-  [7.80, 122.30],
-  [9.10, 124.20]
+  [6.50, 120.50],
+  [11.50, 126.50]
 ];
 const HOME_CENTER: [number, number] = [8.5147, 123.2842];
 const HOME_ZOOM = 12;
@@ -157,6 +157,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   centerLat,
   centerLng,
   height,
+  roleFilter,
   showMedicHud = true,
   onMapReady,
   className = 'mapview__map'
@@ -408,7 +409,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     }).setView(initialCenter, HOME_ZOOM);
 
     map.attributionControl.setPosition('bottomleft');
-    map.setMaxBounds(homeBounds.pad(0.20));
+    map.setMaxBounds(homeBounds.pad(0.35));
 
     L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -439,11 +440,32 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
     map.fitBounds(homeBounds, { padding: BOUNDS_PADDING, animate: false });
 
+    // Staggered layout size invalidation passes to prevent partial tile clipping
+    requestAnimationFrame(() => {
+      map.invalidateSize();
+      updateCalloutPosition();
+    });
+    const tInit1 = window.setTimeout(() => {
+      map.invalidateSize();
+      updateCalloutPosition();
+    }, 80);
+    const tInit2 = window.setTimeout(() => {
+      map.invalidateSize();
+      updateCalloutPosition();
+    }, 240);
+    const tInit3 = window.setTimeout(() => {
+      map.invalidateSize();
+      updateCalloutPosition();
+    }, 650);
+
     if (onMapReady) {
       onMapReady(map);
     }
 
     return () => {
+      window.clearTimeout(tInit1);
+      window.clearTimeout(tInit2);
+      window.clearTimeout(tInit3);
       try {
         const anyMap = map as unknown as { _panAnim?: { stop: () => void } };
         if (anyMap._panAnim) {
@@ -481,6 +503,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       if (mapInstanceRef.current) {
         try {
           mapInstanceRef.current.panTo([found.lat, found.lng], { animate: false });
+          mapInstanceRef.current.panBy([0, -110], { animate: true, duration: 0.35 });
         } catch {
           // Safe pan disposal
         }
@@ -508,8 +531,15 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         inc.status?.toLowerCase() === 'responded' ||
         inc.status?.toLowerCase() === 'resolved';
 
+      const isViewerMedic =
+        (roleFilter || '').toUpperCase().includes('MEDIC') ||
+        (roleFilter || '').toUpperCase().includes('RHU');
+
       const isPaleNonMedic =
-        pointerSettings.paleNonMedicEnabled && !meta.isMedicAllowed && !isResponded;
+        isViewerMedic &&
+        pointerSettings.paleNonMedicEnabled &&
+        !meta.isMedicAllowed &&
+        !isResponded;
 
       const pointerBgColor = isResponded ? RESPONDED_GREEN_COLOR : meta.color;
       const paleStyle = isPaleNonMedic
@@ -574,6 +604,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         if (mapInstanceRef.current) {
           try {
             mapInstanceRef.current.panTo([inc.lat, inc.lng], { animate: false });
+            mapInstanceRef.current.panBy([0, -110], { animate: true, duration: 0.35 });
           } catch {
             // Safe pan disposal
           }
@@ -656,12 +687,19 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       return;
     }
 
-    // Smoothly center the map on the selected incident
+    // Smoothly center the map on the selected incident with vertical clearance for callout card
     if (mapInstanceRef.current) {
-      mapInstanceRef.current.panTo([selectedInc.lat, selectedInc.lng], {
-        animate: true,
-        duration: 0.6
-      });
+      try {
+        mapInstanceRef.current.panTo([selectedInc.lat, selectedInc.lng], {
+          animate: false
+        });
+        mapInstanceRef.current.panBy([0, -110], {
+          animate: true,
+          duration: 0.35
+        });
+      } catch {
+        // Safe pan disposal
+      }
     }
 
     // Filter available on-duty responder units
@@ -1062,28 +1100,55 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       {activePointer && activeCategoryMeta && calloutPoint && (() => {
         const containerW = mapContainerRef.current?.clientWidth || 700;
         const containerH = mapContainerRef.current?.clientHeight || 500;
-        const cardW = isMobile ? Math.min(300, containerW - 24) : 340;
+        
+        // Fluid responsive sizing tailored to device width & zoom
+        const cardW = isMobile
+          ? Math.min(310, containerW - 20)
+          : isTablet
+          ? Math.min(350, containerW - 28)
+          : Math.min(380, Math.max(340, Math.round(containerW * 0.36)));
         const halfW = cardW / 2;
 
         const rawX = calloutPoint.x;
         const rawY = calloutPoint.y;
-        const isAbove = rawY > containerH * 0.45;
         const pinClearance = 44;
+
+        // Guaranteed non-clipping vertical decision & boundary clamping:
+        const cardMaxH = Math.min(480, Math.max(260, containerH - 32));
+        const estimatedCardH = Math.min(410, cardMaxH);
+
+        const spaceAbove = rawY - pinClearance;
+        const spaceBelow = containerH - (rawY + pinClearance);
+        const placeAbove = spaceAbove >= estimatedCardH || spaceAbove >= spaceBelow;
+
+        let computedTop: number;
+        let transformStr: string;
+
+        if (placeAbove) {
+          const idealTop = rawY - pinClearance;
+          const minIdealTop = Math.min(idealTop, containerH - 14);
+          computedTop = Math.max(estimatedCardH + 14, minIdealTop);
+          transformStr = 'translate(-50%, -100%)';
+        } else {
+          const idealTop = rawY + pinClearance;
+          computedTop = Math.max(14, Math.min(containerH - estimatedCardH - 14, idealTop));
+          transformStr = 'translate(-50%, 0)';
+        }
 
         const clampX = Math.max(halfW + 12, Math.min(containerW - halfW - 12, rawX));
         const arrowOffset = Math.max(-halfW + 28, Math.min(halfW - 28, rawX - clampX));
 
         return (
           <div
-            className="absolute z-[450] pointer-events-auto transition-transform duration-75"
+            className="absolute z-[1200] pointer-events-auto transition-all duration-150"
             style={{
               left: `${clampX}px`,
-              top: `${isAbove ? rawY - pinClearance : rawY + pinClearance}px`,
-              transform: isAbove ? 'translate(-50%, -100%)' : 'translate(-50%, 0)'
+              top: `${computedTop}px`,
+              transform: transformStr
             }}
           >
             <div
-              className="relative max-h-[min(480px,80vh)] overflow-y-auto bg-slate-950/95 border-2 border-sky-400/80 rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.95)] backdrop-blur-md overflow-hidden text-slate-100 flex flex-col animate-fadeIn"
+              className="relative max-h-[min(480px,calc(100%-24px))] overflow-y-auto bg-slate-950/95 border-2 border-sky-400/80 rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.95)] backdrop-blur-md overflow-hidden text-slate-100 flex flex-col animate-fadeIn"
               style={{ width: `${cardW}px` }}
             >
               {/* Cloud Message Box Header */}
@@ -1284,7 +1349,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
               {/* Cloud Message Box Caret / Tail pointing directly to the UI Pointer Icon */}
               <div
                 className={`absolute w-3.5 h-3.5 bg-slate-950 ${
-                  isAbove
+                  placeAbove
                     ? '-bottom-1.5 border-r-2 border-b-2 border-sky-400/80'
                     : '-top-1.5 border-l-2 border-t-2 border-sky-400/80'
                 }`}

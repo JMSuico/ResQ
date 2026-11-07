@@ -526,6 +526,7 @@ export const AdminDashboard: FC = () => {
               markers={markers}
               centerLat={8.5147}
               centerLng={123.2842}
+              roleFilter="LDRRMO"
               className="w-full h-full min-h-[280px]"
             />
           </div>

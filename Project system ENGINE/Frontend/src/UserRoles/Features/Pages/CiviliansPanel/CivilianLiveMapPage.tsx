@@ -371,6 +371,7 @@ export const CivilianLiveMapPage: React.FC = () => {
             markers={markers}
             centerLat={coords.latitude}
             centerLng={coords.longitude}
+            roleFilter="Civilian"
             className="h-full w-full"
           />
         </div>

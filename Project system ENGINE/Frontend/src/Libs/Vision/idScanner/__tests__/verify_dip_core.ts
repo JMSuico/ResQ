@@ -199,7 +199,13 @@ const concaveQuad = [
 assert(isQuadConvex(concaveQuad) === false, 'isQuadConvex detects concave quad and returns false');
 
 // 3.5 findCardQuad
-const bestQuad = findCardQuad(edges, cardW, cardH, [1.5858, 1.4205, 60 / 50]);
+const cardEdgesWithInterior = new Uint8Array(edges);
+for (const lineY of [24, 32, 40, 48, 56]) {
+  for (let x = 26; x <= 74; x += 2) {
+    cardEdgesWithInterior[lineY * cardW + x] = 255;
+  }
+}
+const bestQuad = findCardQuad(cardEdgesWithInterior, cardW, cardH, [1.5858, 1.4205, 60 / 50]);
 assert(bestQuad !== null, 'findCardQuad locates candidate card quad');
 if (bestQuad) {
   assert(bestQuad.corners.length === 4, 'findCardQuad returns exactly 4 corners');

@@ -394,6 +394,7 @@ export const StrategicMapPage: FC = () => {
                 agency: u.agency
               }))}
               selectedIncidentId={selectedIncident?.id}
+              roleFilter={filterAgency === 'RHU' ? 'RHU' : 'LDRRMO'}
               onSelectIncident={(inc) => {
                 const matched = reports.find((r) => r.id === inc.id);
                 if (matched) {

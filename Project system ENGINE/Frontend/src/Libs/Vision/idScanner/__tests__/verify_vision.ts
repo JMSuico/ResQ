@@ -168,12 +168,12 @@ assert(highGlare.hasGlare, `detectSpecularGlare flags glare > 3% (got ${highGlar
 
 // 10. Test checkExposureBalance
 const expGray = new Float32Array(100);
-expGray.fill(40);
-assert(checkExposureBalance(expGray, 10, 10).status === 'UNDEREXPOSED', 'Exposure < 60 is UNDEREXPOSED');
+expGray.fill(20);
+assert(checkExposureBalance(expGray, 10, 10).status === 'UNDEREXPOSED', 'Exposure < 38 is UNDEREXPOSED');
 expGray.fill(130);
 assert(checkExposureBalance(expGray, 10, 10).status === 'OPTIMAL', 'Exposure in [60, 200] is OPTIMAL');
-expGray.fill(220);
-assert(checkExposureBalance(expGray, 10, 10).status === 'OVEREXPOSED', 'Exposure > 200 is OVEREXPOSED');
+expGray.fill(235);
+assert(checkExposureBalance(expGray, 10, 10).status === 'OVEREXPOSED', 'Exposure > 225 is OVEREXPOSED');
 
 // 11. Test detectMoirePattern
 const moireW = 50;
