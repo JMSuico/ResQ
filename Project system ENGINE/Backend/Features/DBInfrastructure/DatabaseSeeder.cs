@@ -25,6 +25,27 @@ public static class DatabaseSeeder
                     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'ValidIdType')
                         ALTER TABLE [Users] ADD [ValidIdType] NVARCHAR(50) NULL;
 
+                    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'DepartmentOrBarangay' AND is_nullable = 0)
+                        ALTER TABLE [Users] ALTER COLUMN [DepartmentOrBarangay] NVARCHAR(150) NULL;
+
+                    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'EmployeeOrResidentId' AND is_nullable = 0)
+                        ALTER TABLE [Users] ALTER COLUMN [EmployeeOrResidentId] NVARCHAR(80) NULL;
+
+                    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'PhoneNumber' AND is_nullable = 0)
+                        ALTER TABLE [Users] ALTER COLUMN [PhoneNumber] NVARCHAR(30) NULL;
+
+                    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'RankOrTitle' AND is_nullable = 0)
+                        ALTER TABLE [Users] ALTER COLUMN [RankOrTitle] NVARCHAR(100) NULL;
+
+                    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'ValidIdType' AND is_nullable = 0)
+                        ALTER TABLE [Users] ALTER COLUMN [ValidIdType] NVARCHAR(50) NULL;
+
+                    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'IdCapturePath' AND is_nullable = 0)
+                        ALTER TABLE [Users] ALTER COLUMN [IdCapturePath] NVARCHAR(500) NULL;
+
+                    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FaceCapturePath' AND is_nullable = 0)
+                        ALTER TABLE [Users] ALTER COLUMN [FaceCapturePath] NVARCHAR(500) NULL;
+
                 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FirstName')
                     ALTER TABLE [Users] ADD [FirstName] NVARCHAR(80) NOT NULL CONSTRAINT DF_Users_FirstName DEFAULT '';
 

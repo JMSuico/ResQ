@@ -68,9 +68,9 @@ export const KATIPUNAN_LANDMARKS: LandmarkReference[] = [
     id: 'brgy-daanglungsod',
     name: 'Barangay Daanglungsod',
     category: 'barangay',
-    latitude: 8.5210,
-    longitude: 123.2790,
-    description: 'Northern Coastal Barangay Sector'
+    latitude: 8.5110,
+    longitude: 123.3180,
+    description: 'Eastern Riverbank Barangay Sector'
   },
   {
     id: 'brgy-san-antonio',
@@ -103,8 +103,8 @@ export const KATIPUNAN_BARANGAYS: BarangayReference[] = [
   {
     name: 'Barangay Daanglungsod',
     displayName: 'Brgy. Daanglungsod',
-    latitude: 8.5210,
-    longitude: 123.2790
+    latitude: 8.5110,
+    longitude: 123.3180
   },
   {
     name: 'Barangay San Antonio',

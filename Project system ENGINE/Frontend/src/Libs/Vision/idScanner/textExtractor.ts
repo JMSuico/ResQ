@@ -1623,7 +1623,15 @@ export const parseIdFieldsWithSpatialFsm = (
       }
       case 'EXPECT_ADDRESS': {
         fields.address = fields.address ? `${fields.address}, ${line}` : line;
-        state = 'IDLE';
+        const nextIdx = i + 1;
+        if (
+          nextIdx < rawLines.length &&
+          !/^(?:LICENSE|EXPIRATION|AGENCY|BLOOD|EYES|CONDITIONS|RESTRICTIONS|SEX|DATE|DOB|WEIGHT|HEIGHT)/i.test(rawLines[nextIdx].toUpperCase().trim())
+        ) {
+          // Remain in EXPECT_ADDRESS to accumulate multi-line addresses
+        } else {
+          state = 'IDLE';
+        }
         break;
       }
       default: {
