@@ -125,21 +125,8 @@ export const AdminLayout: React.FC = () => {
       return <Navigate to="/admin/login" replace />;
     }
   } else if (currentPort === '5173') {
-    if (isAdmin) {
-      const token = typeof window !== 'undefined'
-        ? (sessionStorage.getItem('resqtrack_token') || localStorage.getItem('resqtrack_token_5173') || localStorage.getItem('resqtrack_token'))
-        : null;
-      const targetUrl = token
-        ? `http://${host}:5174/admin/dashboard?session_token=${encodeURIComponent(token)}`
-        : `http://${host}:5174/admin/dashboard`;
-      window.location.href = targetUrl;
-      return (
-        <div className="flex h-screen w-screen items-center justify-center bg-slate-950 font-mono text-sm text-rose-400">
-          Admin account detected. Redirecting to Executive Command (5174)...
-        </div>
-      );
-    }
-    return <Navigate to="/login" replace />;
+    // Single-port / Unified dev mode: Allow seamless direct rendering of Admin Executive Command
+    return <LayoutWrappers defaultRole="LDRRMO_Admin" defaultUnit="LDRRMO" />;
   }
 
   return <LayoutWrappers defaultRole="LDRRMO_Admin" defaultUnit="LDRRMO" />;

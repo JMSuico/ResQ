@@ -1,13 +1,13 @@
 // [Layer: Libs/Vision/idScanner]
-// Responsibility: Master Orchestrator for ResQTrack Deterministic Government ID Vision Scanner.
-// Coordinates: Quality Gates -> Canny/Contour Quad Detection -> Homography Rectification ->
-// Preprocessing/Sauvola -> Layout Map Classification -> CCL & Glyph OCR -> Checksum/Repair Validation ->
-// Multi-Provider AI Standby Fallback + Temporal Stability Corner Jitter Lock (<6px across 8 consecutive frames).
+// Responsibility: Master Orchestrator for ResQTrack Deterministic Government ID Vision Scanner (Upload-Only Front & Back Pipeline).
+// Coordinates: Quality Gates -> Canny/Contour Quad Detection (+ Pre-Cropped Full-Frame Upload Fallback) ->
+// Homography Rectification -> Preprocessing/Sauvola -> Layout Map Classification ->
+// Multi-Pass ROI + Full-Body CCL & Glyph OCR -> Spatial FSM Parser -> Checksum/Repair Validation ->
+// Multi-Provider AI Standby Fallback + Deterministic Front & Back Field Merging.
 // Invariant: Strict TypeScript with ZERO 'any'. 100% Universal Lambda syntax (=>). Zero emojis.
 
 import { QualityGateEvaluation } from './qualityGates';
 import { Point2D } from './cannyHough';
-import { OrderedCorners } from './homography';
 import { GovernmentIdCategory } from './idSpecs';
 import { CardPresenceEvaluation } from './cardPresenceGate';
 import {
@@ -21,11 +21,9 @@ import { providerRegistry, IdOcrResult } from './ai';
 import {
   WorkerRequest,
   WorkerResponse,
-  WorkerAnalyzeFrameResponse,
   WorkerFullScanResponse,
   WorkerIdScanResult,
   ExtractedFieldsPayload,
-  executeFrameAnalysis,
   executeFullCardScan
 } from './idScanWorker';
 
@@ -33,25 +31,9 @@ import {
 // Types & Interfaces
 // ============================================================================
 
-export interface TemporalStabilityState {
-  readonly isLocked: boolean;
-  readonly lockProgress: number; // 0 - 100%
-  readonly stableFrameCount: number; // 0 - 8
-  readonly maxShift: number; // max corner Euclidean shift in pixels
-}
-
-export interface FrameAnalysisResult {
-  readonly corners: Point2D[] | null;
-  readonly orderedCorners: OrderedCorners | null;
-  readonly quality: QualityGateEvaluation;
-  readonly aspectRatio: number;
-  readonly quadScore: number;
-  readonly stability: TemporalStabilityState;
-  readonly cardPresence?: CardPresenceEvaluation;
-}
-
 export interface IdScanResult {
   readonly success: boolean;
+  readonly side?: 'front' | 'back';
   readonly idCategory: GovernmentIdCategory;
   readonly confidence: number;
   readonly confidenceTier: IdScanConfidenceTier;
@@ -60,6 +42,8 @@ export interface IdScanResult {
   readonly corners: Point2D[];
   readonly rectifiedImageData?: ImageData;
   readonly rectifiedImageUrl?: string;
+  readonly portraitImageData?: ImageData;
+  readonly portraitImageUrl?: string;
   readonly executionTimeMs: number;
   readonly method: 'DETERMINISTIC_CV' | 'AI_STANDBY_FALLBACK';
   readonly aiProviderUsed?: string;
@@ -69,23 +53,17 @@ export interface IdScanResult {
 }
 
 export interface IdScannerEngineConfig {
-  readonly maxJitterPixels: number; // default: 6.0 px
-  readonly requiredStableFrames: number; // default: 8
-  readonly minConfidenceToAutofill: number; // default: 0.70
+  readonly minConfidenceToAutofill: number; // default: 0.65
   readonly enableAiStandbyFallback: boolean; // default: true
   readonly targetRatios: readonly number[]; // default: [1.5858, 1.4205]
   readonly useWebWorker: boolean; // default: true
-  readonly frameThrottleMs: number; // default: 60ms (~16 fps for optimal thermals)
 }
 
 export const DEFAULT_SCANNER_CONFIG: IdScannerEngineConfig = {
-  maxJitterPixels: 10.5,
-  requiredStableFrames: 6,
   minConfidenceToAutofill: 0.65,
   enableAiStandbyFallback: true,
   targetRatios: [1.5858, 1.4205],
-  useWebWorker: true,
-  frameThrottleMs: 50
+  useWebWorker: true
 };
 
 // ============================================================================
@@ -107,207 +85,51 @@ export const imageDataToDataUrl = (imageData: ImageData): string => {
 };
 
 // ============================================================================
-// Smart Capture: Ring Buffer for Best Frame Selection (Auto-Capture Sharpest Frame)
-// Evaluates Laplacian variance sharpness and border contrast across live stream frames.
+// Deterministic Front + Back Field Merger
+// Preserves Front primary identity fields while backfilling reverse-side fields
+// (e.g., address, weight, height, serial/barcode IDs) from Back ID scan.
 // ============================================================================
 
-export interface ScoredFrame {
-  readonly imageData: ImageData;
-  readonly snapshotUrl?: string;
-  readonly score: number;
-}
-
-export class SmartCaptureRingBuffer {
-  private buffer: ScoredFrame[] = [];
-  private readonly maxFrames: number = 6;
-
-  public readonly push = (
-    imageData: ImageData,
-    arg2: number | string,
-    arg3: number,
-    arg4?: number | string
-  ): void => {
-    let snapshotUrl: string | undefined;
-    let laplacianScore: number;
-    let contrastScore: number;
-
-    if (typeof arg2 === 'string') {
-      snapshotUrl = arg2;
-      laplacianScore = arg3;
-      contrastScore = typeof arg4 === 'number' ? arg4 : 20;
-    } else {
-      laplacianScore = arg2;
-      contrastScore = arg3;
-      snapshotUrl = typeof arg4 === 'string' ? arg4 : undefined;
-    }
-
-    const score = laplacianScore * 0.7 + contrastScore * 0.3;
-    this.buffer.push({ imageData, snapshotUrl, score });
-    if (this.buffer.length > this.maxFrames) {
-      this.buffer.shift();
-    }
+export const mergeFrontAndBackFields = (
+  front: ExtractedFieldsPayload,
+  back: ExtractedFieldsPayload
+): ExtractedFieldsPayload => {
+  return {
+    fullname: front.fullname || undefined,
+    firstName: front.firstName || undefined,
+    middleName: front.middleName || undefined,
+    lastName: front.lastName || undefined,
+    idNumber: front.idNumber || back.idNumber,
+    licenseNumber: front.licenseNumber || front.idNumber || back.licenseNumber || back.idNumber,
+    employeeId: front.employeeId || back.employeeId,
+    dateOfBirth: front.dateOfBirth || undefined,
+    age: front.age || undefined,
+    expirationDate: front.expirationDate || back.expirationDate,
+    sex: front.sex || undefined,
+    address: front.address || back.address || undefined,
+    weight: front.weight || undefined,
+    height: front.height || undefined,
+    rankOrTitle: front.rankOrTitle || back.rankOrTitle
   };
-
-  public readonly getBestFrame = (): { snapshotUrl: string; imageData: ImageData } | null => {
-    if (this.buffer.length === 0) return null;
-    let best = this.buffer[0];
-    for (let i = 1; i < this.buffer.length; i++) {
-      if (this.buffer[i].score > best.score) {
-        best = this.buffer[i];
-      }
-    }
-    const snapshotUrl = best.snapshotUrl || imageDataToDataUrl(best.imageData);
-    return { snapshotUrl, imageData: best.imageData };
-  };
-
-  public readonly clear = (): void => {
-    this.buffer = [];
-  };
-}
+};
 
 // ============================================================================
-// Temporal Stability Tracker
-// Enforces: Corner shift across consecutive frames must remain within jitter threshold.
-// Applies Exponential Moving Average (EMA) smoothing for jitter-free full-frame card tracking.
-// ============================================================================
-
-export class TemporalStabilityTracker {
-  private readonly maxFrames: number;
-  private readonly jitterThreshold: number;
-  private history: Point2D[][] = [];
-  private smoothedCorners: Point2D[] | null = null;
-  private stableCount: number = 0;
-  private missingCount: number = 0;
-  private isLockedState: boolean = false;
-  private lastMaxShift: number = 0;
-
-  public constructor(maxFrames: number = 6, jitterThreshold: number = 10.5) {
-    this.maxFrames = maxFrames;
-    this.jitterThreshold = jitterThreshold;
-  }
-
-  public readonly update = (corners: Point2D[] | null): TemporalStabilityState & { smoothedCorners: Point2D[] | null } => {
-    if (!corners || corners.length !== 4) {
-      this.missingCount++;
-      // Soft-decay when corners are briefly missing (e.g. handheld camera micro-tremors)
-      this.stableCount = Math.max(0, this.stableCount - 1);
-      if (this.stableCount === 0) {
-        this.history = [];
-        this.smoothedCorners = null;
-        this.isLockedState = false;
-      }
-      return {
-        isLocked: false,
-        lockProgress: Math.min(100, Math.round((this.stableCount / this.maxFrames) * 100)),
-        stableFrameCount: this.stableCount,
-        maxShift: 999,
-        smoothedCorners: this.smoothedCorners
-      };
-    }
-
-    this.missingCount = 0;
-
-    // Apply Exponential Moving Average (EMA) smoothing (alpha = 0.45)
-    if (this.smoothedCorners && this.smoothedCorners.length === 4) {
-      const alpha = 0.45;
-      const nextSmoothed: Point2D[] = [];
-      for (let i = 0; i < 4; i++) {
-        nextSmoothed.push({
-          x: Math.round((this.smoothedCorners[i].x * (1 - alpha) + corners[i].x * alpha) * 10) / 10,
-          y: Math.round((this.smoothedCorners[i].y * (1 - alpha) + corners[i].y * alpha) * 10) / 10
-        });
-      }
-      this.smoothedCorners = nextSmoothed;
-    } else {
-      this.smoothedCorners = corners.map((p) => ({ ...p }));
-    }
-
-    if (this.history.length > 0) {
-      const prev = this.history[this.history.length - 1];
-      let maxShift = 0;
-      for (let i = 0; i < 4; i++) {
-        const dx = corners[i].x - prev[i].x;
-        const dy = corners[i].y - prev[i].y;
-        const d = Math.hypot(dx, dy);
-        if (d > maxShift) {
-          maxShift = d;
-        }
-      }
-      this.lastMaxShift = maxShift;
-
-      if (maxShift < this.jitterThreshold) {
-        this.stableCount = Math.min(this.maxFrames, this.stableCount + 1);
-      } else {
-        this.stableCount = Math.max(0, this.stableCount - 1);
-      }
-    } else {
-      this.stableCount = 1;
-      this.lastMaxShift = 0;
-    }
-
-    this.history.push(corners);
-    if (this.history.length > this.maxFrames) {
-      this.history.shift();
-    }
-
-    const lockProgress = Math.min(100, Math.round((this.stableCount / this.maxFrames) * 100));
-    this.isLockedState = this.stableCount >= this.maxFrames;
-
-    return {
-      isLocked: this.isLockedState,
-      lockProgress,
-      stableFrameCount: this.stableCount,
-      maxShift: this.lastMaxShift,
-      smoothedCorners: this.smoothedCorners
-    };
-  };
-
-  public readonly reset = (): void => {
-    this.history = [];
-    this.smoothedCorners = null;
-    this.stableCount = 0;
-    this.missingCount = 0;
-    this.isLockedState = false;
-    this.lastMaxShift = 0;
-  };
-
-  public readonly isLocked = (): boolean => this.isLockedState;
-  public readonly getSmoothedCorners = (): Point2D[] | null => this.smoothedCorners;
-}
-
-// ============================================================================
-// Master IdScanEngine Orchestrator Class
+// Master IdScanEngine Orchestrator Class (Upload-Only Front & Back Pipeline)
 // ============================================================================
 
 interface PendingWorkerTask {
-  readonly resolve: (res: WorkerAnalyzeFrameResponse | WorkerFullScanResponse) => void;
+  readonly resolve: (res: WorkerFullScanResponse) => void;
   readonly reject: (err: Error) => void;
-  readonly type: 'ANALYZE_FRAME' | 'FULL_SCAN';
+  readonly type: 'FULL_SCAN';
 }
 
 export class IdScanEngine {
   private config: IdScannerEngineConfig;
-  private readonly stabilityTracker: TemporalStabilityTracker;
-  private readonly smartBuffer: SmartCaptureRingBuffer = new SmartCaptureRingBuffer();
   private worker: Worker | null = null;
-  private isRunning: boolean = false;
-  private isScanningLock: boolean = false;
-  private animationFrameId: number | null = null;
-  private lastFrameTimestamp: number = 0;
   private pendingTasks = new Map<string, PendingWorkerTask>();
-
-  // Shared processing offscreen canvas for frame capture
-  private processingCanvas: HTMLCanvasElement | null = null;
-  private processingCtx: CanvasRenderingContext2D | null = null;
-  private captureCanvas: HTMLCanvasElement | null = null;
-  private captureCtx: CanvasRenderingContext2D | null = null;
 
   public constructor(config: Partial<IdScannerEngineConfig> = {}) {
     this.config = { ...DEFAULT_SCANNER_CONFIG, ...config };
-    this.stabilityTracker = new TemporalStabilityTracker(
-      this.config.requiredStableFrames,
-      this.config.maxJitterPixels
-    );
     this.initWorker();
   }
 
@@ -364,7 +186,7 @@ export class IdScanEngine {
     if (this.worker) {
       return new Promise<T>((resolve, reject) => {
         this.pendingTasks.set(request.id, {
-          resolve: resolve as (res: WorkerAnalyzeFrameResponse | WorkerFullScanResponse) => void,
+          resolve: resolve as (res: WorkerFullScanResponse) => void,
           reject,
           type: request.type
         });
@@ -372,21 +194,15 @@ export class IdScanEngine {
       });
     }
 
-    // Inline synchronous execution fallback
-    if (request.type === 'ANALYZE_FRAME') {
-      const analysis = executeFrameAnalysis(request.imageData, request.targetRatios);
-      return {
-        id: request.id,
-        ...analysis
-      } as unknown as T;
-    }
-
     if (request.type === 'FULL_SCAN') {
       const result = executeFullCardScan(
         request.imageData,
         request.targetCategory,
         request.userRole,
-        request.targetRatios
+        request.targetRatios,
+        request.preLockedCorners,
+        request.side ?? 'front',
+        request.isStaticUpload ?? true
       );
       return {
         id: request.id,
@@ -400,57 +216,35 @@ export class IdScanEngine {
   };
 
   /**
-   * Analyzes an isolated ImageData frame without full OCR text extraction.
+   * Primary entry point for scanning an uploaded Government ID image (Front or Back).
+   * Handles both uncropped table photos and pre-cropped full-frame ID photos,
+   * runs multi-pass OCR + Spatial FSM parsing, extracts the Front portrait crop for
+   * Step 2 facial verification, and invokes AI Standby fallback if needed.
    */
-  public readonly analyzeFrame = async (imageData: ImageData): Promise<FrameAnalysisResult> => {
-    const requestId = `frame_${Math.random().toString(36).substring(2, 9)}`;
-    const response = await this.callWorkerOrInline<WorkerAnalyzeFrameResponse>({
-      id: requestId,
-      type: 'ANALYZE_FRAME',
-      imageData,
-      targetRatios: this.config.targetRatios
-    });
-
-    if (response.cardPresence && !response.cardPresence.passed) {
-      this.stabilityTracker.reset();
-    }
-
-    const cornersToTrack = response.cardPresence && !response.cardPresence.passed ? null : response.corners;
-    const stability = this.stabilityTracker.update(cornersToTrack);
-    const effectiveCorners = stability.smoothedCorners || response.corners;
-
-    return {
-      corners: effectiveCorners,
-      orderedCorners: response.orderedCorners,
-      quality: response.quality,
-      aspectRatio: response.aspectRatio,
-      quadScore: response.quadScore,
-      stability,
-      cardPresence: response.cardPresence
-    };
-  };
-
-  /**
-   * Executes the full OCR and classification pipeline, falling back to multi-provider AI standby if needed.
-   */
-  public readonly scanCard = async (
+  public readonly scanUploadedIdImage = async (
     imageData: ImageData,
     targetCategory?: GovernmentIdCategory,
-    userRole?: 'Responder' | 'Civilian'
+    userRole?: 'Responder' | 'Civilian',
+    side: 'front' | 'back' = 'front',
+    preLockedCorners?: Point2D[] | null
   ): Promise<IdScanResult> => {
-    const requestId = `scan_${Math.random().toString(36).substring(2, 9)}`;
+    const requestId = `upload_scan_${side}_${Math.random().toString(36).substring(2, 9)}`;
     const workerRes = await this.callWorkerOrInline<WorkerFullScanResponse>({
       id: requestId,
       type: 'FULL_SCAN',
       imageData,
       targetCategory,
       userRole,
-      targetRatios: this.config.targetRatios
+      targetRatios: this.config.targetRatios,
+      preLockedCorners,
+      side,
+      isStaticUpload: true
     });
 
     if (!workerRes.success || !workerRes.result) {
       return {
         success: false,
+        side,
         idCategory: targetCategory || 'philsys',
         confidence: 0,
         confidenceTier: 'MANUAL_ENTRY',
@@ -473,12 +267,15 @@ export class IdScanEngine {
     const rectifiedImageUrl = workerResult.rectifiedImageData
       ? imageDataToDataUrl(workerResult.rectifiedImageData)
       : undefined;
+    const portraitImageUrl = workerResult.portraitImageData
+      ? imageDataToDataUrl(workerResult.portraitImageData)
+      : undefined;
 
-    // Evaluate if AI Standby Fallback is necessary (composite confidence < 0.80)
+    // Evaluate if AI Standby Fallback is necessary
     if (
       this.config.enableAiStandbyFallback &&
       (workerResult.confidence < this.config.minConfidenceToAutofill ||
-        !workerResult.fields.fullname) &&
+        (side === 'front' && !workerResult.fields.fullname && !workerResult.fields.lastName)) &&
       rectifiedImageUrl
     ) {
       try {
@@ -530,9 +327,7 @@ export class IdScanEngine {
               aiResult.fields['EmployeeId']?.value ||
               aiResult.fields['employeeId']?.value ||
               workerResult.fields.employeeId ||
-              (userRole === 'Responder'
-                ? finalIdNumber
-                : undefined),
+              (userRole === 'Responder' ? finalIdNumber : undefined),
             dateOfBirth:
               aiResult.fields['DateOfBirth']?.value ||
               aiResult.fields['dateOfBirth']?.value ||
@@ -563,16 +358,22 @@ export class IdScanEngine {
               workerResult.fields.rankOrTitle
           };
 
-          const idValidationPass = finalIdNumber ? validateIdNumber(workerResult.idCategory, finalIdNumber).isValid : false;
+          const idValidationPass = finalIdNumber
+            ? validateIdNumber(workerResult.idCategory, finalIdNumber).isValid
+            : false;
           const aiScore = aiResult.consensusScore ?? 0.88;
           const aiConfidence = Math.min(
             0.98,
-            Math.max(workerResult.confidence, 0.35 * workerResult.confidence + 0.45 * aiScore + (idValidationPass ? 0.20 : 0.05))
+            Math.max(
+              workerResult.confidence,
+              0.35 * workerResult.confidence + 0.45 * aiScore + (idValidationPass ? 0.20 : 0.05)
+            )
           );
           const aiTier = getIdScanConfidenceTier(aiConfidence);
 
           return {
             success: true,
+            side,
             idCategory: workerResult.idCategory,
             confidence: aiConfidence,
             confidenceTier: aiTier,
@@ -581,10 +382,13 @@ export class IdScanEngine {
             corners: workerResult.corners,
             rectifiedImageData: workerResult.rectifiedImageData,
             rectifiedImageUrl,
+            portraitImageData: workerResult.portraitImageData,
+            portraitImageUrl,
             executionTimeMs: workerResult.executionTimeMs + aiResult.executionTimeMs,
             method: 'AI_STANDBY_FALLBACK',
             aiProviderUsed: aiResult.providerUsed,
-            rawText: aiResult.rawText || workerResult.rawText
+            rawText: aiResult.rawText || workerResult.rawText,
+            cardPresence: workerResult.cardPresence
           };
         }
       } catch (aiErr: unknown) {
@@ -592,25 +396,27 @@ export class IdScanEngine {
       }
     }
 
-    console.log('[IdScanEngine workerResult debug]:', JSON.stringify({ success: workerResult.success, confidence: workerResult.confidence, fields: workerResult.fields, error: workerResult.error }));
-
     const hasCoreFields = Boolean(
-      workerResult.fields && (
-        workerResult.fields.fullname ||
-        workerResult.fields.firstName ||
-        workerResult.fields.lastName ||
-        workerResult.fields.licenseNumber ||
-        workerResult.fields.idNumber ||
-        workerResult.fields.employeeId
-      )
+      workerResult.fields &&
+        (workerResult.fields.fullname ||
+          workerResult.fields.firstName ||
+          workerResult.fields.lastName ||
+          workerResult.fields.licenseNumber ||
+          workerResult.fields.idNumber ||
+          workerResult.fields.employeeId ||
+          workerResult.fields.address ||
+          workerResult.fields.weight ||
+          workerResult.fields.height)
     );
 
     const isSuccessful = Boolean(
-      workerResult.success && (hasCoreFields || workerResult.confidence >= this.config.minConfidenceToAutofill)
+      workerResult.success &&
+        (side === 'back' || hasCoreFields || workerResult.confidence >= this.config.minConfidenceToAutofill)
     );
 
     return {
       success: isSuccessful,
+      side,
       idCategory: workerResult.idCategory,
       confidence: workerResult.confidence,
       confidenceTier: workerResult.confidenceTier,
@@ -619,6 +425,8 @@ export class IdScanEngine {
       corners: workerResult.corners,
       rectifiedImageData: workerResult.rectifiedImageData,
       rectifiedImageUrl,
+      portraitImageData: workerResult.portraitImageData,
+      portraitImageUrl,
       executionTimeMs: workerResult.executionTimeMs,
       method: 'DETERMINISTIC_CV',
       rawText: workerResult.rawText,
@@ -628,277 +436,22 @@ export class IdScanEngine {
   };
 
   /**
-   * Connects the live camera video stream, running real-time frame analysis and HUD telemetry.
-   * When corner jitter remains < 6.0px across 8 consecutive frames, automatically freezes and scans!
+   * Backward-compatible alias for `scanUploadedIdImage` (defaults to `side = 'front'`).
    */
-  public readonly startLiveStream = (
-    video: HTMLVideoElement,
-    callbacks: {
-      readonly onFrame: (analysis: FrameAnalysisResult) => void;
-      readonly onLockedScan: (result: IdScanResult) => void;
-      readonly onStabilityLock?: (snapshotUrl: string) => void;
-      readonly onLockRejected?: (reason?: string) => void;
-      readonly targetCategory?: GovernmentIdCategory;
-      readonly userRole?: 'Responder' | 'Civilian';
-      readonly targetSide?: 'front' | 'back';
-    }
-  ): void => {
-    if (this.isRunning) {
-      this.stop();
-    }
-
-    this.isRunning = true;
-    this.isScanningLock = false;
-    this.stabilityTracker.reset();
-    this.smartBuffer.clear();
-
-    // Prepare processing canvas (fixed downsample resolution 640x360 for high-efficiency 30fps Canny)
-    if (!this.processingCanvas) {
-      this.processingCanvas = document.createElement('canvas');
-      this.processingCanvas.width = 640;
-      this.processingCanvas.height = 360;
-      this.processingCtx = this.processingCanvas.getContext('2d', {
-        willReadFrequently: true
-      });
-    }
-
-    const processLoop = async (now: number): Promise<void> => {
-      if (!this.isRunning) {
-        return;
-      }
-
-      // Check frame throttle
-      if (now - this.lastFrameTimestamp >= this.config.frameThrottleMs && !this.isScanningLock) {
-        this.lastFrameTimestamp = now;
-
-        if (video.readyState >= 2 && video.videoWidth > 0 && this.processingCtx) {
-          const procW = 640;
-          const procH = 360;
-
-          this.processingCtx.drawImage(video, 0, 0, procW, procH);
-          const imageData = this.processingCtx.getImageData(0, 0, procW, procH);
-
-          try {
-            const analysis = await this.analyzeFrame(imageData);
-
-            // Scale corner coordinates back to video coordinate space
-            const scaleX = video.videoWidth / procW;
-            const scaleY = video.videoHeight / procH;
-
-            const scaledCorners = analysis.corners
-              ? analysis.corners.map((p) => ({ x: p.x * scaleX, y: p.y * scaleY }))
-              : null;
-
-            const scaledOrdered = analysis.orderedCorners
-              ? {
-                  tl: { x: analysis.orderedCorners.tl.x * scaleX, y: analysis.orderedCorners.tl.y * scaleY },
-                  tr: { x: analysis.orderedCorners.tr.x * scaleX, y: analysis.orderedCorners.tr.y * scaleY },
-                  br: { x: analysis.orderedCorners.br.x * scaleX, y: analysis.orderedCorners.br.y * scaleY },
-                  bl: { x: analysis.orderedCorners.bl.x * scaleX, y: analysis.orderedCorners.bl.y * scaleY }
-                }
-              : null;
-
-            const normalizedAnalysis: FrameAnalysisResult = {
-              ...analysis,
-              corners: scaledCorners,
-              orderedCorners: scaledOrdered
-            };
-
-            callbacks.onFrame(normalizedAnalysis);
-
-            // Maintain rolling SmartCapture buffer of sharpest frames while card is present
-            // Store raw ImageData only; avoid per-frame synchronous canvas.toDataURL encoding!
-            if (normalizedAnalysis.cardPresence?.passed) {
-              const fullW = video.videoWidth;
-              const fullH = video.videoHeight;
-              if (fullW > 0 && fullH > 0) {
-                if (!this.captureCanvas) {
-                  this.captureCanvas = document.createElement('canvas');
-                }
-                if (this.captureCanvas.width !== fullW || this.captureCanvas.height !== fullH) {
-                  this.captureCanvas.width = fullW;
-                  this.captureCanvas.height = fullH;
-                  this.captureCtx = this.captureCanvas.getContext('2d', { willReadFrequently: true });
-                }
-                if (this.captureCtx) {
-                  this.captureCtx.drawImage(video, 0, 0, fullW, fullH);
-                  const fullImageData = this.captureCtx.getImageData(0, 0, fullW, fullH);
-                  const laplacian = normalizedAnalysis.quality?.details?.laplacian ?? 50;
-                  const edgeContrast = normalizedAnalysis.cardPresence?.edgeContrast ?? 20;
-                  this.smartBuffer.push(fullImageData, laplacian, edgeContrast);
-                }
-              }
-            }
-
-            // Temporal stability lock condition met! Trigger full scan!
-            if (analysis.stability.isLocked && !this.isScanningLock) {
-              this.isScanningLock = true;
-
-              // 1. Detection and Freezing Step: Retrieve Smart Capture Best Frame (Sharpest unblurred snapshot)
-              const frozenFrame = this.smartBuffer.getBestFrame() || this.freezeCaptureSession(video);
-              if (frozenFrame) {
-                // 2. Scanning Animation Step (startScanAnimation / setLineScanAnimationMode / drawOverlay)
-                this.startScanAnimation();
-                callbacks.onStabilityLock?.(frozenFrame.snapshotUrl);
-
-                // 3. Backend Data Extraction Step (decode / parseMatrix)
-                const rawScanResult = await this.decode(
-                  frozenFrame.imageData,
-                  callbacks.targetCategory,
-                  callbacks.userRole
-                );
-
-                // Ensure the 100% frozen frame snapshot is always preserved as rectifiedImageUrl fallback
-                const scanResult: IdScanResult = {
-                  ...rawScanResult,
-                  rectifiedImageUrl: rawScanResult.rectifiedImageUrl || frozenFrame.snapshotUrl
-                };
-
-                const targetSide = callbacks.targetSide || 'front';
-                const hasCoreField = Boolean(
-                  scanResult.fields && (
-                    scanResult.fields.fullname ||
-                    scanResult.fields.firstName ||
-                    scanResult.fields.lastName ||
-                    scanResult.fields.idNumber ||
-                    scanResult.fields.licenseNumber ||
-                    scanResult.fields.employeeId
-                  )
-                );
-
-                const isLockValid = targetSide === 'back'
-                  ? Boolean(scanResult.corners && scanResult.corners.length === 4)
-                  : Boolean(scanResult.success && hasCoreField && scanResult.confidence >= 0.45);
-
-                if (isLockValid) {
-                  // Release scanning lock flag so future retakes or side transitions are never blocked
-                  this.isScanningLock = false;
-                  callbacks.onLockedScan(scanResult);
-                } else {
-                  // False lock or unreadable document: unfreeze scanning lock and reset stability
-                  this.isScanningLock = false;
-                  this.resetStability();
-                  callbacks.onLockRejected?.(scanResult.error || 'Card details unreadable');
-                }
-              } else {
-                this.isScanningLock = false;
-                this.resetStability();
-                callbacks.onLockRejected?.('Canvas context unavailable');
-              }
-            }
-          } catch (loopErr: unknown) {
-            console.warn('[IdScanEngine] Frame processing loop error:', loopErr);
-          }
-        }
-      }
-
-      if (this.isRunning) {
-        this.animationFrameId = requestAnimationFrame(processLoop);
-      }
-    };
-
-    this.animationFrameId = requestAnimationFrame(processLoop);
-  };
-
-  // ==========================================================================
-  // PROGRAMMATIC CAMERA SDK & SCANNER SEQUENCE METHODS
-  // (AVFoundation / CameraX / barKoder / OpenCV Optical Decoding Spec)
-  // ==========================================================================
-
-  /**
-   * 1. The Detection and Freezing Step
-   * Halts the live camera viewfinder feed and extracts a clean, unblurred pixel matrix from the video buffer.
-   */
-  public readonly freezeCaptureSession = (video: HTMLVideoElement): { snapshotUrl: string; imageData: ImageData } | null => {
-    if (video.videoWidth === 0 || video.videoHeight === 0) return null;
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return null;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const snapshotUrl = canvas.toDataURL('image/png');
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    return { snapshotUrl, imageData };
-  };
-
-  public readonly pausePreview = this.freezeCaptureSession;
-  public readonly freezeFrame = this.freezeCaptureSession;
-  public readonly lockFrame = this.freezeCaptureSession;
-
-  /**
-   * 2. The Scanning Animation Step
-   * Controls line scan animation mode and targeting overlay rendering.
-   */
-  public readonly setLineScanAnimationMode = (enabled: boolean): boolean => {
-    return enabled;
-  };
-
-  public readonly startScanAnimation = (): boolean => {
-    return this.setLineScanAnimationMode(true);
-  };
-
-  public readonly drawOverlay = (overlayType: 'laser' | 'reticle' | 'mesh'): string => {
-    return `overlay_${overlayType}_active`;
-  };
-
-  public readonly renderTargetingOverlay = this.drawOverlay;
-
-  /**
-   * 3. The Backend Data Extraction Step
-   * Passes the frozen frame bytes to the underlying deterministic decoder engine.
-   */
-  public readonly decode = async (
+  public readonly scanCard = async (
     imageData: ImageData,
     targetCategory?: GovernmentIdCategory,
-    userRole?: 'Responder' | 'Civilian'
+    userRole?: 'Responder' | 'Civilian',
+    preLockedCorners?: Point2D[] | null,
+    side: 'front' | 'back' = 'front'
   ): Promise<IdScanResult> => {
-    return this.scanCard(imageData, targetCategory, userRole);
-  };
-
-  public readonly parseMatrix = this.decode;
-
-  /**
-   * Resets temporal stability to allow re-locking or retaking the document.
-   */
-  public readonly resetStability = (): void => {
-    this.stabilityTracker.reset();
-    this.smartBuffer.clear();
-    this.isScanningLock = false;
+    return this.scanUploadedIdImage(imageData, targetCategory, userRole, side, preLockedCorners);
   };
 
   /**
-   * Halts active camera video stream processing and animation loop without cancelling full card scans.
-   */
-  public readonly stopLiveStream = (): void => {
-    this.isRunning = false;
-    this.isScanningLock = false;
-    if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-    this.stabilityTracker.reset();
-    this.smartBuffer.clear();
-
-    // Only cancel live frame analysis tasks; preserve active FULL_SCAN card OCR jobs!
-    if (this.pendingTasks.size > 0) {
-      const remainingTasks = new Map<string, PendingWorkerTask>();
-      this.pendingTasks.forEach((task, id) => {
-        if (task.type === 'FULL_SCAN') {
-          remainingTasks.set(id, task);
-        } else {
-          task.reject(new Error('Live frame analysis cancelled: Stream stopped'));
-        }
-      });
-      this.pendingTasks = remainingTasks;
-    }
-  };
-
-  /**
-   * Halts active processing loops and terminates all pending tasks.
+   * Cancels any pending worker tasks.
    */
   public readonly stop = (): void => {
-    this.stopLiveStream();
     if (this.pendingTasks.size > 0) {
       this.pendingTasks.forEach((task) => {
         task.reject(new Error('ID scan operation cancelled: Engine stopped'));
@@ -924,8 +477,6 @@ export class IdScanEngine {
       this.worker = null;
     }
     this.pendingTasks.clear();
-    this.processingCanvas = null;
-    this.processingCtx = null;
   };
 }
 

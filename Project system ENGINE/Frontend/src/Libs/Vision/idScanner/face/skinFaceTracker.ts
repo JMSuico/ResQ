@@ -436,9 +436,13 @@ export const computeOvalSkinMetrics = (
     for (let px = x0; px < x1; px++) {
       const dx = px - cx;
       if ((dx * dx) / rxSq + dySqOverRySq <= 1.0) {
-        if (skinMask[rowOffset + px] === 255) {
-          if (dx < -4) leftSkinCount++;
-          else if (dx > 4) rightSkinCount++;
+        if (skinMask[rowOffset + px] > 0) {
+          // Isolate facial cranial plane from torso/shoulder/neck leakage:
+          // Exclude pixels below the lower jaw line (dy > ry * 0.70) from bilateral head-pose asymmetry
+          if (dy <= ry * 0.70) {
+            if (dx < -4) leftSkinCount++;
+            else if (dx > 4) rightSkinCount++;
+          }
 
           if (dy < -4) topSkinCount++;
           else if (dy > 4) bottomSkinCount++;
@@ -499,6 +503,12 @@ export const computeFullFrameProfileMetrics = (
 ): OvalSkinMetrics => {
   const cy = moments.cy > 0 ? moments.cy : height * 0.5;
   const ry = moments.majorAxis > 0 ? moments.majorAxis * 0.5 : height * 0.25;
+  const cx = moments.cx > 0 ? moments.cx : width * 0.5;
+
+  // Isolate cranial corridor around face center: strictly cuts off peripheral raised arms and shoulders
+  const cranialHalfW = Math.max(35, Math.min(width * 0.45, moments.minorAxis > 0 ? moments.minorAxis * 0.95 : ry * 0.85));
+  const scanX0 = Math.max(0, Math.floor(cx - cranialHalfW));
+  const scanX1 = Math.min(width - 1, Math.floor(cx + cranialHalfW));
 
   // Mid-face band where nose and profile protrusion live
   const midY0 = Math.max(0, Math.floor(cy - ry * 0.25));
@@ -523,7 +533,7 @@ export const computeFullFrameProfileMetrics = (
   let topSkinCount = 0;
   let bottomSkinCount = 0;
 
-  // Single pass to gather bounding extents and cranial axes
+  // Single pass to gather bounding extents and cranial axes within cranial corridor
   for (let py = 0; py < height; py += 2) {
     const rowOffset = py * width;
     const isMidBand = py >= midY0 && py <= midY1;
@@ -531,8 +541,8 @@ export const computeFullFrameProfileMetrics = (
     const isChin = py >= chinY0 && py <= chinY1;
     const dy = py - cy;
 
-    for (let px = 0; px < width; px += 2) {
-      if (skinMask[rowOffset + px] === 255) {
+    for (let px = scanX0; px <= scanX1; px += 2) {
+      if (skinMask[rowOffset + px] > 0) {
         if (px < minSkinX) minSkinX = px;
         if (px > maxSkinX) maxSkinX = px;
 
@@ -584,7 +594,7 @@ export const computeFullFrameProfileMetrics = (
   for (let py = 0; py < height; py += 2) {
     const rowOffset = py * width;
     for (let px = minSkinX; px <= maxSkinX; px += 2) {
-      if (skinMask[rowOffset + px] === 255) {
+      if (skinMask[rowOffset + px] > 0) {
         const dx = px - boxMidX;
         if (dx < -4) boxLeftSkinCount++;
         else if (dx > 4) boxRightSkinCount++;
@@ -1259,7 +1269,7 @@ export const extractGeometricFacialLandmarks = (
       for (let px = x0; px < x1; px++) {
         const idx = rowOffset + px;
         const val = gray[idx];
-        const isSkin = !skinMask || skinMask[idx] === 255;
+        const isSkin = !skinMask || skinMask[idx] > 0;
         const effectiveVal = isSkin ? val : val + 90;
         if (effectiveVal < minLum) {
           minLum = effectiveVal;
@@ -1277,7 +1287,7 @@ export const extractGeometricFacialLandmarks = (
       for (let px = x0; px < x1; px++) {
         const idx = rowOffset + px;
         const val = gray[idx];
-        const isSkin = !skinMask || skinMask[idx] === 255;
+        const isSkin = !skinMask || skinMask[idx] > 0;
         const effectiveVal = isSkin ? val : val + 90;
         if (effectiveVal <= threshold) {
           const weight = threshold - effectiveVal + 1;
@@ -1380,14 +1390,40 @@ export const extractGeometricFacialLandmarks = (
   const mouthCenter = findDarkestCentroid(w * 0.28, h * 0.66, w * 0.44, h * 0.18, w * 0.50, h * 0.75);
   const chinApex = { x: Math.round(x + w * 0.50), y: Math.round(y + h * 0.95) };
 
+  const clampPoint = (pt: { x: number; y: number }): { x: number; y: number } => {
+    const safeX = Number.isFinite(pt.x) ? Math.max(0, Math.min(Math.max(0, width - 1), Math.round(pt.x))) : 0;
+    const safeY = Number.isFinite(pt.y) ? Math.max(0, Math.min(Math.max(0, height - 1), Math.round(pt.y))) : 0;
+    return { x: safeX, y: safeY };
+  };
+
+  const clampedLeftEye = clampPoint(leftEye);
+  const clampedRightEye = clampPoint(rightEye);
+  const clampedNoseTip = clampPoint(noseTip);
+  const clampedMouthCenter = clampPoint(mouthCenter);
+  const clampedChinApex = clampPoint(chinApex);
+
+  const clampedBoxX = Number.isFinite(x) ? Math.max(0, Math.min(Math.max(0, width - 1), Math.round(x))) : 0;
+  const clampedBoxY = Number.isFinite(y) ? Math.max(0, Math.min(Math.max(0, height - 1), Math.round(y))) : 0;
+  const clampedBoxW = Number.isFinite(w) ? Math.max(0, Math.min(width - clampedBoxX, Math.round(w))) : 0;
+  const clampedBoxH = Number.isFinite(h) ? Math.max(0, Math.min(height - clampedBoxY, Math.round(h))) : 0;
+
+  const eyeMidY = (clampedLeftEye.y + clampedRightEye.y) * 0.5;
+  const isTopologyValid =
+    clampedBoxW >= 20 &&
+    clampedBoxH >= 20 &&
+    clampedLeftEye.x < clampedRightEye.x &&
+    eyeMidY < clampedNoseTip.y &&
+    clampedNoseTip.y < clampedMouthCenter.y &&
+    clampedMouthCenter.y <= clampedChinApex.y;
+
   return {
-    leftEye,
-    rightEye,
-    noseTip,
-    mouthCenter,
-    chinApex,
-    faceBox,
-    isValidLandmarks: true
+    leftEye: clampedLeftEye,
+    rightEye: clampedRightEye,
+    noseTip: clampedNoseTip,
+    mouthCenter: clampedMouthCenter,
+    chinApex: clampedChinApex,
+    faceBox: { x: clampedBoxX, y: clampedBoxY, w: clampedBoxW, h: clampedBoxH },
+    isValidLandmarks: isTopologyValid
   };
 };
 
@@ -1430,12 +1466,11 @@ export const calculateGeometricHeadPose = (
     const flowComp = Math.max(-30, Math.min(30, flowVx * 4.0));       // Directional optical flow velocity
     const landmarkComp = eyeBasedYaw * 28.0;
 
-    const hasProfileSignal = Math.abs(massAsym) > 0.12 || Math.abs(silhAsym) > 0.12;
-
-    if (hasProfileSignal) {
-      rawFusedYaw = massComp * 0.35 + silhComp * 0.25 + centroidComp * 0.25 + flowComp * 0.15;
+    if (landmarks.isValidLandmarks) {
+      // Landmark geometry is primary ground truth (immune to raised arms/shoulders)
+      rawFusedYaw = landmarkComp * 0.70 + massComp * 0.15 + centroidComp * 0.10 + silhComp * 0.05;
     } else {
-      rawFusedYaw = landmarkComp * 0.45 + massComp * 0.25 + centroidComp * 0.15 + silhComp * 0.15;
+      rawFusedYaw = massComp * 0.40 + silhComp * 0.30 + centroidComp * 0.30;
     }
   } else {
     rawFusedYaw = eyeBasedYaw * 32.0;
@@ -1856,13 +1891,20 @@ export const trackSkinFace = (
   // 2. Skin segmentation and morphological filtering
   const skinMask = segmentSkinMask(ycbcr.cb, ycbcr.cr, width, height);
 
-  // 3. Compute spatial moments across the FULL camera viewport, removing oval restrictions
-  const roi: RoiRect = {
-    x: 0,
-    y: 0,
-    w: width,
-    h: height,
-  };
+  // 3. Compute spatial moments within the cranial zone, isolating the head from raised arms and shoulders
+  const roi: RoiRect = oval && oval.rx > 0 && oval.ry > 0
+    ? {
+        x: Math.max(0, oval.cx - oval.rx * 1.35),
+        y: Math.max(0, oval.cy - oval.ry * 1.35),
+        w: Math.min(width, oval.rx * 2.7),
+        h: Math.min(height, oval.ry * 2.7)
+      }
+    : {
+        x: Math.max(0, width * 0.15),
+        y: Math.max(0, height * 0.05),
+        w: width * 0.70,
+        h: height * 0.85
+      };
 
   const moments = computeSpatialMoments(skinMask, width, height, roi);
 
@@ -2083,4 +2125,221 @@ export const livenessDetection = (
         challengeName: 'ACTIVE_CHALLENGE_CENTER_LOCK'
       };
   }
+};
+
+// ============================================================================
+// REFERENCE-SYNTHESIZED ENHANCEMENTS
+// (Bicubic Inter.Cubic Normalization, Canny Edge Pruning, PCA Eigenface & 128-D Portrait Matching)
+// ============================================================================
+
+/**
+ * Keys' Bicubic Convolution Kernel (a = -0.5, Catmull-Rom spline).
+ */
+const cubicWeight = (t: number): number => {
+  const absT = Math.abs(t);
+  const a = -0.5;
+  if (absT <= 1.0) {
+    return (a + 2.0) * absT * absT * absT - (a + 3.0) * absT * absT + 1.0;
+  }
+  if (absT < 2.0) {
+    return a * absT * absT * absT - 5.0 * a * absT * absT + 8.0 * a * absT - 4.0 * a;
+  }
+  return 0.0;
+};
+
+/**
+ * Resamples a single-channel Float32Array grid to specified dimensions using
+ * 4x4 Bicubic Interpolation (Inter.Cubic equivalent), preserving sharp ocular,
+ * nasal, and labial edge gradients during canonical 100x100 / 32x32 face normalization.
+ */
+export const resampleBicubic = (
+  source: Float32Array,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number
+): Float32Array => {
+  const output = new Float32Array(dstW * dstH);
+  if (srcW <= 0 || srcH <= 0 || dstW <= 0 || dstH <= 0) {
+    return output;
+  }
+
+  const xRatio = srcW > 1 ? (srcW - 1) / Math.max(1, dstW - 1) : 0;
+  const yRatio = srcH > 1 ? (srcH - 1) / Math.max(1, dstH - 1) : 0;
+
+  for (let dy = 0; dy < dstH; dy++) {
+    const srcY = dy * yRatio;
+    const yInt = Math.floor(srcY);
+    const dyFrac = srcY - yInt;
+    const dstRowOffset = dy * dstW;
+
+    const wy0 = cubicWeight(dyFrac + 1);
+    const wy1 = cubicWeight(dyFrac);
+    const wy2 = cubicWeight(dyFrac - 1);
+    const wy3 = cubicWeight(dyFrac - 2);
+    const wy = [wy0, wy1, wy2, wy3];
+
+    for (let dx = 0; dx < dstW; dx++) {
+      const srcX = dx * xRatio;
+      const xInt = Math.floor(srcX);
+      const dxFrac = srcX - xInt;
+
+      const wx0 = cubicWeight(dxFrac + 1);
+      const wx1 = cubicWeight(dxFrac);
+      const wx2 = cubicWeight(dxFrac - 1);
+      const wx3 = cubicWeight(dxFrac - 2);
+      const wx = [wx0, wx1, wx2, wx3];
+
+      let sum = 0;
+      let weightSum = 0;
+
+      for (let m = -1; m <= 2; m++) {
+        const sy = Math.max(0, Math.min(srcH - 1, yInt + m));
+        const rowOff = sy * srcW;
+        const wY = wy[m + 1];
+        for (let n = -1; n <= 2; n++) {
+          const sx = Math.max(0, Math.min(srcW - 1, xInt + n));
+          const w = wY * wx[n + 1];
+          sum += source[rowOff + sx] * w;
+          weightSum += w;
+        }
+      }
+
+      const val = weightSum !== 0 ? sum / weightSum : 0;
+      output[dstRowOffset + dx] = Math.max(0, Math.min(255, val));
+    }
+  }
+
+  return output;
+};
+
+/**
+ * Evaluates Canny/Sobel Edge Density Pruning (`DO_CANNY_PRUNING` principle) on a candidate
+ * face rectangle. Rejects windows that are either too flat (blank wall/paper) or overly
+ * saturated with high-frequency text noise before full cascade evaluation.
+ */
+export const checkCannyEdgePruningGate = (
+  gray: Float32Array,
+  width: number,
+  height: number,
+  box: RoiRect
+): { passed: boolean; edgeDensity: number } => {
+  const x0 = Math.max(1, Math.floor(box.x));
+  const y0 = Math.max(1, Math.floor(box.y));
+  const x1 = Math.min(width - 2, Math.floor(box.x + box.w));
+  const y1 = Math.min(height - 2, Math.floor(box.y + box.h));
+
+  if (x1 <= x0 || y1 <= y0) {
+    return { passed: false, edgeDensity: 0 };
+  }
+
+  let edgePixels = 0;
+  let totalSampled = 0;
+  const gradThreshold = 24.0;
+
+  for (let y = y0; y <= y1; y += 2) {
+    const row = y * width;
+    const prevRow = (y - 1) * width;
+    const nextRow = (y + 1) * width;
+    for (let x = x0; x <= x1; x += 2) {
+      const gx = gray[row + x + 1] - gray[row + x - 1];
+      const gy = gray[nextRow + x] - gray[prevRow + x];
+      const mag = Math.abs(gx) + Math.abs(gy);
+      if (mag >= gradThreshold) {
+        edgePixels++;
+      }
+      totalSampled++;
+    }
+  }
+
+  const edgeDensity = totalSampled > 0 ? edgePixels / totalSampled : 0;
+  // Genuine human faces exhibit moderate internal edge density [0.025 .. 0.68]
+  const passed = edgeDensity >= 0.025 && edgeDensity <= 0.68;
+  return {
+    passed,
+    edgeDensity: Number(edgeDensity.toFixed(4))
+  };
+};
+
+export interface PortraitBiometricMatchResult {
+  readonly isMatch: boolean;
+  readonly compositeSimilarity: number;
+  readonly cosineSimilarity128D: number;
+  readonly eigenfaceSubspaceDistance: number;
+  readonly nccCorrelation100x100: number;
+}
+
+/**
+ * Compares a live webcam face ROI against a scanned Government ID portrait crop
+ * using 100x100 Bicubic (`Inter.Cubic`) normalization, 128-D Hybrid Feature Cosine Similarity,
+ * and PCA Eigenface Subspace Euclidean Distance.
+ */
+export const compareLiveFaceWithIdPortrait = (
+  liveGray: Float32Array,
+  liveW: number,
+  liveH: number,
+  liveFaceBox: RoiRect,
+  idGray: Float32Array,
+  idW: number,
+  idH: number,
+  idPhotoBox: RoiRect
+): PortraitBiometricMatchResult => {
+  const liveCrop = extractRoiCrop(liveGray, liveW, liveH, liveFaceBox);
+  const idCrop = extractRoiCrop(idGray, idW, idH, idPhotoBox);
+
+  if (liveCrop.width < 12 || liveCrop.height < 12 || idCrop.width < 12 || idCrop.height < 12) {
+    return {
+      isMatch: false,
+      compositeSimilarity: 0,
+      cosineSimilarity128D: 0,
+      eigenfaceSubspaceDistance: 999,
+      nccCorrelation100x100: 0
+    };
+  }
+
+  // 1. Canonical 100x100 Bicubic Normalization (Inter.Cubic reference standard)
+  const live100 = resampleBicubic(liveCrop.crop, liveCrop.width, liveCrop.height, 100, 100);
+  const id100 = resampleBicubic(idCrop.crop, idCrop.width, idCrop.height, 100, 100);
+
+  const normLive100 = standardizeLuminance(live100);
+  const normId100 = standardizeLuminance(id100);
+
+  let nccSum = 0;
+  if (normLive100.std > 1e-6 && normId100.std > 1e-6) {
+    for (let i = 0; i < 10000; i++) {
+      nccSum += normLive100.normalized[i] * normId100.normalized[i];
+    }
+  }
+  const ncc100 = Math.max(-1, Math.min(1, nccSum / 10000));
+
+  // 2. Compute 128-D Hybrid Descriptors (PCA Eigenface + Fisherface LDA + LBP + Deep CNN)
+  const fullBox100: RoiRect = { x: 0, y: 0, w: 100, h: 100 };
+  const liveEigen = computeHolisticEigenfaceProjection(live100, 100, 100, fullBox100);
+  const liveFisher = computeFisherfaceLinearDiscriminant(live100, 100, 100, fullBox100);
+  const liveLbp = computeLbpTextureHistogram(live100, 100, 100, fullBox100);
+  const liveCnn = computeDeepCnnFeatureEmbedding(live100, 100, 100, fullBox100);
+  const liveDesc = buildUnifiedFeatureDescriptor(liveEigen, liveFisher, liveLbp, liveCnn);
+
+  const idEigen = computeHolisticEigenfaceProjection(id100, 100, 100, fullBox100);
+  const idFisher = computeFisherfaceLinearDiscriminant(id100, 100, 100, fullBox100);
+  const idLbp = computeLbpTextureHistogram(id100, 100, 100, fullBox100);
+  const idCnn = computeDeepCnnFeatureEmbedding(id100, 100, 100, fullBox100);
+  const idDesc = buildUnifiedFeatureDescriptor(idEigen, idFisher, idLbp, idCnn);
+
+  const cosineSim128 = evaluateCosineSimilarity(liveDesc, idDesc);
+  const eigenDistance = evaluateEuclideanKnnDistance(liveEigen, idEigen);
+  const eigenSim = 1.0 / (1.0 + eigenDistance * 0.85);
+  const nccMapped = Math.max(0, (ncc100 + 1.0) * 0.5);
+
+  const compositeSimilarity = Number(
+    (0.50 * Math.max(0, cosineSim128) + 0.30 * eigenSim + 0.20 * nccMapped).toFixed(4)
+  );
+
+  return {
+    isMatch: compositeSimilarity >= 0.62,
+    compositeSimilarity,
+    cosineSimilarity128D: Number(cosineSim128.toFixed(4)),
+    eigenfaceSubspaceDistance: eigenDistance,
+    nccCorrelation100x100: Number(ncc100.toFixed(4))
+  };
 };

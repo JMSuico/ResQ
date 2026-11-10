@@ -1,5 +1,5 @@
-// [Layer: Backend/Controllers]
-// Responsibility: AI Standby Multi-Provider controller supporting Google Gemini, OpenAI GPT-4o Vision, and Azure Document Intelligence.
+// [Layer: Backend/Services/Implementations]
+// Responsibility: AI Standby Multi-Provider service supporting Google Gemini, OpenAI GPT-4o Vision, and Azure Document Intelligence.
 // Invariant: C# .NET 10 Web API standards, nullable reference types, universal lambda expressions (=>), masked secrets in logs.
 
 using System.Diagnostics;
@@ -7,17 +7,15 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Microsoft.AspNetCore.Mvc;
-using Backend.Models;
+using Backend.Features.Api.DTOs;
+using Backend.Features.Services.Interfaces;
 
-namespace Backend.Controllers;
+namespace Backend.Features.Services.Implementations;
 
-[ApiController]
-[Route("api/identity")]
-public class IdentityController(
+public class IdentityAiService(
     IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
-    ILogger<IdentityController> logger) : ControllerBase
+    ILogger<IdentityAiService> logger) : IIdentityAiService
 {
     private static readonly string[] CoreIdFields =
     [
@@ -29,26 +27,18 @@ public class IdentityController(
         "Sex"
     ];
 
-    /// <summary>
-    /// Checks availability of configured cloud vision providers without exposing secret keys.
-    /// </summary>
-    [HttpGet("ai-status")]
-    public IActionResult GetAiStatus() =>
-        Ok(new AiProviderStatusDto
+    public AiProviderStatusDto GetAiStatus() =>
+        new()
         {
             GeminiConfigured = !string.IsNullOrWhiteSpace(GetSecret("GEMINI_API_KEY")),
             OpenAiConfigured = !string.IsNullOrWhiteSpace(GetSecret("OPENAI_API_KEY")),
             AzureConfigured = !string.IsNullOrWhiteSpace(GetSecret("AZURE_VISION_KEY")) &&
                               !string.IsNullOrWhiteSpace(GetSecret("AZURE_VISION_ENDPOINT")),
             ActiveChain = ResolveActiveChainSummary()
-        });
+        };
 
-    /// <summary>
-    /// Dispatches OCR extraction to configured cloud AI providers (Gemini, Azure, OpenAI) with deterministic standby fallback.
-    /// </summary>
-    [HttpPost("ai-extract")]
-    public async Task<IActionResult> AiExtractAsync([FromBody] AiExtractRequestDto request, CancellationToken ct) =>
-        Ok(await ExecuteAiExtractionAsync(request, ct));
+    public async Task<AiExtractResponseDto> ExtractIdentityAsync(AiExtractRequestDto request, CancellationToken ct = default) =>
+        await ExecuteAiExtractionAsync(request, ct);
 
     private async Task<AiExtractResponseDto> ExecuteAiExtractionAsync(AiExtractRequestDto request, CancellationToken ct)
     {
@@ -88,7 +78,6 @@ public class IdentityController(
         var (mimeType, base64Data) = ParseDataUrl(request.ImageDataUrl);
         var client = httpClientFactory.CreateClient();
 
-        // Build execution order: respect PreferredProvider first, then fallback chain ['gemini', 'azure', 'openai']
         var executionList = new List<string>();
         if (!string.IsNullOrWhiteSpace(request.PreferredProvider))
         {
@@ -106,10 +95,7 @@ public class IdentityController(
 
         foreach (var provider in executionList)
         {
-            if (ct.IsCancellationRequested)
-            {
-                break;
-            }
+            if (ct.IsCancellationRequested) break;
 
             try
             {
@@ -356,7 +342,6 @@ public class IdentityController(
             return null;
         }
 
-        // Check for 202 Accepted Operation-Location
         if (response.Headers.TryGetValues("Operation-Location", out var opValues))
         {
             string? pollUrl = opValues.FirstOrDefault();
@@ -370,7 +355,6 @@ public class IdentityController(
             }
         }
 
-        // Direct synchronous response fallback
         string responseJson = await response.Content.ReadAsStringAsync(ct);
         return ParseAzureAnalyzeResult(responseJson, hintType);
     }
@@ -388,10 +372,7 @@ public class IdentityController(
             req.Headers.Add("Ocp-Apim-Subscription-Key", apiKey);
 
             using var res = await client.SendAsync(req, ct);
-            if (!res.IsSuccessStatusCode)
-            {
-                break;
-            }
+            if (!res.IsSuccessStatusCode) break;
 
             string body = await res.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(body);
@@ -519,10 +500,7 @@ public class IdentityController(
 
     private static AiExtractResponseDto? ParseStructuredAiJson(string rawText, string provider, string? hintType)
     {
-        if (string.IsNullOrWhiteSpace(rawText))
-        {
-            return null;
-        }
+        if (string.IsNullOrWhiteSpace(rawText)) return null;
 
         string cleanJson = CleanJsonFences(rawText);
 

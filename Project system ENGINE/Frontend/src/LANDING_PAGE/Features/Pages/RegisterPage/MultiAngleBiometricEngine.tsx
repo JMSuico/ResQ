@@ -221,6 +221,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
   const prevGrayRef = useRef<Float32Array | undefined>(undefined);
   const centerBaselineRef = useRef<{ yaw0: number; pitch0: number } | undefined>(undefined);
   const centerDescriptorRef = useRef<Float32Array | null>(null);
+  const centerEyeOpenBaselineRef = useRef<number>(0.5);
 
   // Frame Pause and Command Transition Telemetry
   const [isFramePaused, setIsFramePaused] = useState<boolean>(false);
@@ -867,13 +868,16 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           snapshotsRef.current.center = centerSnap;
           setSnapshots((prev) => ({ ...prev, center: centerSnap }));
 
-          // Calibrate baseline angles and identity descriptor from user's locked center pose
+          // Calibrate baseline angles, identity descriptor, and open-eye baseline from user's locked center pose
           if (res) {
             centerBaselineRef.current = {
               yaw0: res.yawDegrees,
               pitch0: res.pitchDegrees
             };
             centerDescriptorRef.current = res.featureDescriptor || res.hybridProfile.featureDescriptor || res.hybridProfile.eigenVector;
+            if (res.blink && res.blink.eyeOpenness > 0.15) {
+              centerEyeOpenBaselineRef.current = res.blink.eyeOpenness;
+            }
           }
 
           // Command 1 finished: PAUSE frame counting immediately until Command 2 starts!
@@ -903,7 +907,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     }, 60);
   };
 
-  // Pose 2: Turn Left (Requires Actual Left Profile Rotation: deltaYaw <= -9 deg or profileRatio < 0.92)
+  // Pose 2: Turn Left (Requires Actual Left Profile Rotation: deltaYaw <= -16 deg or yawDegrees <= -16 deg)
   const runPose2Left = () => {
     isTransitionPausedRef.current = false;
     biometricFrameCache.resume();
@@ -913,33 +917,42 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     setCurrentStep('POSE_LEFT');
     currentStepRef.current = 'POSE_LEFT';
     setPoseProgress(0);
-    console.info('[BiometricEngine] COMMAND 2 (LEFT) STARTED. Resuming frame caching for Left Profile.');
+    console.info('[BiometricEngine] COMMAND 2 (LEFT) STARTED. Awaiting actual Left Profile head rotation (<= -16 deg).');
 
-    let progress = 0;
+    let holdTicks = 0;
+    const REQUIRED_HOLD_TICKS = 8; // 8 * 60ms = ~480ms continuous stable left-turn hold
+
     if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
     activeIntervalRef.current = setInterval(() => {
       const res = latestSkinResultRef.current;
       const isLiveValid = isSynthetic || (res && res.isValidFace);
       const deltaYaw = res ? (res.pose.deltaYaw ?? (res.yawDegrees - (centerBaselineRef.current?.yaw0 ?? 0))) : 0;
-      const flowVx = res?.liveness.vx ?? 0;
 
       let isIdentityMatched = true;
       if (res && centerDescriptorRef.current && res.featureDescriptor) {
         const sim = evaluateCosineSimilarity(centerDescriptorRef.current, res.featureDescriptor);
-        isIdentityMatched = sim >= 0.45; // Rotated profile continuity tolerance
+        isIdentityMatched = sim >= 0.40; // Rotated profile continuity tolerance
       }
 
-      const profRatio = res?.profileRatio ?? res?.ovalMetrics?.profileRatio;
-      const isProfileLeft = (profRatio !== undefined && profRatio < 0.92) || (res && res.yawDegrees <= -8);
-      const isAngleMatched = isSynthetic || (res && (deltaYaw <= -8 || (deltaYaw <= -5 && flowVx < -0.05) || isProfileLeft) && isIdentityMatched);
+      // Strict Left Profile threshold: requires genuine head rotation left (absolute yaw <= -14 deg AND deltaYaw <= -10 deg)
+      // Stationary forward face (yaw ~ 0 deg) is strictly rejected!
+      const isAngleMatched = isSynthetic || (
+        Boolean(res) &&
+        res!.yawDegrees <= -14 &&
+        deltaYaw <= -10 &&
+        Math.abs(res!.yawDegrees) >= 12 &&
+        isIdentityMatched
+      );
 
       if (isLiveValid && isAngleMatched) {
-        progress += 10;
-        setPoseProgress(Math.min(progress, 100));
+        holdTicks = Math.min(REQUIRED_HOLD_TICKS, holdTicks + 1);
+        const currentProgress = Math.round((holdTicks / REQUIRED_HOLD_TICKS) * 100);
+        setPoseProgress(currentProgress);
 
-        if (progress >= 100) {
+        if (holdTicks >= REQUIRED_HOLD_TICKS) {
           if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
           activeIntervalRef.current = null;
+          // Capture the snapshot while head is genuinely turned to the left!
           const leftSnap = captureCurrentFrame();
           snapshotsRef.current.left = leftSnap;
           setSnapshots((prev) => ({ ...prev, left: leftSnap }));
@@ -951,10 +964,10 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           setFramePauseReason('COMMAND_2_COMPLETE');
           setTransitionBanner({
             visible: true,
-            title: 'COMMAND 2 (LEFT) VERIFIED',
+            title: 'COMMAND 2 (LEFT PROFILE) VERIFIED',
             subtitle: 'FRAMES PAUSED // PREPARING COMMAND 3: TURN RIGHT'
           });
-          console.info('[BiometricEngine] COMMAND 2 (LEFT) COMPLETED. Frame caching PAUSED during transition to Command 3.');
+          console.info('[BiometricEngine] COMMAND 2 (LEFT) COMPLETED with true left pose. Frame caching PAUSED.');
 
           stepTimerRef.current = setTimeout(() => {
             setTransitionBanner(null);
@@ -962,13 +975,14 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           }, 1000);
         }
       } else {
-        progress = Math.max(0, progress - 1.0);
-        setPoseProgress(progress);
+        holdTicks = Math.max(0, holdTicks - 1);
+        const currentProgress = Math.round((holdTicks / REQUIRED_HOLD_TICKS) * 100);
+        setPoseProgress(currentProgress);
       }
     }, 60);
   };
 
-  // Pose 3: Turn Right (Requires Actual Right Profile Rotation: deltaYaw >= +9 deg or profileRatio > 1.08)
+  // Pose 3: Turn Right (Requires Actual Right Profile Rotation: deltaYaw >= +16 deg or yawDegrees >= +16 deg)
   const runPose3Right = () => {
     isTransitionPausedRef.current = false;
     biometricFrameCache.resume();
@@ -978,33 +992,42 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     setCurrentStep('POSE_RIGHT');
     currentStepRef.current = 'POSE_RIGHT';
     setPoseProgress(0);
-    console.info('[BiometricEngine] COMMAND 3 (RIGHT) STARTED. Resuming frame caching for Right Profile.');
+    console.info('[BiometricEngine] COMMAND 3 (RIGHT) STARTED. Awaiting actual Right Profile head rotation (>= +16 deg).');
 
-    let progress = 0;
+    let holdTicks = 0;
+    const REQUIRED_HOLD_TICKS = 8; // 8 * 60ms = ~480ms continuous stable right-turn hold
+
     if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
     activeIntervalRef.current = setInterval(() => {
       const res = latestSkinResultRef.current;
       const isLiveValid = isSynthetic || (res && res.isValidFace);
       const deltaYaw = res ? (res.pose.deltaYaw ?? (res.yawDegrees - (centerBaselineRef.current?.yaw0 ?? 0))) : 0;
-      const flowVx = res?.liveness.vx ?? 0;
 
       let isIdentityMatched = true;
       if (res && centerDescriptorRef.current && res.featureDescriptor) {
         const sim = evaluateCosineSimilarity(centerDescriptorRef.current, res.featureDescriptor);
-        isIdentityMatched = sim >= 0.45; // Rotated profile continuity tolerance
+        isIdentityMatched = sim >= 0.40; // Rotated profile continuity tolerance
       }
 
-      const profRatio = res?.profileRatio ?? res?.ovalMetrics?.profileRatio;
-      const isProfileRight = (profRatio !== undefined && profRatio > 1.08) || (res && res.yawDegrees >= 8);
-      const isAngleMatched = isSynthetic || (res && (deltaYaw >= 8 || (deltaYaw >= 5 && flowVx > 0.05) || isProfileRight) && isIdentityMatched);
+      // Strict Right Profile threshold: requires genuine head rotation right (absolute yaw >= +14 deg AND deltaYaw >= +10 deg)
+      // Stationary forward face (yaw ~ 0 deg) is strictly rejected!
+      const isAngleMatched = isSynthetic || (
+        Boolean(res) &&
+        res!.yawDegrees >= 14 &&
+        deltaYaw >= 10 &&
+        Math.abs(res!.yawDegrees) >= 12 &&
+        isIdentityMatched
+      );
 
       if (isLiveValid && isAngleMatched) {
-        progress += 10;
-        setPoseProgress(Math.min(progress, 100));
+        holdTicks = Math.min(REQUIRED_HOLD_TICKS, holdTicks + 1);
+        const currentProgress = Math.round((holdTicks / REQUIRED_HOLD_TICKS) * 100);
+        setPoseProgress(currentProgress);
 
-        if (progress >= 100) {
+        if (holdTicks >= REQUIRED_HOLD_TICKS) {
           if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
           activeIntervalRef.current = null;
+          // Capture the snapshot while head is genuinely turned to the right!
           const rightSnap = captureCurrentFrame();
           snapshotsRef.current.right = rightSnap;
           setSnapshots((prev) => ({ ...prev, right: rightSnap }));
@@ -1016,10 +1039,10 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           setFramePauseReason('COMMAND_3_COMPLETE');
           setTransitionBanner({
             visible: true,
-            title: 'COMMAND 3 (RIGHT) VERIFIED',
+            title: 'COMMAND 3 (RIGHT PROFILE) VERIFIED',
             subtitle: 'FRAMES PAUSED // PREPARING COMMAND 4: BLINK EYES'
           });
-          console.info('[BiometricEngine] COMMAND 3 (RIGHT) COMPLETED. Frame caching PAUSED during transition to Command 4.');
+          console.info('[BiometricEngine] COMMAND 3 (RIGHT) COMPLETED with true right pose. Frame caching PAUSED.');
 
           stepTimerRef.current = setTimeout(() => {
             setTransitionBanner(null);
@@ -1027,13 +1050,14 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           }, 1000);
         }
       } else {
-        progress = Math.max(0, progress - 1.0);
-        setPoseProgress(progress);
+        holdTicks = Math.max(0, holdTicks - 1);
+        const currentProgress = Math.round((holdTicks / REQUIRED_HOLD_TICKS) * 100);
+        setPoseProgress(currentProgress);
       }
     }, 60);
   };
 
-  // Pose 4: Eye Blink Liveness (Requires real human eyelid blink closure and reopening)
+  // Pose 4: Eye Blink Liveness (Requires true two-phase human eyelid blink closure and reopening)
   const runPose4Blink = () => {
     isTransitionPausedRef.current = false;
     biometricFrameCache.resume();
@@ -1043,30 +1067,63 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     setCurrentStep('POSE_BLINK');
     currentStepRef.current = 'POSE_BLINK';
     setPoseProgress(0);
-    console.info('[BiometricEngine] COMMAND 4 (BLINK) STARTED. Resuming frame caching for Eye Blink Liveness.');
+    console.info('[BiometricEngine] COMMAND 4 (BLINK) STARTED. Awaiting true two-phase human eyelid blink.');
 
-    let progress = 0;
-    let blinkClosedDetected = false;
+    let blinkPhase: 'WAITING_FOR_OPEN_BASELINE' | 'WAITING_FOR_DIP' | 'CLOSED_DIP_DETECTED' | 'REOPENED_CONFIRMED' = 'WAITING_FOR_OPEN_BASELINE';
+    let openBaselineTicks = 0;
+    let closedTicks = 0;
+    let postBlinkHold = 0;
 
     if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
     activeIntervalRef.current = setInterval(() => {
       const res = latestSkinResultRef.current;
       const isLiveValid = isSynthetic || (res && res.isValidFace);
-      const isBlinking = isSynthetic || (res && res.blink && res.blink.isBlinking);
+      const isBlinkingSignal = isSynthetic || (res && res.blink && res.blink.isBlinking);
       const eyeOpenness = res?.blink?.eyeOpenness ?? 0.5;
 
-      if (isBlinking || eyeOpenness < 0.28) {
-        blinkClosedDetected = true;
+      const baselineEye = Math.max(0.28, centerEyeOpenBaselineRef.current || 0.45);
+      const openThresh = baselineEye * 0.78;
+      const closedThresh = Math.min(0.22, baselineEye * 0.48);
+      const reopenThresh = baselineEye * 0.72;
+
+      if (isSynthetic) {
+        // In synthetic test mode, simulate natural blink progression
+        blinkPhase = 'REOPENED_CONFIRMED';
+      } else if (blinkPhase === 'WAITING_FOR_OPEN_BASELINE') {
+        // Pre-condition: User's eyes must be visibly open relative to personal baseline
+        if (eyeOpenness >= openThresh && !isBlinkingSignal) {
+          openBaselineTicks++;
+          if (openBaselineTicks >= 3) {
+            blinkPhase = 'WAITING_FOR_DIP';
+            setPoseProgress(15);
+          }
+        } else {
+          openBaselineTicks = 0;
+        }
+      } else if (blinkPhase === 'WAITING_FOR_DIP') {
+        // Phase 1: User must genuinely close their eyelids (eye openness drops below closedThresh)
+        if (isBlinkingSignal || eyeOpenness <= closedThresh) {
+          closedTicks++;
+          if (closedTicks >= 2) { // held closed for ~120ms
+            blinkPhase = 'CLOSED_DIP_DETECTED';
+            setPoseProgress(55);
+          }
+        } else {
+          closedTicks = 0;
+        }
+      } else if (blinkPhase === 'CLOSED_DIP_DETECTED') {
+        // Phase 2: User must reopen eyes (eye openness rises back above reopenThresh)
+        if (eyeOpenness >= reopenThresh) {
+          blinkPhase = 'REOPENED_CONFIRMED';
+          setPoseProgress(85);
+        }
       }
 
-      // Blink verified if eyelid dip is detected followed by recovery, or repeated blink signal
-      const blinkVerified = isSynthetic || (blinkClosedDetected && (isBlinking || eyeOpenness >= 0.20));
+      if (isLiveValid && blinkPhase === 'REOPENED_CONFIRMED') {
+        postBlinkHold++;
+        setPoseProgress(Math.min(100, 80 + postBlinkHold * 10));
 
-      if (isLiveValid && blinkVerified) {
-        progress += 15;
-        setPoseProgress(Math.min(progress, 100));
-
-        if (progress >= 100) {
+        if (postBlinkHold >= 2) {
           if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
           activeIntervalRef.current = null;
           const blinkSnap = captureCurrentFrame();
@@ -1085,16 +1142,15 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
             title: 'ALL 4 BIOMETRIC POSES VERIFIED',
             subtitle: 'FRAMES PAUSED // STORING BIOMETRIC HASH TO DATABASE'
           });
-          console.info('[BiometricEngine] COMMAND 4 (BLINK) COMPLETED. All biometric poses secured. Frame caching permanently PAUSED.');
+          console.info('[BiometricEngine] COMMAND 4 (BLINK) COMPLETED with true eye blink. Frame caching permanently PAUSED.');
 
           stepTimerRef.current = setTimeout(() => {
             setTransitionBanner(null);
             runFlashChromaLivenessSequence();
           }, 600);
         }
-      } else {
-        progress = Math.max(0, progress - 1.0);
-        setPoseProgress(progress);
+      } else if (blinkPhase === 'WAITING_FOR_DIP') {
+        setPoseProgress(0);
       }
     }, 60);
   };

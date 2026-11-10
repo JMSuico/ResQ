@@ -1341,6 +1341,7 @@ export const ResponderDashboard: React.FC = () => {
                 centerLng={effectiveMapCenterLng}
                 roleFilter={session?.unit || 'RHU'}
                 selectedIncidentId={selectedPointer?.id || null}
+                onCloseCallout={() => setSelectedPointer(null)}
                 onSelectIncident={(inc) => {
                   const ptr = allRadarPointers.find((p) => p.id === inc.id);
                   if (ptr) setSelectedPointer(ptr);

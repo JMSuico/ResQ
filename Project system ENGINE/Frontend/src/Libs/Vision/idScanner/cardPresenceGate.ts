@@ -3,7 +3,14 @@
 // Strict TypeScript, zero 'any', universal arrow lambdas (=>).
 
 import { Point2D } from './cannyHough';
-import { rgbaToYCbCr, segmentSkinMask, computeSpatialMoments, detectViolaJonesHaarFaceFeatures, RoiRect } from './face/skinFaceTracker';
+import {
+  rgbaToYCbCr,
+  segmentSkinMask,
+  computeSpatialMoments,
+  detectViolaJonesHaarFaceFeatures,
+  computeSecondOrderIntegralImage,
+  RoiRect
+} from './face/skinFaceTracker';
 import { computeIntegralImage } from './imageOps';
 
 export type CardPresenceStatus = 'NO_CARD' | 'FACE_DETECTED' | 'ALIGNING' | 'LOCKED';
@@ -92,7 +99,8 @@ export const evaluateCardPresenceGate = (
     // Real faces occupy between 12% and 65% of the frame (ratios > 65% indicate brown walls or wooden desks)
     if (faceAreaRatio >= 0.12 && faceAreaRatio <= 0.65) {
       const integral = computeIntegralImage(gray, width, height);
-      const haarCheck = detectViolaJonesHaarFaceFeatures(integral, width, height, detectedFaceBox);
+      const integralSq = computeSecondOrderIntegralImage(gray, width, height);
+      const haarCheck = detectViolaJonesHaarFaceFeatures(integral, width, height, detectedFaceBox, integralSq);
 
       // If ocular dipole, nasal bridge, or confidence score >= 0.50 confirms human facial architecture
       if (haarCheck.ocularDipolePassed || haarCheck.bridgeTriplePassed || haarCheck.score >= 0.50) {
@@ -271,20 +279,23 @@ export const evaluateCardPresenceGate = (
       const lx = pA.x + dx * t;
       const ly = pA.y + dy * t;
 
-      const insideX = Math.round(lx + nx * 4);
-      const insideY = Math.round(ly + ny * 4);
-      const outsideX = Math.round(lx - nx * 4);
-      const outsideY = Math.round(ly - ny * 4);
+      const clampX = (v: number): number => Math.max(0, Math.min(width - 1, Math.round(v)));
+      const clampY = (v: number): number => Math.max(0, Math.min(height - 1, Math.round(v)));
 
-      if (
-        insideX >= 0 && insideX < width && insideY >= 0 && insideY < height &&
-        outsideX >= 0 && outsideX < width && outsideY >= 0 && outsideY < height
-      ) {
-        const lumIn = gray[insideY * width + insideX];
-        const lumOut = gray[outsideY * width + outsideX];
-        totalBorderContrast += Math.abs(lumIn - lumOut);
-        sampledBorderPoints++;
-      }
+      const in3X = clampX(lx + nx * 3);
+      const in3Y = clampY(ly + ny * 3);
+      const out3X = clampX(lx - nx * 3);
+      const out3Y = clampY(ly - ny * 3);
+      const step3 = Math.abs(gray[in3Y * width + in3X] - gray[out3Y * width + out3X]);
+
+      const in6X = clampX(lx + nx * 6);
+      const in6Y = clampY(ly + ny * 6);
+      const out6X = clampX(lx - nx * 6);
+      const out6Y = clampY(ly - ny * 6);
+      const step6 = Math.abs(gray[in6Y * width + in6X] - gray[out6Y * width + out6X]);
+
+      totalBorderContrast += Math.max(step3, step6);
+      sampledBorderPoints++;
     }
   }
 

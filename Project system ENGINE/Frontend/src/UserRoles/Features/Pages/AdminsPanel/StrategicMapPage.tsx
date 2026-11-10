@@ -162,8 +162,8 @@ export const StrategicMapPage: FC = () => {
       })
       .map((rep) => ({
         id: rep.id,
-        lat: Number(rep.latitude),
-        lng: Number(rep.longitude),
+        lat: Number(rep.currentLatitude ?? rep.latitude),
+        lng: Number(rep.currentLongitude ?? rep.longitude),
         title: rep.title,
         status: rep.status || 'Reported',
         type: 'incident' as const,
@@ -238,7 +238,7 @@ export const StrategicMapPage: FC = () => {
   const handleSelectIncident = (r: ReportItem) => {
     setSelectedIncident(r);
     if (typeof r.latitude === 'number' && typeof r.longitude === 'number') {
-      setActiveCenter({ lat: r.latitude, lng: r.longitude });
+      setActiveCenter({ lat: r.currentLatitude ?? r.latitude, lng: r.currentLongitude ?? r.longitude });
     }
   };
 
@@ -395,6 +395,7 @@ export const StrategicMapPage: FC = () => {
               }))}
               selectedIncidentId={selectedIncident?.id}
               roleFilter={filterAgency === 'RHU' ? 'RHU' : 'LDRRMO'}
+              onCloseCallout={() => setSelectedIncident(null)}
               onSelectIncident={(inc) => {
                 const matched = reports.find((r) => r.id === inc.id);
                 if (matched) {

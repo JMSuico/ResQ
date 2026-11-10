@@ -271,8 +271,8 @@ export const AdminDashboard: FC = () => {
     })),
     ...reports.map((rep) => ({
       id: rep.id,
-      lat: Number(rep.latitude),
-      lng: Number(rep.longitude),
+      lat: Number(rep.currentLatitude ?? rep.latitude),
+      lng: Number(rep.currentLongitude ?? rep.longitude),
       title: rep.title,
       status: rep.status || 'Reported',
       type: 'incident' as const,
@@ -527,6 +527,8 @@ export const AdminDashboard: FC = () => {
               centerLat={8.5147}
               centerLng={123.2842}
               roleFilter="LDRRMO"
+              isMinimap={true}
+              onExpandMap={() => navigate('/admin/strategic-map')}
               className="w-full h-full min-h-[280px]"
             />
           </div>

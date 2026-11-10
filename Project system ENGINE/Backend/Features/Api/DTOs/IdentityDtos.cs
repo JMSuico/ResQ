@@ -1,8 +1,8 @@
-// [Layer: Backend/Models]
+// [Layer: Backend/Api/DTOs]
 // Responsibility: Data Transfer Objects for AI standby ID document extraction and vision provider orchestration.
 // Invariant: C# .NET 10 Web API standards, nullable reference types enabled, universal lambda expressions (=>).
 
-namespace Backend.Models;
+namespace Backend.Features.Api.DTOs;
 
 /// <summary>
 /// Payload submitted for AI-assisted optical character recognition and identity classification.

@@ -12,6 +12,8 @@ public class SessionVerificationMiddleware(RequestDelegate next)
 {
     private static readonly HashSet<string> PublicPaths = new(StringComparer.OrdinalIgnoreCase)
     {
+        "/api/health",
+        "/health",
         "/api/login",
         "/api/logout",
         "/api/register",
@@ -47,10 +49,11 @@ public class SessionVerificationMiddleware(RequestDelegate next)
 
     public async Task InvokeAsync(HttpContext context, ISessionRepository sessionRepo, IUserRepository userRepo)
     {
-        string path = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
+        string rawPath = context.Request.Path.Value?.ToLowerInvariant() ?? string.Empty;
+        string path = rawPath.TrimEnd('/');
 
-        // Skip public routes, identity extraction endpoints, or non-API static requests
-        if (!path.StartsWith("/api") || PublicPaths.Contains(path) || path.StartsWith("/api/identity") || path.Contains("/image"))
+        // Skip public routes, health checks, identity extraction endpoints, or distress beacon emergency pings
+        if (path == "/api/health" || path == "/health" || path.StartsWith("/api/health") || !path.StartsWith("/api") || PublicPaths.Contains(path) || path.StartsWith("/api/identity") || path.Contains("/image") || path.EndsWith("/beacon"))
         {
             await next(context);
             return;

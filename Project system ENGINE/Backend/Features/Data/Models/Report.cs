@@ -42,6 +42,14 @@ public class Report
 
     public double Longitude { get; set; }
 
+    public double? CurrentLatitude { get; set; }
+
+    public double? CurrentLongitude { get; set; }
+
+    public DateTime? LastBeaconAt { get; set; }
+
+    public int BeaconCount { get; set; } = 0;
+
     [MaxLength(255)]
     public string LocationLabel { get; set; } = string.Empty;
 

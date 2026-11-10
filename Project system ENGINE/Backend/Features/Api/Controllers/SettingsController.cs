@@ -1,18 +1,17 @@
 // [Layer: Backend/Api/Controllers]
-// Responsibility: Exposes system configuration settings and tamper-evident audit logs using Universal Lambdas (=>).
-// DO NOT allow non-admins to modify core system settings or audit trails.
+// Responsibility: Exposes system configuration settings and tamper-evident audit logs via ISettingsService.
+// Universal Lambda Expressions (=>). Injects Services ONLY. Under 35 lines. Zero emojis.
 
 using Microsoft.AspNetCore.Mvc;
 using Backend.Features.Api.DTOs;
 using Backend.Features.Data.Enums;
-using Backend.Features.Repositories.Interfaces;
 using Backend.Features.Services.Interfaces;
 
 namespace Backend.Features.Api.Controllers;
 
 [ApiController]
 [Route("api/settings")]
-public class SettingsController(ISettingsService settingsService, IAuditLogRepository auditRepo) : ControllerBase
+public class SettingsController(ISettingsService settingsService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetSettingsAsync(CancellationToken ct) =>
@@ -30,5 +29,5 @@ public class SettingsController(ISettingsService settingsService, IAuditLogRepos
     public async Task<IActionResult> GetAuditLogsAsync(CancellationToken ct) =>
         HttpContext.Items["UserRole"] is not UserRole role || role != UserRole.LDRRMO_Admin
             ? StatusCode(StatusCodes.Status403Forbidden, new { message = "Only LDRRMO Administrators may view audit trails." })
-            : Ok(await auditRepo.GetRecentAsync(50, ct));
+            : Ok(await settingsService.GetRecentAuditLogsAsync(50, ct));
 }

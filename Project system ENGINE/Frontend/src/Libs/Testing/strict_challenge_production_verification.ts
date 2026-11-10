@@ -90,19 +90,19 @@ export const runStrictChallenge = async () => {
 
   // SECTION 2: AUTHENTICATION FOR ALL SEEDED USER ROLES
   logInfo('\n--- SECTION 2: MULTI-USER CREDENTIAL VERIFICATION ---');
-  const civilian1 = await executeLogin('civilain1@gmail.com', 'Civilian1', 'ResponderCivilian', 'Civilian');
+  const civilian1 = await executeLogin('resident.juan@resqtrack.gov.ph', 'CivilianSafe@2026!', 'ResponderCivilian', 'Civilian');
   logPass(`Civilian 1 Authenticated: ${civilian1.session.fullName} (${civilian1.session.email})`);
 
-  const civilianAlt = await executeLogin('civilian1@gmail.com', 'Civilian1', 'ResponderCivilian', 'Civilian');
+  const civilianAlt = await executeLogin('resident.juan@resqtrack.gov.ph', 'CivilianSafe@2026!', 'ResponderCivilian', 'Civilian');
   logPass(`Civilian Alt Authenticated: ${civilianAlt.session.fullName} (${civilianAlt.session.email})`);
 
-  const medic1 = await executeLogin('medic1@gmail.com', 'Medic1', 'ResponderCivilian', 'Responder');
+  const medic1 = await executeLogin('rhu.medic@resqtrack.gov.ph', 'RhuResponder@2026!', 'ResponderCivilian', 'Responder');
   logPass(`RHU Medic Authenticated: ${medic1.session.fullName} (Unit: ${medic1.session.unit})`);
 
-  const fire1 = await executeLogin('fire1@gmail.com', 'Fire1', 'ResponderCivilian', 'Responder');
+  const fire1 = await executeLogin('bfp.fire@resqtrack.gov.ph', 'BfpResponder@2026!', 'ResponderCivilian', 'Responder');
   logPass(`BFP Fire Authenticated: ${fire1.session.fullName} (Unit: ${fire1.session.unit})`);
 
-  const police1 = await executeLogin('police1@gmail.com', 'Police1', 'ResponderCivilian', 'Responder');
+  const police1 = await executeLogin('pnp.patrol@resqtrack.gov.ph', 'PnpResponder@2026!', 'ResponderCivilian', 'Responder');
   logPass(`PNP Police Authenticated: ${police1.session.fullName} (Unit: ${police1.session.unit})`);
 
   const admin = await executeLogin('ldrrmo.admin@resqtrack.gov.ph', 'LdrrmoCommand@2026!', 'Admin', 'LDRRMO_Admin');

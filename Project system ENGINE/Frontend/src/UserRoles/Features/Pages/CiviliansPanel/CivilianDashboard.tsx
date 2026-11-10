@@ -30,6 +30,7 @@ import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
+import { useDistressBeacon } from '@/Hooks/useDistressBeacon';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
 import { Button } from '@/Shared/Button';
 import { AGENCY_METADATA } from '@/Libs/Assets/data';
@@ -166,6 +167,25 @@ export const CivilianDashboard: React.FC = () => {
     });
   }, [reports, session?.userId]);
 
+  const activeDistressIncidentId = useMemo(() => {
+    try {
+      const stored = localStorage.getItem('resqtrack_active_distress_incident_id');
+      if (stored) return stored;
+    } catch {
+      // Storage guard
+    }
+    const activeOne = myReports.find((r) => {
+      const st = (r.status || '').toLowerCase();
+      return st !== 'resolved' && st !== 'closed';
+    });
+    return activeOne?.id || null;
+  }, [myReports]);
+
+  const { beaconCount, isBeaconsActive, lastBeaconAt } = useDistressBeacon({
+    activeIncidentId: activeDistressIncidentId,
+    intervalMs: 60000 // 1 Beat Per Minute
+  });
+
   const handleQuickReport = async (dataUrl: string, meta?: CameraCaptureMetadata) => {
     try {
       const res = await createReport({
@@ -190,6 +210,7 @@ export const CivilianDashboard: React.FC = () => {
           existing.unshift(res.report.id);
         }
         localStorage.setItem('resqtrack_submitted_report_ids', JSON.stringify(existing));
+        localStorage.setItem('resqtrack_active_distress_incident_id', res.report.id);
         if (res.report.reporterId) {
           localStorage.setItem('resqtrack_reporter_id', res.report.reporterId);
         }
@@ -440,7 +461,14 @@ export const CivilianDashboard: React.FC = () => {
               {/* High-Urgency One-Tap Trigger Button */}
               <button
                 type="button"
-                onClick={() => setIsCameraOpen(true)}
+                onClick={() => {
+                  if (!isHardwareGeolocated && coords.isFallback) {
+                    refreshGps();
+                    alert('Active Location Required: Please enable and authorize device GPS / WiFi location to pinpoint exact coordinates in Katipunan 7109 before activating the emergency SOS camera.');
+                    return;
+                  }
+                  setIsCameraOpen(true);
+                }}
                 className="relative z-10 w-full sm:w-80 min-h-[72px] px-8 py-5 rounded-2xl bg-gradient-to-r from-rose-600 via-rose-700 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-black text-lg tracking-wide uppercase shadow-[0_0_40px_rgba(225,29,72,0.6)] hover:shadow-[0_0_55px_rgba(225,29,72,0.8)] active:scale-[0.98] transition-all flex items-center justify-center gap-4 border border-rose-400/50"
                 aria-label="One-Tap Emergency Accident SOS Trigger"
               >

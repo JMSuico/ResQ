@@ -23,7 +23,8 @@ import {
   X,
   Camera,
   Lock,
-  Layers
+  Layers,
+  GripHorizontal
 } from 'lucide-react';
 import {
   RADAR_POINTER_CATEGORIES,
@@ -42,7 +43,7 @@ import {
   calculateHaversineDistanceKm,
   calculateDynamicEtaMinutes
 } from '@/Libs/Map/mapAccuracy';
-import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
+import { useFluidResposiveness, useDraggable } from '@/Hooks';
 
 export interface IncidentPinData {
   id: string;
@@ -117,6 +118,8 @@ export interface SatelliteCommandMapProps {
   showMedicHud?: boolean;
   onMapReady?: (map: L.Map) => void;
   className?: string;
+  isMinimap?: boolean;
+  onCloseCallout?: () => void;
 }
 
 const AREA_BOUNDS: [[number, number], [number, number]] = [
@@ -160,7 +163,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   roleFilter,
   showMedicHud = true,
   onMapReady,
-  className = 'mapview__map'
+  className = 'mapview__map',
+  isMinimap: isMinimapProp = false,
+  onCloseCallout
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -168,6 +173,8 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   const accuracyCirclesLayerRef = useRef<L.LayerGroup | null>(null);
   const dispatchRoutesLayerRef = useRef<L.LayerGroup | null>(null);
   const respondersLayerRef = useRef<L.LayerGroup | null>(null);
+  const closedIncidentIdRef = useRef<string | null>(null);
+  const markerInstancesRef = useRef<Map<string, { marker: L.Marker; circle?: L.Circle }>>(new Map());
 
   const [sortMode, setSortMode] = useState<'ALL' | 'FOR_MEDICS'>('ALL');
   const [pointerSettings, setPointerSettings] = useState(() => getMedicPointerSettings());
@@ -180,22 +187,78 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   const [lightboxOpen, setLightboxOpen] = useState<boolean>(false);
   const [calloutPoint, setCalloutPoint] = useState<{ x: number; y: number } | null>(null);
 
+  const lastFocusedIdRef = useRef<string | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+
+  const { position: dragOffset, dragHandleProps } = useDraggable({
+    resetKey: activePointer?.id || null
+  });
+
   const { isMobile, isTablet } = useFluidResposiveness();
   const effectiveExpanded = isExpanded !== undefined ? isExpanded : isExpandedFullscreen;
 
-  // Real-time calculation of callout pixel position anchored to active pointer
+  // Real-time calculation of callout pixel position anchored to active pointer with requestAnimationFrame throttling
   const updateCalloutPosition = useCallback(() => {
     if (!mapInstanceRef.current || !activePointer) {
       setCalloutPoint(null);
       return;
     }
-    try {
-      const pt = mapInstanceRef.current.latLngToContainerPoint([activePointer.lat, activePointer.lng]);
-      setCalloutPoint({ x: pt.x, y: pt.y });
-    } catch {
-      setCalloutPoint(null);
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
     }
+    animFrameRef.current = requestAnimationFrame(() => {
+      try {
+        const map = mapInstanceRef.current;
+        if (!map) return;
+        const pt = map.latLngToContainerPoint([activePointer.lat, activePointer.lng]);
+        setCalloutPoint((prev) => {
+          if (prev && Math.abs(prev.x - pt.x) < 0.4 && Math.abs(prev.y - pt.y) < 0.4) {
+            return prev;
+          }
+          return { x: pt.x, y: pt.y };
+        });
+      } catch {
+        setCalloutPoint(null);
+      }
+    });
   }, [activePointer]);
+
+  // Smooth, non-jittering single camera transition to focused incident with stability check
+  const smoothlyFocusIncident = useCallback((inc: IncidentPinData, isUserClick = false) => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    // Prevent duplicate camera interruptions if already focused on this incident
+    if (lastFocusedIdRef.current === inc.id && !isUserClick) {
+      return;
+    }
+    lastFocusedIdRef.current = inc.id;
+
+    try {
+      // Check if incident marker is already comfortably within visible map viewport
+      const pt = map.latLngToContainerPoint([inc.lat, inc.lng]);
+      const size = map.getSize();
+      const padX = size.x * 0.12;
+      const padY = size.y * 0.15;
+      const isComfortablyInView =
+        pt.x >= padX && pt.x <= size.x - padX &&
+        pt.y >= padY && pt.y <= size.y - padY;
+
+      // If already comfortably visible, keep the map rock-solid and stable with ZERO shaking
+      if (isComfortablyInView) {
+        return;
+      }
+
+      // If outside view, pan gently and stably to bring the marker into view
+      map.panTo([inc.lat, inc.lng], {
+        animate: true,
+        duration: 0.32,
+        easeLinearity: 0.2
+      });
+    } catch {
+      // Safe pan fallback
+    }
+  }, []);
 
   useEffect(() => {
     updateCalloutPosition();
@@ -233,17 +296,12 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     const t2 = window.setTimeout(() => {
       mapInstanceRef.current?.invalidateSize();
       updateCalloutPosition();
-    }, 220);
-    const t3 = window.setTimeout(() => {
-      mapInstanceRef.current?.invalidateSize();
-      updateCalloutPosition();
-    }, 600);
+    }, 240);
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
-      window.clearTimeout(t3);
     };
-  }, [effectiveExpanded, updateCalloutPosition]);
+  }, [effectiveExpanded]);
 
   // Sync medic pointer settings from localStorage / custom event
   useEffect(() => {
@@ -482,34 +540,59 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     };
   }, []);
 
-  // Smoothly pan when center coordinates change dynamically
+  // Smoothly pan when center coordinates change dynamically from outside
   useEffect(() => {
     if (!mapInstanceRef.current) return;
-    if (typeof centerLat === 'number' && typeof centerLng === 'number') {
-      try {
+    if (typeof centerLat !== 'number' || typeof centerLng !== 'number') return;
+    // Prevent competing animation loops while user is viewing or dragging a callout
+    if (activePointer) return;
+
+    try {
+      const cur = mapInstanceRef.current.getCenter();
+      if (Math.abs(cur.lat - centerLat) > 0.005 || Math.abs(cur.lng - centerLng) > 0.005) {
         mapInstanceRef.current.panTo([centerLat, centerLng], { animate: false });
-      } catch {
-        // Safe pan disposal
       }
+    } catch {
+      // Safe fallback
     }
-  }, [centerLat, centerLng]);
+  }, [centerLat, centerLng, activePointer]);
+
+  const handleCloseCallout = useCallback((e?: React.MouseEvent | MouseEvent) => {
+    if (e && 'stopPropagation' in e) {
+      e.stopPropagation();
+    }
+    if (activePointer) {
+      closedIncidentIdRef.current = activePointer.id;
+    } else if (selectedIncidentId) {
+      closedIncidentIdRef.current = selectedIncidentId;
+    }
+    setActivePointer(null);
+    onCloseCallout?.();
+  }, [activePointer, selectedIncidentId, onCloseCallout]);
 
   // Sync external selectedIncidentId
   useEffect(() => {
-    if (!selectedIncidentId) return;
-    const found = unifiedIncidents.find((i) => i.id === selectedIncidentId);
-    if (found) {
-      setActivePointer(found);
-      if (mapInstanceRef.current) {
-        try {
-          mapInstanceRef.current.panTo([found.lat, found.lng], { animate: false });
-          mapInstanceRef.current.panBy([0, -110], { animate: true, duration: 0.35 });
-        } catch {
-          // Safe pan disposal
-        }
+    if (!selectedIncidentId) {
+      if (activePointer) {
+        setActivePointer(null);
       }
+      lastFocusedIdRef.current = null;
+      return;
     }
-  }, [selectedIncidentId, unifiedIncidents]);
+    // If the user explicitly closed this callout, do not auto-reopen until closedIncidentIdRef is reset
+    if (closedIncidentIdRef.current === selectedIncidentId) {
+      return;
+    }
+    if (activePointer?.id === selectedIncidentId) {
+      lastFocusedIdRef.current = selectedIncidentId;
+      return;
+    }
+    const found = unifiedIncidents.find((i) => i.id === selectedIncidentId);
+    if (found && found.id !== activePointer?.id) {
+      lastFocusedIdRef.current = selectedIncidentId;
+      setActivePointer(found);
+    }
+  }, [selectedIncidentId, unifiedIncidents, activePointer?.id]);
 
   // Render 16-category pointers onto Leaflet layer with prominent pulsing red/amber markers for unallocated or critical incidents
   useEffect(() => {
@@ -517,13 +600,13 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     const circlesLayer = accuracyCirclesLayerRef.current;
     if (!markersLayer || !circlesLayer) return;
 
-    markersLayer.clearLayers();
-    circlesLayer.clearLayers();
+    const activeIds = new Set<string>();
 
     visibleIncidents.forEach((inc) => {
       const lat = Number(inc.lat);
       const lng = Number(inc.lng);
       if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
+      activeIds.add(inc.id);
 
       const meta = inc.categoryMeta;
       const isResponded =
@@ -546,7 +629,6 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         ? 'opacity: 0.38; filter: grayscale(82%);'
         : 'opacity: 1;';
 
-      // Prominent pulsing red or amber markers for unallocated or critical reports
       const isCritical = (inc.severity || '').toLowerCase() === 'critical';
       const isUnallocated = !inc.allocatedUnitCode && !inc.allocatedUnitId && !isResponded;
       const isPulsing = (isUnallocated || isCritical) && !isResponded;
@@ -582,13 +664,43 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         iconAnchor: [19, 19]
       });
 
-      const marker = L.marker([inc.lat, inc.lng], {
+      // Smooth distress signal live repositioning:
+      // If marker already exists, smoothly update coordinates via Leaflet CSS transition glide
+      const existing = markerInstancesRef.current.get(inc.id);
+      if (existing) {
+        const cur = existing.marker.getLatLng();
+        if (Math.abs(cur.lat - lat) > 0.00001 || Math.abs(cur.lng - lng) > 0.00001) {
+          existing.marker.setLatLng([lat, lng]);
+          if (existing.circle) {
+            existing.circle.setLatLng([lat, lng]);
+          }
+          if (activePointer?.id === inc.id) {
+            setActivePointer(inc);
+          }
+        }
+        existing.marker.off('click');
+        existing.marker.on('click', (e) => {
+          if (e && e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          } else if (e && typeof (e as any).stopPropagation === 'function') {
+            (e as any).stopPropagation();
+          }
+          closedIncidentIdRef.current = null;
+          setActivePointer(inc);
+          onSelectIncident?.(inc);
+        });
+        existing.marker.setIcon(pinIcon);
+        return;
+      }
+
+      const marker = L.marker([lat, lng], {
         icon: pinIcon,
         title: `${meta.label} — ${inc.id}`
       });
 
+      let accuracyCircle: L.Circle | undefined;
       if (inc.gpsAccuracyMeters && inc.gpsAccuracyMeters > 0) {
-        const accuracyCircle = L.circle([inc.lat, inc.lng], {
+        accuracyCircle = L.circle([lat, lng], {
           radius: Math.max(inc.gpsAccuracyMeters, MIN_ACCURACY_RADIUS_METERS),
           color: pointerBgColor,
           weight: 1.5,
@@ -598,22 +710,32 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         circlesLayer.addLayer(accuracyCircle);
       }
 
-      marker.on('click', () => {
+      marker.on('click', (e) => {
+        if (e && e.originalEvent) {
+          L.DomEvent.stopPropagation(e.originalEvent);
+        } else if (e && typeof (e as any).stopPropagation === 'function') {
+          (e as any).stopPropagation();
+        }
+        closedIncidentIdRef.current = null;
         setActivePointer(inc);
         onSelectIncident?.(inc);
-        if (mapInstanceRef.current) {
-          try {
-            mapInstanceRef.current.panTo([inc.lat, inc.lng], { animate: false });
-            mapInstanceRef.current.panBy([0, -110], { animate: true, duration: 0.35 });
-          } catch {
-            // Safe pan disposal
-          }
-        }
+        // Map stability guarantee: The marker is already right under the user's cursor.
+        // Omit pan animation on click to eliminate competing Leaflet pan loops and prevent map shaking.
       });
 
       markersLayer.addLayer(marker);
+      markerInstancesRef.current.set(inc.id, { marker, circle: accuracyCircle });
     });
-  }, [visibleIncidents, pointerSettings.paleNonMedicEnabled, respondedIds, onSelectIncident]);
+
+    // Clean up expired markers
+    markerInstancesRef.current.forEach((val, id) => {
+      if (!activeIds.has(id)) {
+        markersLayer.removeLayer(val.marker);
+        if (val.circle) circlesLayer.removeLayer(val.circle);
+        markerInstancesRef.current.delete(id);
+      }
+    });
+  }, [visibleIncidents, pointerSettings.paleNonMedicEnabled, respondedIds, onSelectIncident, activePointer, roleFilter]);
 
   // Render on-duty responder units on map with tactical agency badges
   useEffect(() => {
@@ -685,21 +807,6 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       activePointer || unifiedIncidents.find((i) => i.id === selectedIncidentId);
     if (!selectedInc || typeof selectedInc.lat !== 'number' || typeof selectedInc.lng !== 'number') {
       return;
-    }
-
-    // Smoothly center the map on the selected incident with vertical clearance for callout card
-    if (mapInstanceRef.current) {
-      try {
-        mapInstanceRef.current.panTo([selectedInc.lat, selectedInc.lng], {
-          animate: false
-        });
-        mapInstanceRef.current.panBy([0, -110], {
-          animate: true,
-          duration: 0.35
-        });
-      } catch {
-        // Safe pan disposal
-      }
     }
 
     // Filter available on-duty responder units
@@ -935,6 +1042,19 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         .tactical-map-tooltip::before {
           border-top-color: rgba(56, 189, 248, 0.6) !important;
         }
+        .resqtrack-tactical-pointer,
+        .leaflet-marker-icon {
+          transition: transform 1.2s cubic-bezier(0.25, 1, 0.5, 1) !important;
+        }
+        .tactical-modal-scroll {
+          scrollbar-width: none !important;
+          -ms-overflow-style: none !important;
+        }
+        .tactical-modal-scroll::-webkit-scrollbar {
+          display: none !important;
+          width: 0px !important;
+          height: 0px !important;
+        }
       `}</style>
 
       {/* Top RHU Medic Radar HUD Overlay */}
@@ -1100,67 +1220,80 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       {activePointer && activeCategoryMeta && calloutPoint && (() => {
         const containerW = mapContainerRef.current?.clientWidth || 700;
         const containerH = mapContainerRef.current?.clientHeight || 500;
-        
+        const isCompactMinimap = isMinimapProp || containerH < 440 || containerW < 460;
+
         // Fluid responsive sizing tailored to device width & zoom
-        const cardW = isMobile
-          ? Math.min(310, containerW - 20)
+        const cardW = isCompactMinimap
+          ? Math.min(290, containerW - 20)
+          : isMobile
+          ? Math.min(310, containerW - 24)
           : isTablet
-          ? Math.min(350, containerW - 28)
-          : Math.min(380, Math.max(340, Math.round(containerW * 0.36)));
+          ? Math.min(350, containerW - 32)
+          : Math.min(390, Math.max(340, Math.round(containerW * 0.38)));
         const halfW = cardW / 2;
 
         const rawX = calloutPoint.x;
         const rawY = calloutPoint.y;
-        const pinClearance = 44;
+        const pinClearance = isCompactMinimap ? 12 : 18;
+        const safeMargin = 12;
 
-        // Guaranteed non-clipping vertical decision & boundary clamping:
-        const cardMaxH = Math.min(480, Math.max(260, containerH - 32));
-        const estimatedCardH = Math.min(410, cardMaxH);
+        // Guaranteed non-clipping decision: Initial placement centered in viewport
+        // Eliminates partial cutoff at top/bottom across all browser zoom levels.
+        const cardMaxH = Math.max(160, containerH - safeMargin * 2);
+        const targetCardH = isCompactMinimap
+          ? Math.min(240, cardMaxH)
+          : Math.min(430, cardMaxH);
 
-        const spaceAbove = rawY - pinClearance;
-        const spaceBelow = containerH - (rawY + pinClearance);
-        const placeAbove = spaceAbove >= estimatedCardH || spaceAbove >= spaceBelow;
+        // Center card on the map viewport by default so entire header and body are 100% visible
+        const clampX = Math.round(containerW / 2);
+        const clampedTop = Math.max(safeMargin, Math.round((containerH - targetCardH) / 2));
+        const isPlacedAbove = rawY > clampedTop + targetCardH / 2;
 
-        let computedTop: number;
-        let transformStr: string;
+        // Bounded dragging: card cannot be dragged beyond map container boundaries
+        const boundedDragX = Math.max(
+          -clampX + halfW + safeMargin,
+          Math.min(containerW - clampX - halfW - safeMargin, dragOffset.x)
+        );
+        const boundedDragY = Math.max(
+          -clampedTop + safeMargin,
+          Math.min(containerH - clampedTop - targetCardH - safeMargin, dragOffset.y)
+        );
 
-        if (placeAbove) {
-          const idealTop = rawY - pinClearance;
-          const minIdealTop = Math.min(idealTop, containerH - 14);
-          computedTop = Math.max(estimatedCardH + 14, minIdealTop);
-          transformStr = 'translate(-50%, -100%)';
-        } else {
-          const idealTop = rawY + pinClearance;
-          computedTop = Math.max(14, Math.min(containerH - estimatedCardH - 14, idealTop));
-          transformStr = 'translate(-50%, 0)';
-        }
-
-        const clampX = Math.max(halfW + 12, Math.min(containerW - halfW - 12, rawX));
         const arrowOffset = Math.max(-halfW + 28, Math.min(halfW - 28, rawX - clampX));
 
         return (
           <div
-            className="absolute z-[1200] pointer-events-auto transition-all duration-150"
+            className="absolute z-[1200] pointer-events-auto transition-transform duration-75 select-none"
             style={{
               left: `${clampX}px`,
-              top: `${computedTop}px`,
-              transform: transformStr
+              top: `${clampedTop}px`,
+              transform: `translate(calc(-50% + ${boundedDragX}px), ${boundedDragY}px)`
             }}
           >
             <div
-              className="relative max-h-[min(480px,calc(100%-24px))] overflow-y-auto bg-slate-950/95 border-2 border-sky-400/80 rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.95)] backdrop-blur-md overflow-hidden text-slate-100 flex flex-col animate-fadeIn"
-              style={{ width: `${cardW}px` }}
+              className="relative bg-slate-950/95 border-2 border-sky-400/80 rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.95)] backdrop-blur-md text-slate-100 flex flex-col overflow-hidden animate-fadeIn"
+              style={{
+                width: `${cardW}px`,
+                maxHeight: `${targetCardH}px`
+              }}
             >
-              {/* Cloud Message Box Header */}
+              {/* 1. FIXED DRAGGABLE HEADER - NEVER SCROLLS OUT OF VIEW */}
               <div
-                className="px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between gap-2"
+                {...dragHandleProps}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  dragHandleProps.onPointerDown(e);
+                }}
+                className="flex-shrink-0 px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none"
+                title="Drag to reposition card on map"
                 style={{
+                  ...dragHandleProps.style,
                   background: `linear-gradient(90deg, ${
                     activeIsResponded ? RESPONDED_GREEN_COLOR : activeCategoryMeta.color
                   }28 0%, rgba(15,23,42,0.98) 100%)`
                 }}
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 pointer-events-none">
                   <div
                     className="w-7 h-7 rounded-full flex items-center justify-center text-white border border-white/80 flex-shrink-0 shadow"
                     style={{
@@ -1193,18 +1326,98 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                     </h4>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActivePointer(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
-                  title="Close Callout"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="p-1 text-slate-400 hover:text-slate-200" title="Drag card">
+                    <GripHorizontal className="w-4 h-4 opacity-70" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      handleCloseCallout(e);
+                    }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer pointer-events-auto"
+                    title="Close Callout"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
-              {/* Cloud Message Box Body */}
-              <div className="p-3 space-y-2.5 text-xs">
+              {/* 2. SCROLLABLE BODY - ONLY BODY SCROLLS, WITH ZERO UGLY WHITE SCROLLBAR */}
+              <div
+                className="overflow-y-auto flex-1 min-h-0 tactical-modal-scroll"
+                style={{
+                  maxHeight: `${cardMaxH - 52}px`
+                }}
+              >
+
+              {isCompactMinimap ? (
+                /* Compact Minimap Callout (Fits 100% cleanly without vertical scroll) */
+                <div className="p-2.5 space-y-2 text-xs">
+                  <div className="flex items-center justify-between gap-1 text-[10px] font-mono">
+                    <span className="text-slate-200 font-bold truncate">
+                      {activePointer.type || activeCategoryMeta.label}
+                    </span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                        activeIsResponded
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-rose-600 text-white'
+                      }`}
+                    >
+                      {activeIsResponded ? 'RESPONDED' : activeCategoryMeta.severityLevel}
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1 text-[10px] font-mono">
+                    <div className="flex items-center justify-between text-slate-400">
+                      <span className="flex items-center gap-1 min-w-0">
+                        <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
+                        <span className="truncate max-w-[160px] text-slate-200">
+                          {activePointer.place || 'Katipunan C2 Area'}
+                        </span>
+                      </span>
+                      <span className="text-emerald-300 shrink-0">
+                        {activePointer.lat.toFixed(4)}°, {activePointer.lng.toFixed(4)}°
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleMarkResponded(activePointer.id)}
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                        activeIsResponded
+                          ? 'bg-emerald-950/90 border-emerald-500 text-emerald-300'
+                          : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3 h-3" />
+                      <span>{activeIsResponded ? 'RESPONDED' : 'MARK DONE'}</span>
+                    </button>
+
+                    {onExpandMap && (
+                      <button
+                        type="button"
+                        onClick={onExpandMap}
+                        className="py-1.5 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-mono font-bold flex items-center justify-center gap-1 cursor-pointer shadow"
+                        title="Enlarge map to full view"
+                      >
+                        <Maximize2 className="w-3 h-3" />
+                        <span>ENLARGE</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* Full Map View Callout Body */
+                <div className="p-3 space-y-2.5 text-xs">
                 {/* Picture Evidence Preview */}
                 <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black group">
                   <img
@@ -1345,19 +1558,23 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                   )}
                 </div>
               </div>
+              )}
+              </div>
 
               {/* Cloud Message Box Caret / Tail pointing directly to the UI Pointer Icon */}
-              <div
-                className={`absolute w-3.5 h-3.5 bg-slate-950 ${
-                  placeAbove
-                    ? '-bottom-1.5 border-r-2 border-b-2 border-sky-400/80'
-                    : '-top-1.5 border-l-2 border-t-2 border-sky-400/80'
-                }`}
-                style={{
-                  left: `calc(50% + ${arrowOffset}px)`,
-                  transform: 'translateX(-50%) rotate(45deg)'
-                }}
-              />
+              {!isCompactMinimap && (
+                <div
+                  className={`absolute w-3.5 h-3.5 bg-slate-950 ${
+                    isPlacedAbove
+                      ? '-bottom-1.5 border-r-2 border-b-2 border-sky-400/80'
+                      : '-top-1.5 border-l-2 border-t-2 border-sky-400/80'
+                  }`}
+                  style={{
+                    left: `calc(50% + ${arrowOffset}px)`,
+                    transform: 'translateX(-50%) rotate(45deg)'
+                  }}
+                />
+              )}
             </div>
           </div>
         );

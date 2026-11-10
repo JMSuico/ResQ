@@ -110,6 +110,8 @@ builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
 // Dependency Injection: Services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IReportService, ReportService>();
+builder.Services.AddScoped<IAlertService, AlertService>();
+builder.Services.AddScoped<IIdentityAiService, IdentityAiService>();
 builder.Services.AddScoped<ITriageService, TriageService>();
 builder.Services.AddScoped<IRespondersService, RespondersService>();
 builder.Services.AddScoped<IResponderOpsService, RespondersService>();
@@ -176,7 +178,23 @@ using (var scope = app.Services.CreateScope())
                     BEGIN
                         ALTER TABLE [AuditLogs] ALTER COLUMN [PreviousHash] NVARCHAR(128) NOT NULL;
                         ALTER TABLE [AuditLogs] ALTER COLUMN [CurrentHash] NVARCHAR(128) NOT NULL;
+                    END
+                    IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Reports' AND COLUMN_NAME='BeaconCount')
+                    BEGIN
+                        ALTER TABLE [Reports] ADD [CurrentLatitude] FLOAT NULL;
+                        ALTER TABLE [Reports] ADD [CurrentLongitude] FLOAT NULL;
+                        ALTER TABLE [Reports] ADD [LastBeaconAt] DATETIME2 NULL;
+                        ALTER TABLE [Reports] ADD [BeaconCount] INT NOT NULL DEFAULT 0;
                     END");
+            }
+            else
+            {
+                await db.Database.ExecuteSqlRawAsync(@"
+                    ALTER TABLE ""Reports"" ADD COLUMN IF NOT EXISTS ""CurrentLatitude"" double precision;
+                    ALTER TABLE ""Reports"" ADD COLUMN IF NOT EXISTS ""CurrentLongitude"" double precision;
+                    ALTER TABLE ""Reports"" ADD COLUMN IF NOT EXISTS ""LastBeaconAt"" timestamp with time zone;
+                    ALTER TABLE ""Reports"" ADD COLUMN IF NOT EXISTS ""BeaconCount"" integer NOT NULL DEFAULT 0;
+                ");
             }
         }
         catch { }

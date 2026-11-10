@@ -15,6 +15,7 @@ import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { formatIsoTimestamp, formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
 import { SEVERITY_COLORS } from '@/Libs/Assets/data';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
+import { useDistressBeacon } from '@/Hooks/useDistressBeacon';
 import { BASELINE_INCIDENT_REPORTS } from '@/Libs/Assets/baselineFixtures';
 
 type FilterTab = 'all' | 'active' | 'resolved';
@@ -30,6 +31,24 @@ export const MyReportsHistory: React.FC = () => {
   const [feedbackSuccessToast, setFeedbackSuccessToast] = useState<string | null>(null);
 
   const { viewMode, setViewMode } = useTableCardView('card');
+
+  // 1-BPM Dynamic Distress Beacon: Continuous GPS heartbeat for active incidents
+  const activeDistressIncidentId = useMemo(() => {
+    try {
+      const stored = localStorage.getItem('resqtrack_active_distress_incident_id');
+      if (stored) return stored;
+    } catch {}
+    const activeOne = reports.find((r) => {
+      const st = (r.status || '').toLowerCase();
+      return st !== 'resolved' && st !== 'closed' && st !== 'rejected';
+    });
+    return activeOne?.id || null;
+  }, [reports]);
+
+  useDistressBeacon({
+    activeIncidentId: activeDistressIncidentId,
+    intervalMs: 60000 // 1 Beat Per Minute
+  });
 
   const loadReports = useCallback(async () => {
     try {
