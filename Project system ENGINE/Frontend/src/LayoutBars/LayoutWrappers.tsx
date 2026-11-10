@@ -85,7 +85,7 @@ export const LayoutWrappers: React.FC<LayoutWrappersProps> = ({
       <div className="app-shell">
         <ResQTrackSvgSprite />
         <Header user={user} />
-        <div className="dash relative flex flex-1 min-h-0 w-full overflow-hidden bg-slate-950">
+        <div className="dash relative z-10 flex flex-1 min-h-0 w-full overflow-hidden bg-slate-950">
           <Sidebar userRole={activeRole} userUnit={activeUnit} />
           <main className="dash__main flex-1 w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-6 sm:px-8 sm:py-8 md:px-10 md:py-8 lg:px-12 bg-slate-950/95 transition-all">
             <div className="w-full flex-1 min-h-0 flex flex-col max-w-[1720px] mx-auto">
@@ -125,21 +125,8 @@ export const AdminLayout: React.FC = () => {
       return <Navigate to="/admin/login" replace />;
     }
   } else if (currentPort === '5173') {
-    if (isAdmin) {
-      const token = typeof window !== 'undefined'
-        ? (sessionStorage.getItem('resqtrack_token') || localStorage.getItem('resqtrack_token_5173') || localStorage.getItem('resqtrack_token'))
-        : null;
-      const targetUrl = token
-        ? `http://${host}:5174/admin/dashboard?session_token=${encodeURIComponent(token)}`
-        : `http://${host}:5174/admin/dashboard`;
-      window.location.href = targetUrl;
-      return (
-        <div className="flex h-screen w-screen items-center justify-center bg-slate-950 font-mono text-sm text-rose-400">
-          Admin account detected. Redirecting to Executive Command (5174)...
-        </div>
-      );
-    }
-    return <Navigate to="/login" replace />;
+    // Single-port / Unified dev mode: Allow seamless direct rendering of Admin Executive Command
+    return <LayoutWrappers defaultRole="LDRRMO_Admin" defaultUnit="LDRRMO" />;
   }
 
   return <LayoutWrappers defaultRole="LDRRMO_Admin" defaultUnit="LDRRMO" />;

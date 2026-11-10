@@ -48,6 +48,13 @@ public record CreateReportRequest(
     string? ImageDataUrl
 );
 
+public record DistressBeaconRequest(
+    double Latitude,
+    double Longitude,
+    double? GpsAccuracyMeters = null,
+    long? Timestamp = null
+);
+
 public record AllocateReportRequest(
     Guid? UnitId = null,
     Guid? ResponderId = null

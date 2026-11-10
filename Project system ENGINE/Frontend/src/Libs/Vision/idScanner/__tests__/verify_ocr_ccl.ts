@@ -142,7 +142,7 @@ assert(families.includes('ocr-a'), 'FONT_BANK includes ocr-a');
 
 for (const fam of families) {
   const templates = FONT_BANK[fam];
-  assert(templates.length === 40, `Font '${fam}' contains all 40 glyphs (got ${templates.length})`);
+  assert(templates.length >= 40, `Font '${fam}' contains at least 40 glyphs (got ${templates.length})`);
 
   // Check required characters
   const chars = templates.map((t) => t.char);

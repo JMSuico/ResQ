@@ -72,6 +72,12 @@ export const ReportAccidentPage: React.FC = () => {
       scrollToStep(stepTriageRef);
       return;
     }
+    // Mandatory Location Check: GPS / Internet WiFi sensor location is strictly required before incident submission
+    if (!isHardwareGeolocated && coords.isFallback) {
+      refreshGps();
+      setError('Active Location Required: Please enable and authorize device GPS / WiFi location to pinpoint exact coordinates in Katipunan 7109.');
+      return;
+    }
     setError(null);
     setIsConfirmModalOpen(true);
   };
@@ -104,6 +110,7 @@ export const ReportAccidentPage: React.FC = () => {
           existing.unshift(res.report.id);
         }
         localStorage.setItem('resqtrack_submitted_report_ids', JSON.stringify(existing));
+        localStorage.setItem('resqtrack_active_distress_incident_id', res.report.id);
         if (res.report.reporterId) {
           localStorage.setItem('resqtrack_reporter_id', res.report.reporterId);
         }
@@ -365,7 +372,15 @@ export const ReportAccidentPage: React.FC = () => {
                 <div className="flex flex-col gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsCameraOpen(true)}
+                    onClick={() => {
+                      if (!isHardwareGeolocated && coords.isFallback) {
+                        refreshGps();
+                        setError('Active Location Required: Please enable and authorize device GPS / WiFi location to pinpoint exact coordinates in Katipunan 7109 before activating emergency camera.');
+                        scrollToStep(stepGpsRef);
+                        return;
+                      }
+                      setIsCameraOpen(true);
+                    }}
                     className="w-full sm:w-auto min-h-[48px] px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-lg shadow-rose-950/60 active:scale-[0.98] transition-all"
                   >
                     <Camera className="w-5 h-5 text-white animate-pulse" />

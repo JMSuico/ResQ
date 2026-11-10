@@ -14,3 +14,5 @@ export * from './useResponsive';
 export * from './useSession';
 export * from './useValueRefreshAuto';
 export * from './useAnalyticsTelemetry';
+export * from './useDraggable';
+export * from './useDistressBeacon';

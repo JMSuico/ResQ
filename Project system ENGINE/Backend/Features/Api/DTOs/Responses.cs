@@ -63,7 +63,11 @@ public record ReportResponse(
     bool IsHardwareGeolocated = false,
     bool IsBlurry = false,
     bool RequiresManualVerification = false,
-    string? RecommendedAgencyUnit = null
+    string? RecommendedAgencyUnit = null,
+    double? CurrentLatitude = null,
+    double? CurrentLongitude = null,
+    DateTime? LastBeaconAt = null,
+    int BeaconCount = 0
 );
 
 public record DutyUnitResponse(

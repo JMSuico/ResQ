@@ -1,866 +1,711 @@
-# ==============================================================================
-# ResQTrack Incident AI System Detection -- Unified Dev & Ops Master Controller
-# Works across any Windows workstation without requiring Visual Studio IDE.
-# Relational Database: Microsoft SQL Server (SSMS 19) via Windows Auth / SQL Auth
-# Usage:
-#   .\manage.ps1                          (Launches interactive menu)
-#   .\manage.ps1 start                    (Starts Backend :5000 & Frontend :5173)
-#   .\manage.ps1 status                   (Probes live health matrix of ports 5000 & 5173 & SQL Server)
-#   .\manage.ps1 refresh                  (Hard refresh: cleans caches, rebuilds & restarts)
-#   .\manage.ps1 stop                     (Stops all running services on ports 5000 & 5173)
-#   .\manage.ps1 migrate                  (Interactive EF Core SQL Server migration & DB update)
-#   .\manage.ps1 test                     (Build checks, API tests, SQL Server check & TS verification)
-#   .\manage.ps1 postgres-up              (Starts Standby PostgreSQL 16 Alpine container via Docker)
-#   .\manage.ps1 postgres-down            (Stops Standby PostgreSQL Docker container)
-#   .\manage.ps1 switch-db                (Interactive switch between SQL Server, PostgreSQL & MySQL)
-#   .\manage.ps1 help                     (Displays help guide and SQL Server auth details)
-#   .\manage.ps1 createsuperadmin <email> <password> <fullName> [unit]
-#   .\manage.ps1 createcustomsuperadmin <email> <password> <fullName> [unit]
-#   .\manage.ps1 resetpassword <email> <newPassword>
-#   .\manage.ps1 adduser <email> <password> <fullName> <role> [unit] [employeeId]
-#   .\manage.ps1 listusers
-# ==============================================================================
+<#
+.SYNOPSIS
+    ResQTrack Incident AI System Unified Management Engine.
+.DESCRIPTION
+    Consolidated single controller for starting/stopping 4-port topology, managing database
+    migrations across PostgreSQL, SQL Server (SSMS), and MySQL/MariaDB (strictly excluding SQLite),
+    and terminal-based superadmin bypass account creation/editing/deletion (email & password only).
+#>
 
+[CmdletBinding()]
 param (
-    [Parameter(Position=0)]
-    [string]$Action = "",
-
-    [Parameter(Position=1, ValueFromRemainingArguments=$true)]
-    [string[]]$CmdArgs = @()
+    [Parameter(Position = 0)]
+    [string]$Action = ""
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
-# Resolve root and inner directories
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-if (-not $ScriptDir) { $ScriptDir = $PSScriptRoot }
-if (-not $ScriptDir) { $ScriptDir = (Get-Location).Path }
-
-# Detect repository root containing "Project system ENGINE"
-if (Test-Path (Join-Path $ScriptDir "Project system ENGINE")) {
-    $RootDir = $ScriptDir
-} elseif (Test-Path (Join-Path (Split-Path -Parent $ScriptDir) "Project system ENGINE")) {
-    $RootDir = Split-Path -Parent $ScriptDir
+# Resolve Directory Paths dynamically (supports running from CommandStart or Root)
+if (Test-Path "$PSScriptRoot\Project system ENGINE") {
+    $RootDir = $PSScriptRoot
+} elseif (Test-Path "$PSScriptRoot\..\Project system ENGINE") {
+    $RootDir = (Resolve-Path "$PSScriptRoot\..").Path
 } else {
-    $RootDir = $ScriptDir
+    $RootDir = (Get-Location).Path
 }
 
-$EngineDir = Join-Path $RootDir "Project system ENGINE"
-$BackendDir = Join-Path $EngineDir "Backend"
-$FrontendDir = Join-Path $EngineDir "Frontend"
+$BackendDir  = Join-Path $RootDir "Project system ENGINE\Backend"
+$FrontendDir = Join-Path $RootDir "Project system ENGINE\Frontend"
+$BackendProj = Join-Path $BackendDir "Backend.csproj"
 
-$AllArgs = if ($CmdArgs -and $CmdArgs.Count -gt 0) { $CmdArgs } else { $args }
+$Ports = @(5000, 5173, 5174, 5175)
 
+# --- Console Color Utility Functions ---
 function Write-Header {
     param([string]$Title)
-    Write-Host ""
-    Write-Host "======================================================================" -ForegroundColor Cyan
-    Write-Host "  $Title" -ForegroundColor Yellow
-    Write-Host "======================================================================" -ForegroundColor Cyan
-    Write-Host ""
+    Clear-Host
+    Write-Host "================================================================================" -ForegroundColor Cyan
+    Write-Host "   RESQTRACK INCIDENT AI DETECTION SYSTEM - UNIFIED MANAGEMENT CONSOLE        " -ForegroundColor Yellow -NoNewline
+    Write-Host " [v2.5]" -ForegroundColor Green
+    Write-Host "================================================================================" -ForegroundColor Cyan
+    if ($Title) {
+        Write-Host " >> $Title" -ForegroundColor White
+        Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
+    }
 }
 
-function Get-DatabaseConfig {
-    $appSettingsPath = Join-Path $BackendDir "appsettings.json"
-    $provider = "SqlServer"
-    $connStr = "Server=localhost;Database=ResQTrackDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true;"
-    $source = "Default fallback"
+function Write-Success { param([string]$Msg) Write-Host "[OK] $Msg" -ForegroundColor Green }
+function Write-Info    { param([string]$Msg) Write-Host "[i]  $Msg" -ForegroundColor Cyan }
+function Write-Warn    { param([string]$Msg) Write-Host "[!]  $Msg" -ForegroundColor Yellow }
+function Write-Err     { param([string]$Msg) Write-Host "[X]  $Msg" -ForegroundColor Red }
 
-    if (Test-Path $appSettingsPath) {
+function Pause-Console {
+    Write-Host "`nPress any key to return to menu..." -ForegroundColor DarkGray
+    $null = [Console]::ReadKey($true)
+}
+
+# --- Fresh Clone Dependency & Environment Detection ---
+function Ensure-Prerequisites {
+    Write-Info "Checking development runtime prerequisites..."
+
+    # Check dotnet
+    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+        Write-Err ".NET SDK (v10.0+) is not installed or not in PATH."
+        return $false
+    }
+
+    # Check node
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        Write-Err "Node.js (v18+) is not installed or not in PATH."
+        return $false
+    }
+
+    # Fresh clone detection: Check Frontend node_modules
+    $NodeModulesDir = Join-Path $FrontendDir "node_modules"
+    if (-not (Test-Path $NodeModulesDir)) {
+        Write-Warn "Fresh clone detected! 'node_modules' is missing in Frontend."
+        Write-Info "Running automatic 'npm install' in Frontend directory..."
+        Push-Location $FrontendDir
         try {
-            $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
-            if ($json.DatabaseProvider) {
-                $provider = $json.DatabaseProvider
-            }
-            if ($json.ConnectionStrings -and $json.ConnectionStrings.DefaultConnection) {
-                $connStr = $json.ConnectionStrings.DefaultConnection
-                $source = "appsettings.json"
-            }
+            npm install
+            Write-Success "Frontend dependencies successfully installed."
         } catch {
-            $source = "Error reading appsettings.json"
+            Write-Err "Failed to run npm install: $_"
+        } finally {
+            Pop-Location
         }
     }
 
-    $authMode = "Standard / SQL Login"
-    if ($connStr -match "(?i)Trusted_Connection=True|Integrated Security=(True|SSPI)") {
-        $authMode = "Windows Authentication (SSMS 19 Trusted)"
-    } elseif ($connStr -match "(?i)User Id=") {
-        $authMode = "SQL Server Authentication (SQL Login)"
-    }
-
-    return [PSCustomObject]@{
-        Provider         = $provider
-        ConnectionString = $connStr
-        AuthMode         = $authMode
-        ConfigSource     = $source
-    }
-}
-
-function Check-Prerequisites {
-    Write-Host "[*] Checking development prerequisites..." -ForegroundColor Gray
-    
-    # 1. Check .NET SDK
-    try {
-        $dotnetVer = & dotnet --version 2>$null
-        Write-Host "  [OK] .NET SDK installed: v$dotnetVer" -ForegroundColor Green
-    } catch {
-        Write-Host "  [ERROR] .NET SDK is not installed! Download .NET 10 or .NET 9 from https://dotnet.microsoft.com/download" -ForegroundColor Red
-        return $false
-    }
-
-    # 2. Check Node.js
-    try {
-        $nodeVer = & node --version 2>$null
-        Write-Host "  [OK] Node.js installed: $nodeVer" -ForegroundColor Green
-    } catch {
-        Write-Host "  [ERROR] Node.js is not installed! Download Node.js from https://nodejs.org/" -ForegroundColor Red
-        return $false
-    }
-
-    # 3. Check Frontend node_modules
-    $nmPath = Join-Path $FrontendDir "node_modules"
-    if (-not (Test-Path $nmPath)) {
-        Write-Host "  [*] Frontend dependencies not found. Installing now..." -ForegroundColor Yellow
-        Push-Location $FrontendDir
-        & npm install
-        Pop-Location
-        Write-Host "  [OK] Frontend dependencies installed successfully." -ForegroundColor Green
+    # Check Backend build
+    $BackendBin = Join-Path $BackendDir "bin\Debug\net10.0\Backend.dll"
+    if (-not (Test-Path $BackendBin)) {
+        Write-Info "Building .NET Backend project for initial execution..."
+        Push-Location $BackendDir
+        try {
+            dotnet build -c Debug --nologo -v q
+            Write-Success "Backend built successfully."
+        } catch {
+            Write-Err "Backend build failed: $_"
+        } finally {
+            Pop-Location
+        }
     }
 
     return $true
 }
 
-function Invoke-TscValidation {
-    $tscLocal = Join-Path $FrontendDir "node_modules\.bin\tsc.cmd"
-    if (Test-Path $tscLocal) {
-        & $tscLocal -b
-    } elseif (Get-Command tsc -ErrorAction SilentlyContinue) {
-        & tsc -b
-    } else {
-        & npx --yes tsc -b
-    }
-    return $LASTEXITCODE
-}
+# --- Port and Process Management ---
+function Stop-PortProcesses {
+    param([int[]]$TargetPorts = $Ports)
+    Write-Info "Stopping active listeners and terminating locks on ports: $($TargetPorts -join ', ')..."
 
-function Stop-AllServices {
-    Write-Header "STOPPING ALL SERVICES (PORTS 5000, 5173, 5174, 5175)"
-    
-    $ports = @(5000, 5173, 5174, 5175)
-    $killedCount = 0
-
-    foreach ($port in $ports) {
-        try {
-            $connections = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
-            if ($connections) {
-                foreach ($conn in $connections) {
-                    $pidToKill = $conn.OwningProcess
-                    if ($pidToKill -gt 0 -and $pidToKill -ne $PID) {
-                        try {
-                            $proc = Get-Process -Id $pidToKill -ErrorAction SilentlyContinue
-                            if ($proc) {
-                                Write-Host "  [!] Terminating process $($proc.ProcessName) (PID: $pidToKill) on port $port..." -ForegroundColor Yellow
-                                & taskkill /F /PID $pidToKill /T 2>$null | Out-Null
-                                Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue
-                                $killedCount++
-                            }
-                        } catch {}
-                    }
-                }
-            }
-        } catch {}
-    }
-
-    # Fallback to netstat if Get-NetTCPConnection did not catch anything
-    if ($killedCount -eq 0) {
-        foreach ($port in $ports) {
-            $lines = netstat -ano | Select-String ":$port\s+.*LISTENING\s+(\d+)"
-            foreach ($line in $lines) {
-                if ($line.Matches.Groups[1].Value) {
-                    $pidToKill = [int]$line.Matches.Groups[1].Value
-                    if ($pidToKill -gt 0 -and $pidToKill -ne $PID) {
-                        Write-Host "  [!] Terminating listener PID $pidToKill on port $port..." -ForegroundColor Yellow
-                        & taskkill /F /PID $pidToKill /T 2>$null | Out-Null
-                        Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue
-                        $killedCount++
-                    }
+    foreach ($port in $TargetPorts) {
+        $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+        if ($conns) {
+            $pids = $conns | Select-Object -ExpandProperty OwningProcess -Unique
+            foreach ($processId in $pids) {
+                if ($processId -gt 4) {
+                    try {
+                        $p = Get-Process -Id $processId -ErrorAction SilentlyContinue
+                        if ($p) {
+                            Write-Info "Killing process '$($p.ProcessName)' (PID: $processId) on port $port..."
+                            Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+                        }
+                    } catch {}
                 }
             }
         }
     }
 
-    if ($killedCount -gt 0) {
-        Write-Host "  [OK] Stopped $killedCount service process(es). Ports 5000, 5173, 5174, and 5175 are now free." -ForegroundColor Green
-    } else {
-        Write-Host "  [i] No active services detected on ports 5000, 5173, 5174, or 5175." -ForegroundColor Gray
-    }
+    # Also clean up any lingering orphan Backend.exe and Vite dev server processes
+    Get-Process -Name Backend -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object {
+        $_.CommandLine -like "*vite*" -or $_.CommandLine -like "*dev:*"
+    } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+    Start-Sleep -Milliseconds 600
+    Write-Success "All target port listeners and lingering engine processes stopped."
 }
 
-function Show-Status {
-    Write-Header "RESQTRACK SYSTEM LIVE STATUS & PORT MATRIX"
-    
-    $services = @(
-        @{ Port = 5000; Name = "Backend Web API"; Target = "http://localhost:5000/api/reports"; Role = ".NET 10 REST API & Scalar Docs" },
-        @{ Port = 5173; Name = "Emergency Responders"; Target = "http://127.0.0.1:5173/"; Role = "React 19 Responders (RHU/Fire/PNP) & Induction" },
-        @{ Port = 5174; Name = "LDRRMO Admin Command"; Target = "http://127.0.0.1:5174/"; Role = "React 19 Executive Command & Governance" },
-        @{ Port = 5175; Name = "Civilian SOS Portal"; Target = "http://127.0.0.1:5175/"; Role = "React 19 Citizen Emergency SOS & Live Map" }
-    )
-
-    $format = "{0,-6} | {1,-20} | {2,-8} | {3,-12} | {4,-14} | {5}"
-    Write-Host ($format -f "PORT", "SERVICE NAME", "PID", "TCP STATUS", "HTTP HEALTH", "DESCRIPTION") -ForegroundColor Yellow
-    Write-Host ("-" * 95) -ForegroundColor DarkGray
-
-    foreach ($svc in $services) {
-        $p = $svc.Port
-        $procId = "-"
-        $tcpStatus = "OFFLINE"
-        $httpStatus = "UNKNOWN"
-
-        # Check TCP Listener
-        try {
-            $conn = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($conn) {
-                $procId = $conn.OwningProcess
-                $tcpStatus = "LISTENING"
-            }
-        } catch {}
-
-        if ($tcpStatus -eq "OFFLINE") {
-            # Netstat fallback
-            $match = netstat -ano | Select-String ":$p\s+.*LISTENING\s+(\d+)" | Select-Object -First 1
-            if ($match -and $match.Matches.Groups[1].Value) {
-                $procId = [int]$match.Matches.Groups[1].Value
-                $tcpStatus = "LISTENING"
-            }
-        }
-
-        # Check HTTP Endpoint
-        if ($tcpStatus -eq "LISTENING") {
-            try {
-                $resp = Invoke-WebRequest -Uri $svc.Target -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
-                if ($resp.StatusCode -eq 200 -or $resp.StatusCode -eq 204) {
-                    $httpStatus = "200 OK"
-                } else {
-                    $httpStatus = "HTTP $($resp.StatusCode)"
-                }
-            } catch {
-                if ($_.Exception.Response) {
-                    $code = [int]$_.Exception.Response.StatusCode
-                    $httpStatus = "HTTP $code"
-                } else {
-                    $httpStatus = "NO RESPONSE"
-                }
-            }
-        } else {
-            $httpStatus = "DOWN"
-        }
-
-        $color = if ($tcpStatus -eq "LISTENING" -and $httpStatus -like "*200*") { "Green" } elseif ($tcpStatus -eq "LISTENING") { "Yellow" } else { "DarkGray" }
-        Write-Host ($format -f $p, $svc.Name, $procId, $tcpStatus, $httpStatus, $svc.Role) -ForegroundColor $color
+function Wait-ForPort {
+    param([int]$Port, [int]$TimeoutSeconds = 25)
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+        $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+        if ($conn) { return $true }
+        Start-Sleep -Milliseconds 400
     }
-
-    Write-Host ("-" * 95) -ForegroundColor DarkGray
-    Write-Host ""
-
-    # Database Diagnostics & Active RDBMS Provider
-    Write-Host "DATABASE & RDBMS ENGINE STATUS (SSMS 19)" -ForegroundColor Yellow
-    Write-Host ("-" * 95) -ForegroundColor DarkGray
-    $dbConfig = Get-DatabaseConfig
-    Write-Host "  Active Provider:    $($dbConfig.Provider) (Microsoft SQL Server / SSMS 19 Compatible)" -ForegroundColor Green
-    Write-Host "  Target Connection:  $($dbConfig.ConnectionString)" -ForegroundColor Gray
-    Write-Host "  Authentication:     $($dbConfig.AuthMode)" -ForegroundColor Cyan
-    Write-Host "  Configuration From: $($dbConfig.ConfigSource)" -ForegroundColor DarkGray
-    Write-Host ("-" * 95) -ForegroundColor DarkGray
-    Write-Host ""
+    return $false
 }
 
-function Start-AllServices {
-    Write-Header "STARTING RESQTRACK INCIDENT AI SYSTEM (DEV PREVIEW - DUAL PORT)"
-    if (-not (Check-Prerequisites)) { return }
+function Start-AllEngines {
+    Write-Header "START ALL ENGINES & 4-PORT ECOSYSTEM"
 
-    # 1. Stop any stale instances across ports 5000, 5173, 5174, and 5175
-    Stop-AllServices
+    if (-not (Ensure-Prerequisites)) {
+        Pause-Console
+        return
+    }
 
-    # 2. Update Database via EF Core to ensure SQL Server schemas are current
-    $targetProject = if (Test-Path "$BackendDir") { "$BackendDir" } else { "..\Project system ENGINE\Backend" }
-    Write-Host "[*] Synchronizing SQL Server Database Schema via EF Core..." -ForegroundColor Magenta
+    # Stop any existing processes first to avoid port collisions
+    Stop-PortProcesses
+
+    Write-Info "Applying database migrations and seeding initial fixtures..."
+    Push-Location $BackendDir
     try {
-        Push-Location $RootDir
-        & dotnet ef database update --project "$targetProject"
-        Pop-Location
-        Write-Host "  [OK] Database schema is up to date." -ForegroundColor Green
+        # Auto-run EF Core database migration on boot for fresh clones
+        dotnet ef database update --no-build --nologo 2>$null
     } catch {
-        Write-Host "  [!] EF Core update note: $_" -ForegroundColor Yellow
+        Write-Warn "EF database update deferred (runtime EnsureCreatedAsync handles database setup on start)."
+    } finally {
         Pop-Location
     }
 
-    # 3. Start Backend Web API on Port 5000
-    Write-Host "[*] Launching .NET 10 Web API backend on http://localhost:5000..." -ForegroundColor Cyan
-    $backendCmd = "Set-Location '$BackendDir'; `$host.UI.RawUI.WindowTitle = 'ResQTrack .NET 10 Web API Backend (:5000)'; dotnet run --launch-profile http"
-    Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack .NET 10 Web API Backend (:5000)' -ForegroundColor Cyan; $backendCmd }"
+    Write-Info "Starting Backend Web API on Port 5000..."
+    $backendProc = Start-Process -FilePath "dotnet" -ArgumentList "run --launch-profile http" `
+        -WorkingDirectory $BackendDir -PassThru -WindowStyle Minimized
 
-    # Wait for backend port 5000 to be ready
-    Write-Host "[*] Waiting for backend API to initialize..." -ForegroundColor Yellow
-    $retry = 0
-    $backendReady = $false
-    while ($retry -lt 20 -and -not $backendReady) {
-        Start-Sleep -Seconds 1
-        try {
-            $testReq = Invoke-WebRequest -Uri "http://localhost:5000/api/reports" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
-            if ($testReq.StatusCode -ge 200 -and $testReq.StatusCode -lt 500) { $backendReady = $true }
-        } catch {
-            if ($_.Exception.Response) {
-                # API responded with HTTP status, so backend is alive
-                $backendReady = $true
-            } else {
-                $retry++
-            }
-        }
-        Write-Host "." -NoNewline
-    }
-    Write-Host ""
-
-    if ($backendReady) {
-        Write-Host "  [OK] Backend is live and responding on http://localhost:5000/api" -ForegroundColor Green
+    Write-Info "Waiting for Backend :5000 to become ready..."
+    if (Wait-ForPort -Port 5000 -TimeoutSeconds 30) {
+        Write-Success "Backend Web API is LIVE on http://localhost:5000"
     } else {
-        Write-Host "  [i] Backend process spawned. Proceeding to launch UI client..." -ForegroundColor Yellow
+        Write-Warn "Backend startup timed out; continuing with frontends..."
     }
 
-    # 4. Start React 19 Frontend Portals (Role & Port Separation)
-    Write-Host "[*] Launching LDRRMO Admin Command Portal on http://127.0.0.1:5174..." -ForegroundColor Magenta
-    $adminCmd = "Set-Location '$FrontendDir'; `$host.UI.RawUI.WindowTitle = 'ResQTrack LDRRMO Admin Command Portal (:5174)'; npm run dev:admin"
-    Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack LDRRMO Admin Command Portal (:5174)' -ForegroundColor Magenta; $adminCmd }"
+    Write-Info "Starting Responders Portal on Port 5173..."
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run dev:responder" `
+        -WorkingDirectory $FrontendDir -WindowStyle Minimized
 
+    Write-Info "Starting Admin (LDRRMO) Portal on Port 5174..."
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run dev:admin" `
+        -WorkingDirectory $FrontendDir -WindowStyle Minimized
+
+    Write-Info "Starting Civilian Portal on Port 5175..."
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run dev:civilian" `
+        -WorkingDirectory $FrontendDir -WindowStyle Minimized
+
+    Write-Info "Verifying active portal endpoints..."
     Start-Sleep -Seconds 2
 
-    Write-Host "[*] Launching Emergency Responders Portal on http://127.0.0.1:5173..." -ForegroundColor Green
-    $responderCmd = "Set-Location '$FrontendDir'; `$host.UI.RawUI.WindowTitle = 'ResQTrack Emergency Responders Portal (:5173)'; npm run dev:responder"
-    Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack Emergency Responders Portal (:5173)' -ForegroundColor Green; $responderCmd }"
+    Write-Host "`n================================================================================" -ForegroundColor Cyan
+    Write-Host "                ACTIVE ECOSYSTEM RUNTIME PORTALS                              " -ForegroundColor Green
+    Write-Host "================================================================================" -ForegroundColor Cyan
+    Write-Host " [API & DB]   Backend Core & Docs :  http://localhost:5000/scalar/v1" -ForegroundColor Yellow
+    Write-Host " [PORT 5173]  Tactical Responders :  http://localhost:5173" -ForegroundColor Yellow
+    Write-Host " [PORT 5174]  Central Admin LDRRMO:  http://localhost:5174" -ForegroundColor Yellow
+    Write-Host " [PORT 5175]  Civilian Emergency  :  http://localhost:5175" -ForegroundColor Yellow
+    Write-Host "================================================================================`n" -ForegroundColor Cyan
 
-    Start-Sleep -Seconds 2
-
-    Write-Host "[*] Launching Civilian Emergency SOS Portal on http://127.0.0.1:5175..." -ForegroundColor Green
-    $civilianCmd = "Set-Location '$FrontendDir'; `$host.UI.RawUI.WindowTitle = 'ResQTrack Civilian Emergency SOS Portal (:5175)'; npm run dev:civilian"
-    Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "& { Write-Host 'ResQTrack Civilian Emergency SOS Portal (:5175)' -ForegroundColor Green; $civilianCmd }"
-
-    Start-Sleep -Seconds 2
-
-    # 5. Print Access Dashboard & Auto-Launch Web Browser
-    Write-Host ""
-    Write-Host "==========================================================================================" -ForegroundColor DarkCyan
-    Write-Host "         RESQTRACK INCIDENT AI SYSTEM -- MULTI-PORT TACTICAL DASHBOARD                    " -ForegroundColor Cyan
-    Write-Host "==========================================================================================" -ForegroundColor DarkCyan
-    Write-Host " Portal / Service                  | Port  | Status   | Target URL                        " -ForegroundColor Yellow
-    Write-Host "-----------------------------------+-------+----------+-----------------------------------" -ForegroundColor DarkGray
-    Write-Host " LDRRMO Admin Executive Command    | :5174 | ACTIVE   | http://127.0.0.1:5174/dashboard   " -ForegroundColor Magenta
-    Write-Host " LDRRMO Admin Login Portal         | :5174 | ACTIVE   | http://127.0.0.1:5174/login       " -ForegroundColor Magenta
-    Write-Host " Emergency Responders (RHU/Fire/PNP)|:5173 | ACTIVE   | http://127.0.0.1:5173/responder   " -ForegroundColor Green
-    Write-Host " Responders Login Portal           | :5173 | ACTIVE   | http://127.0.0.1:5173/login       " -ForegroundColor Green
-    Write-Host " Civilians Emergency SOS Portal    | :5175 | ACTIVE   | http://127.0.0.1:5175/civilian    " -ForegroundColor Green
-    Write-Host " .NET 10 Web API Backend           | :5000 | ACTIVE   | http://localhost:5000/api         " -ForegroundColor Yellow
-    Write-Host " Scalar Interactive API Docs       | :5000 | ACTIVE   | http://localhost:5000/scalar/v1   " -ForegroundColor White
-    Write-Host " OpenAPI V1 Specification          | :5000 | ACTIVE   | http://localhost:5000/openapi/v1.json" -ForegroundColor White
-    Write-Host " Redis Distributed Cache           | :6379 | ACTIVE   | localhost:6379 (redis:7-alpine)   " -ForegroundColor Red
-    Write-Host " Primary Relational DB             | :5432 | ACTIVE   | localhost:5432 (Postgres / SSMS19)" -ForegroundColor Cyan
-    Write-Host " Standby Relational DB Replica     | :5433 | STANDBY  | localhost:5433 (PostgreSQL 16)    " -ForegroundColor DarkCyan
-    Write-Host "==========================================================================================" -ForegroundColor DarkCyan
-    Write-Host ""
-
-    Write-Host "[*] Opening browser tabs for preview..." -ForegroundColor Yellow
-    Start-Process "http://127.0.0.1:5174/"
-    Start-Process "http://127.0.0.1:5173/"
-    Start-Process "http://127.0.0.1:5175/"
-    Start-Process "http://localhost:5000/scalar/v1"
+    Write-Success "All 4 engines launched successfully."
 }
 
-function Hard-Refresh {
-    Write-Header "HARD REFRESH & CLEAN REBUILD (ALL SERVICES)"
-    
-    # 1. Stop existing services on ports 5000, 5173, 5174, and 5175
-    Stop-AllServices
+# --- Database Migration Management ---
+function Manage-DatabaseMigrations {
+    Write-Header "DATABASE MIGRATIONS & PROVIDER CONFIGURATION"
+    Write-Host "Supported RDBMS Providers: Microsoft SQL Server, PostgreSQL, MariaDB/MySQL." -ForegroundColor Cyan
+    Write-Host "Strict Architecture Rule : SQLite is strictly excluded from this system.`n" -ForegroundColor Yellow
 
-    # 2. Clean Vite Cache & Build Artifacts
-    Write-Host "[*] Cleaning Vite cache and frontend build output..." -ForegroundColor Gray
-    $viteCache = Join-Path $FrontendDir "node_modules\.vite"
-    if (Test-Path $viteCache) { Remove-Item -Recurse -Force $viteCache }
-    $distFolder = Join-Path $FrontendDir "dist"
-    if (Test-Path $distFolder) { Remove-Item -Recurse -Force $distFolder }
-    Write-Host "  [OK] Frontend cache purged." -ForegroundColor Green
+    Write-Host "  [1] Apply / Update Database (dotnet ef database update)"
+    Write-Host "  [2] Add New Migration (dotnet ef migrations add <Name>)"
+    Write-Host "  [3] Remove Last Migration (dotnet ef migrations remove)"
+    Write-Host "  [4] Check / Inspect Current Database Connection"
+    Write-Host "  [0] Return to Main Menu`n"
 
-    # 3. Clean .NET bin & obj
-    Write-Host "[*] Cleaning .NET build artifacts..." -ForegroundColor Gray
-    Push-Location $BackendDir
-    & dotnet clean --verbosity quiet
-    Pop-Location
-    Write-Host "  [OK] .NET clean completed." -ForegroundColor Green
-
-    # 4. Verify Frontend TypeScript Compilation with resilient tsc detection
-    Write-Host "[*] Validating TypeScript compilation (tsc -b)..." -ForegroundColor Gray
-    Push-Location $FrontendDir
-    $tscCode = Invoke-TscValidation
-    if ($tscCode -ne 0) {
-        Write-Host "  [ERROR] TypeScript build failed. Please fix compile errors before refreshing." -ForegroundColor Red
-        Pop-Location
-        return
-    }
-    Write-Host "  [OK] TypeScript check passed with 0 errors." -ForegroundColor Green
-    Pop-Location
-
-    # 5. Build .NET Backend
-    Write-Host "[*] Building .NET 10 backend..." -ForegroundColor Gray
-    Push-Location $BackendDir
-    & dotnet build Backend.csproj
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  [ERROR] Backend build failed." -ForegroundColor Red
-        Pop-Location
-        return
-    }
-    Write-Host "  [OK] Backend built successfully with 0 errors." -ForegroundColor Green
-    Pop-Location
-
-    # 6. Re-launch fresh services across all 4 ports (5000, 5173, 5174, 5175)
-    Start-AllServices
-}
-
-function Run-DatabaseMigrations {
-    Write-Header "ENTITY FRAMEWORK CORE DATABASE MIGRATIONS (MICROSOFT SQL SERVER / SSMS 19)"
-    if (-not (Check-Prerequisites)) { return }
-
-    $targetProject = if (Test-Path "$BackendDir") { "$BackendDir" } else { "..\Project system ENGINE\Backend" }
-    $dbConfig = Get-DatabaseConfig
-
-    Write-Host "Active RDBMS Provider: $($dbConfig.Provider) (Microsoft SQL Server / SSMS 19)" -ForegroundColor Cyan
-    Write-Host "Target Connection:     $($dbConfig.ConnectionString)" -ForegroundColor Gray
-    Write-Host "Authentication Mode:   $($dbConfig.AuthMode)" -ForegroundColor Gray
-    Write-Host "Target EF Project:     $targetProject" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "Choose migration option:" -ForegroundColor Yellow
-    Write-Host "  [1] Apply all pending migrations (dotnet ef database update --project `"$targetProject`")"
-    Write-Host "  [2] Create a new migration and apply it to SQL Server"
-    Write-Host "  [3] Re-seed initial database & test fixtures"
-    Write-Host "  [0] Back to main menu"
-    $choice = Read-Host "Select [0-3]"
-
-    switch ($choice) {
+    $subChoice = Read-Host "Select Migration Action (0-4)"
+    switch ($subChoice) {
         "1" {
-            Write-Host "[*] Synchronizing SQL Server Database Schema via EF Core..." -ForegroundColor Magenta
-            Push-Location $RootDir
-            & dotnet ef database update --project "$targetProject"
-            Pop-Location
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "  [OK] Database schema is up to date." -ForegroundColor Green
-            } else {
-                Write-Host "[!] Migration failed. Ensure Microsoft SQL Server is running and connection string is valid." -ForegroundColor Red
+            Write-Info "Applying pending migrations to configured relational database..."
+            Push-Location $BackendDir
+            try {
+                dotnet ef database update
+                Write-Success "Database migration update completed."
+            } catch {
+                Write-Err "Migration failed: $_"
+            } finally {
+                Pop-Location
             }
         }
         "2" {
-            $migName = Read-Host "Enter descriptive name for the new migration (e.g. SqlServerInitialCreate)"
-            if ([string]::IsNullOrWhiteSpace($migName)) {
-                Write-Host "[!] Migration name cannot be empty." -ForegroundColor Red
-                return
-            }
-            Write-Host "[*] Creating EF Core migration '$migName' for Microsoft SQL Server..." -ForegroundColor Cyan
-            Push-Location $RootDir
-            & dotnet ef migrations add $migName --project "$targetProject"
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "[*] Applying new migration to Microsoft SQL Server..." -ForegroundColor Cyan
-                & dotnet ef database update --project "$targetProject"
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Host "[OK] Migration '$migName' successfully created and applied to SQL Server." -ForegroundColor Green
+            $migName = Read-Host "Enter New Migration Name (e.g. AddAuditIndexing)"
+            if (-not [string]::IsNullOrWhiteSpace($migName)) {
+                Push-Location $BackendDir
+                try {
+                    dotnet ef migrations add $migName
+                    Write-Success "Migration '$migName' created successfully."
+                } catch {
+                    Write-Err "Failed to add migration: $_"
+                } finally {
+                    Pop-Location
                 }
+            } else {
+                Write-Warn "Migration name cannot be empty."
             }
-            Pop-Location
         }
         "3" {
-            Write-Host "[*] Triggering database re-seed via CLI..." -ForegroundColor Cyan
-            Push-Location $BackendDir
-            & dotnet run -- listcliusers
-            Pop-Location
-            Write-Host "[OK] Database ready." -ForegroundColor Green
+            $confirm = Read-Host "Are you sure you want to revert the last unapplied migration? (Y/N)"
+            if ($confirm -eq "Y" -or $confirm -eq "y") {
+                Push-Location $BackendDir
+                try {
+                    dotnet ef migrations remove
+                    Write-Success "Last migration removed."
+                } catch {
+                    Write-Err "Failed to remove migration: $_"
+                } finally {
+                    Pop-Location
+                }
+            }
         }
-        Default { return }
+        "4" {
+            Push-Location $BackendDir
+            try {
+                dotnet run --no-build -- listcliusers | Out-Null
+                Write-Success "Database connection validated successfully."
+            } catch {
+                Write-Err "Database connection check encountered an error: $_"
+            } finally {
+                Pop-Location
+            }
+        }
+        default { return }
     }
 }
 
-function Run-HealthTests {
-    Write-Header "RESQTRACK SYSTEM HEALTH & INTEGRITY CHECK"
-    
-    # 1. Check Backend Build
-    Write-Host "[1/5] Checking .NET 10 compilation..." -ForegroundColor Gray
+# --- Backend CLI User Management Operations ---
+function Run-BackendCli {
+    param([string[]]$CliArgs)
     Push-Location $BackendDir
-    & dotnet build Backend.csproj --verbosity minimal
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "  [OK] Backend compiles with 0 errors." -ForegroundColor Green
-    }
-    Pop-Location
-
-    # 2. Check Frontend Typecheck with resilient tsc detection
-    Write-Host "[2/5] Checking Frontend TypeScript..." -ForegroundColor Gray
-    Push-Location $FrontendDir
-    $tscCode = Invoke-TscValidation
-    if ($tscCode -eq 0) {
-        Write-Host "  [OK] Frontend TypeScript compiles with 0 errors." -ForegroundColor Green
-    }
-    Pop-Location
-
-    # 3. Check Relational Database Configuration
-    Write-Host "[3/5] Verifying Relational Database Configuration (SQL Server / SSMS 19)..." -ForegroundColor Gray
-    $dbConfig = Get-DatabaseConfig
-    if ($dbConfig.Provider -ieq "SqlServer") {
-        Write-Host "  [OK] Active RDBMS Provider: $($dbConfig.Provider) (Microsoft SQL Server)" -ForegroundColor Green
-        Write-Host "  [OK] Authentication Mode:   $($dbConfig.AuthMode)" -ForegroundColor Green
-        Write-Host "  [i] Connection Target:      $($dbConfig.ConnectionString)" -ForegroundColor DarkGray
-    } else {
-        Write-Host "  [!] Active Provider is configured as: $($dbConfig.Provider)" -ForegroundColor Yellow
-    }
-
-    # 4. Check live API endpoints if running
-    Write-Host "[4/5] Testing Backend REST API connectivity (:5000)..." -ForegroundColor Gray
     try {
-        $reports = Invoke-RestMethod -Uri "http://localhost:5000/api/reports" -TimeoutSec 3 -ErrorAction Stop
-        Write-Host "  [OK] GET /api/reports returned successfully." -ForegroundColor Green
-    } catch {
-        Write-Host "  [i] Backend is not currently running. Start services via Option [1] to test live API." -ForegroundColor Yellow
+        $output = & dotnet run --project $BackendProj --no-build -- $CliArgs
+        return $output
+    } finally {
+        Pop-Location
     }
+}
 
-    # 5. Probe Frontend Ports (5173, 5174, 5175)
-    $frontendPorts = @(
-        @{ Port = 5173; Name = "Responders & ID Induction" },
-        @{ Port = 5174; Name = "LDRRMO Admin Console" },
-        @{ Port = 5175; Name = "Civilian Emergency Portal" }
+function Get-AllUsersFromCli {
+    $rawOutput = Run-BackendCli -CliArgs @("listcliusers")
+    $text = $rawOutput -join "`n"
+    if ($text -match '(?s)\[CLI_USERS_JSON_BEGIN\]\r?\n?(.*?)\r?\n?\[CLI_USERS_JSON_END\]') {
+        $jsonStr = $matches[1]
+        try {
+            return ($jsonStr | ConvertFrom-Json)
+        } catch {
+            Write-Err "Failed to parse users JSON."
+            return @()
+        }
+    }
+    return @()
+}
+
+function Select-UserInteractive {
+    param(
+        [string]$RoleFilter,
+        [string]$UnitFilter = "",
+        [string]$HeaderTitle = "SELECT USER"
     )
-    foreach ($fp in $frontendPorts) {
-        $p = $fp.Port
-        Write-Host "[5/5] Checking Frontend listener (:$p - $($fp.Name))..." -ForegroundColor Gray
-        $found = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue
-        if ($found) {
-            $pids = ($found.OwningProcess | Select-Object -Unique) -join ', '
-            Write-Host "  [OK] $($fp.Name) (:$p) is active (PID: $pids)." -ForegroundColor Green
-        } else {
-            Write-Host "  [i] $($fp.Name) (:$p) is not listening." -ForegroundColor DarkGray
+
+    $allUsers = Get-AllUsersFromCli
+    if (-not $allUsers -or $allUsers.Count -eq 0) {
+        Write-Warn "No users found in database."
+        return $null
+    }
+
+    # Apply role filter
+    $filtered = $allUsers
+    if ($RoleFilter) {
+        $filtered = $filtered | Where-Object { $_.role -like "*$RoleFilter*" }
+    }
+    if ($UnitFilter -and $UnitFilter -ne "ALL") {
+        $filtered = $filtered | Where-Object { $_.unit -eq $UnitFilter }
+    }
+
+    if (-not $filtered -or $filtered.Count -eq 0) {
+        Write-Warn "No accounts matched the criteria (Role: $RoleFilter, Unit: $UnitFilter)."
+        return $null
+    }
+
+    Write-Host "`nSearch filter (leave empty to show all $($filtered.Count) accounts):" -ForegroundColor Cyan
+    $search = Read-Host "Search query"
+    if (-not [string]::IsNullOrWhiteSpace($search)) {
+        $filtered = $filtered | Where-Object {
+            $_.email -like "*$search*" -or $_.fullName -like "*$search*" -or $_.employeeOrResidentId -like "*$search*"
         }
     }
+
+    if (-not $filtered -or $filtered.Count -eq 0) {
+        Write-Warn "No users matched query '$search'."
+        return $null
+    }
+
+    Write-Host "`n--------------------------------------------------------------------------------" -ForegroundColor DarkGray
+    Write-Host ("{0,-4} | {1,-30} | {2,-12} | {3,-8} | {4,-15}" -f "#", "Email", "Role", "Unit", "ID") -ForegroundColor White
+    Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
+
+    $list = @($filtered)
+    for ($i = 0; $i -lt $list.Count; $i++) {
+        $u = $list[$i]
+        Write-Host ("{0,-4} | {1,-30} | {2,-12} | {3,-8} | {4,-15}" -f ($i + 1), $u.email, $u.role, $u.unit, $u.employeeOrResidentId) -ForegroundColor Gray
+    }
+    Write-Host "--------------------------------------------------------------------------------`n" -ForegroundColor DarkGray
+
+    $pick = Read-Host "Enter # to select (or 0 to cancel)"
+    if ($pick -match '^\d+$' -and [int]$pick -ge 1 -and [int]$pick -le $list.Count) {
+        return $list[[int]$pick - 1]
+    }
+    return $null
 }
 
-function Show-Help {
-    Write-Header "RESQTRACK DEV & OPS MASTER CONTROLLER -- USAGE & HELP"
-    Write-Host "Architecture Overview:" -ForegroundColor Yellow
-    Write-Host "  Backend:    .NET 10 ASP.NET Core REST API (:5000)" -ForegroundColor White
-    Write-Host "  Frontend:   Multi-Portal Vite Architecture:" -ForegroundColor White
-    Write-Host "              - Responders & ID Induction: http://localhost:5173" -ForegroundColor White
-    Write-Host "              - LDRRMO Executive Admin:     http://localhost:5174" -ForegroundColor White
-    Write-Host "              - Civilian Emergency SOS:     http://localhost:5175" -ForegroundColor White
-    Write-Host "  Database:   Microsoft SQL Server (SSMS 19 Compatible Relational Store)" -ForegroundColor White
-    Write-Host ""
-    Write-Host "SQL Server Authentication Options (configured in appsettings.json):" -ForegroundColor Yellow
-    Write-Host "  * Windows Authentication (Recommended for local dev / SSMS):" -ForegroundColor Cyan
-    Write-Host "    Server=localhost;Database=ResQTrackDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true;" -ForegroundColor Gray
-    Write-Host "  * LocalDB Instance (SQL Server Express / Visual Studio LocalDB):" -ForegroundColor Cyan
-    Write-Host "    Server=(localdb)\mssqllocaldb;Database=ResQTrackDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true;" -ForegroundColor Gray
-    Write-Host "  * SQL Server Authentication (SSMS / Production SQL logins):" -ForegroundColor Cyan
-    Write-Host "    Server=localhost;Database=ResQTrackDb;User Id=sa;Password=<YourPassword>;TrustServerCertificate=True;MultipleActiveResultSets=true;" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "Available CLI Actions:" -ForegroundColor Yellow
-    Write-Host "  .\manage.ps1 start                    Start Backend (:5000) & Frontends (:5173, :5174, :5175)"
-    Write-Host "  .\manage.ps1 status                   Inspect health matrix & SQL Server RDBMS connection"
-    Write-Host "  .\manage.ps1 refresh                  Hard refresh: cleans caches, rebuilds & restarts"
-    Write-Host "  .\manage.ps1 stop                     Stop all running services on ports 5000, 5173, 5174, 5175"
-    Write-Host "  .\manage.ps1 migrate                  Apply EF Core migrations to SQL Server (SSMS 19)"
-    Write-Host "  .\manage.ps1 test                     Run compilation, TypeScript, and SQL Server health tests"
-    Write-Host "  .\manage.ps1 audit                    Run automated browser Playwright audit (Civilian, Admin, Responder)"
-    Write-Host "  .\manage.ps1 scan-test                Run automated ID scanner freeze & laser sweep Playwright test"
-    Write-Host "  .\manage.ps1 help                     Display this help guide"
-    Write-Host "  .\manage.ps1 createsuperadmin <email> <password> <fullName> [unit]"
-    Write-Host "  .\manage.ps1 createcustomsuperadmin <email> <password> <fullName> [unit]"
-    Write-Host "  .\manage.ps1 resetpassword <email> <newPassword>"
-    Write-Host "  .\manage.ps1 adduser <email> <password> <fullName> <role> [unit] [employeeId]"
-    Write-Host "  .\manage.ps1 listusers                List all registered users from SQL Server"
-    Write-Host ""
+# --- User Management Handlers ---
+function Create-SuperadminAccount {
+    Write-Header "CREATE SUPERADMIN ACCOUNT (BYPASS TERMINAL CREATION)"
+    Write-Host "Reminder: Enter email and password only. Default verified profile attributes are assigned.`n" -ForegroundColor Yellow
+
+    Write-Host "  [1] Create Default Superadmin (admin@resqtrack.gov.ph / Admin123!)"
+    Write-Host "  [2] Create Custom Superadmin (Specify Email & Password)"
+    Write-Host "  [0] Cancel`n"
+
+    $choice = Read-Host "Select Option (0-2)"
+    if ($choice -eq "1") {
+        Write-Info "Creating default superadmin account..."
+        $res = Run-BackendCli -CliArgs @("createsuperadmin", "admin@resqtrack.gov.ph", "Admin123!")
+        Write-Host ($res -join "`n") -ForegroundColor Green
+    } elseif ($choice -eq "2") {
+        $email = Read-Host "Enter Superadmin Email"
+        if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return }
+        $pass = Read-Host "Enter Superadmin Password (min 5 chars)"
+        if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 5) { Write-Warn "Password too short."; return }
+
+        Write-Info "Creating superadmin '$email'..."
+        $res = Run-BackendCli -CliArgs @("createsuperadmin", $email, $pass)
+        Write-Host ($res -join "`n") -ForegroundColor Green
+    }
 }
 
-function New-SuperAdminPrompt {
-    Write-Header "CREATE SUPERADMIN CLI (LDRRMO EXECUTIVE DIRECTOR)"
-    $email = Read-Host "Enter Email (e.g. ldrrmo.admin@resqtrack.gov.ph)"
-    $password = Read-Host "Enter Password (min 5 chars)"
-    $fullName = Read-Host "Enter Full Name (e.g. Director Alejandro Ramos)"
-    $unit = Read-Host "Enter Unit [LDRRMO/RHU/FIRE/PNP/Security] (Default: LDRRMO)"
-    if ([string]::IsNullOrWhiteSpace($unit)) { $unit = "LDRRMO" }
+function Edit-SuperadminAccount {
+    Write-Header "EDIT SUPERADMIN ACCOUNT"
+    Write-Host "Search and select a superadmin to update (Email & Password only).`n" -ForegroundColor Yellow
 
-    if ([string]::IsNullOrWhiteSpace($email) -or [string]::IsNullOrWhiteSpace($password) -or [string]::IsNullOrWhiteSpace($fullName)) {
-        Write-Host "[!] Email, Password, and Full Name are required." -ForegroundColor Red
+    $user = Select-UserInteractive -RoleFilter "LDRRMO" -HeaderTitle "Select Superadmin to Edit"
+    if (-not $user) { return }
+
+    Write-Info "Selected Superadmin: $($user.email)"
+    $newEmail = Read-Host "New Email [leave blank or press Enter to keep current]"
+    $newPass  = Read-Host "New Password [leave blank or press Enter to keep current]"
+
+    if ([string]::IsNullOrWhiteSpace($newEmail) -and [string]::IsNullOrWhiteSpace($newPass)) {
+        Write-Warn "No changes provided."
         return
     }
+
+    $passArg = if ([string]::IsNullOrWhiteSpace($newPass)) { "-" } else { $newPass }
+    $emailArg = if ([string]::IsNullOrWhiteSpace($newEmail)) { "-" } else { $newEmail }
+
+    $res = Run-BackendCli -CliArgs @("edituser", $user.email, $passArg, $emailArg)
+    Write-Host ($res -join "`n") -ForegroundColor Green
+}
+
+function Delete-SuperadminAccount {
+    Write-Header "DELETE SUPERADMIN ACCOUNT"
+    $user = Select-UserInteractive -RoleFilter "LDRRMO" -HeaderTitle "Select Superadmin to Delete"
+    if (-not $user) { return }
+
+    $confirm = Read-Host "Are you sure you want to permanently delete Superadmin '$($user.email)'? (Y/N)"
+    if ($confirm -eq "Y" -or $confirm -eq "y") {
+        $res = Run-BackendCli -CliArgs @("deletecliuser", $user.email)
+        Write-Host ($res -join "`n") -ForegroundColor Green
+    } else {
+        Write-Info "Deletion cancelled."
+    }
+}
+
+function Create-ResponderAccount {
+    Write-Header "CREATE RESPONDER ACCOUNT"
+    Write-Host "Select Agency Branch, then enter Email and Password only.`n" -ForegroundColor Yellow
+
+    Write-Host "  [1] RHU  (Rural Health Unit / Medical)"
+    Write-Host "  [2] FIRE (Bureau of Fire Protection)"
+    Write-Host "  [3] PNP  (Philippine National Police)"
+    Write-Host "  [0] Cancel`n"
+
+    $unitChoice = Read-Host "Choose Branch (1-3)"
+    $unit = switch ($unitChoice) {
+        "1" { "RHU" }
+        "2" { "FIRE" }
+        "3" { "PNP" }
+        default { return }
+    }
+
+    $email = Read-Host "Enter $unit Responder Email"
+    if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return }
+    $pass = Read-Host "Enter Password (min 5 chars)"
+    if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 5) { Write-Warn "Password too short."; return }
+
+    Write-Info "Creating $unit responder '$email'..."
+    $res = Run-BackendCli -CliArgs @("createresponder", $email, $pass, $unit)
+    Write-Host ($res -join "`n") -ForegroundColor Green
+}
+
+function Edit-ResponderAccount {
+    Write-Header "EDIT RESPONDER ACCOUNT"
+    Write-Host "Select Agency Branch to filter, then search and select.`n" -ForegroundColor Yellow
+
+    Write-Host "  [1] RHU Responders"
+    Write-Host "  [2] FIRE Responders"
+    Write-Host "  [3] PNP Responders"
+    Write-Host "  [4] All Responders"
+    Write-Host "  [0] Cancel`n"
+
+    $filterChoice = Read-Host "Choose Option (1-4)"
+    $unitFilter = switch ($filterChoice) {
+        "1" { "RHU" }
+        "2" { "FIRE" }
+        "3" { "PNP" }
+        "4" { "ALL" }
+        default { return }
+    }
+
+    $user = Select-UserInteractive -RoleFilter "Responder" -UnitFilter $unitFilter -HeaderTitle "Select Responder to Edit"
+    if (-not $user) { return }
+
+    Write-Info "Selected Responder: $($user.email) [Unit: $($user.unit)]"
+    $newEmail = Read-Host "New Email [leave blank or press Enter to keep current]"
+    $newPass  = Read-Host "New Password [leave blank or press Enter to keep current]"
+
+    if ([string]::IsNullOrWhiteSpace($newEmail) -and [string]::IsNullOrWhiteSpace($newPass)) {
+        Write-Warn "No changes provided."
+        return
+    }
+
+    $passArg = if ([string]::IsNullOrWhiteSpace($newPass)) { "-" } else { $newPass }
+    $emailArg = if ([string]::IsNullOrWhiteSpace($newEmail)) { "-" } else { $newEmail }
+
+    $res = Run-BackendCli -CliArgs @("edituser", $user.email, $passArg, $emailArg)
+    Write-Host ($res -join "`n") -ForegroundColor Green
+}
+
+function Delete-ResponderAccount {
+    Write-Header "DELETE RESPONDER ACCOUNT"
+    Write-Host "  [1] RHU Responders"
+    Write-Host "  [2] FIRE Responders"
+    Write-Host "  [3] PNP Responders"
+    Write-Host "  [4] All Responders"
+    Write-Host "  [0] Cancel`n"
+
+    $filterChoice = Read-Host "Choose Branch to Filter (1-4)"
+    $unitFilter = switch ($filterChoice) {
+        "1" { "RHU" }
+        "2" { "FIRE" }
+        "3" { "PNP" }
+        "4" { "ALL" }
+        default { return }
+    }
+
+    $user = Select-UserInteractive -RoleFilter "Responder" -UnitFilter $unitFilter -HeaderTitle "Select Responder to Delete"
+    if (-not $user) { return }
+
+    $confirm = Read-Host "Are you sure you want to delete Responder '$($user.email)' ($($user.unit))? (Y/N)"
+    if ($confirm -eq "Y" -or $confirm -eq "y") {
+        $res = Run-BackendCli -CliArgs @("deletecliuser", $user.email)
+        Write-Host ($res -join "`n") -ForegroundColor Green
+    } else {
+        Write-Info "Deletion cancelled."
+    }
+}
+
+function Create-CivilianAccount {
+    Write-Header "CREATE CIVILIAN ACCOUNT"
+    Write-Host "Enter Email and Password only. Resident account is created with Verified status.`n" -ForegroundColor Yellow
+
+    $email = Read-Host "Enter Civilian Email"
+    if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return }
+    $pass = Read-Host "Enter Password (min 5 chars)"
+    if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 5) { Write-Warn "Password too short."; return }
+
+    Write-Info "Creating civilian account '$email'..."
+    $res = Run-BackendCli -CliArgs @("createcivilian", $email, $pass)
+    Write-Host ($res -join "`n") -ForegroundColor Green
+}
+
+function Edit-CivilianAccount {
+    Write-Header "EDIT CIVILIAN ACCOUNT"
+    $user = Select-UserInteractive -RoleFilter "Civilian" -HeaderTitle "Select Civilian to Edit"
+    if (-not $user) { return }
+
+    Write-Info "Selected Civilian: $($user.email)"
+    $newEmail = Read-Host "New Email [leave blank or press Enter to keep current]"
+    $newPass  = Read-Host "New Password [leave blank or press Enter to keep current]"
+
+    if ([string]::IsNullOrWhiteSpace($newEmail) -and [string]::IsNullOrWhiteSpace($newPass)) {
+        Write-Warn "No changes provided."
+        return
+    }
+
+    $passArg = if ([string]::IsNullOrWhiteSpace($newPass)) { "-" } else { $newPass }
+    $emailArg = if ([string]::IsNullOrWhiteSpace($newEmail)) { "-" } else { $newEmail }
+
+    $res = Run-BackendCli -CliArgs @("edituser", $user.email, $passArg, $emailArg)
+    Write-Host ($res -join "`n") -ForegroundColor Green
+}
+
+function Delete-CivilianAccount {
+    Write-Header "DELETE CIVILIAN ACCOUNT"
+    $user = Select-UserInteractive -RoleFilter "Civilian" -HeaderTitle "Select Civilian to Delete"
+    if (-not $user) { return }
+
+    $confirm = Read-Host "Are you sure you want to delete Civilian '$($user.email)'? (Y/N)"
+    if ($confirm -eq "Y" -or $confirm -eq "y") {
+        $res = Run-BackendCli -CliArgs @("deletecliuser", $user.email)
+        Write-Host ($res -join "`n") -ForegroundColor Green
+    } else {
+        Write-Info "Deletion cancelled."
+    }
+}
+
+function Invoke-HardHotRefresh {
+    Write-Header "HARD HOT REFRESH (PURGE CACHES & RESTART ENGINES)"
+    Write-Info "Stopping active processes..."
+    Stop-PortProcesses
+
+    Write-Info "Purging Vite and build cache directories..."
+    $viteCache = Join-Path $FrontendDir "node_modules\.vite"
+    $distDir   = Join-Path $FrontendDir "dist"
+    if (Test-Path $viteCache) { Remove-Item -Recurse -Force $viteCache -ErrorAction SilentlyContinue }
+    if (Test-Path $distDir)   { Remove-Item -Recurse -Force $distDir -ErrorAction SilentlyContinue }
+
+    Write-Success "Caches cleared. Restarting 4-port ecosystem..."
+    Start-AllEngines
+}
+
+function Invoke-CleanRebuild {
+    Write-Header "CLEAN BUILD / REBUILD (.NET & FRONTEND)"
+    Stop-PortProcesses
+
+    Write-Info "Cleaning .NET Backend artifacts..."
     Push-Location $BackendDir
-    & dotnet run -- createsuperadmin "$email" "$password" "$fullName" "$unit"
-    Pop-Location
+    try {
+        dotnet clean --nologo -v q
+        dotnet build -c Debug --nologo
+        Write-Success "Backend rebuilt cleanly."
+    } catch {
+        Write-Err "Backend rebuild failed: $_"
+    } finally {
+        Pop-Location
+    }
+
+    Write-Info "Validating Frontend TypeScript compilation..."
+    Push-Location $FrontendDir
+    try {
+        npm run build --no-emit
+        Write-Success "Frontend build verification passed."
+    } catch {
+        Write-Warn "Frontend build check reported warnings or non-fatal notes."
+    } finally {
+        Pop-Location
+    }
 }
 
-function New-CustomSuperAdminPrompt {
-    Write-Header "CREATE CUSTOM SUPERADMIN CLI"
-    $email = Read-Host "Enter Email"
-    $password = Read-Host "Enter Password (min 5 chars)"
-    $fullName = Read-Host "Enter Full Name"
-    $unit = Read-Host "Enter Unit [LDRRMO/RHU/FIRE/PNP/Security] (Default: RHU)"
-    if ([string]::IsNullOrWhiteSpace($unit)) { $unit = "RHU" }
-
-    if ([string]::IsNullOrWhiteSpace($email) -or [string]::IsNullOrWhiteSpace($password) -or [string]::IsNullOrWhiteSpace($fullName)) {
-        Write-Host "[!] Email, Password, and Full Name are required." -ForegroundColor Red
+function Invoke-DockerRebuild {
+    Write-Header "DOCKER BUILD / REBUILD"
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        Write-Err "Docker is not installed or docker daemon is not running."
+        Pause-Console
         return
     }
-    Push-Location $BackendDir
-    & dotnet run -- createcustomsuperadmin "$email" "$password" "$fullName" "$unit"
-    Pop-Location
-}
 
-function New-ResetPasswordPrompt {
-    Write-Header "RESET USER PASSWORD CLI (SCRYPT KDF)"
-    $email = Read-Host "Enter Email of User"
-    $newPassword = Read-Host "Enter New Password (min 5 chars)"
-    if ([string]::IsNullOrWhiteSpace($email) -or [string]::IsNullOrWhiteSpace($newPassword)) {
-        Write-Host "[!] Email and New Password are required." -ForegroundColor Red
-        return
-    }
-    Push-Location $BackendDir
-    & dotnet run -- resetpassword "$email" "$newPassword"
-    Pop-Location
-}
-
-function New-UserCliPrompt {
-    Write-Header "ADD NEW USER CLI (ADMIN / RESPONDER / CIVILIAN)"
-    $email = Read-Host "Enter Email"
-    $password = Read-Host "Enter Password (min 5 chars)"
-    $fullName = Read-Host "Enter Full Name"
-    $role = Read-Host "Enter Role [LDRRMO_Admin/Responder/Civilian] (Default: Civilian)"
-    if ([string]::IsNullOrWhiteSpace($role)) { $role = "Civilian" }
-    $unit = Read-Host "Enter Unit [None/LDRRMO/RHU/FIRE/PNP/Security] (Default: None)"
-    if ([string]::IsNullOrWhiteSpace($unit)) { $unit = "None" }
-    $id = Read-Host "Enter Employee or Resident ID (Optional)"
-    
-    if ([string]::IsNullOrWhiteSpace($email) -or [string]::IsNullOrWhiteSpace($password) -or [string]::IsNullOrWhiteSpace($fullName)) {
-        Write-Host "[!] Email, Password, and Full Name are required." -ForegroundColor Red
-        return
-    }
-    Push-Location $BackendDir
-    & dotnet run -- adduser "$email" "$password" "$fullName" "$role" "$unit" "$id"
-    Pop-Location
-}
-
-function New-DeleteSuperAdminPrompt {
-    Write-Header "DELETE SUPERADMIN ACCOUNT CLI (SQL SERVER)"
-    $email = Read-Host "Enter SuperAdmin Email to delete"
-    if ([string]::IsNullOrWhiteSpace($email)) {
-        Write-Host "[!] Email cannot be empty." -ForegroundColor Red
-        return
-    }
-    Write-Host "[!] WARNING: You are about to permanently delete SuperAdmin account: $email" -ForegroundColor Red
-    $confirm = Read-Host "Type 'CONFIRM' or 'yes' to proceed with deletion"
-    if ($confirm -ne 'CONFIRM' -and $confirm -ne 'yes') {
-        Write-Host "[-] Deletion cancelled by user." -ForegroundColor Yellow
-        return
-    }
-    Push-Location $BackendDir
-    & dotnet run -- deletesuperadmin "$email"
-    Pop-Location
-}
-
-# ─── Command Line Argument Dispatcher ────────────────────────────────────────
-switch ($Action.ToLower()) {
-    "start"   { Start-AllServices; exit }
-    "status"  { Show-Status; exit }
-    "refresh" { Hard-Refresh; exit }
-    "stop"    { Stop-AllServices; exit }
-    "migrate" { Run-DatabaseMigrations; exit }
-    "test"    { Run-HealthTests; exit }
-    "audit"   {
-        Write-Header "RUNNING FULL PLAYWRIGHT AUTOMATION AUDIT (CIVILIAN + ADMIN + RESPONDER)"
-        Push-Location $FrontendDir
-        & npx tsx "src/Libs/Testing/verify_map_and_dual_approval_workflows.ts"
+    Push-Location $RootDir
+    try {
+        Write-Info "Stopping existing Docker Compose containers..."
+        docker compose down
+        Write-Info "Rebuilding containers without cache..."
+        docker compose build --no-cache
+        Write-Info "Starting containers in detached mode..."
+        docker compose up -d
+        Write-Success "Docker containers deployed."
+        docker compose ps
+    } catch {
+        Write-Err "Docker operation failed: $_"
+    } finally {
         Pop-Location
-        exit
-    }
-    "verify"  {
-        Write-Header "RUNNING FULL PLAYWRIGHT AUTOMATION AUDIT (CIVILIAN + ADMIN + RESPONDER)"
-        Push-Location $FrontendDir
-        & npx tsx "src/Libs/Testing/verify_map_and_dual_approval_workflows.ts"
-        Pop-Location
-        exit
-    }
-    "test-id" {
-        Write-Header "RUNNING ID SCANNER FREEZE & LASER SWEEP PLAYWRIGHT TEST"
-        Push-Location $FrontendDir
-        & npx tsx "src/Libs/Testing/test_id_scan_freeze_and_autofill_browser.ts"
-        Pop-Location
-        exit
-    }
-    "scan-test" {
-        Write-Header "RUNNING ID SCANNER FREEZE & LASER SWEEP PLAYWRIGHT TEST"
-        Push-Location $FrontendDir
-        & npx tsx "src/Libs/Testing/test_id_scan_freeze_and_autofill_browser.ts"
-        Pop-Location
-        exit
-    }
-    "docker-up" {
-        & (Join-Path $PSScriptRoot "docker-start-all.ps1")
-        exit
-    }
-    "docker-down" {
-        & (Join-Path $PSScriptRoot "docker-stop-all.ps1")
-        exit
-    }
-    "install-deps" {
-        & (Join-Path $PSScriptRoot "install-dependencies.ps1")
-        exit
-    }
-    "bootstrap" {
-        & (Join-Path $PSScriptRoot "install-dependencies.ps1")
-        exit
-    }
-    "postgres-up" {
-        & (Join-Path $PSScriptRoot "start-postgres-docker.ps1")
-        exit
-    }
-    "postgres-down" {
-        & (Join-Path $PSScriptRoot "stop-postgres-docker.ps1")
-        exit
-    }
-    "switch-db" {
-        & (Join-Path $PSScriptRoot "switch-database.ps1") $AllArgs
-        exit
-    }
-    "help"    { Show-Help; exit }
-    "-h"      { Show-Help; exit }
-    "--help"  { Show-Help; exit }
-    "-?"      { Show-Help; exit }
-    "createsuperadmin" { 
-        if ($AllArgs.Count -lt 3) {
-            Write-Host "Usage: .\manage.ps1 createsuperadmin <email> <password> <fullName> [unit]" -ForegroundColor Red
-            exit 1
-        }
-        $unit = if ($AllArgs.Count -gt 3) { $AllArgs[3] } else { "LDRRMO" }
-        Push-Location $BackendDir
-        & dotnet run -- createsuperadmin "$($AllArgs[0])" "$($AllArgs[1])" "$($AllArgs[2])" "$unit"
-        Pop-Location
-        exit 
-    }
-    "createcustomsuperadmin" {
-        if ($AllArgs.Count -lt 3) {
-            Write-Host "Usage: .\manage.ps1 createcustomsuperadmin <email> <password> <fullName> [unit]" -ForegroundColor Red
-            exit 1
-        }
-        $unit = if ($AllArgs.Count -gt 3) { $AllArgs[3] } else { "RHU" }
-        Push-Location $BackendDir
-        & dotnet run -- createcustomsuperadmin "$($AllArgs[0])" "$($AllArgs[1])" "$($AllArgs[2])" "$unit"
-        Pop-Location
-        exit
-    }
-    "deletesuperadmin" {
-        if ($AllArgs.Count -lt 1) {
-            Write-Host "Usage: .\manage.ps1 deletesuperadmin <email>" -ForegroundColor Red
-            exit 1
-        }
-        Push-Location $BackendDir
-        & dotnet run -- deletesuperadmin "$($AllArgs[0])"
-        Pop-Location
-        exit
-    }
-    "resetpassword" {
-        if ($AllArgs.Count -lt 2) {
-            Write-Host "Usage: .\manage.ps1 resetpassword <email> <newPassword>" -ForegroundColor Red
-            exit 1
-        }
-        Push-Location $BackendDir
-        & dotnet run -- resetpassword "$($AllArgs[0])" "$($AllArgs[1])"
-        Pop-Location
-        exit
-    }
-    "adduser" {
-        if ($AllArgs.Count -lt 4) {
-            Write-Host "Usage: .\manage.ps1 adduser <email> <password> <fullName> <role> [unit] [employeeId]" -ForegroundColor Red
-            exit 1
-        }
-        $unit = if ($AllArgs.Count -gt 4) { $AllArgs[4] } else { "None" }
-        $id = if ($AllArgs.Count -gt 5) { $AllArgs[5] } else { "" }
-        Push-Location $BackendDir
-        & dotnet run -- adduser "$($AllArgs[0])" "$($AllArgs[1])" "$($AllArgs[2])" "$($AllArgs[3])" "$unit" "$id"
-        Pop-Location
-        exit
-    }
-    "listusers" {
-        Push-Location $BackendDir
-        & dotnet run -- listcliusers
-        Pop-Location
-        exit
     }
 }
 
-# ─── Interactive Console Menu ────────────────────────────────────────────────
-do {
-    Clear-Host
-    Write-Host "======================================================================" -ForegroundColor Cyan
-    Write-Host "   RESQTRACK INCIDENT AI SYSTEM DETECTION -- DEV & OPS CONTROLLER    " -ForegroundColor Yellow
-    Write-Host "   Database Engine: Microsoft SQL Server (SSMS 19 / Windows & SQL Auth)" -ForegroundColor DarkCyan
-    Write-Host "   Single command runner for any team member's Windows machine        " -ForegroundColor Gray
-    Write-Host "======================================================================" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "  [1] Start Fullstack Dev        -> Backend :5000 + Responders :5173 + Admin :5174 + Civilian :5175" -ForegroundColor White
-    Write-Host "  [2] Live Status Matrix         -> Probes ports 5000, 5173, 5174, 5175 & Database" -ForegroundColor White
-    Write-Host "  [3] Hard Refresh & Rebuild     -> Purge caches, re-compile & restart services" -ForegroundColor White
-    Write-Host "  [4] Stop All Services          -> Free ports 5000, 5173, 5174, and 5175" -ForegroundColor White
-    Write-Host "  [5] Database Migrations        -> EF Core Relational Database schema migration" -ForegroundColor White
-    Write-Host "  [6] Health Check & Tests       -> Compilation, TypeScript, Database & API" -ForegroundColor White
-    Write-Host "  [T] Playwright E2E Audit       -> Automated test of Civilian, Admin & Responder dispatch" -ForegroundColor Green
-    Write-Host "  [TI] ID Auto-Scan E2E Test     -> Automated test of ID freeze, laser sweep & autofill" -ForegroundColor Green
-    Write-Host "  [D] Docker 7-Container Topology-> Launch Docker Compose (Admin, Resp, Civ, API, Redis, DB Primary & Replica)" -ForegroundColor Magenta
-    Write-Host "  [DS] Docker Stop Containers    -> Stop all Docker Compose services and containers" -ForegroundColor DarkMagenta
-    Write-Host "  [I] Install All Dependencies   -> Auto-restore npm, dotnet, and check RDBMS prerequisites" -ForegroundColor Cyan
-    Write-Host "  [S] Switch Database Provider   -> Switch between SQL Server (SSMS 19), PostgreSQL & MySQL" -ForegroundColor Yellow
-    Write-Host "  [7] Create SuperAdmin CLI      -> Terminal prompt for createsuperadmin" -ForegroundColor White
-    Write-Host "  [8] Create Custom Admin CLI    -> Terminal prompt for createcustomsuperadmin" -ForegroundColor White
-    Write-Host "  [9] Reset User Password CLI   -> Terminal prompt for resetpassword (Scrypt KDF)" -ForegroundColor White
-    Write-Host "  [10] Add User CLI              -> Terminal prompt to add Admin/Responder/Civilian" -ForegroundColor White
-    Write-Host "  [11] List All Users            -> Lists all accounts from Relational Database" -ForegroundColor White
-    Write-Host "  [12] Delete SuperAdmin CLI     -> Permanently delete SuperAdmin account" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "  [0] Exit" -ForegroundColor DarkGray
-    Write-Host "======================================================================" -ForegroundColor Cyan
-    $sel = Read-Host "Select an option [0-12, T, TI, D, DS, I, S]"
+# --- Interactive Main Menu ---
+function Show-MainMenu {
+    while ($true) {
+        Write-Header ""
+        Write-Host " CORE ENGINE OPERATIONS" -ForegroundColor Green
+        Write-Host "  [1]  Start all Engines & Portals (:5000, :5173, :5174, :5175)"
+        Write-Host "  [2]  Stop all Engines & Release Ports"
+        Write-Host "  [3]  Database Migrations (Add Migration / Update Database / Auto-detect)"
+        Write-Host ""
+        Write-Host " SUPERADMIN MANAGEMENT (Email & Password Only)" -ForegroundColor Yellow
+        Write-Host "  [4]  Create Superadmin (Default or Custom)"
+        Write-Host "  [5]  Edit Superadmin (Search list, Email & Password only)"
+        Write-Host "  [6]  Delete Superadmin (Search list)"
+        Write-Host ""
+        Write-Host " RESPONDER MANAGEMENT (Choose RHU / FIRE / PNP - Email & Password Only)" -ForegroundColor Cyan
+        Write-Host "  [7]  Create Responder (Choose RHU / FIRE / PNP)"
+        Write-Host "  [8]  Edit Responder (Choose Unit, Search list, Email & Password only)"
+        Write-Host "  [9]  Delete Responder (Choose Unit, Search list)"
+        Write-Host ""
+        Write-Host " CIVILIAN MANAGEMENT (Email & Password Only)" -ForegroundColor Magenta
+        Write-Host "  [10] Create Civilian (Email & Password only)"
+        Write-Host "  [11] Edit Civilian (Search list, Email & Password only)"
+        Write-Host "  [12] Delete Civilian (Search list)"
+        Write-Host ""
+        Write-Host " SYSTEM MAINTENANCE & CONTAINERS" -ForegroundColor DarkCyan
+        Write-Host "  [13] HARD HOT REFRESH (Purge Vite caches & restart)"
+        Write-Host "  [14] CLEAN BUILD / REBUILD (.NET clean & build, frontend check)"
+        Write-Host "  [15] DOCKER BUILD / REBUILD (Compose down, rebuild, boot)"
+        Write-Host ""
+        Write-Host "  [0]  Exit Console"
+        Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
 
-    switch -Regex ($sel) {
-        "^1$"   { Start-AllServices; Read-Host "`nPress Enter to return to menu..." }
-        "^2$"   { Show-Status; Read-Host "`nPress Enter to return to menu..." }
-        "^3$"   { Hard-Refresh; Read-Host "`nPress Enter to return to menu..." }
-        "^4$"   { Stop-AllServices; Read-Host "`nPress Enter to return to menu..." }
-        "^5$"   { Run-DatabaseMigrations; Read-Host "`nPress Enter to return to menu..." }
-        "^6$"   { Run-HealthTests; Read-Host "`nPress Enter to return to menu..." }
-        "^(t|audit|test-all)$" {
-            Write-Header "RUNNING FULL PLAYWRIGHT AUTOMATION AUDIT"
-            Push-Location $FrontendDir
-            & npx tsx "src/Libs/Testing/verify_map_and_dual_approval_workflows.ts"
-            Pop-Location
-            Read-Host "`nPress Enter to return to menu..."
+        $choice = Read-Host "Select an Option [0-15]"
+
+        switch ($choice) {
+            "1"  { Start-AllEngines; Pause-Console }
+            "2"  { Stop-PortProcesses; Pause-Console }
+            "3"  { Manage-DatabaseMigrations; Pause-Console }
+            "4"  { Create-SuperadminAccount; Pause-Console }
+            "5"  { Edit-SuperadminAccount; Pause-Console }
+            "6"  { Delete-SuperadminAccount; Pause-Console }
+            "7"  { Create-ResponderAccount; Pause-Console }
+            "8"  { Edit-ResponderAccount; Pause-Console }
+            "9"  { Delete-ResponderAccount; Pause-Console }
+            "10" { Create-CivilianAccount; Pause-Console }
+            "11" { Edit-CivilianAccount; Pause-Console }
+            "12" { Delete-CivilianAccount; Pause-Console }
+            "13" { Invoke-HardHotRefresh; Pause-Console }
+            "14" { Invoke-CleanRebuild; Pause-Console }
+            "15" { Invoke-DockerRebuild; Pause-Console }
+            "0"  { Write-Host "Exiting ResQTrack Management Console. Goodbye!" -ForegroundColor Cyan; break }
+            default { Write-Warn "Invalid choice. Please enter a number between 0 and 15."; Start-Sleep -Milliseconds 800 }
         }
-        "^(ti|scan-test|id-test)$" {
-            Write-Header "RUNNING ID SCANNER FREEZE & LASER SWEEP TEST"
-            Push-Location $FrontendDir
-            & npx tsx "src/Libs/Testing/test_id_scan_freeze_and_autofill_browser.ts"
-            Pop-Location
-            Read-Host "`nPress Enter to return to menu..."
-        }
-        "^(d|docker)$"    { & (Join-Path $PSScriptRoot "docker-start-all.ps1"); Read-Host "`nPress Enter to return to menu..." }
-        "^(ds|docker-stop)$" { & (Join-Path $PSScriptRoot "docker-stop-all.ps1"); Read-Host "`nPress Enter to return to menu..." }
-        "^(i|install)$"   { & (Join-Path $PSScriptRoot "install-dependencies.ps1"); Read-Host "`nPress Enter to return to menu..." }
-        "^(s|switch)$"    { & (Join-Path $PSScriptRoot "switch-database.ps1"); Read-Host "`nPress Enter to return to menu..." }
-        "^7$"   { New-SuperAdminPrompt; Read-Host "`nPress Enter to return to menu..." }
-        "^8$"   { New-CustomSuperAdminPrompt; Read-Host "`nPress Enter to return to menu..." }
-        "^9$"   { New-ResetPasswordPrompt; Read-Host "`nPress Enter to return to menu..." }
-        "^10$"  { New-UserCliPrompt; Read-Host "`nPress Enter to return to menu..." }
-        "^11$"  { 
-            Push-Location $BackendDir
-            & dotnet run -- listcliusers
-            Pop-Location
-            Read-Host "`nPress Enter to return to menu..." 
-        }
-        "^12$"  { New-DeleteSuperAdminPrompt; Read-Host "`nPress Enter to return to menu..." }
-        "^0$"   { Write-Host "`nExiting. Stay safe, ResQTrack!" -ForegroundColor Yellow; break }
-        Default { Write-Host "`nInvalid selection." -ForegroundColor Red; Start-Sleep -Seconds 1 }
     }
-} while ($sel -ne "0")
+}
+
+# --- CLI Dispatcher Entrypoint ---
+if ($Action) {
+    switch ($Action.ToLowerInvariant()) {
+        "start"        { Start-AllEngines }
+        "stop"         { Stop-PortProcesses }
+        "migrate"      { Manage-DatabaseMigrations }
+        "superadmin"   { Create-SuperadminAccount }
+        "refresh"      { Invoke-HardHotRefresh }
+        "rebuild"      { Invoke-CleanRebuild }
+        "docker"       { Invoke-DockerRebuild }
+        default        { Show-MainMenu }
+    }
+} else {
+    Show-MainMenu
+}

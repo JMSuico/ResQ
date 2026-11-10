@@ -5,9 +5,11 @@
 // Universal lambda expressions (=>).
 
 import React, { FC, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { X, Settings, ShieldCheck, AlertTriangle, User, Mail } from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
+import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
 
 export interface ProfileFloatingModalCardProps {
   isOpen: boolean;
@@ -99,11 +101,13 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
     navigate(settingsRoute);
   };
 
-  return (
+  const { isMobile } = useFluidResposiveness();
+
+  const content = (
     <>
       {/* Invisible backdrop overlay to catch outside clicks */}
       <div
-        className="fixed inset-0 z-[99990] bg-black/20 backdrop-blur-[0.5px]"
+        className="fixed inset-0 z-[999998] bg-black/25 backdrop-blur-[0.5px]"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -111,7 +115,9 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
       {/* Floating Tactical Card */}
       <div
         ref={cardRef}
-        className="absolute top-[calc(100%+10px)] right-0 z-[99999] w-80 sm:w-88 rounded-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-rose-950/30 border border-slate-700/80 shadow-2xl p-4 text-slate-100 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
+        className={`fixed top-14 right-4 z-[999999] ${
+          isMobile ? 'inset-x-3 w-auto' : 'w-80 sm:w-88'
+        } max-w-[calc(100vw-1.5rem)] max-h-[88vh] rounded-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-rose-950/30 border border-slate-700/80 shadow-2xl p-4 text-slate-100 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150 overflow-y-auto`}
         style={{
           boxShadow: '0 24px 50px -6px rgba(0, 0, 0, 0.85), 0 0 1px 1px rgba(244, 63, 94, 0.25)'
         }}
@@ -234,6 +240,10 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
       </div>
     </>
   );
+
+  return typeof document !== 'undefined'
+    ? createPortal(content, document.body)
+    : content;
 };
 
 export default ProfileFloatingModalCard;

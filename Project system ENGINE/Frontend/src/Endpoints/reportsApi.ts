@@ -40,6 +40,10 @@ export interface ReportItem {
   status: string;
   latitude: number;
   longitude: number;
+  currentLatitude?: number | null;
+  currentLongitude?: number | null;
+  lastBeaconAt?: string | null;
+  beaconCount?: number;
   locationLabel: string;
   hasImage: boolean;
   imageUrl?: string | null;

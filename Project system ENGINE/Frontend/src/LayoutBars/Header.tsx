@@ -30,6 +30,8 @@ import {
 import { UserSessionChip, UserSessionChipProps } from './UserSessionChip';
 import { useDrawerSidebar } from '@/Shared/ToggleDrawerSidebarMenu';
 import { requestJson } from '@/Endpoints/apiClient';
+import { createPortal } from 'react-dom';
+import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
 
 export interface HeaderProps {
   user?: UserSessionChipProps['user'];
@@ -319,6 +321,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'UNREAD' | ResponderNotificationCategory>('ALL');
   const [sirenMuted, setSirenMuted] = useState<boolean>(false);
   const { isCollapsed } = useDrawerSidebar();
+  const { isMobile } = useFluidResposiveness();
   const navigate = useNavigate();
   const bellWrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -650,7 +653,11 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
   };
 
   return (
-    <header className="topbar select-none relative z-[5000]" role="banner">
+    <header
+      className="topbar select-none relative"
+      style={{ zIndex: isAlertsOpen ? 999999 : 100000 }}
+      role="banner"
+    >
       <div
         className="brandbar flex items-center justify-between transition-all duration-200 border-r border-white/5 pr-3 overflow-hidden"
         style={{
@@ -689,7 +696,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
       </form>
 
       <div className="topbar__actions flex items-center gap-1 sm:gap-2">
-        <div className="alerts relative" id="alerts" ref={bellWrapperRef}>
+        <div className={`alerts relative ${isAlertsOpen ? 'z-[999999]' : ''}`} id="alerts" ref={bellWrapperRef}>
           <button
             className="iconbtn relative flex items-center justify-center p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all"
             type="button"
@@ -713,13 +720,22 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           </button>
 
           {/* Consolidated Hospital ER Alarms & 6-Category Responder Notification Bell Popover */}
-          {isAlertsOpen && (
-            <section
-              className="alerts__panel absolute right-0 mt-2 w-[380px] sm:w-[480px] md:w-[540px] z-[99999] border border-slate-700/90 shadow-2xl rounded-2xl bg-slate-950/98 backdrop-blur-xl overflow-hidden"
-              id="alerts-panel"
-              aria-label="Hospital ER Alarms and Tactical Notifications"
-              role="region"
-            >
+          {isAlertsOpen && typeof document !== 'undefined' && createPortal(
+            <>
+              <div
+                className="fixed inset-0 z-[999998] bg-black/20 backdrop-blur-[0.5px]"
+                onClick={() => setIsAlertsOpen(false)}
+                aria-hidden="true"
+              />
+              <section
+                className={`alerts__panel fixed top-14 right-2 sm:right-4 z-[999999] ${
+                  isMobile ? 'inset-x-2 w-auto' : 'w-[400px] sm:w-[480px] md:w-[540px]'
+                } max-w-[calc(100vw-1rem)] max-h-[85vh] border border-slate-700/90 shadow-2xl rounded-2xl bg-slate-950/98 backdrop-blur-xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150`}
+                id="alerts-panel"
+                aria-label="Hospital ER Alarms and Tactical Notifications"
+                role="region"
+                onClick={(e: React.MouseEvent<HTMLElement>) => e.stopPropagation()}
+              >
               {/* Popover Header */}
               <header className="flex flex-col gap-2.5 px-4 py-3 bg-slate-900 border-b border-slate-800">
                 <div className="flex items-center justify-between gap-2">
@@ -945,6 +961,8 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                 )}
               </ul>
             </section>
+            </>,
+            document.body
           )}
         </div>
 

@@ -3,7 +3,14 @@
 // Strict TypeScript, zero 'any', universal arrow lambdas (=>).
 
 import { Point2D } from './cannyHough';
-import { rgbaToYCbCr, segmentSkinMask, computeSpatialMoments, detectViolaJonesHaarFaceFeatures, RoiRect } from './face/skinFaceTracker';
+import {
+  rgbaToYCbCr,
+  segmentSkinMask,
+  computeSpatialMoments,
+  detectViolaJonesHaarFaceFeatures,
+  computeSecondOrderIntegralImage,
+  RoiRect
+} from './face/skinFaceTracker';
 import { computeIntegralImage } from './imageOps';
 
 export type CardPresenceStatus = 'NO_CARD' | 'FACE_DETECTED' | 'ALIGNING' | 'LOCKED';
@@ -92,7 +99,8 @@ export const evaluateCardPresenceGate = (
     // Real faces occupy between 12% and 65% of the frame (ratios > 65% indicate brown walls or wooden desks)
     if (faceAreaRatio >= 0.12 && faceAreaRatio <= 0.65) {
       const integral = computeIntegralImage(gray, width, height);
-      const haarCheck = detectViolaJonesHaarFaceFeatures(integral, width, height, detectedFaceBox);
+      const integralSq = computeSecondOrderIntegralImage(gray, width, height);
+      const haarCheck = detectViolaJonesHaarFaceFeatures(integral, width, height, detectedFaceBox, integralSq);
 
       // If ocular dipole, nasal bridge, or confidence score >= 0.50 confirms human facial architecture
       if (haarCheck.ocularDipolePassed || haarCheck.bridgeTriplePassed || haarCheck.score >= 0.50) {
@@ -184,9 +192,9 @@ export const evaluateCardPresenceGate = (
     };
   }
 
-  // 1. Strict ID Aspect Ratio: [1.30, 1.75]
+  // 1. Resilient ID Aspect Ratio: [1.25, 1.82] (Accommodates perspective tilt and close-up projection)
   const aspect = Math.max(avgW, avgH) / Math.min(avgW, avgH);
-  if (aspect < 1.30 || aspect > 1.75) {
+  if (aspect < 1.25 || aspect > 1.82) {
     return {
       passed: false,
       status: 'NO_CARD',
@@ -200,11 +208,11 @@ export const evaluateCardPresenceGate = (
     };
   }
 
-  // 1b. Card Viewport Area Ratio (12% to 88% of camera viewport)
-  // Rejects room furniture, distant objects, or full-viewport background patterns
+  // 1b. Card Viewport Area Ratio (8% to 96% of camera viewport)
+  // Accommodates both distant alignment and close-up full-viewfinder positioning
   const quadArea = avgW * avgH;
   const quadAreaRatio = quadArea / totalPixels;
-  if (quadAreaRatio < 0.12 || quadAreaRatio > 0.88) {
+  if (quadAreaRatio < 0.08 || quadAreaRatio > 0.96) {
     return {
       passed: false,
       status: 'NO_CARD',
@@ -218,7 +226,7 @@ export const evaluateCardPresenceGate = (
     };
   }
 
-  // 2. Corner Orthogonality Check: |cos θ| <= 0.38 (67.6° to 112.4°)
+  // 2. Corner Orthogonality Check: |cos θ| <= 0.45 (63.2° to 116.8°)
   for (let i = 0; i < 4; i++) {
     const pPrev = candidateCorners[(i + 3) % 4];
     const pCurr = candidateCorners[i];
@@ -234,7 +242,7 @@ export const evaluateCardPresenceGate = (
     if (len1 <= 0 || len2 <= 0) continue;
 
     const cosTheta = Math.abs((v1x * v2x + v1y * v2y) / (len1 * len2));
-    if (cosTheta > 0.38) {
+    if (cosTheta > 0.45) {
       return {
         passed: false,
         status: 'NO_CARD',
@@ -271,25 +279,28 @@ export const evaluateCardPresenceGate = (
       const lx = pA.x + dx * t;
       const ly = pA.y + dy * t;
 
-      const insideX = Math.round(lx + nx * 4);
-      const insideY = Math.round(ly + ny * 4);
-      const outsideX = Math.round(lx - nx * 4);
-      const outsideY = Math.round(ly - ny * 4);
+      const clampX = (v: number): number => Math.max(0, Math.min(width - 1, Math.round(v)));
+      const clampY = (v: number): number => Math.max(0, Math.min(height - 1, Math.round(v)));
 
-      if (
-        insideX >= 0 && insideX < width && insideY >= 0 && insideY < height &&
-        outsideX >= 0 && outsideX < width && outsideY >= 0 && outsideY < height
-      ) {
-        const lumIn = gray[insideY * width + insideX];
-        const lumOut = gray[outsideY * width + outsideX];
-        totalBorderContrast += Math.abs(lumIn - lumOut);
-        sampledBorderPoints++;
-      }
+      const in3X = clampX(lx + nx * 3);
+      const in3Y = clampY(ly + ny * 3);
+      const out3X = clampX(lx - nx * 3);
+      const out3Y = clampY(ly - ny * 3);
+      const step3 = Math.abs(gray[in3Y * width + in3X] - gray[out3Y * width + out3X]);
+
+      const in6X = clampX(lx + nx * 6);
+      const in6Y = clampY(ly + ny * 6);
+      const out6X = clampX(lx - nx * 6);
+      const out6Y = clampY(ly - ny * 6);
+      const step6 = Math.abs(gray[in6Y * width + in6X] - gray[out6Y * width + out6X]);
+
+      totalBorderContrast += Math.max(step3, step6);
+      sampledBorderPoints++;
     }
   }
 
   const meanEdgeContrast = sampledBorderPoints > 0 ? totalBorderContrast / sampledBorderPoints : 0;
-  if (meanEdgeContrast < 15.0) {
+  if (meanEdgeContrast < 11.0) {
     return {
       passed: false,
       status: 'NO_CARD',
@@ -387,10 +398,10 @@ export const evaluateCardPresenceGate = (
     }
   }
 
-  // Philippine government IDs have text lines spreading across at least 4 of 12 spatial blocks
+  // Philippine government IDs have text lines spreading across at least 3 of 12 spatial blocks
   // and multiple distinct alternating character stroke transitions
   // Rejects plain furniture slats, doors, and bed frames that have border edges but lack dense text matrix
-  if (strokeDensity < 0.016 || activeBlocks < 4 || textTransitions < 8) {
+  if (strokeDensity < 0.011 || activeBlocks < 3 || textTransitions < 5) {
     return {
       passed: false,
       status: 'NO_CARD',

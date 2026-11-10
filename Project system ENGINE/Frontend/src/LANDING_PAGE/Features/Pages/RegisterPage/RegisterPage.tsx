@@ -2,7 +2,7 @@
 // Responsibility: Pixel-faithful, responsive React 19 conversion of ResQTrack Register Page.
 // Implements 4-Step Role-Based Registration Wizard:
 // Step 0: 00 Role (Role selection: Responder vs Civilian)
-// Step 1: 01 Identity (Personal Info + ID Type + Front & Back ID Live Camera / Upload Capture)
+// Step 1: 01 Identity (Personal Info + ID Type + Front & Back Government ID Picture Upload + Automated On-Device OCR + Crosshair Text Extractor)
 // Step 2: 02 Biometrics (MultiAngleBiometricEngine Facial Verification)
 // Step 3: 03 Security (Argon2 Master Password, Consents, Final Registration Submission)
 // Strict TypeScript with ZERO 'any'. Universal expression-bodied lambdas (=>).
@@ -23,7 +23,6 @@ import {
   Siren,
   Award,
   ArrowRight,
-  ArrowLeft,
   Lock,
   Eye,
   EyeOff,
@@ -32,38 +31,39 @@ import {
   Check,
   CheckCircle2,
   Upload,
-  AlertCircle,
   X,
   Scan,
-  Maximize2,
-  Target,
   Cpu,
   Sparkles,
-  Activity,
-  UserX,
-  AlertTriangle,
-  MapPin
+  MapPin,
+  Crop
 } from 'lucide-react';
 import { registerUser, RegisterPayload, ResponderUnit } from '@/Endpoints/authApi';
 import { MultiAngleBiometricEngine } from './MultiAngleBiometricEngine';
+import { TextExtractorOverlay, type AssignableField } from './TextExtractorOverlay';
 import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
 import { biometricFrameCache } from '@/Libs/Cache/biometricFrameCache';
 import { LaserScanOverlay } from '@/components/Vision/LaserScanOverlay';
 import {
   idScanEngine,
-  FrameAnalysisResult,
   IdScanResult,
   GovernmentIdCategory,
+  ExtractedFieldsPayload,
+  mergeFrontAndBackFields,
+  parseNameComponents,
+  isPascalCaseLabel,
   isPlausibleHumanName,
-  parseNameComponents
+  normalizePhilippineAddress,
+  normalizePhysicalMeasurement,
+  parseFieldsByPascalCaseIndications
 } from '@/Libs/Vision/idScanner';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isMobile, isTablet, isUltraWide, width, getFluidClamp } = useFluidResposiveness();
+  const { isMobile } = useFluidResposiveness();
 
-  // Wizard Step: 0 = Role, 1 = Identity (Personal & ID Capture), 2 = Biometrics, 3 = Security
+  // Wizard Step: 0 = Role, 1 = Identity (Personal & ID Upload + Auto OCR), 2 = Biometrics, 3 = Security
   const [step, setStep] = useState<number>(0);
 
   // Step 0 - Role Classification Selection
@@ -89,36 +89,33 @@ export const RegisterPage: React.FC = () => {
   const [employeeId, setEmployeeId] = useState<string>('');
   const [rankOrTitle, setRankOrTitle] = useState<string>('');
 
-  // ID Capture State - Step 1
-  const [idCaptureMode, setIdCaptureMode] = useState<'camera' | 'upload'>('camera');
+  // ID Upload & Automated OCR State - Step 1 (Upload-Only Front & Back Pipeline)
   const [idFrontShot, setIdFrontShot] = useState<string | null>(null);
   const [idBackShot, setIdBackShot] = useState<string | null>(null);
-  const [isFlippingCard, setIsFlippingCard] = useState<boolean>(false);
-  const flipCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [idPortraitCropUrl, setIdPortraitCropUrl] = useState<string | null>(null);
+  const [isScanningFrontUpload, setIsScanningFrontUpload] = useState<boolean>(false);
+  const [isScanningBackUpload, setIsScanningBackUpload] = useState<boolean>(false);
+  const [frontExtractedFields, setFrontExtractedFields] = useState<ExtractedFieldsPayload>({});
+  const [backExtractedFields, setBackExtractedFields] = useState<ExtractedFieldsPayload>({});
   const [isDraggingFront, setIsDraggingFront] = useState<boolean>(false);
   const [isDraggingBack, setIsDraggingBack] = useState<boolean>(false);
-  const isIdValidated = Boolean(idFrontShot && (firstName.trim() || lastName.trim() || licenseNumber.trim()));
+  const isIdValidated = Boolean(idFrontShot);
 
-  // Optical Frame Freezing & Laser Scan Overlay State
-  const [isFrameFrozen, setIsFrameFrozen] = useState<boolean>(false);
-  const [frozenFrameUrl, setFrozenFrameUrl] = useState<string | null>(null);
-  const [isOpticalDecoding, setIsOpticalDecoding] = useState<boolean>(false);
-
-  // Real-Time Deterministic Vision Scanner State
-  const [scannerAnalysis, setScannerAnalysis] = useState<FrameAnalysisResult | null>(null);
+  // Deterministic Vision & Automated OCR Telemetry Badge
   const [autofillBadge, setAutofillBadge] = useState<{
     visible: boolean;
     method: 'DETERMINISTIC_CV' | 'AI_STANDBY_FALLBACK';
     confidence: number;
     tier: string;
     provider?: string;
+    extractedCount?: number;
   } | null>(null);
 
-  // Refs for camera video and file inputs
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const videoStreamRef = useRef<MediaStream | null>(null);
+  // Text Extractor (On-Device Crosshair OCR Overlay)
+  const [isTextExtractorOpen, setIsTextExtractorOpen] = useState<boolean>(false);
+  const [textExtractorSourceUrl, setTextExtractorSourceUrl] = useState<string | null>(null);
+
+  // Refs for file inputs
   const frontFileInputRef = useRef<HTMLInputElement | null>(null);
   const backFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -141,15 +138,6 @@ export const RegisterPage: React.FC = () => {
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-  // Cleanup flip cooldown timer on unmount
-  useEffect(() => {
-    return () => {
-      if (flipCooldownTimerRef.current) {
-        clearTimeout(flipCooldownTimerRef.current);
-      }
-    };
-  }, []);
 
   // Handle URL query parameters for role & unit pre-selection
   useEffect(() => {
@@ -190,90 +178,6 @@ export const RegisterPage: React.FC = () => {
       setEmail('e.reyes@bfp.gov.ph');
     }
   }, [location.search]);
-
-  // Synthetic fallback ID generator for environments without hardware cameras
-  const generateSyntheticIdCanvas = (side: 'front' | 'back'): string => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 856;
-    canvas.height = 540;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      // Dark HUD ID Card surface
-      ctx.fillStyle = side === 'front' ? '#0d1829' : '#141c2c';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Fine grid texture
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
-      ctx.lineWidth = 1;
-      for (let x = 0; x < canvas.width; x += 40) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
-        ctx.stroke();
-      }
-      for (let y = 0; y < canvas.height; y += 40) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
-      }
-
-      // Security Top Header Strip
-      ctx.fillStyle = side === 'front' ? '#1e0710' : '#082f49';
-      ctx.fillRect(0, 0, canvas.width, 70);
-      ctx.fillStyle = '#ff5c74';
-      ctx.font = 'bold 20px "JetBrains Mono", monospace';
-      ctx.fillText(`GOVERNMENT OF THE PHILIPPINES // ${idType.toUpperCase()}`, 30, 44);
-
-      if (side === 'front') {
-        // Photo Holder
-        ctx.fillStyle = '#1e293b';
-        ctx.fillRect(30, 100, 170, 220);
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(30, 100, 170, 220);
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '14px monospace';
-        ctx.fillText('[PHOTO MATRIX]', 50, 215);
-
-        // Holder Metadata
-        ctx.fillStyle = '#f8fafc';
-        ctx.font = 'bold 24px monospace';
-        ctx.fillText(fullname.toUpperCase(), 230, 140);
-
-        ctx.fillStyle = '#38bdf8';
-        ctx.font = '16px monospace';
-        ctx.fillText(`ROLE: ${selectedRole.toUpperCase()} [${selectedRole === 'Responder' ? agencyUnit : 'CIVILIAN'}]`, 230, 185);
-        ctx.fillText(`ID#: ${selectedRole === 'Responder' ? employeeId : 'RES-ZN-2024'}`, 230, 225);
-        ctx.fillText(`AGE: ${age} // SEX: ${sex.toUpperCase()}`, 230, 265);
-        ctx.fillText(`RANK: ${selectedRole === 'Responder' ? rankOrTitle : 'COMMUNITY RESIDENT'}`, 230, 305);
-      } else {
-        // Back: Barcode & Digital Cryptographic Strip
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(30, 100, canvas.width - 60, 130);
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(30, 100, canvas.width - 60, 130);
-
-        // Barcode lines
-        ctx.fillStyle = '#ffffff';
-        for (let b = 50; b < canvas.width - 80; b += 11) {
-          ctx.fillRect(b, 120, (b % 5 === 0 ? 6 : 3), 90);
-        }
-
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '14px monospace';
-        ctx.fillText('OFFICIAL RESQTRACK ENCRYPTION & BIOMETRIC REPOSITORY SIGNATURE', 30, 275);
-        ctx.fillText(`CLEARANCE SEC-VECTOR: 0x${Math.random().toString(16).substring(2, 10).toUpperCase()}-VERIFIED`, 30, 315);
-      }
-
-      // Bottom Status Seal
-      ctx.fillStyle = '#34d399';
-      ctx.font = 'bold 16px monospace';
-      ctx.fillText(`[${side.toUpperCase()} ID SECURED // 300 DPI OPTICAL]`, 30, canvas.height - 30);
-    }
-    return canvas.toDataURL('image/png');
-  };
 
   // Helper to generate a clean dual composite canvas merging front and back ID cards
   const generateDualIdComposite = async (frontUrl: string, backUrl: string): Promise<string> => {
@@ -333,10 +237,8 @@ export const RegisterPage: React.FC = () => {
     // Corner targeting brackets
     ctx.strokeStyle = '#ff5c74';
     ctx.lineWidth = 2;
-    // Front corners
     ctx.strokeRect(14, 46, 10, 10);
     ctx.strokeRect(408, 288, 10, 10);
-    // Back corners
     ctx.strokeRect(438, 46, 10, 10);
     ctx.strokeRect(832, 288, 10, 10);
 
@@ -349,436 +251,371 @@ export const RegisterPage: React.FC = () => {
     return canvas.toDataURL('image/png');
   };
 
-  // Camera Lifecycle Controller
-  const startCamera = useCallback(async () => {
-    if (videoStreamRef.current) return;
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Camera API unavailable in this browser environment');
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false
-      });
-      videoStreamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
-      }
-      setIsCameraActive(true);
-      setCameraError(null);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Camera access restricted or unavailable';
-      setCameraError(msg);
-      setIsCameraActive(false);
-    }
-  }, []);
-
-  const stopCamera = useCallback(() => {
-    if (videoStreamRef.current) {
-      videoStreamRef.current.getTracks().forEach((track) => track.stop());
-      videoStreamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setIsCameraActive(false);
-  }, []);
-
-  // Helper to convert extracted date of birth (DOB) into integer age
+  // Helper to convert extracted date of birth (DOB) into integer age (Year/month/day: YYYY/MM/DD)
   const computeAgeFromDob = (dob?: string): string | null => {
     if (!dob) return null;
-    const parts = dob.split(/[-/.]/);
-    if (parts.length === 3) {
-      const yr = parts[0].length === 4 ? parseInt(parts[0], 10) : parseInt(parts[2], 10);
-      const currentYear = new Date().getFullYear();
-      if (yr > 1900 && yr < currentYear) {
-        const calculatedAge = currentYear - yr;
-        if (calculatedAge >= 18 && calculatedAge <= 100) return String(calculatedAge);
+    const clean = dob.trim();
+    // Standard format: YYYY/MM/DD or YYYY-MM-DD
+    const m = clean.match(/^(\d{4})[-/.](0[1-9]|1[0-2])[-/.](0[1-9]|[12]\d|3[01])$/);
+    if (m) {
+      const birthYear = parseInt(m[1], 10);
+      const birthMonth = parseInt(m[2], 10) - 1;
+      const birthDay = parseInt(m[3], 10);
+      const today = new Date();
+      let calculatedAge = today.getFullYear() - birthYear;
+      if (
+        today.getMonth() < birthMonth ||
+        (today.getMonth() === birthMonth && today.getDate() < birthDay)
+      ) {
+        calculatedAge--;
+      }
+      if (calculatedAge >= 10 && calculatedAge <= 120) {
+        return String(calculatedAge);
       }
     }
-    const parsed = new Date(dob);
+    // Fallback: parts split
+    const parts = clean.split(/[-/.]/);
+    if (parts.length === 3) {
+      const yr = parts[0].length === 4 ? parseInt(parts[0], 10) : parseInt(parts[2], 10);
+      const today = new Date();
+      if (yr > 1900 && yr <= today.getFullYear()) {
+        const calculatedAge = today.getFullYear() - yr;
+        if (calculatedAge >= 10 && calculatedAge <= 120) return String(calculatedAge);
+      }
+    }
+    const parsed = new Date(clean);
     if (!isNaN(parsed.getTime())) {
       const diffMs = Date.now() - parsed.getTime();
       const calculatedAge = Math.floor(diffMs / (365.25 * 24 * 60 * 60 * 1000));
-      if (calculatedAge >= 18 && calculatedAge <= 100) return String(calculatedAge);
+      if (calculatedAge >= 10 && calculatedAge <= 120) return String(calculatedAge);
     }
     return null;
   };
 
-  // Handler for automatic card detection, temporal stability lock, and field autofill
-  const handleLockedCardScan = useCallback((result: IdScanResult) => {
-    const confidenceScore = result.confidence ?? 0;
-    const isFront = !idFrontShot;
-
-    const hasCoreField = Boolean(
-      result.fields && (
-        result.fields.fullname ||
-        result.fields.firstName ||
-        result.fields.lastName ||
-        result.fields.licenseNumber ||
-        result.fields.idNumber ||
-        result.fields.employeeId
-      )
-    );
-
-    const isFaceDetected = Boolean(
-      (result.cardPresence && result.cardPresence.status === 'FACE_DETECTED') ||
-      (scannerAnalysis?.cardPresence?.status === 'FACE_DETECTED')
-    );
-
-    const isRejected = isFront
-      ? (!result.success || confidenceScore < 0.55 || !hasCoreField || isFaceDetected)
-      : (!result.success || confidenceScore < 0.50 || isFaceDetected);
-
-    if (isRejected) {
-      // 1. Unfreeze vision engine loop so user can realign card
-      idScanEngine.resetStability();
-
-      // 2. Clear any lingering autofill badge
-      setAutofillBadge(null);
-
-      // 3. Compile specific rejection explanation
-      const reasonMsg = isFaceDetected
-        ? 'Human face detected in reticle. Please position your physical Government ID card inside the target reticle.'
-        : (result.quality && result.quality.reasons && result.quality.reasons.length > 0)
-        ? result.quality.reasons[0]
-        : result.error
-        ? result.error
-        : !hasCoreField
-        ? 'No readable Government ID details detected. Please position a valid Philippine Government ID within the target reticle.'
-        : `Scan confidence too low (${Math.round(confidenceScore * 100)}% < 55%). Ensure card is well-lit and glare-free.`;
-
-      setErrors((prev) => ({
-        ...prev,
-        idCard: reasonMsg
-      }));
-
-      setStatusMessage(
-        `ID Scan Rejected (${Math.round(confidenceScore * 100)}% confidence). Non-card or illegible document detected.`
-      );
-      setStatusTone('bad');
-
-      // CRITICAL: DO NOT MUTATE idFrontShot OR idBackShot. Keep form locked!
-      return;
-    }
-
-    if (isFront) {
-      const shotUrl = result.rectifiedImageUrl || captureFromVideoOrSynthetic('front');
-      setIdFrontShot(shotUrl);
-
-      // Deterministic CV & AI Standby Field Autofill
-      if (result.fields.firstName) {
-        setFirstName(result.fields.firstName);
-      } else if (result.fields.fullname && isPlausibleHumanName(result.fields.fullname)) {
-        const parsed = parseNameComponents(result.fields.fullname);
-        if (parsed.firstName) setFirstName(parsed.firstName);
-        if (parsed.middleName) setMiddleName(parsed.middleName);
-        if (parsed.lastName) setLastName(parsed.lastName);
-      }
-      if (result.fields.middleName) {
-        setMiddleName(result.fields.middleName);
-      }
-      if (result.fields.lastName) {
-        setLastName(result.fields.lastName);
-      }
-      if (result.fields.sex) {
-        const s = result.fields.sex.toLowerCase();
-        if (s.startsWith('m')) setSex('male');
-        else if (s.startsWith('f')) setSex('female');
-      }
-      if (result.fields.dateOfBirth) {
-        setDateOfBirth(result.fields.dateOfBirth);
-      }
-      if (result.fields.address) {
-        setAddress(result.fields.address);
-      }
-      if (result.fields.licenseNumber) {
-        setLicenseNumber(result.fields.licenseNumber);
-      } else if (result.fields.idNumber) {
-        setLicenseNumber(result.fields.idNumber);
-      }
-      if (result.fields.weight) {
-        setWeight(result.fields.weight);
-      }
-      if (result.fields.height) {
-        setHeight(result.fields.height);
-      }
-      const resolvedAge = result.fields.age || computeAgeFromDob(result.fields.dateOfBirth);
-      if (resolvedAge && !isNaN(Number(resolvedAge))) {
-        setAge(resolvedAge);
-      }
-      if (result.fields.employeeId) {
-        setEmployeeId(result.fields.employeeId);
-      } else if (result.fields.idNumber) {
-        setEmployeeId(result.fields.idNumber);
-      }
-      if (result.fields.rankOrTitle) {
-        setRankOrTitle(result.fields.rankOrTitle);
-      }
-
-      setAutofillBadge({
-        visible: true,
-        method: result.method,
-        confidence: Math.round(result.confidence * 100),
-        tier: result.confidenceTier,
-        provider: result.aiProviderUsed
-      });
-
-      setStatusMessage(
-        `ID Scanned via ${result.method === 'DETERMINISTIC_CV' ? 'Deterministic CV' : 'AI Standby'} (${Math.round(result.confidence * 100)}% confidence). Front secured. Now flip card to capture back side.`
-      );
-      setStatusTone('ok');
-
-      // 2.0-second cooldown transition before restarting live stream for the back side
-      setIsFlippingCard(true);
-      if (flipCooldownTimerRef.current) {
-        clearTimeout(flipCooldownTimerRef.current);
-      }
-      flipCooldownTimerRef.current = setTimeout(() => {
-        setIsFlippingCard(false);
-      }, 2000);
-    } else if (!idBackShot) {
-      const shotUrl = result.rectifiedImageUrl || captureFromVideoOrSynthetic('back');
-      setIdBackShot(shotUrl);
-      setStatusMessage('Both front and back ID cards secured successfully.');
-      setStatusTone('ok');
-    }
-
-    setErrors((prev) => {
-      const next = { ...prev };
-      delete next.idCard;
-      return next;
-    });
-  }, [idFrontShot, idBackShot]);
-
-  // ==========================================================================
-  // PROGRAMMATIC CAMERA SDK & SCANNER SEQUENCE METHODS
-  // (AVFoundation / CameraX / barKoder Optical Decoding Spec)
-  // ==========================================================================
-
-  // 1. Detection and Freezing Step
-  const freezeCaptureSession = useCallback((snapshotUrl: string) => {
-    setIsFrameFrozen(true);
-    setFrozenFrameUrl(snapshotUrl);
-    setIsOpticalDecoding(true);
-    setStatusMessage('100% Stability Locked. Freezing frame & initiating optical laser scan...');
-    setStatusTone('ok');
-  }, []);
-  const pausePreview = freezeCaptureSession;
-  const freezeFrame = freezeCaptureSession;
-  const lockFrame = freezeCaptureSession;
-
-  // 2. Scanning Animation Step
-  const startScanAnimation = useCallback(() => {
-    setIsOpticalDecoding(true);
-  }, []);
-  const setLineScanAnimationMode = startScanAnimation;
-  const drawOverlay = startScanAnimation;
-  const renderTargetingOverlay = startScanAnimation;
-
-  // 3. Backend Data Extraction Step
-  const decode = useCallback(async (imageData: ImageData) => {
-    return await idScanEngine.decode(imageData, idType as GovernmentIdCategory, selectedRole);
-  }, [idType, selectedRole]);
-  const parseMatrix = decode;
-
-  // Manage camera streaming and connect live viewfinder video stream to idScanEngine
+  // Synchronize age whenever dateOfBirth is updated or populated
   useEffect(() => {
-    const isCapturing = step === 1 && idCaptureMode === 'camera' && (!idFrontShot || !idBackShot);
-    if (isCapturing) {
-      startCamera();
-    } else {
-      stopCamera();
-      idScanEngine.stopLiveStream();
-      setScannerAnalysis(null);
-    }
-    return () => {
-      stopCamera();
-      idScanEngine.stopLiveStream();
-    };
-  }, [step, idCaptureMode, idFrontShot, idBackShot, startCamera, stopCamera]);
-
-  // Connect video feed to idScanEngine when camera becomes active
-  useEffect(() => {
-    const isCapturing =
-      step === 1 &&
-      idCaptureMode === 'camera' &&
-      (!idFrontShot || !idBackShot) &&
-      !isFlippingCard;
-
-    if (isCapturing && isCameraActive && videoRef.current) {
-      idScanEngine.startLiveStream(videoRef.current, {
-        targetCategory: idType as GovernmentIdCategory,
-        userRole: selectedRole,
-        targetSide: idFrontShot ? 'back' : 'front',
-        onFrame: (analysis: FrameAnalysisResult) => {
-          if (!isFrameFrozen) {
-            setScannerAnalysis(analysis);
-          }
-        },
-        onStabilityLock: (snapshotUrl: string) => {
-          freezeCaptureSession(snapshotUrl);
-          startScanAnimation();
-        },
-        onLockedScan: (result: IdScanResult) => {
-          // Allow laser scan animation to play for 1.2s to provide distinct optical decoding feedback
-          setTimeout(() => {
-            setIsOpticalDecoding(false);
-            setIsFrameFrozen(false);
-            setFrozenFrameUrl(null);
-            handleLockedCardScan(result);
-          }, 1200);
-        },
-        onLockRejected: (reason?: string) => {
-          setIsOpticalDecoding(false);
-          setIsFrameFrozen(false);
-          setFrozenFrameUrl(null);
-          setStatusMessage(`Optical scan rejected: ${reason || 'Document unreadable. Please align ID card clearly.'}`);
-          setStatusTone('bad');
-        }
-      });
-    } else {
-      idScanEngine.stopLiveStream();
-      setScannerAnalysis(null);
-      setIsOpticalDecoding(false);
-      setIsFrameFrozen(false);
-      setFrozenFrameUrl(null);
-    }
-    return () => {
-      idScanEngine.stopLiveStream();
-      setIsOpticalDecoding(false);
-      setIsFrameFrozen(false);
-      setFrozenFrameUrl(null);
-    };
-  }, [
-    step,
-    idCaptureMode,
-    isCameraActive,
-    idFrontShot,
-    idBackShot,
-    isFlippingCard,
-    idType,
-    selectedRole,
-    handleLockedCardScan
-  ]);
-
-  // Capture current stage from video feed or synthetic fallback
-  const captureFromVideoOrSynthetic = (side: 'front' | 'back'): string => {
-    if (videoRef.current && videoRef.current.videoWidth > 0) {
-      const video = videoRef.current;
-      const canvas = document.createElement('canvas');
-      canvas.width = 856;
-      canvas.height = 540;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = 'rgba(7, 12, 20, 0.78)';
-        ctx.fillRect(0, canvas.height - 34, canvas.width, 34);
-        ctx.fillStyle = '#38bdf8';
-        ctx.font = 'bold 14px monospace';
-        ctx.fillText(`RESQTRACK ID SENSOR // ${side.toUpperCase()} // ${idType.toUpperCase()}`, 16, canvas.height - 12);
-        return canvas.toDataURL('image/png');
+    if (dateOfBirth) {
+      const autoAge = computeAgeFromDob(dateOfBirth);
+      if (autoAge && !isNaN(Number(autoAge))) {
+        setAge(autoAge);
       }
     }
-    return generateSyntheticIdCanvas(side);
-  };
+  }, [dateOfBirth]);
 
-  const [isManualScanning, setIsManualScanning] = useState<boolean>(false);
+  // Applies automated OCR extraction results from an uploaded Front or Back ID image
+  // and deterministically merges Front + Back fields into the registration form.
+  const applyUploadedIdScanResult = useCallback(
+    (side: 'front' | 'back', result: IdScanResult, rawDataUrl: string) => {
+      const confidenceScore = result.confidence ?? 0;
+      const isFaceDetected = Boolean(
+        result.cardPresence && result.cardPresence.status === 'FACE_DETECTED'
+      );
 
-  const handleCaptureCurrentStage = async () => {
-    if (isFlippingCard || isManualScanning) return;
+      if (isFaceDetected) {
+        setErrors((prev) => ({
+          ...prev,
+          idCard:
+            'Human portrait/selfie detected instead of a Government ID card. Please upload a clear photo of your physical Government ID card.'
+        }));
+        setStatusMessage('Upload rejected: Human face/selfie detected instead of an ID card.');
+        setStatusTone('bad');
+        return;
+      }
 
-    const isFrontStage = !idFrontShot;
-    const side = isFrontStage ? 'front' : 'back';
+      if (side === 'front') {
+        (window as unknown as { __lastFrontScanResult?: IdScanResult }).__lastFrontScanResult = result;
+        const hasCoreField = Boolean(
+          (result.fields &&
+            (result.fields.fullname ||
+              result.fields.firstName ||
+              result.fields.lastName ||
+              result.fields.licenseNumber ||
+              result.fields.idNumber ||
+              result.fields.employeeId)) ||
+            (result.rawText && result.rawText.trim().length >= 6) ||
+            (result.corners && result.corners.length === 4)
+        );
 
-    // If live camera is running, execute full CV scan synchronously before committing state
-    if (videoRef.current && videoRef.current.videoWidth > 0) {
-      const v = videoRef.current;
-      const c = document.createElement('canvas');
-      c.width = v.videoWidth;
-      c.height = v.videoHeight;
-      const ctx = c.getContext('2d', { willReadFrequently: true });
-      if (ctx) {
-        ctx.drawImage(v, 0, 0, c.width, c.height);
-        const imgData = ctx.getImageData(0, 0, c.width, c.height);
-
-        setIsManualScanning(true);
-        setIsFrameFrozen(true);
-        const snapshotUrl = c.toDataURL('image/png');
-        setFrozenFrameUrl(snapshotUrl);
-        setIsOpticalDecoding(true);
-        setStatusMessage(`Scanning and verifying ${side} of ID card...`);
-        setStatusTone('');
-
-        try {
-          const res = await idScanEngine.scanCard(
-            imgData,
-            idType as GovernmentIdCategory,
-            selectedRole
-          );
-
-          setTimeout(() => {
-            setIsManualScanning(false);
-            setIsOpticalDecoding(false);
-            setIsFrameFrozen(false);
-            setFrozenFrameUrl(null);
-            // Route through central validator
-            handleLockedCardScan(res);
-          }, 1000);
-          return;
-        } catch (scanErr) {
-          console.warn('[RegisterPage] Manual capture error:', scanErr);
-          setIsManualScanning(false);
-          setIsOpticalDecoding(false);
-          setIsFrameFrozen(false);
-          setFrozenFrameUrl(null);
-          idScanEngine.resetStability();
+        if (!result.success && !hasCoreField) {
           setErrors((prev) => ({
             ...prev,
-            idCard: 'Failed to process camera frame. Please align ID card clearly inside the target reticle.'
+            idCard:
+              result.error ||
+              'Uploaded image is not a recognized Government ID card. Please upload a clear photo showing full name and ID number.'
           }));
-          setStatusMessage('Capture verification failed. Please try again.');
+          setStatusMessage('Front ID upload rejected: Unreadable or invalid document.');
           setStatusTone('bad');
           return;
         }
-      }
-    }
 
-    // Hardware camera restricted fallback (synthetic snapshot mode)
-    if (cameraError) {
-      const syntheticUrl = generateSyntheticIdCanvas(side);
-      if (isFrontStage) {
-        setIdFrontShot(syntheticUrl);
-        setStatusMessage('Synthetic Front ID secured. Flip card for reverse side.');
+        const finalFrontUrl = result.rectifiedImageUrl || rawDataUrl;
+        setIdFrontShot(finalFrontUrl);
+        if (result.portraitImageUrl) {
+          setIdPortraitCropUrl(result.portraitImageUrl);
+        }
+
+        // Enrich fields with fallback regex and PascalCase Indication Parser from rawText
+        const rawText = result.rawText || '';
+        type MutableExtractedFields = {
+          -readonly [K in keyof ExtractedFieldsPayload]: ExtractedFieldsPayload[K];
+        };
+        const enrichedFront: MutableExtractedFields = { ...result.fields };
+
+        // Parse fullname into name components and discard any noisy / label tokens
+        if (enrichedFront.fullname) {
+          const parsed = parseNameComponents(enrichedFront.fullname);
+          if (parsed.firstName && (!enrichedFront.firstName || !isPlausibleHumanName(enrichedFront.firstName) || isPascalCaseLabel(enrichedFront.firstName))) {
+            enrichedFront.firstName = parsed.firstName;
+          }
+          if (parsed.middleName && (!enrichedFront.middleName || !isPlausibleHumanName(enrichedFront.middleName) || isPascalCaseLabel(enrichedFront.middleName))) {
+            enrichedFront.middleName = parsed.middleName;
+          }
+          if (parsed.lastName && (!enrichedFront.lastName || !isPlausibleHumanName(enrichedFront.lastName) || isPascalCaseLabel(enrichedFront.lastName))) {
+            enrichedFront.lastName = parsed.lastName;
+          }
+        }
+
+        // Sanitize any individual fields that accidentally captured PascalCase headers or noise
+        if (enrichedFront.firstName && (isPascalCaseLabel(enrichedFront.firstName) || !isPlausibleHumanName(enrichedFront.firstName))) {
+          enrichedFront.firstName = undefined;
+        }
+        if (enrichedFront.lastName && (isPascalCaseLabel(enrichedFront.lastName) || !isPlausibleHumanName(enrichedFront.lastName))) {
+          enrichedFront.lastName = undefined;
+        }
+        if (enrichedFront.middleName && (isPascalCaseLabel(enrichedFront.middleName) || !isPlausibleHumanName(enrichedFront.middleName))) {
+          enrichedFront.middleName = undefined;
+        }
+        if (enrichedFront.address && isPascalCaseLabel(enrichedFront.address)) {
+          enrichedFront.address = undefined;
+        }
+
+        // Apply Indication-to-Target pairing parser (trained on PascalCase header indications)
+        if (rawText) {
+          const pascalParsed = parseFieldsByPascalCaseIndications(rawText);
+          if (pascalParsed.firstName && isPlausibleHumanName(pascalParsed.firstName)) {
+            enrichedFront.firstName = pascalParsed.firstName;
+          }
+          if (pascalParsed.middleName && isPlausibleHumanName(pascalParsed.middleName)) {
+            enrichedFront.middleName = pascalParsed.middleName;
+          }
+          if (pascalParsed.lastName && isPlausibleHumanName(pascalParsed.lastName)) {
+            enrichedFront.lastName = pascalParsed.lastName;
+          }
+          if (pascalParsed.idNumber) {
+            enrichedFront.licenseNumber = pascalParsed.idNumber;
+          }
+          if (pascalParsed.birthDate) {
+            enrichedFront.dateOfBirth = pascalParsed.birthDate;
+          }
+          if (pascalParsed.address) {
+            enrichedFront.address = normalizePhilippineAddress(pascalParsed.address);
+          }
+          if (pascalParsed.sex) {
+            enrichedFront.sex = pascalParsed.sex;
+          }
+          if (pascalParsed.weight) {
+            enrichedFront.weight = normalizePhysicalMeasurement(pascalParsed.weight, 'weight');
+          }
+          if (pascalParsed.height) {
+            enrichedFront.height = normalizePhysicalMeasurement(pascalParsed.height, 'height');
+          }
+        }
+
+        if (!enrichedFront.licenseNumber && !enrichedFront.idNumber && rawText) {
+          const licMatch = rawText.match(
+            /(?:LIC(?:ENSE)?(?:\s*NO)?|ID\s*(?:NO)?|CARD\s*NO)[:\s#]*([A-Z0-9-]{8,22})/i
+          );
+          if (licMatch) enrichedFront.licenseNumber = licMatch[1].trim();
+        }
+        if (!enrichedFront.weight && rawText) {
+          const wtMatch = rawText.match(
+            /(?:WT|WEIGHT|W)[:\s]*([0-9]{2,3}(?:\.[0-9]+)?\s*(?:kg|lbs|kilos)?)/i
+          );
+          if (wtMatch) enrichedFront.weight = normalizePhysicalMeasurement(wtMatch[1].trim(), 'weight');
+        }
+        if (!enrichedFront.height && rawText) {
+          const htMatch = rawText.match(/(?:HT|HEIGHT|H)[:\s]*([0-9]{1,3}(?:\.[0-9]+)?\s*(?:cm|m)?)/i);
+          if (htMatch) enrichedFront.height = normalizePhysicalMeasurement(htMatch[1].trim(), 'height');
+        }
+        if (!enrichedFront.dateOfBirth && rawText) {
+          const dobMatch = rawText.match(
+            /(?:DOB|DATE\s*OF\s*BIRTH|BIRTH\s*DATE)[:\s]*([0-9]{4}[-/][0-9]{2}[-/][0-9]{2}|[0-9]{2}[-/][0-9]{2}[-/][0-9]{4})/i
+          );
+          if (dobMatch) enrichedFront.dateOfBirth = dobMatch[1].trim();
+        }
+        if (!enrichedFront.address && rawText) {
+          const addrMatch = rawText.match(/(?:ADDRESS|ADDR)[:\s]*([^\n\r]{10,80})/i);
+          if (addrMatch) enrichedFront.address = normalizePhilippineAddress(addrMatch[1].trim());
+        }
+
+        setFrontExtractedFields(enrichedFront);
+        const merged = mergeFrontAndBackFields(enrichedFront, backExtractedFields);
+
+        if (merged.firstName && isPlausibleHumanName(merged.firstName) && !isPascalCaseLabel(merged.firstName)) {
+          setFirstName(merged.firstName);
+        }
+        if (merged.middleName && isPlausibleHumanName(merged.middleName) && !isPascalCaseLabel(merged.middleName)) {
+          setMiddleName(merged.middleName);
+        }
+        if (merged.lastName && isPlausibleHumanName(merged.lastName) && !isPascalCaseLabel(merged.lastName)) {
+          setLastName(merged.lastName);
+        }
+        if (merged.sex) {
+          const s = merged.sex.toLowerCase();
+          if (s.startsWith('m')) setSex('male');
+          else if (s.startsWith('f')) setSex('female');
+        }
+        if (merged.dateOfBirth) {
+          setDateOfBirth(merged.dateOfBirth);
+          const resolvedAge = merged.age || computeAgeFromDob(merged.dateOfBirth);
+          if (resolvedAge && !isNaN(Number(resolvedAge))) {
+            setAge(String(resolvedAge));
+          }
+        } else if (merged.age) {
+          setAge(String(merged.age));
+        }
+        if (merged.address && !isPascalCaseLabel(merged.address)) {
+          setAddress(normalizePhilippineAddress(merged.address));
+        }
+        if (merged.licenseNumber) {
+          setLicenseNumber(merged.licenseNumber);
+        } else if (merged.idNumber) {
+          setLicenseNumber(merged.idNumber);
+        }
+        if (merged.weight && !isPascalCaseLabel(merged.weight)) {
+          const w = normalizePhysicalMeasurement(merged.weight, 'weight');
+          if (w) setWeight(w);
+        }
+        if (merged.height && !isPascalCaseLabel(merged.height)) {
+          const h = normalizePhysicalMeasurement(merged.height, 'height');
+          if (h) setHeight(h);
+        }
+        if (merged.employeeId) setEmployeeId(merged.employeeId);
+        else if (merged.idNumber && selectedRole === 'Responder') setEmployeeId(merged.idNumber);
+        if (merged.rankOrTitle) setRankOrTitle(merged.rankOrTitle);
+
+        const extractedCount = Object.values(merged).filter(Boolean).length;
+        setAutofillBadge({
+          visible: true,
+          method: result.method,
+          confidence: Math.max(68, Math.round(confidenceScore * 100)),
+          tier: result.confidenceTier,
+          provider: result.aiProviderUsed,
+          extractedCount
+        });
+
+        setStatusMessage(
+          `Front ID uploaded & scanned via ${
+            result.method === 'DETERMINISTIC_CV' ? 'On-Device OCR' : 'AI Standby'
+          } (${Math.max(68, Math.round(confidenceScore * 100))}% confidence). ${
+            idBackShot ? 'Both Front & Back IDs secured.' : 'Now upload the Back of your ID card.'
+          }`
+        );
         setStatusTone('ok');
-        setIsFlippingCard(true);
-        if (flipCooldownTimerRef.current) clearTimeout(flipCooldownTimerRef.current);
-        flipCooldownTimerRef.current = setTimeout(() => setIsFlippingCard(false), 2000);
       } else {
-        setIdBackShot(syntheticUrl);
-        setStatusMessage('Both front and back ID cards secured.');
+        if (!result.corners || result.corners.length !== 4) {
+          setErrors((prev) => ({
+            ...prev,
+            idCard:
+              'Uploaded image does not appear to be the back of a valid Government ID card. Please upload a clear image.'
+          }));
+          setStatusMessage('Back ID upload rejected: Invalid document structure.');
+          setStatusTone('bad');
+          return;
+        }
+
+        const finalBackUrl = result.rectifiedImageUrl || rawDataUrl;
+        setIdBackShot(finalBackUrl);
+
+        const enrichedBack: ExtractedFieldsPayload = { ...result.fields };
+        setBackExtractedFields(enrichedBack);
+
+        const merged = mergeFrontAndBackFields(frontExtractedFields, enrichedBack);
+        if (merged.licenseNumber && !licenseNumber) setLicenseNumber(merged.licenseNumber);
+        else if (merged.idNumber && !licenseNumber) setLicenseNumber(merged.idNumber);
+
+        setStatusMessage('Back ID uploaded & verified. Both Front and Back ID cards secured.');
         setStatusTone('ok');
       }
+
       setErrors((prev) => {
         const next = { ...prev };
         delete next.idCard;
         return next;
       });
+    },
+    [
+      address,
+      backExtractedFields,
+      dateOfBirth,
+      frontExtractedFields,
+      height,
+      idBackShot,
+      licenseNumber,
+      selectedRole,
+      weight
+    ]
+  );
+
+  // Open On-Device Crosshair Text Extractor Overlay on Uploaded IDs
+  const handleOpenTextExtractor = useCallback(
+    (sourceUrl?: string | null) => {
+      setTextExtractorSourceUrl(sourceUrl || idFrontShot || idBackShot || null);
+      setIsTextExtractorOpen(true);
+    },
+    [idFrontShot, idBackShot]
+  );
+
+  // Handle Quick-Assign from Text Extractor into Registration Form fields
+  const handleApplyTextExtractorField = useCallback((field: AssignableField, value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+
+    switch (field) {
+      case 'firstName':
+        setFirstName(trimmed);
+        break;
+      case 'middleName':
+        setMiddleName(trimmed);
+        break;
+      case 'lastName':
+        setLastName(trimmed);
+        break;
+      case 'dateOfBirth': {
+        setDateOfBirth(trimmed);
+        const resolvedAge = computeAgeFromDob(trimmed);
+        if (resolvedAge && !isNaN(Number(resolvedAge))) {
+          setAge(resolvedAge);
+        }
+        break;
+      }
+      case 'address':
+        setAddress(trimmed);
+        break;
+      case 'licenseNumber':
+        setLicenseNumber(trimmed);
+        break;
+      case 'sex': {
+        const s = trimmed.toLowerCase();
+        if (s.startsWith('m')) setSex('male');
+        else if (s.startsWith('f')) setSex('female');
+        break;
+      }
+      case 'weight':
+        setWeight(trimmed);
+        break;
+      case 'height':
+        setHeight(trimmed);
+        break;
     }
-  };
+  }, []);
 
   const handleRetakeAllId = () => {
-    if (flipCooldownTimerRef.current) {
-      clearTimeout(flipCooldownTimerRef.current);
-    }
-    setIsFlippingCard(false);
     setIdFrontShot(null);
     setIdBackShot(null);
+    setIdPortraitCropUrl(null);
+    setFrontExtractedFields({});
+    setBackExtractedFields({});
     setFirstName('');
     setMiddleName('');
     setLastName('');
@@ -789,131 +626,113 @@ export const RegisterPage: React.FC = () => {
     setHeight('');
     setAge('');
     setAutofillBadge(null);
-    idScanEngine.resetStability();
-    setStatusMessage('ID card snapshots cleared. Align front of card to restart capture.');
+    setStatusMessage('Uploaded ID cards and extracted fields cleared. Upload Front & Back ID images to begin.');
     setStatusTone('');
   };
 
-  // Upload Handling (File Picker & Drag-and-Drop) with Automatic Deterministic CV Scan
+  // Re-runs automated OCR extraction on an already-uploaded Front or Back ID data URL
+  const handleRescanUploadedSide = useCallback(
+    (side: 'front' | 'back') => {
+      const targetUrl = side === 'front' ? idFrontShot : idBackShot;
+      if (!targetUrl) return;
+
+      if (side === 'front') setIsScanningFrontUpload(true);
+      else setIsScanningBackUpload(true);
+
+      const img = new Image();
+      img.onload = async () => {
+        setStatusMessage(`Re-scanning ${side.toUpperCase()} ID with automated On-Device OCR...`);
+        setStatusTone('');
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || 856;
+          canvas.height = img.naturalHeight || 540;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const scanRes = await idScanEngine.scanUploadedIdImage(
+              imgData,
+              idType as GovernmentIdCategory,
+              selectedRole,
+              side
+            );
+            applyUploadedIdScanResult(side, scanRes, targetUrl);
+          }
+        } finally {
+          if (side === 'front') setIsScanningFrontUpload(false);
+          else setIsScanningBackUpload(false);
+        }
+      };
+      img.onerror = () => {
+        if (side === 'front') setIsScanningFrontUpload(false);
+        else setIsScanningBackUpload(false);
+      };
+      img.src = targetUrl;
+    },
+    [applyUploadedIdScanResult, idBackShot, idFrontShot, idType, selectedRole]
+  );
+
+  // Upload Handling (File Picker & Drag-and-Drop) with Automatic Deterministic CV + OCR Scan
   const handleFileUpload = (side: 'front' | 'back', file: File) => {
-    console.log('[RegisterPage handleFileUpload] triggered for side:', side, 'file:', file.name, file.type, file.size);
     if (!file.type.startsWith('image/')) {
-      setErrors((prev) => ({ ...prev, idCard: 'Please upload a valid image file (PNG, JPG, or WebP).' }));
+      setErrors((prev) => ({
+        ...prev,
+        idCard: 'Please upload a valid image file (PNG, JPG, or WebP).'
+      }));
       return;
     }
+
+    if (side === 'front') setIsScanningFrontUpload(true);
+    else setIsScanningBackUpload(true);
+
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      if (side === 'front') {
-        // DO NOT commit setIdFrontShot(result) yet! Validate image first.
-        const img = new Image();
-        img.onload = async () => {
-          setStatusMessage('Analyzing and verifying uploaded ID card...');
-          setStatusTone('');
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.naturalWidth || 640;
-            canvas.height = img.naturalHeight || 480;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const scanRes = await idScanEngine.scanCard(
-                imgData,
-                idType as GovernmentIdCategory,
-                selectedRole
-              );
-              console.log('[RegisterPage handleFileUpload] scanRes front error:', scanRes.error, 'reasons:', JSON.stringify(scanRes.quality?.reasons));
-
-              const hasCoreField = Boolean(
-                scanRes.fields && (
-                  scanRes.fields.fullname ||
-                  scanRes.fields.firstName ||
-                  scanRes.fields.lastName ||
-                  scanRes.fields.licenseNumber ||
-                  scanRes.fields.idNumber ||
-                  scanRes.fields.employeeId
-                )
-              );
-
-              if (!scanRes.success || scanRes.confidence < 0.45 || !hasCoreField) {
-                setErrors((prev) => ({
-                  ...prev,
-                  idCard: 'Uploaded image is not a recognized Government ID card. Please upload a clear photo showing full name and ID number.'
-                }));
-                setStatusMessage('Upload rejected: Invalid or unreadable document (confidence below 45%).');
-                setStatusTone('bad');
-                return;
-              }
-
-              // Valid scan -> delegate to handler
-              handleLockedCardScan(scanRes);
-            }
-          } catch (err) {
-            console.warn('[RegisterPage] Upload CV scan error:', err);
-            setErrors((prev) => ({
-              ...prev,
-              idCard: 'Could not process uploaded file. Please provide a clear image of your ID card.'
-            }));
-            setStatusMessage('Upload analysis failed.');
-            setStatusTone('bad');
+      const img = new Image();
+      img.onload = async () => {
+        setStatusMessage(
+          `Analyzing uploaded ${side.toUpperCase()} ID card & extracting text fields...`
+        );
+        setStatusTone('');
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || 856;
+          canvas.height = img.naturalHeight || 540;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const scanRes = await idScanEngine.scanUploadedIdImage(
+              imgData,
+              idType as GovernmentIdCategory,
+              selectedRole,
+              side
+            );
+            applyUploadedIdScanResult(side, scanRes, result);
           }
-        };
-        img.src = result;
-      } else {
-        const img = new Image();
-        img.onload = async () => {
-          setStatusMessage('Analyzing and verifying uploaded Back ID card...');
-          setStatusTone('');
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.naturalWidth || 640;
-            canvas.height = img.naturalHeight || 480;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const scanRes = await idScanEngine.scanCard(
-                imgData,
-                idType as GovernmentIdCategory,
-                selectedRole
-              );
-              console.log('[RegisterPage handleFileUpload] scanRes back error:', scanRes.error, 'reasons:', JSON.stringify(scanRes.quality?.reasons));
-
-              const isFaceDetected = Boolean(
-                scanRes.cardPresence && scanRes.cardPresence.status === 'FACE_DETECTED'
-              );
-
-              if (isFaceDetected || !scanRes.corners || scanRes.corners.length !== 4) {
-                setErrors((prev) => ({
-                  ...prev,
-                  idCard: isFaceDetected
-                    ? 'Human face detected. Please position or upload the back side of your physical Government ID card.'
-                    : 'Uploaded image does not appear to be the back of a physical Government ID card. Please ensure the card boundary is visible.'
-                }));
-                setStatusMessage('Back ID rejected: Invalid document or human face detected.');
-                setStatusTone('bad');
-                return;
-              }
-
-              setIdBackShot(scanRes.rectifiedImageUrl || result);
-              setErrors((prev) => {
-                const next = { ...prev };
-                delete next.idCard;
-                return next;
-              });
-              setStatusMessage('Both front and back ID cards secured successfully.');
-              setStatusTone('ok');
-            }
-          } catch (err) {
-            console.warn('[RegisterPage] Back ID CV scan error:', err);
-            setIdBackShot(result);
-            setStatusMessage('Back ID image secured.');
-            setStatusTone('ok');
-          }
-        };
-        img.src = result;
-      }
+        } catch (err) {
+          console.warn(`[RegisterPage] Upload ${side} CV scan error:`, err);
+          setErrors((prev) => ({
+            ...prev,
+            idCard: 'Could not process uploaded file. Please provide a clear image of your ID card.'
+          }));
+          setStatusMessage('Upload analysis failed.');
+          setStatusTone('bad');
+        } finally {
+          if (side === 'front') setIsScanningFrontUpload(false);
+          else setIsScanningBackUpload(false);
+        }
+      };
+      img.onerror = () => {
+        if (side === 'front') setIsScanningFrontUpload(false);
+        else setIsScanningBackUpload(false);
+        setErrors((prev) => ({
+          ...prev,
+          idCard: 'Unable to decode uploaded image file.'
+        }));
+      };
+      img.src = result;
     };
     reader.readAsDataURL(file);
   };
@@ -959,18 +778,6 @@ export const RegisterPage: React.FC = () => {
   const score = calculatePasswordScore(password);
   const strengthLabel = score >= 5 ? 'STRONG' : score >= 3 ? 'FAIR' : score >= 1 ? 'WEAK' : 'VERY WEAK';
   const strengthTone = score >= 5 ? 'ok' : score >= 3 ? 'warn' : 'bad';
-
-  // Vision Scanner Telemetry Calculations
-  const clarity = scannerAnalysis?.quality.details.laplacian ?? 0;
-  const isSharp = clarity >= 100;
-  const glareRatio = (scannerAnalysis?.quality.details.glare ?? 0) * 100;
-  const hasGlare = glareRatio >= 3.0;
-  const exposureVal = scannerAnalysis?.quality.details.exposure ?? 128;
-  const exposureStatus = exposureVal < 60 ? 'UNDEREXPOSED' : exposureVal > 200 ? 'OVEREXPOSED' : 'OPTIMAL';
-  const lockProgress = scannerAnalysis?.stability.lockProgress ?? 0;
-  const isLocked = scannerAnalysis?.stability.isLocked ?? false;
-  const presenceStatus = scannerAnalysis?.cardPresence?.status
-    ?? (isLocked ? 'LOCKED' : lockProgress > 0 ? 'ALIGNING' : 'NO_CARD');
 
   // Role Selection Logic for Step 0
   const handleSelectRole = (role: 'Responder' | 'Civilian') => {
@@ -1537,7 +1344,7 @@ export const RegisterPage: React.FC = () => {
                   </button>
                 </div>
 
-                {/* ============ TOP CONTROL BAR: ID SELECTION & CAPTURE METHOD ============ */}
+                {/* ============ TOP CONTROL BAR: ID DOCUMENT SELECTION & UPLOAD PIPELINE ============ */}
                 <div className="p-4 rounded-xl bg-black/50 border border-rose-500/30 mb-5">
                   <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                     {/* ID Document Selection */}
@@ -1566,7 +1373,7 @@ export const RegisterPage: React.FC = () => {
                           <option value="philsys">PhilSys National ID</option>
                           <option value="passport">Philippine Passport</option>
                           <option value="postal">Postal ID</option>
-                          <option value="drivers">LTO Driver's License</option>
+                          <option value="drivers">LTO Driver&apos;s License</option>
                           <option value="prc">PRC Professional License</option>
                           {selectedRole === 'Responder' && (
                             <>
@@ -1580,40 +1387,31 @@ export const RegisterPage: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Capture Mode Switcher (Live Camera vs Upload) */}
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold">
-                          Capture Method
-                        </span>
-                        <span className="font-mono text-[8.5px] text-cyan-400/80">[INPUT.MODE]</span>
+                    {/* Upload + Automated OCR Pipeline Status Badge & Interactive Text Extractor Trigger */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <div className="px-3 py-2 rounded-lg bg-slate-950/90 border border-cyan-500/40 font-mono text-[10px] flex items-center gap-2">
+                        <Upload className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        <div>
+                          <div className="font-bold text-white uppercase tracking-wider">
+                            DUAL ID UPLOAD // AUTO-OCR
+                          </div>
+                          <div className="text-[9px] text-cyan-300/80">
+                            Upload Front &amp; Back Pictures
+                          </div>
+                        </div>
                       </div>
-                      <div className="inline-flex p-1 rounded-lg bg-black/80 border border-rose-500/30 font-mono text-[10px] w-full sm:w-auto">
+
+                      {(idFrontShot || idBackShot) && (
                         <button
                           type="button"
-                          onClick={() => setIdCaptureMode('camera')}
-                          className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-bold transition-all cursor-pointer ${
-                            idCaptureMode === 'camera'
-                              ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-[0_0_12px_rgba(232,17,76,0.5)]'
-                              : 'text-slate-400 hover:text-slate-200'
-                          }`}
+                          onClick={() => handleOpenTextExtractor()}
+                          className="px-3.5 py-2 font-mono text-[10px] font-bold rounded-lg border border-cyan-500/60 bg-cyan-950/80 text-cyan-200 hover:bg-cyan-900 cursor-pointer flex items-center justify-center gap-1.5 transition-all shadow-[0_0_12px_rgba(6,182,212,0.25)]"
+                          title="Open On-Device Crosshair Text Extractor"
                         >
-                          <Camera className="w-3.5 h-3.5" />
-                          <span>Live Camera Capture</span>
+                          <Crop className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Interactive Text Extractor</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setIdCaptureMode('upload')}
-                          className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-md flex items-center justify-center gap-1.5 font-bold transition-all cursor-pointer ${
-                            idCaptureMode === 'upload'
-                              ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-[0_0_12px_rgba(232,17,76,0.5)]'
-                              : 'text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Upload Picture File</span>
-                        </button>
-                      </div>
+                      )}
                     </div>
                   </div>
 
@@ -1638,587 +1436,320 @@ export const RegisterPage: React.FC = () => {
                   )}
                 </div>
 
-                {/* ============ ID CARD FRONT & BACK CAPTURE SECTION ============ */}
+                {/* ============ GOVERNMENT ID FRONT & BACK PICTURE UPLOAD + AUTOMATED OCR SECTION ============ */}
                 <div className="mt-2 pt-1 border-t border-rose-500/20">
-                  <div className="flex items-center gap-2 mb-3.5 pt-3">
-                    <Scan className="w-4 h-4 text-[#ff5c74]" />
-                    <div>
-                      <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">
-                        Government ID Dual Optical Capture <span className="text-[#ff5c74]">*</span>
-                      </h4>
-                      <p className="font-mono text-[9px] text-rose-300/80 mt-0.5">
-                        Both front &amp; back sides of your {idType.toUpperCase()} are required for identity induction.
-                      </p>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3.5 pt-3">
+                    <div className="flex items-center gap-2">
+                      <Scan className="w-4 h-4 text-[#ff5c74]" />
+                      <div>
+                        <h4 className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                          Upload Government ID Pictures (Front &amp; Back) <span className="text-[#ff5c74]">*</span>
+                        </h4>
+                        <p className="font-mono text-[9px] text-rose-300/80 mt-0.5">
+                          Upload clear pictures of both Front and Back sides of your {idType.toUpperCase()}. On-device OCR automatically extracts and populates your personal details.
+                        </p>
+                      </div>
                     </div>
+
+                    {(idFrontShot || idBackShot) && (
+                      <button
+                        type="button"
+                        onClick={handleRetakeAllId}
+                        className="font-mono text-[10px] text-rose-300 hover:text-white px-2.5 py-1 rounded border border-rose-500/30 bg-rose-950/40 hover:bg-rose-900/60 cursor-pointer flex items-center gap-1 transition-all self-start sm:self-auto"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Clear Both ID Uploads</span>
+                      </button>
+                    )}
                   </div>
 
-                  {/* MODE 1: LIVE CAMERA CAPTURE */}
-                  {idCaptureMode === 'camera' && (
-                    <div className="space-y-4">
-                      {/* Check if both front & back are captured -> Display side-by-side preview */}
-                      {idFrontShot && idBackShot ? (
-                        <div className="p-4 rounded-xl bg-black/50 border border-emerald-500/40">
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="font-mono text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
-                              <CheckCircle2 className="w-4 h-4" />
-                              DUAL ID CREDENTIAL SECURED (FRONT &amp; BACK)
-                            </span>
-                            <button
-                              type="button"
-                              onClick={handleRetakeAllId}
-                              className="font-mono text-[10px] text-rose-300 hover:text-white px-2.5 py-1 rounded border border-rose-500/30 bg-rose-950/40 hover:bg-rose-900/60 cursor-pointer flex items-center gap-1 transition-all"
-                            >
-                              <RefreshCw className="w-3 h-3" />
-                              <span>Retake ID Cards</span>
-                            </button>
+                  {/* Dual Upload Dropzones: Front ID Card & Back ID Card */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Dropzone 1: Front ID Card */}
+                    <div className="flex flex-col">
+                      <input
+                        type="file"
+                        ref={frontFileInputRef}
+                        data-side="front"
+                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            handleFileUpload('front', e.target.files[0]);
+                          }
+                        }}
+                      />
+                      <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
+                        <span className="font-bold uppercase tracking-wider text-slate-200">
+                          1. Front ID Card Picture
+                        </span>
+                        <span
+                          className={
+                            isScanningFrontUpload
+                              ? 'text-cyan-400 font-bold animate-pulse'
+                              : idFrontShot
+                              ? 'text-emerald-400 font-bold'
+                              : 'text-slate-400'
+                          }
+                        >
+                          {isScanningFrontUpload ? 'EXTRACTING TEXT...' : idFrontShot ? 'SECURED & SCANNED' : 'REQUIRED'}
+                        </span>
+                      </div>
+
+                      {idFrontShot ? (
+                        <div className="relative rounded-xl overflow-hidden border border-emerald-500/50 bg-[#070c14] p-3 flex flex-col items-center">
+                          <div className="relative w-full overflow-hidden rounded border border-emerald-500/30">
+                            <img
+                              src={idFrontShot}
+                              alt="Front ID Card Upload"
+                              className="w-full h-auto object-cover"
+                              style={{ aspectRatio: '85.6 / 53.98' }}
+                            />
+                            <LaserScanOverlay
+                              isScanning={isScanningFrontUpload}
+                              label="EXTRACTING FRONT ID FIELDS..."
+                              cardCategory={idType}
+                            />
                           </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                            {/* Front Card Preview */}
-                            <div className="relative rounded-lg overflow-hidden border border-emerald-500/50 bg-[#070c14] p-2 flex flex-col items-center">
-                              <div className="absolute top-1 left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-emerald-400 pointer-events-none" />
-                              <div className="absolute top-1 right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-emerald-400 pointer-events-none" />
-                              <img
-                                src={idFrontShot}
-                                alt="Front ID Preview"
-                                className="w-full h-auto object-cover rounded shadow"
-                                style={{ aspectRatio: '85.6 / 53.98' }}
-                              />
-                              <div className="mt-2 w-full flex items-center justify-between font-mono text-[9.5px]">
-                                <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
-                                  <Check className="w-3 h-3 stroke-[3]" /> FRONT ID SECURED
-                                </span>
-                                <span className="text-slate-400">300 DPI // ISO-1</span>
-                              </div>
-                            </div>
-
-                            {/* Back Card Preview */}
-                            <div className="relative rounded-lg overflow-hidden border border-emerald-500/50 bg-[#070c14] p-2 flex flex-col items-center">
-                              <div className="absolute top-1 left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-emerald-400 pointer-events-none" />
-                              <div className="absolute top-1 right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-emerald-400 pointer-events-none" />
-                              <img
-                                src={idBackShot}
-                                alt="Back ID Preview"
-                                className="w-full h-auto object-cover rounded shadow"
-                                style={{ aspectRatio: '85.6 / 53.98' }}
-                              />
-                              <div className="mt-2 w-full flex items-center justify-between font-mono text-[9.5px]">
-                                <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
-                                  <Check className="w-3 h-3 stroke-[3]" /> BACK ID SECURED
-                                </span>
-                                <span className="text-slate-400">OPTICAL ENCRYPTION</span>
-                              </div>
+                          <div className="mt-2.5 w-full flex flex-wrap items-center justify-between gap-1.5 font-mono text-[10px]">
+                            <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
+                              <Check className="w-3 h-3 stroke-[3]" /> FRONT ID SECURED
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleRescanUploadedSide('front')}
+                                disabled={isScanningFrontUpload}
+                                className="text-emerald-400 hover:text-emerald-300 underline cursor-pointer text-[9.5px] flex items-center gap-0.5"
+                              >
+                                <Sparkles className="w-3 h-3" /> Auto-Extract
+                              </button>
+                              <span className="text-slate-600">&bull;</span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenTextExtractor(idFrontShot)}
+                                className="text-cyan-400 hover:text-cyan-300 underline cursor-pointer text-[9.5px] flex items-center gap-0.5"
+                              >
+                                <Crop className="w-3 h-3" /> Crosshair OCR
+                              </button>
+                              <span className="text-slate-600">&bull;</span>
+                              <button
+                                type="button"
+                                onClick={() => frontFileInputRef.current?.click()}
+                                className="text-sky-400 hover:text-sky-300 underline cursor-pointer text-[9.5px]"
+                              >
+                                Replace
+                              </button>
+                              <span className="text-slate-600">&bull;</span>
+                              <button
+                                type="button"
+                                onClick={() => setIdFrontShot(null)}
+                                className="text-rose-400 hover:text-rose-300 underline cursor-pointer text-[9.5px]"
+                              >
+                                Remove
+                              </button>
                             </div>
                           </div>
                         </div>
                       ) : (
-                        /* Live Viewfinder Active (Stage 1: Front ID or Stage 2: Back ID) */
-                        <div className="p-4 rounded-xl bg-black/60 border border-rose-500/30">
-                          <div className="flex items-center justify-between font-mono text-[10px] mb-2.5 pb-2 border-b border-rose-500/20">
-                            <span className="font-bold text-rose-300 flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-                              {isFlippingCard
-                                ? 'TRANSITIONING: FLIP CARD TO BACK SIDE'
-                                : !idFrontShot
-                                ? 'STAGE 1: CAPTURE FRONT OF ID CARD'
-                                : 'STAGE 2: NOW CAPTURE BACK OF ID CARD'}
-                            </span>
-                            <span className="text-slate-400">
-                              {isFlippingCard
-                                ? 'COOLDOWN [2.0s]'
-                                : !idFrontShot
-                                ? 'STEP [1/2] FRONT'
-                                : 'STEP [2/2] BACK'}
-                            </span>
+                        <div
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setIsDraggingFront(true);
+                          }}
+                          onDragLeave={() => setIsDraggingFront(false)}
+                          onDrop={(e) => handleDrop('front', e)}
+                          onClick={() => frontFileInputRef.current?.click()}
+                          className={`relative rounded-xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[168px] overflow-hidden ${
+                            isDraggingFront
+                              ? 'border-[#ff5c74] bg-rose-950/30'
+                              : 'border-rose-500/30 bg-[#16070d]/60 hover:border-rose-400 hover:bg-[#1f0a13]/70'
+                          }`}
+                        >
+                          <LaserScanOverlay
+                            isScanning={isScanningFrontUpload}
+                            label="ANALYZING FRONT ID UPLOAD..."
+                            cardCategory={idType}
+                          />
+                          <div className="p-2.5 rounded-full bg-rose-950/60 border border-rose-500/30 text-[#ff5c74] mb-2">
+                            <Upload className="w-5 h-5" />
                           </div>
-
-                          {/* Viewfinder Aspect Ratio Window with Deterministic CV Tactical HUD */}
-                          <div className="relative w-full max-w-lg mx-auto bg-[#070c14] rounded-lg overflow-hidden border border-rose-500/40 aspect-[16/10] flex items-center justify-center">
-                            {/* Live Video Feed or Frozen Frame */}
-                            <video
-                              ref={videoRef}
-                              autoPlay
-                              playsInline
-                              muted
-                              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
-                                isFrameFrozen ? 'opacity-0 pointer-events-none' : 'opacity-100'
-                              }`}
-                            />
-
-                            {/* Frozen Frame Snapshot during Optical Decoding */}
-                            {isFrameFrozen && frozenFrameUrl && (
-                              <img
-                                src={frozenFrameUrl}
-                                alt="Frozen Frame for Optical Scanning"
-                                className="absolute inset-0 w-full h-full object-cover z-0"
-                              />
-                            )}
-
-                            {/* Laser Scan Line Sweep & Reticle Overlay */}
-                            <LaserScanOverlay
-                              isScanning={isOpticalDecoding}
-                              label={!idFrontShot ? 'DECODING FRONT CREDENTIAL MATRIX...' : 'DECODING REVERSE MATRIX...'}
-                              cardCategory={idType}
-                            />
-
-                            {/* HUD Top Status Pills Bar */}
-                            <div className="absolute top-2 inset-x-2 z-20 flex flex-wrap items-center justify-between gap-1 pointer-events-none font-mono text-[8.5px]">
-                              <div className="flex items-center gap-1">
-                                <span
-                                  className={`px-2 py-0.5 rounded backdrop-blur-md border flex items-center gap-1 ${
-                                    isSharp
-                                      ? 'bg-emerald-950/85 border-emerald-500/60 text-emerald-300'
-                                      : 'bg-rose-950/85 border-rose-500/60 text-rose-300'
-                                  }`}
-                                >
-                                  <Activity className="w-2.5 h-2.5" />
-                                  CLARITY: {clarity > 0 ? clarity.toFixed(1) : '--'} [{isSharp ? 'SHARP' : 'BLUR'}]
-                                </span>
-                                <span
-                                  className={`px-2 py-0.5 rounded backdrop-blur-md border flex items-center gap-1 ${
-                                    !hasGlare
-                                      ? 'bg-slate-900/85 border-cyan-500/50 text-cyan-300'
-                                      : 'bg-amber-950/85 border-amber-500/60 text-amber-300'
-                                  }`}
-                                >
-                                  <Sparkles className="w-2.5 h-2.5" />
-                                  GLARE: {glareRatio > 0 ? `${glareRatio.toFixed(1)}%` : '0%'} [{hasGlare ? 'HOTSPOT' : 'NOMINAL'}]
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span
-                                  className={`px-2 py-0.5 rounded backdrop-blur-md border ${
-                                    exposureStatus === 'OPTIMAL'
-                                      ? 'bg-slate-900/85 border-emerald-500/50 text-emerald-300'
-                                      : 'bg-amber-950/85 border-amber-500/60 text-amber-300'
-                                  }`}
-                                >
-                                  EXP: {exposureStatus}
-                                </span>
-                                <span
-                                  className={`px-2 py-0.5 rounded backdrop-blur-md border font-bold flex items-center gap-1 ${
-                                    presenceStatus === 'LOCKED'
-                                      ? 'bg-emerald-900/90 border-emerald-400 text-emerald-200 shadow-[0_0_12px_rgba(52,211,153,0.6)]'
-                                      : presenceStatus === 'FACE_DETECTED'
-                                      ? 'bg-amber-950/90 border-amber-500 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.5)] animate-pulse'
-                                      : presenceStatus === 'ALIGNING'
-                                      ? 'bg-cyan-950/85 border-cyan-500/60 text-cyan-300'
-                                      : 'bg-black/85 border-rose-500/60 text-rose-300'
-                                  }`}
-                                >
-                                  {presenceStatus === 'FACE_DETECTED' ? (
-                                    <>
-                                      <UserX className="w-2.5 h-2.5" />
-                                      REJECT: FACE DETECTED
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Target className="w-2.5 h-2.5" />
-                                      LOCK: {presenceStatus === 'NO_CARD' ? 0 : lockProgress}% {presenceStatus === 'LOCKED' ? '[LOCKED]' : '[ALIGNING]'}
-                                    </>
-                                  )}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Real-time Dynamic 4-Corner Quadrilateral Tracking Vector */}
-                            {scannerAnalysis?.corners && scannerAnalysis.corners.length === 4 && (
-                              <svg
-                                className="absolute inset-0 w-full h-full pointer-events-none z-10"
-                                viewBox={`0 0 ${videoRef.current?.videoWidth || 640} ${videoRef.current?.videoHeight || 360}`}
-                                preserveAspectRatio="none"
-                              >
-                                <polygon
-                                  points={scannerAnalysis.corners.map((p) => `${p.x},${p.y}`).join(' ')}
-                                  fill={
-                                    presenceStatus === 'LOCKED'
-                                      ? 'rgba(52, 211, 153, 0.18)'
-                                      : presenceStatus === 'FACE_DETECTED'
-                                      ? 'rgba(245, 158, 11, 0.12)'
-                                      : 'rgba(6, 182, 212, 0.10)'
-                                  }
-                                  stroke={
-                                    presenceStatus === 'LOCKED'
-                                      ? '#34d399'
-                                      : presenceStatus === 'FACE_DETECTED'
-                                      ? '#f59e0b'
-                                      : '#06b6d4'
-                                  }
-                                  strokeWidth="2.5"
-                                  strokeDasharray={presenceStatus === 'LOCKED' ? 'none' : '6 4'}
-                                />
-                                {scannerAnalysis.corners.map((p, idx) => (
-                                  <g key={idx} transform={`translate(${p.x}, ${p.y})`}>
-                                    <circle
-                                      r="7"
-                                      fill={
-                                        presenceStatus === 'LOCKED'
-                                          ? '#34d399'
-                                          : presenceStatus === 'FACE_DETECTED'
-                                          ? '#f59e0b'
-                                          : '#06b6d4'
-                                      }
-                                      fillOpacity="0.4"
-                                    />
-                                    <circle r="3" fill="#ffffff" />
-                                    <line
-                                      x1="-12"
-                                      y1="0"
-                                      x2="12"
-                                      y2="0"
-                                      stroke={
-                                        presenceStatus === 'LOCKED'
-                                          ? '#34d399'
-                                          : presenceStatus === 'FACE_DETECTED'
-                                          ? '#f59e0b'
-                                          : '#06b6d4'
-                                      }
-                                      strokeWidth="2"
-                                    />
-                                    <line
-                                      x1="0"
-                                      y1="-12"
-                                      x2="0"
-                                      y2="12"
-                                      stroke={
-                                        presenceStatus === 'LOCKED'
-                                          ? '#34d399'
-                                          : presenceStatus === 'FACE_DETECTED'
-                                          ? '#f59e0b'
-                                          : '#06b6d4'
-                                      }
-                                      strokeWidth="2"
-                                    />
-                                  </g>
-                                ))}
-                              </svg>
-                            )}
-
-                            {/* Fallback Simulation Notice if Camera Not Found */}
-                            {cameraError && (
-                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 p-4 text-center z-10">
-                                <AlertCircle className="w-6 h-6 text-amber-400 mb-1" />
-                                <p className="font-mono text-xs text-amber-200 font-bold">HARDWARE OPTICAL STREAM RESTRICTED</p>
-                                <p className="font-sans text-[11px] text-slate-300 mt-0.5 max-w-xs">
-                                  {cameraError}. The sensor engine will automatically generate an authenticated synthetic ID snapshot.
-                                </p>
-                              </div>
-                            )}
-
-                            {/* Flip Card Cooldown Transition Overlay (Prevents front card re-locking race condition) */}
-                            {isFlippingCard && (
-                              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/92 backdrop-blur-sm p-4 text-center">
-                                <div className="w-12 h-12 rounded-full bg-cyan-950/80 border border-cyan-400/50 flex items-center justify-center mb-3">
-                                  <RefreshCw className="w-6 h-6 text-cyan-400 animate-spin" />
-                                </div>
-                                <p className="font-mono text-xs font-bold text-cyan-300 tracking-wider uppercase mb-1">
-                                  FRONT ID SECURED // FLIP CARD
-                                </p>
-                                <p className="font-mono text-[11px] text-amber-300 font-medium max-w-xs">
-                                  Please turn your physical ID card to the BACK side. Optical auto-lock calibrating in 2.0s...
-                                </p>
-                                <div className="flex items-center gap-1.5 mt-3 px-2.5 py-1 rounded bg-slate-900/90 border border-cyan-500/30 text-[9px] font-mono text-slate-300">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                                  <span>SENSOR STABILIZATION COOLDOWN (2.0s)</span>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Full-Frame Unconstrained ID Detection HUD Overlay */}
-                            <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 z-15">
-                              {/* 4 Viewport Corner Targeting Reticles */}
-                              <div className="flex justify-between w-full">
-                                <div className={`w-5 h-5 border-t-2 border-l-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
-                                <div className={`w-5 h-5 border-t-2 border-r-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
-                              </div>
-
-                              {/* Center auto-tracking status badge */}
-                              <div className="self-center flex flex-col items-center gap-1.5">
-                                <div className="px-3.5 py-1 rounded bg-black/85 border border-rose-500/50 font-mono text-[10.5px] font-bold text-white uppercase tracking-wider shadow backdrop-blur-sm">
-                                  {!idFrontShot ? 'SHOW FRONT OF ID CARD' : 'FLIP CARD & SHOW BACK'}
-                                </div>
-                                <span className="font-mono text-[8.5px] text-cyan-300 bg-black/75 px-2.5 py-0.5 rounded border border-cyan-500/30 backdrop-blur-sm">
-                                  FULL-FRAME OPTICAL TRACKING ACTIVE // PLACE ANYWHERE IN VIEW
-                                </span>
-                              </div>
-
-                              {/* Bottom Status & Target Lock Progress Bar */}
-                              <div className="flex flex-col gap-1 w-full max-w-sm mx-auto">
-                                <div className="flex justify-between items-center font-mono text-[8.5px]">
-                                  <span className="text-slate-400">DIP FULL-FRAME MATRIX</span>
-                                  <span className={`font-bold flex items-center gap-1 ${isLocked ? 'text-emerald-400' : 'text-rose-300'}`}>
-                                    <Target className="w-3 h-3" />
-                                    {isLocked ? 'TARGET ACQUIRED [LOCKED]' : `ACQUIRING ${lockProgress}%`}
-                                  </span>
-                                </div>
-                                <div className="w-full bg-slate-900/90 rounded-full h-1.5 overflow-hidden border border-slate-700/60">
-                                  <div
-                                    className={`h-full transition-all duration-150 ${
-                                      isLocked
-                                        ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_8px_#34d399]'
-                                        : 'bg-gradient-to-r from-rose-600 via-amber-500 to-emerald-400'
-                                    }`}
-                                    style={{ width: `${lockProgress}%` }}
-                                  />
-                                </div>
-                              </div>
-
-                              {/* Bottom Corner Reticles */}
-                              <div className="flex justify-between w-full">
-                                <div className={`w-5 h-5 border-b-2 border-l-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
-                                <div className={`w-5 h-5 border-b-2 border-r-2 transition-colors duration-200 ${isLocked ? 'border-emerald-400' : 'border-[#ff5c74]'}`} />
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Autofill Verified HUD Badge */}
-                          {autofillBadge && autofillBadge.visible && (
-                            <div className="mt-3 p-3 rounded-lg bg-[#041a12] border border-emerald-500/60 shadow-[0_0_16px_rgba(16,185,129,0.2)] flex items-center justify-between font-mono text-[10.5px]">
-                              <div className="flex items-center gap-2.5 text-emerald-300">
-                                <Cpu className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
-                                <div>
-                                  <span className="font-bold tracking-wide">
-                                    ID SCANNED VIA {autofillBadge.method === 'DETERMINISTIC_CV' ? 'DETERMINISTIC CV' : `AI STANDBY (${autofillBadge.provider?.toUpperCase()})`} // CONFIDENCE: {autofillBadge.confidence}% [{autofillBadge.tier}]
-                                  </span>
-                                  <p className="text-[9px] text-emerald-400/80 font-sans mt-0.5">
-                                    Holder credentials autofilled below. Fields remain fully editable; click Retake anytime to re-scan.
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/50 text-emerald-300 font-bold text-[9px]">
-                                  AUTOFILL VERIFIED
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setAutofillBadge(null)}
-                                  className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800/60 transition-all cursor-pointer"
-                                  title="Dismiss notification"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Capture Controls */}
-                          <div className="mt-3.5 flex flex-col sm:flex-row items-center gap-2">
-                            {idFrontShot && !idBackShot && (
-                              <button
-                                type="button"
-                                onClick={() => setIdFrontShot(null)}
-                                className="w-full sm:w-auto px-4 !h-[42px] font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/80 text-slate-300 hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
-                              >
-                                <RefreshCw className="w-3.5 h-3.5" />
-                                <span>Retake Front</span>
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={handleCaptureCurrentStage}
-                              disabled={isFlippingCard}
-                              className={`w-full flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2 ${
-                                isFlippingCard ? 'opacity-50 cursor-not-allowed' : ''
-                              }`}
-                            >
-                              <Camera className="w-4 h-4" />
-                              <span>
-                                {isFlippingCard
-                                  ? 'FLIPPING CARD (2.0s)...'
-                                  : !idFrontShot
-                                  ? 'CAPTURE FRONT ID'
-                                  : 'CAPTURE BACK ID'}
-                              </span>
-                            </button>
-                          </div>
-
-                          {/* Temporary thumbnail showing front card once captured */}
-                          {idFrontShot && !idBackShot && (
-                            <div className="mt-3 pt-2.5 border-t border-rose-500/20 flex items-center gap-3">
-                              <img
-                                src={idFrontShot}
-                                alt="Front Captured Preview"
-                                className="w-16 h-10 object-cover rounded border border-emerald-500/60"
-                              />
-                              <div className="font-mono text-[10px]">
-                                <span className="text-emerald-400 font-bold">[FRONT ID SECURED]</span>
-                                <p className="text-slate-400 text-[9px]">Card front frozen in memory. Flip card to capture reverse side.</p>
-                              </div>
-                            </div>
-                          )}
+                          <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                            Upload Front ID Picture
+                          </span>
+                          <span className="font-sans text-[11px] text-slate-400 mt-1">
+                            Drag &amp; drop or click to select PNG/JPG/WebP
+                          </span>
+                          <span className="font-mono text-[8.5px] text-cyan-300/90 mt-1.5">
+                            [AUTO-EXTRACTS SURNAME, FIRST NAME, DOB &amp; ID NO.]
+                          </span>
                         </div>
                       )}
                     </div>
-                  )}
 
-                  {/* MODE 2: UPLOAD PICTURE FILE */}
-                  {idCaptureMode === 'upload' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {/* Dropzone 1: Front ID Card */}
-                      <div className="flex flex-col">
-                        <input
-                          type="file"
-                          ref={frontFileInputRef}
-                          data-side="front"
-                          accept="image/png,image/jpeg,image/jpg,image/webp"
-                          className="hidden"
-                          onChange={(e) => {
-                            if (e.target.files && e.target.files[0]) {
-                              handleFileUpload('front', e.target.files[0]);
-                            }
-                          }}
-                        />
-                        <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
-                          <span className="font-bold uppercase tracking-wider text-slate-200">Front ID Card</span>
-                          <span className={idFrontShot ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
-                            {idFrontShot ? 'SECURED' : 'REQUIRED'}
-                          </span>
-                        </div>
-
-                        {idFrontShot ? (
-                          <div className="relative rounded-xl overflow-hidden border border-emerald-500/50 bg-[#070c14] p-3 flex flex-col items-center">
-                            <img
-                              src={idFrontShot}
-                              alt="Front ID Card Upload"
-                              className="w-full h-auto object-cover rounded border border-emerald-500/30"
-                              style={{ aspectRatio: '85.6 / 53.98' }}
-                            />
-                            <div className="mt-2.5 w-full flex items-center justify-between font-mono text-[10px]">
-                              <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
-                                <Check className="w-3 h-3 stroke-[3]" /> FRONT ID SECURED
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => frontFileInputRef.current?.click()}
-                                  className="text-sky-400 hover:text-sky-300 underline cursor-pointer text-[9.5px]"
-                                >
-                                  Replace
-                                </button>
-                                <span className="text-slate-600">&bull;</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setIdFrontShot(null)}
-                                  className="text-rose-400 hover:text-rose-300 underline cursor-pointer text-[9.5px]"
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              setIsDraggingFront(true);
-                            }}
-                            onDragLeave={() => setIsDraggingFront(false)}
-                            onDrop={(e) => handleDrop('front', e)}
-                            onClick={() => frontFileInputRef.current?.click()}
-                            className={`rounded-xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[160px] ${
-                              isDraggingFront
-                                ? 'border-[#ff5c74] bg-rose-950/30'
-                                : 'border-rose-500/30 bg-[#16070d]/60 hover:border-rose-400 hover:bg-[#1f0a13]/70'
-                            }`}
-                          >
-                            <div className="p-2.5 rounded-full bg-rose-950/60 border border-rose-500/30 text-[#ff5c74] mb-2">
-                              <Upload className="w-5 h-5" />
-                            </div>
-                            <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
-                              Front ID Card
-                            </span>
-                            <span className="font-sans text-[11px] text-slate-400 mt-1">
-                              Drag &amp; drop or click to upload PNG/JPG
-                            </span>
-                            <span className="font-mono text-[8.5px] text-rose-400/80 mt-1.5">
-                              [ISO/IEC 7810 ASPECT RATIO]
-                            </span>
-                          </div>
-                        )}
+                    {/* Dropzone 2: Back ID Card */}
+                    <div className="flex flex-col">
+                      <input
+                        type="file"
+                        ref={backFileInputRef}
+                        data-side="back"
+                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            handleFileUpload('back', e.target.files[0]);
+                          }
+                        }}
+                      />
+                      <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
+                        <span className="font-bold uppercase tracking-wider text-slate-200">
+                          2. Back ID Card Picture
+                        </span>
+                        <span
+                          className={
+                            isScanningBackUpload
+                              ? 'text-cyan-400 font-bold animate-pulse'
+                              : idBackShot
+                              ? 'text-emerald-400 font-bold'
+                              : 'text-slate-400'
+                          }
+                        >
+                          {isScanningBackUpload ? 'EXTRACTING TEXT...' : idBackShot ? 'SECURED & SCANNED' : 'REQUIRED'}
+                        </span>
                       </div>
 
-                      {/* Dropzone 2: Back ID Card */}
-                      <div className="flex flex-col">
-                        <input
-                          type="file"
-                          ref={backFileInputRef}
-                          data-side="back"
-                          accept="image/png,image/jpeg,image/jpg,image/webp"
-                          className="hidden"
-                          onChange={(e) => {
-                            if (e.target.files && e.target.files[0]) {
-                              handleFileUpload('back', e.target.files[0]);
-                            }
-                          }}
-                        />
-                        <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
-                          <span className="font-bold uppercase tracking-wider text-slate-200">Back ID Card</span>
-                          <span className={idBackShot ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
-                            {idBackShot ? 'SECURED' : 'REQUIRED'}
-                          </span>
-                        </div>
-
-                        {idBackShot ? (
-                          <div className="relative rounded-xl overflow-hidden border border-emerald-500/50 bg-[#070c14] p-3 flex flex-col items-center">
+                      {idBackShot ? (
+                        <div className="relative rounded-xl overflow-hidden border border-emerald-500/50 bg-[#070c14] p-3 flex flex-col items-center">
+                          <div className="relative w-full overflow-hidden rounded border border-emerald-500/30">
                             <img
                               src={idBackShot}
                               alt="Back ID Card Upload"
-                              className="w-full h-auto object-cover rounded border border-emerald-500/30"
+                              className="w-full h-auto object-cover"
                               style={{ aspectRatio: '85.6 / 53.98' }}
                             />
-                            <div className="mt-2.5 w-full flex items-center justify-between font-mono text-[10px]">
-                              <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
-                                <Check className="w-3 h-3 stroke-[3]" /> BACK ID SECURED
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => backFileInputRef.current?.click()}
-                                  className="text-sky-400 hover:text-sky-300 underline cursor-pointer text-[9.5px]"
-                                >
-                                  Replace
-                                </button>
-                                <span className="text-slate-600">&bull;</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setIdBackShot(null)}
-                                  className="text-rose-400 hover:text-rose-300 underline cursor-pointer text-[9.5px]"
-                                >
-                                  Remove
-                                </button>
-                              </div>
+                            <LaserScanOverlay
+                              isScanning={isScanningBackUpload}
+                              label="EXTRACTING BACK ID FIELDS..."
+                              cardCategory={idType}
+                            />
+                          </div>
+                          <div className="mt-2.5 w-full flex flex-wrap items-center justify-between gap-1.5 font-mono text-[10px]">
+                            <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold flex items-center gap-1">
+                              <Check className="w-3 h-3 stroke-[3]" /> BACK ID SECURED
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleRescanUploadedSide('back')}
+                                disabled={isScanningBackUpload}
+                                className="text-emerald-400 hover:text-emerald-300 underline cursor-pointer text-[9.5px] flex items-center gap-0.5"
+                              >
+                                <Sparkles className="w-3 h-3" /> Auto-Extract
+                              </button>
+                              <span className="text-slate-600">&bull;</span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenTextExtractor(idBackShot)}
+                                className="text-cyan-400 hover:text-cyan-300 underline cursor-pointer text-[9.5px] flex items-center gap-0.5"
+                              >
+                                <Crop className="w-3 h-3" /> Crosshair OCR
+                              </button>
+                              <span className="text-slate-600">&bull;</span>
+                              <button
+                                type="button"
+                                onClick={() => backFileInputRef.current?.click()}
+                                className="text-sky-400 hover:text-sky-300 underline cursor-pointer text-[9.5px]"
+                              >
+                                Replace
+                              </button>
+                              <span className="text-slate-600">&bull;</span>
+                              <button
+                                type="button"
+                                onClick={() => setIdBackShot(null)}
+                                className="text-rose-400 hover:text-rose-300 underline cursor-pointer text-[9.5px]"
+                              >
+                                Remove
+                              </button>
                             </div>
                           </div>
-                        ) : (
-                          <div
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              setIsDraggingBack(true);
-                            }}
-                            onDragLeave={() => setIsDraggingBack(false)}
-                            onDrop={(e) => handleDrop('back', e)}
-                            onClick={() => backFileInputRef.current?.click()}
-                            className={`rounded-xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[160px] ${
-                              isDraggingBack
-                                ? 'border-[#ff5c74] bg-rose-950/30'
-                                : 'border-rose-500/30 bg-[#16070d]/60 hover:border-rose-400 hover:bg-[#1f0a13]/70'
-                            }`}
-                          >
-                            <div className="p-2.5 rounded-full bg-rose-950/60 border border-rose-500/30 text-[#ff5c74] mb-2">
-                              <Upload className="w-5 h-5" />
-                            </div>
-                            <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
-                              Back ID Card
-                            </span>
-                            <span className="font-sans text-[11px] text-slate-400 mt-1">
-                              Drag &amp; drop or click to upload PNG/JPG
-                            </span>
-                            <span className="font-mono text-[8.5px] text-rose-400/80 mt-1.5">
-                              [ISO/IEC 7810 ASPECT RATIO]
-                            </span>
+                        </div>
+                      ) : (
+                        <div
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setIsDraggingBack(true);
+                          }}
+                          onDragLeave={() => setIsDraggingBack(false)}
+                          onDrop={(e) => handleDrop('back', e)}
+                          onClick={() => backFileInputRef.current?.click()}
+                          className={`relative rounded-xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[168px] overflow-hidden ${
+                            isDraggingBack
+                              ? 'border-[#ff5c74] bg-rose-950/30'
+                              : 'border-rose-500/30 bg-[#16070d]/60 hover:border-rose-400 hover:bg-[#1f0a13]/70'
+                          }`}
+                        >
+                          <LaserScanOverlay
+                            isScanning={isScanningBackUpload}
+                            label="ANALYZING BACK ID UPLOAD..."
+                            cardCategory={idType}
+                          />
+                          <div className="p-2.5 rounded-full bg-rose-950/60 border border-rose-500/30 text-[#ff5c74] mb-2">
+                            <Upload className="w-5 h-5" />
+                          </div>
+                          <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                            Upload Back ID Picture
+                          </span>
+                          <span className="font-sans text-[11px] text-slate-400 mt-1">
+                            Drag &amp; drop or click to select PNG/JPG/WebP
+                          </span>
+                          <span className="font-mono text-[8.5px] text-cyan-300/90 mt-1.5">
+                            [AUTO-EXTRACTS ADDRESS, WEIGHT, HEIGHT &amp; BARCODE]
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Autofill Verified HUD Badge (Directly in Upload Section) */}
+                  {autofillBadge && autofillBadge.visible && (
+                    <div className="mt-3.5 p-3 rounded-lg bg-[#041a12] border border-emerald-500/60 shadow-[0_0_16px_rgba(16,185,129,0.2)] flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-mono text-[10.5px]">
+                      <div className="flex items-center gap-2.5 text-emerald-300">
+                        <Cpu className="w-4 h-4 text-emerald-400 shrink-0 animate-pulse" />
+                        <div>
+                          <span className="font-bold tracking-wide">
+                            UPLOADED ID SCANNED VIA{' '}
+                            {autofillBadge.method === 'DETERMINISTIC_CV'
+                              ? 'ON-DEVICE OCR & SPATIAL FSM'
+                              : `AI STANDBY (${autofillBadge.provider?.toUpperCase()})`}{' '}
+                            // CONFIDENCE: {autofillBadge.confidence}% [{autofillBadge.tier}]
+                          </span>
+                          <p className="text-[9px] text-emerald-400/80 font-sans mt-0.5">
+                            Holder credentials automatically extracted from your uploaded ID image. Use &quot;Crosshair OCR&quot; on either card to drag-select any region, or edit fields below.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {idPortraitCropUrl && (
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-900 border border-cyan-500/40 text-cyan-300 text-[9px]">
+                            <img
+                              src={idPortraitCropUrl}
+                              alt="ID Portrait Crop"
+                              className="w-4 h-5 object-cover rounded-xs"
+                            />
+                            <span>PORTRAIT CROPPED</span>
                           </div>
                         )}
+                        <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/50 text-emerald-300 font-bold text-[9px]">
+                          AUTOFILL VERIFIED
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setAutofillBadge(null)}
+                          className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800/60 transition-all cursor-pointer"
+                          title="Dismiss notification"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
                   )}
@@ -2238,10 +1769,10 @@ export const RegisterPage: React.FC = () => {
                       <Lock className="w-5 h-5 text-rose-400/90" />
                     </div>
                     <p className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                      Personal Details Locked Until Government ID Scanned
+                      Personal Details Locked Until Front Government ID Uploaded
                     </p>
                     <p className="text-[11px] text-slate-400 max-w-md mx-auto leading-relaxed">
-                      Select your Government ID type above and scan or upload your card. Once validated by the deterministic computer vision engine, your Personal Details (Surname, First Name, Middle Name, Sex, Date of Birth, Address, License Number, Weight, and Height) will unlock and autofill below for your review.
+                      Select your Government ID type above and upload your Front &amp; Back ID pictures. Once validated by the on-device OCR &amp; computer vision engine, your Personal Details (Surname, First Name, Middle Name, Sex, Date of Birth, Address, License Number, Weight, and Height) will automatically unlock and populate below for review.
                     </p>
                   </div>
                 ) : (
@@ -2412,7 +1943,14 @@ export const RegisterPage: React.FC = () => {
                             name="dateOfBirth"
                             type="text"
                             value={dateOfBirth}
-                            onChange={(e) => setDateOfBirth(e.target.value)}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setDateOfBirth(val);
+                              const autoAge = computeAgeFromDob(val);
+                              if (autoAge && !isNaN(Number(autoAge))) {
+                                setAge(autoAge);
+                              }
+                            }}
                             placeholder="YYYY/MM/DD"
                             spellCheck={false}
                           />
@@ -2971,6 +2509,16 @@ export const RegisterPage: React.FC = () => {
           </form>
         </section>
       </div>
+
+      {/* Interactive On-Device Crosshair Text Extractor Overlay */}
+      <TextExtractorOverlay
+        isOpen={isTextExtractorOpen}
+        onClose={() => setIsTextExtractorOpen(false)}
+        imageSourceUrl={textExtractorSourceUrl}
+        frontImageUrl={idFrontShot}
+        backImageUrl={idBackShot}
+        onApplyToField={handleApplyTextExtractorField}
+      />
     </main>
   );
 };

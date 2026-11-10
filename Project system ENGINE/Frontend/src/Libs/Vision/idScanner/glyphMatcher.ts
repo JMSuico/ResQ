@@ -209,7 +209,7 @@ export const disambiguateGlyph = (
   }
 
   // 2. Diagonal slash '/' detection for dates
-  if (aspect >= 0.35 && aspect <= 0.70) {
+  if ((candidateChar === '/' || (isNumeric && (candidateChar === '1' || candidateChar === 'I'))) && aspect >= 0.35 && aspect <= 0.70) {
     let topR = 0;
     let botL = 0;
     let topL = 0;
@@ -228,7 +228,7 @@ export const disambiguateGlyph = (
   }
 
   // 3. Narrow vertical letter: strictly I or J or 1
-  if (aspect <= 0.48) {
+  if (aspect <= 0.48 && (candidateChar === 'I' || candidateChar === 'J' || candidateChar === '1' || candidateChar === 'L' || candidateChar === '|')) {
     let topEmptyLeft = 0;
     for (let y = 0; y <= 4; y++) {
       for (let x = 0; x <= 3; x++) {
@@ -288,7 +288,7 @@ export const disambiguateGlyph = (
       if (glyph16[y * 16 + x] > 0) uBotCurve++;
     }
   }
-  if (!isNumeric && uTopCenter <= 3 && uBotCurve >= 8) {
+  if (!isNumeric && (candidateChar === 'U' || candidateChar === 'V' || candidateChar === 'O') && uTopCenter <= 3 && uBotCurve >= 8) {
     return 'U';
   }
 
@@ -322,7 +322,7 @@ export const disambiguateGlyph = (
       if (glyph16[y * 16 + x] > 0) hBotCenter++;
     }
   }
-  if (!isNumeric && hMidBar >= 7 && hTopCenter <= 4 && hBotCenter <= 4) {
+  if (!isNumeric && (candidateChar === 'H' || candidateChar === 'N' || candidateChar === 'M') && hMidBar >= 7 && hTopCenter <= 4 && hBotCenter <= 4) {
     return 'H';
   }
 
@@ -344,7 +344,7 @@ export const disambiguateGlyph = (
   }
 
   // 9. M check: wide aspect (>= 0.88), V-vertex in center (rows 8..14, cols 5..10 has pixels)
-  if (!isNumeric && aspect >= 0.88) {
+  if (!isNumeric && (candidateChar === 'M' || candidateChar === 'W' || candidateChar === 'N') && aspect >= 0.88) {
     let centerPixels = 0;
     for (let y = 8; y <= 14; y++) {
       for (let x = 5; x <= 10; x++) {
@@ -486,6 +486,27 @@ export const disambiguateGlyph = (
     if (candidateChar === 'B') return '8';
   }
 
+  // 18. 3 vs 5 numeric check: in 5, top-left has vertical neck stem and top-right is open
+  if (isNumeric && (candidateChar === '3' || candidateChar === '5')) {
+    let topLeftStem = 0;
+    for (let y = 3; y <= 6; y++) {
+      for (let x = 0; x <= 4; x++) {
+        if (glyph16[y * 16 + x] > 0) topLeftStem++;
+      }
+    }
+    let topRightEmpty = 0;
+    for (let y = 3; y <= 6; y++) {
+      for (let x = 10; x <= 15; x++) {
+        if (glyph16[y * 16 + x] === 0) topRightEmpty++;
+      }
+    }
+    if (topLeftStem >= 3 && topRightEmpty >= 10) {
+      return '5';
+    } else if (topLeftStem <= 1) {
+      return '3';
+    }
+  }
+
   return candidateChar;
 };
 
@@ -603,8 +624,11 @@ export const recognizeLineText = (
     const match = matchGlyph(glyph16, aspect, FONT_BANK, allowedChars);
 
     const isNumeric = Boolean(allowedChars && !/[A-Z]/.test(allowedChars));
-    const lineH = Math.max(...sortedBoxes.map((b) => b.h));
-    const finalChar = disambiguateGlyph(glyph16, aspect, match.char, currentBox.h, currentBox.y, lineH, isNumeric);
+    const lineH = Math.max(1, ...sortedBoxes.map((b) => b.h));
+    const lineMinY = Math.min(...sortedBoxes.map((b) => b.y));
+    const lineMaxY = Math.max(...sortedBoxes.map((b) => b.y + b.h));
+    const relBoxY = ((currentBox.y - lineMinY) / Math.max(1, lineMaxY - lineMinY)) * 16;
+    const finalChar = disambiguateGlyph(glyph16, aspect, match.char, currentBox.h, relBoxY, lineH, isNumeric);
 
     reconstructedText += finalChar;
     charConfidences.push(match.confidence);

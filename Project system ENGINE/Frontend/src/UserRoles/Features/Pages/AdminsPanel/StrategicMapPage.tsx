@@ -162,8 +162,8 @@ export const StrategicMapPage: FC = () => {
       })
       .map((rep) => ({
         id: rep.id,
-        lat: Number(rep.latitude),
-        lng: Number(rep.longitude),
+        lat: Number(rep.currentLatitude ?? rep.latitude),
+        lng: Number(rep.currentLongitude ?? rep.longitude),
         title: rep.title,
         status: rep.status || 'Reported',
         type: 'incident' as const,
@@ -238,7 +238,7 @@ export const StrategicMapPage: FC = () => {
   const handleSelectIncident = (r: ReportItem) => {
     setSelectedIncident(r);
     if (typeof r.latitude === 'number' && typeof r.longitude === 'number') {
-      setActiveCenter({ lat: r.latitude, lng: r.longitude });
+      setActiveCenter({ lat: r.currentLatitude ?? r.latitude, lng: r.currentLongitude ?? r.longitude });
     }
   };
 
@@ -266,12 +266,12 @@ export const StrategicMapPage: FC = () => {
   return (
     <div className="flex flex-col gap-4 w-full h-[calc(100vh-130px)] min-h-[580px] flex-1">
       {/* Top Header Bar */}
-      <div className="relative z-30 flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-700/70 backdrop-blur-md">
+      <div className="relative z-[500] pointer-events-auto flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-700/70 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => navigate('/admin/dashboard')}
-            className="p-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white transition-all flex items-center gap-1.5 text-xs font-mono font-bold"
+            className="p-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white transition-all flex items-center gap-1.5 text-xs font-mono font-bold cursor-pointer relative z-[510] pointer-events-auto"
             title="Return to Executive Dashboard"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -312,7 +312,7 @@ export const StrategicMapPage: FC = () => {
       {/* Main Grid: Enlarge Map + 4-Pane Live Command Deck */}
       <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-4 flex-1 min-h-0 w-full">
         {/* Full Enlarged Map (Takes 2 Cols on lg, 3 Cols on xl) */}
-        <div className="lg:col-span-2 xl:col-span-3 rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950/90 shadow-2xl relative flex flex-col flex-1 h-full min-h-[520px]">
+        <div className="lg:col-span-2 xl:col-span-3 rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950/90 shadow-2xl relative flex flex-col flex-1 h-full min-h-[580px]">
           <div className="absolute top-3 left-3 z-10 flex items-center gap-2 bg-slate-950/85 px-3 py-1.5 rounded-lg border border-slate-700/80 text-[11px] font-mono text-slate-300 backdrop-blur-md">
             <Crosshair className="w-3.5 h-3.5 text-rose-400" />
             <span className="text-rose-400 font-bold">{markers.length}</span> Coordinates Plotted
@@ -322,7 +322,7 @@ export const StrategicMapPage: FC = () => {
 
           {/* Selected Incident Drawer on Map */}
           {selectedIncident && (
-            <div className="absolute top-3 right-3 z-10 w-80 max-w-[90%] bg-slate-950/95 border border-rose-500/50 rounded-xl p-3 shadow-2xl backdrop-blur-md text-xs">
+            <div className="absolute top-3 right-3 z-20 w-80 max-w-[90%] bg-slate-950/95 border border-rose-500/50 rounded-xl p-3 shadow-2xl backdrop-blur-md text-xs">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-mono text-[10px] text-rose-400 font-bold flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3 text-rose-400" />
@@ -381,7 +381,7 @@ export const StrategicMapPage: FC = () => {
             </div>
           )}
 
-          <div className="flex-1 w-full h-full min-h-[520px] flex flex-col">
+          <div className="flex-1 w-full h-full min-h-[580px] relative flex flex-col">
             <SatelliteCommandMap
               markers={markers}
               responders={roster.map((u) => ({
@@ -394,6 +394,8 @@ export const StrategicMapPage: FC = () => {
                 agency: u.agency
               }))}
               selectedIncidentId={selectedIncident?.id}
+              roleFilter={filterAgency === 'RHU' ? 'RHU' : 'LDRRMO'}
+              onCloseCallout={() => setSelectedIncident(null)}
               onSelectIncident={(inc) => {
                 const matched = reports.find((r) => r.id === inc.id);
                 if (matched) {
@@ -402,7 +404,8 @@ export const StrategicMapPage: FC = () => {
               }}
               centerLat={activeCenter.lat}
               centerLng={activeCenter.lng}
-              className="w-full h-full min-h-[520px] flex-1"
+              onExpandMap={() => navigate('/admin/dashboard')}
+              className="w-full h-full min-h-[580px] flex-1"
             />
           </div>
         </div>
