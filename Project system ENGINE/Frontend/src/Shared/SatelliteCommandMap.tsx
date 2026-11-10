@@ -24,7 +24,10 @@ import {
   Camera,
   Lock,
   Layers,
-  GripHorizontal
+  GripHorizontal,
+  Plus,
+  Minus,
+  Crosshair
 } from 'lucide-react';
 import {
   RADAR_POINTER_CATEGORIES,
@@ -120,17 +123,27 @@ export interface SatelliteCommandMapProps {
   className?: string;
   isMinimap?: boolean;
   onCloseCallout?: () => void;
+  hideZoomControls?: boolean;
 }
 
-const AREA_BOUNDS: [[number, number], [number, number]] = [
-  [6.50, 120.50],
-  [11.50, 126.50]
+// Katipunan, Zamboanga del Norte (7109) Municipal Sector Geofence & Strategic Bounding Box
+// (Matching exact territorial boundary from Nabilid/Tuburan on the West to Malugas/Punta on the East)
+export const KATIPUNAN_SECTOR_BOUNDS: [[number, number], [number, number]] = [
+  [8.4720, 123.2100], // Southwest inland sector (encompassing Tuburan/Nabilid south)
+  [8.5380, 123.3550]  // Northeast coastal sector (encompassing Punta/Malugas north)
 ];
-const HOME_CENTER: [number, number] = [8.5147, 123.2842];
-const HOME_ZOOM = 12;
-const MIN_ZOOM = 11;
-const MAX_ZOOM = 18;
-const BOUNDS_PADDING: [number, number] = [18, 18];
+
+// Max pan boundary box with strict viscosity (firmly locks camera inside Katipunan jurisdiction)
+export const KATIPUNAN_MAX_PAN_BOUNDS: [[number, number], [number, number]] = [
+  [8.4550, 123.1900], // Southwest hard boundary stop
+  [8.5550, 123.3750]  // Northeast hard boundary stop
+];
+
+export const KATIPUNAN_CENTER: [number, number] = [8.5125, 123.2842];
+export const DEFAULT_KATIPUNAN_ZOOM = 13;
+export const MIN_KATIPUNAN_ZOOM = 12; // Strictly locks minimum zoom to Katipunan Municipal Sector
+export const MAX_KATIPUNAN_ZOOM = 19; // Ultra-high resolution satellite zoom
+const BOUNDS_PADDING: [number, number] = [16, 16];
 const MIN_ACCURACY_RADIUS_METERS = 15;
 const PAN_DURATION_SECONDS = 0.8;
 
@@ -165,7 +178,8 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   onMapReady,
   className = 'mapview__map',
   isMinimap: isMinimapProp = false,
-  onCloseCallout
+  onCloseCallout,
+  hideZoomControls = false
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -452,27 +466,34 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     if (!mapContainerRef.current) return;
     if (mapInstanceRef.current) return;
 
-    const homeBounds = L.latLngBounds(AREA_BOUNDS[0], AREA_BOUNDS[1]);
+    const homeBounds = L.latLngBounds(KATIPUNAN_SECTOR_BOUNDS[0], KATIPUNAN_SECTOR_BOUNDS[1]);
+    const maxBounds = L.latLngBounds(KATIPUNAN_MAX_PAN_BOUNDS[0], KATIPUNAN_MAX_PAN_BOUNDS[1]);
     const initialCenter: [number, number] =
-      typeof centerLat === 'number' && typeof centerLng === 'number'
+      typeof centerLat === 'number' &&
+      typeof centerLng === 'number' &&
+      centerLat >= KATIPUNAN_MAX_PAN_BOUNDS[0][0] &&
+      centerLat <= KATIPUNAN_MAX_PAN_BOUNDS[1][0] &&
+      centerLng >= KATIPUNAN_MAX_PAN_BOUNDS[0][1] &&
+      centerLng <= KATIPUNAN_MAX_PAN_BOUNDS[1][1]
         ? [centerLat, centerLng]
-        : HOME_CENTER;
+        : KATIPUNAN_CENTER;
 
     const map = L.map(mapContainerRef.current, {
       zoomControl: false,
-      minZoom: MIN_ZOOM,
-      maxZoom: MAX_ZOOM,
-      maxBoundsViscosity: 0.25,
+      minZoom: MIN_KATIPUNAN_ZOOM,
+      maxZoom: MAX_KATIPUNAN_ZOOM,
+      maxBounds: maxBounds,
+      maxBoundsViscosity: 0.95,
       attributionControl: true
-    }).setView(initialCenter, HOME_ZOOM);
+    }).setView(initialCenter, DEFAULT_KATIPUNAN_ZOOM);
 
     map.attributionControl.setPosition('bottomleft');
-    map.setMaxBounds(homeBounds.pad(0.35));
+    map.setMaxBounds(maxBounds);
 
     L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
       {
-        maxZoom: MAX_ZOOM,
+        maxZoom: MAX_KATIPUNAN_ZOOM,
         attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
       }
     ).addTo(map);
@@ -480,7 +501,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
       {
-        maxZoom: MAX_ZOOM,
+        maxZoom: MAX_KATIPUNAN_ZOOM,
         attribution: 'Labels &copy; Esri'
       }
     ).addTo(map);
@@ -496,6 +517,8 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     markersLayerRef.current = markersLayer;
     mapInstanceRef.current = map;
 
+    // Firmly fit the Katipunan Sector bounding box so that the entire municipal sector
+    // (from Nabilid/Tuburan on the West to Malugas/Punta on the East) is centered and displayed
     map.fitBounds(homeBounds, { padding: BOUNDS_PADDING, animate: false });
 
     // Staggered layout size invalidation passes to prevent partial tile clipping
@@ -547,6 +570,16 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     // Prevent competing animation loops while user is viewing or dragging a callout
     if (activePointer) return;
 
+    // Boundary guard: only pan if target is within Katipunan Municipal Sector
+    if (
+      centerLat < KATIPUNAN_MAX_PAN_BOUNDS[0][0] ||
+      centerLat > KATIPUNAN_MAX_PAN_BOUNDS[1][0] ||
+      centerLng < KATIPUNAN_MAX_PAN_BOUNDS[0][1] ||
+      centerLng > KATIPUNAN_MAX_PAN_BOUNDS[1][1]
+    ) {
+      return;
+    }
+
     try {
       const cur = mapInstanceRef.current.getCenter();
       if (Math.abs(cur.lat - centerLat) > 0.005 || Math.abs(cur.lng - centerLng) > 0.005) {
@@ -556,6 +589,22 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       // Safe fallback
     }
   }, [centerLat, centerLng, activePointer]);
+
+  const handleRecenterSector = useCallback(() => {
+    if (!mapInstanceRef.current) return;
+    const homeBounds = L.latLngBounds(KATIPUNAN_SECTOR_BOUNDS[0], KATIPUNAN_SECTOR_BOUNDS[1]);
+    mapInstanceRef.current.fitBounds(homeBounds, { padding: BOUNDS_PADDING, animate: true });
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    if (!mapInstanceRef.current) return;
+    mapInstanceRef.current.zoomIn();
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    if (!mapInstanceRef.current) return;
+    mapInstanceRef.current.zoomOut();
+  }, []);
 
   const handleCloseCallout = useCallback((e?: React.MouseEvent | MouseEvent) => {
     if (e && 'stopPropagation' in e) {
@@ -1045,6 +1094,10 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         .resqtrack-tactical-pointer,
         .leaflet-marker-icon {
           transition: transform 1.2s cubic-bezier(0.25, 1, 0.5, 1) !important;
+        }
+        .leaflet-zoom-anim .resqtrack-tactical-pointer,
+        .leaflet-zoom-anim .leaflet-marker-icon {
+          transition: transform 0.25s cubic-bezier(0, 0, 0.25, 1) !important;
         }
         .tactical-modal-scroll {
           scrollbar-width: none !important;
@@ -1597,6 +1650,51 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           bottom: 0
         }}
       />
+
+      {/* Floating Tactical Zoom & Recenter Controls Bar */}
+      {!hideZoomControls && (
+        <div className="absolute bottom-5 right-3 z-[400] flex flex-col items-center gap-1.5 bg-slate-950/90 border border-slate-700/80 backdrop-blur-md p-1.5 rounded-xl shadow-2xl pointer-events-auto">
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 hover:text-white flex items-center justify-center border border-slate-700/60 transition-all cursor-pointer shadow-sm"
+            title="Zoom In (+)"
+            aria-label="Zoom in"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 hover:text-white flex items-center justify-center border border-slate-700/60 transition-all cursor-pointer shadow-sm"
+            title="Zoom Out (-)"
+            aria-label="Zoom out"
+          >
+            <Minus className="w-4 h-4" />
+          </button>
+          <div className="w-5 h-px bg-slate-700/60 my-0.5" />
+          <button
+            type="button"
+            onClick={handleRecenterSector}
+            className="w-8 h-8 rounded-lg bg-sky-950/80 hover:bg-sky-900 active:scale-95 text-sky-400 hover:text-sky-200 flex items-center justify-center border border-sky-600/50 transition-all cursor-pointer shadow-sm"
+            title="Recenter Katipunan Sector View (7109)"
+            aria-label="Recenter on Katipunan Sector"
+          >
+            <Crosshair className="w-4 h-4" />
+          </button>
+          {(onExpandMap || onToggleExpand) && (
+            <button
+              type="button"
+              onClick={onToggleExpand || onExpandMap}
+              className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 hover:text-white flex items-center justify-center border border-slate-700/60 transition-all cursor-pointer shadow-sm"
+              title={isExpanded ? 'Minimize Map' : 'Maximize Map'}
+              aria-label="Toggle map size"
+            >
+              {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Multi-Media Evidence Lightbox */}
       <ImageLightboxModal

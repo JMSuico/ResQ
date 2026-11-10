@@ -18,7 +18,7 @@
 // 6. Verified state with BIOMETRIC PROOF VERIFIED [99.8%] badge and Retake Biometric Scan functionality.
 // 7. Resilient hardware fallback with procedural 3D wireframe face simulation for automated tests or headless environments.
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Camera,
   Check,
@@ -51,6 +51,17 @@ import {
   type SkinFaceTrackingFrameResult,
   type FacialLandmarks
 } from '@/Libs/Vision/idScanner/face/skinFaceTracker';
+import {
+  initMediaPipeFaceLandmarker,
+  processMediaPipeVideoFrame,
+  type MediaPipeFaceResult
+} from '@/Libs/Vision/idScanner/face/mediaPipeFaceEngine';
+import {
+  evaluateLiveGeometricPose,
+  type GeometricFaceResult,
+  type GeometricPoseType
+} from '@/Libs/Vision/idScanner/face/geometricFacePatternEngine';
+import GeometricFacePatternHUD from '@/Libs/Vision/idScanner/face/GeometricFacePatternHUD';
 
 export type BiometricPoseStep =
   | 'STANDBY'
@@ -218,10 +229,18 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
   const [faceDetected, setFaceDetected] = useState<boolean>(false);
   const [landmarks, setLandmarks] = useState<FacialLandmarks | null>(null);
   const latestSkinResultRef = useRef<SkinFaceTrackingFrameResult | null>(null);
+  const latestMediaPipeResultRef = useRef<MediaPipeFaceResult | null>(null);
   const prevGrayRef = useRef<Float32Array | undefined>(undefined);
   const centerBaselineRef = useRef<{ yaw0: number; pitch0: number } | undefined>(undefined);
   const centerDescriptorRef = useRef<Float32Array | null>(null);
   const centerEyeOpenBaselineRef = useRef<number>(0.5);
+
+  // Pre-load MediaPipe FaceLandmarker for GPU 3D Landmark & Blendshape tracking
+  useEffect(() => {
+    initMediaPipeFaceLandmarker().catch((err: unknown) => {
+      console.warn('[BiometricEngine] MediaPipe async init note:', err);
+    });
+  }, []);
 
   // Frame Pause and Command Transition Telemetry
   const [isFramePaused, setIsFramePaused] = useState<boolean>(false);
@@ -305,6 +324,59 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     }
   }, [currentStep, verifiedPayload, startCamera]);
 
+  // Active pose type for Geometric Blueprint Engine
+  const activePoseType: GeometricPoseType = useMemo(() => {
+    switch (currentStep) {
+      case 'POSE_LEFT':
+        return 'LEFT';
+      case 'POSE_RIGHT':
+        return 'RIGHT';
+      case 'POSE_BLINK':
+      case 'POSE_UP':
+        return 'BLINK';
+      case 'POSE_CENTER':
+      default:
+        return 'FRONT';
+    }
+  }, [currentStep]);
+
+  // Real-time Geometric Pattern Blueprint Evaluator matching Pictures 1 through 7
+  const liveGeometricResult = useMemo((): GeometricFaceResult => {
+    const mp = latestMediaPipeResultRef.current;
+    const skin = latestSkinResultRef.current;
+
+    let liveYaw = mp ? mp.yaw : skin ? skin.yawDegrees : 0;
+    let livePitch = mp ? mp.pitch : skin ? skin.pitchDegrees : 0;
+    let liveRoll = mp ? mp.roll : 0;
+    let liveEyeOpenness = mp
+      ? 1.0 - (mp.eyeBlinkLeft + mp.eyeBlinkRight) * 0.5
+      : skin?.blink
+      ? skin.blink.eyeOpenness
+      : 0.85;
+
+    if (isSynthetic) {
+      if (activePoseType === 'LEFT') liveYaw = -25;
+      else if (activePoseType === 'RIGHT') liveYaw = 25;
+      else if (activePoseType === 'BLINK') {
+        liveYaw = 0;
+        liveEyeOpenness = 0.08;
+      } else {
+        liveYaw = 0;
+        livePitch = 0;
+        liveEyeOpenness = 0.85;
+      }
+    }
+
+    return evaluateLiveGeometricPose(
+      480,
+      360,
+      activePoseType,
+      liveYaw,
+      livePitch,
+      liveEyeOpenness
+    );
+  }, [activePoseType, isSynthetic, currentStep, fps, skinYaw, skinPitch]);
+
   // Procedural 3D wireframe face drawing for synthetic fallback mode
   const drawSyntheticWireframe = (canvas: HTMLCanvasElement, step: BiometricPoseStep, timestamp: number) => {
     const ctx = canvas.getContext('2d');
@@ -341,11 +413,12 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     if (step === 'DISTANCE_CHECK') {
       headScale = 0.95 + Math.sin(timestamp / 500) * 0.08;
     } else if (step === 'POSE_LEFT') {
-      yaw = -24;
+      yaw = -26;
     } else if (step === 'POSE_RIGHT') {
-      yaw = 24;
-    } else if (step === 'POSE_UP') {
-      pitch = -18;
+      yaw = 26;
+    } else if (step === 'POSE_BLINK' || step === 'POSE_UP') {
+      yaw = 0;
+      pitch = 0;
     }
 
     const centerX = 200 + yaw * 1.5;
@@ -379,27 +452,55 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     ctx.lineTo(70, -15);
     ctx.stroke();
 
-    // Eye sockets
-    ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
-    ctx.strokeStyle = '#38bdf8';
-    // Left eye
-    ctx.beginPath();
-    ctx.ellipse(-32 + yaw * 0.2, -15, 14, 8, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fill();
-    // Right eye
-    ctx.beginPath();
-    ctx.ellipse(32 + yaw * 0.2, -15, 14, 8, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fill();
+    if (step === 'POSE_BLINK' || step === 'POSE_UP') {
+      // Eyelids closed for Blink liveness (Picture 7)
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(-45 + yaw * 0.2, -15);
+      ctx.lineTo(-19 + yaw * 0.2, -15);
+      ctx.moveTo(19 + yaw * 0.2, -15);
+      ctx.lineTo(45 + yaw * 0.2, -15);
+      ctx.stroke();
 
-    // Pupils
-    ctx.fillStyle = '#34d399';
-    ctx.beginPath();
-    ctx.arc(-32 + yaw * 0.3, -15, 4, 0, Math.PI * 2);
-    ctx.arc(32 + yaw * 0.3, -15, 4, 0, Math.PI * 2);
-    ctx.fill();
+      // Red vertical caliper guides ||
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      // Left eye calipers
+      ctx.moveTo(-36 + yaw * 0.2, -23);
+      ctx.lineTo(-36 + yaw * 0.2, -7);
+      ctx.moveTo(-28 + yaw * 0.2, -23);
+      ctx.lineTo(-28 + yaw * 0.2, -7);
+      // Right eye calipers
+      ctx.moveTo(28 + yaw * 0.2, -23);
+      ctx.lineTo(28 + yaw * 0.2, -7);
+      ctx.moveTo(36 + yaw * 0.2, -23);
+      ctx.lineTo(36 + yaw * 0.2, -7);
+      ctx.stroke();
+    } else {
+      // Open eye sockets
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+      ctx.strokeStyle = '#38bdf8';
+      // Left eye
+      ctx.beginPath();
+      ctx.ellipse(-32 + yaw * 0.2, -15, 14, 8, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fill();
+      // Right eye
+      ctx.beginPath();
+      ctx.ellipse(32 + yaw * 0.2, -15, 14, 8, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fill();
+
+      // Pupils
+      ctx.fillStyle = '#34d399';
+      ctx.beginPath();
+      ctx.arc(-32 + yaw * 0.3, -15, 4, 0, Math.PI * 2);
+      ctx.arc(32 + yaw * 0.3, -15, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // Nose bridge and tip
     ctx.strokeStyle = '#f43f5e';
@@ -562,7 +663,16 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
             currentLaplacian = Math.max(variance, 100);
             setLaplacianVariance(currentLaplacian);
 
-            // Execute deterministic YCbCr skin chrominance moments & temporal motion energy
+            // 1. Execute MediaPipe GPU 3D FaceLandmarker tracking
+            let mpResult: MediaPipeFaceResult | null = null;
+            try {
+              mpResult = processMediaPipeVideoFrame(video, now);
+              latestMediaPipeResultRef.current = mpResult;
+            } catch {
+              // Graceful fallback to classical vision
+            }
+
+            // 2. Execute deterministic YCbCr skin chrominance moments & temporal motion energy
             try {
               const imgData = ctx.getImageData(0, 0, 320, 240);
               const skinResult = trackSkinFace(
@@ -575,11 +685,21 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
               );
               prevGrayRef.current = skinResult.ycbcr.y;
               latestSkinResultRef.current = skinResult;
-              setSkinYaw(skinResult.yawDegrees);
-              setSkinPitch(skinResult.pitchDegrees);
-              setDistanceStatus(skinResult.pose.distanceStatus);
-              setMotionEnergy(Math.max(skinResult.liveness.energy, 2.1));
-              setFaceDetected(skinResult.isValidFace);
+
+              if (mpResult && mpResult.isValidFace) {
+                setSkinYaw(mpResult.yaw);
+                setSkinPitch(mpResult.pitch);
+                setDistanceStatus(skinResult.pose.distanceStatus);
+                setMotionEnergy(Math.max(skinResult.liveness.energy, 2.1));
+                setFaceDetected(true);
+              } else {
+                setSkinYaw(skinResult.yawDegrees);
+                setSkinPitch(skinResult.pitchDegrees);
+                setDistanceStatus(skinResult.pose.distanceStatus);
+                setMotionEnergy(Math.max(skinResult.liveness.energy, 2.1));
+                setFaceDetected(skinResult.isValidFace);
+              }
+
               if (skinResult.landmarks.isValidLandmarks) {
                 setLandmarks(skinResult.landmarks);
               }
@@ -609,7 +729,8 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         let targetPose: BiometricPose | null = null;
         let isPoseAngleValid = false;
         const skinRes = latestSkinResultRef.current;
-        const isFaceValid = isSynthetic || (skinRes && skinRes.isValidFace && skinRes.landmarks.isValidLandmarks);
+        const mpRes = latestMediaPipeResultRef.current;
+        const isFaceValid = isSynthetic || (mpRes && mpRes.isValidFace) || (skinRes && skinRes.isValidFace && skinRes.landmarks.isValidLandmarks);
 
         // Face presence gating: Auto-pause frame accumulation if no face or face traces detected
         if (step === 'POSE_CENTER' || step === 'POSE_LEFT' || step === 'POSE_RIGHT' || step === 'POSE_BLINK' || step === 'POSE_UP') {
@@ -626,7 +747,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           } else {
             if (!lastFaceDetectStateRef.current) {
               lastFaceDetectStateRef.current = true;
-              console.info(`[BiometricEngine] Human face traces detected in camera during ${step} (confidence: ${Math.round(((skinRes?.confidence ?? skinRes?.trackingConfidence) || 0.85) * 100)}%).`);
+              console.info(`[BiometricEngine] Human face traces detected in camera during ${step} (confidence: ${Math.round(((mpRes?.confidence ?? skinRes?.confidence ?? skinRes?.trackingConfidence) || 0.85) * 100)}%).`);
             }
             if (biometricFrameCache.getIsPaused() && biometricFrameCache.getPauseReason() === 'NO_FACE_IN_CAMERA') {
               if (!isTransitionPausedRef.current) {
@@ -641,28 +762,44 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
 
         if (step === 'POSE_CENTER') {
           targetPose = 'CENTER';
-          isPoseAngleValid = isSynthetic || (skinRes && Math.abs(skinRes.yawDegrees) <= 12 && Math.abs(skinRes.pitchDegrees) <= 12);
+          const yawVal = mpRes ? mpRes.yaw : (skinRes?.yawDegrees ?? 0);
+          const pitchVal = mpRes ? mpRes.pitch : (skinRes?.pitchDegrees ?? 0);
+          isPoseAngleValid = isSynthetic || (Math.abs(yawVal) <= 12 && Math.abs(pitchVal) <= 12);
         } else if (step === 'POSE_LEFT') {
           targetPose = 'LEFT';
-          const dYaw = skinRes ? (skinRes.pose.deltaYaw ?? (skinRes.yawDegrees - (centerBaselineRef.current?.yaw0 ?? 0))) : 0;
-          const profRatio = skinRes?.profileRatio ?? skinRes?.ovalMetrics?.profileRatio;
-          const isProfLeft = (profRatio !== undefined && profRatio < 0.92) || (skinRes && skinRes.yawDegrees <= -8);
-          isPoseAngleValid = isSynthetic || (skinRes && (dYaw <= -8 || isProfLeft));
+          if (mpRes && mpRes.isValidFace) {
+            const dYaw = mpRes.yaw - (centerBaselineRef.current?.yaw0 ?? 0);
+            isPoseAngleValid = isSynthetic || (mpRes.yaw <= -14 && dYaw <= -10);
+          } else {
+            const dYaw = skinRes ? (skinRes.pose.deltaYaw ?? (skinRes.yawDegrees - (centerBaselineRef.current?.yaw0 ?? 0))) : 0;
+            const profRatio = skinRes?.profileRatio ?? skinRes?.ovalMetrics?.profileRatio;
+            const isProfLeft = (profRatio !== undefined && profRatio < 0.92) || (skinRes && skinRes.yawDegrees <= -8);
+            isPoseAngleValid = isSynthetic || (skinRes && (dYaw <= -8 || isProfLeft));
+          }
         } else if (step === 'POSE_RIGHT') {
           targetPose = 'RIGHT';
-          const dYaw = skinRes ? (skinRes.pose.deltaYaw ?? (skinRes.yawDegrees - (centerBaselineRef.current?.yaw0 ?? 0))) : 0;
-          const profRatio = skinRes?.profileRatio ?? skinRes?.ovalMetrics?.profileRatio;
-          const isProfRight = (profRatio !== undefined && profRatio > 1.08) || (skinRes && skinRes.yawDegrees >= 8);
-          isPoseAngleValid = isSynthetic || (skinRes && (dYaw >= 8 || isProfRight));
+          if (mpRes && mpRes.isValidFace) {
+            const dYaw = mpRes.yaw - (centerBaselineRef.current?.yaw0 ?? 0);
+            isPoseAngleValid = isSynthetic || (mpRes.yaw >= 14 && dYaw >= 10);
+          } else {
+            const dYaw = skinRes ? (skinRes.pose.deltaYaw ?? (skinRes.yawDegrees - (centerBaselineRef.current?.yaw0 ?? 0))) : 0;
+            const profRatio = skinRes?.profileRatio ?? skinRes?.ovalMetrics?.profileRatio;
+            const isProfRight = (profRatio !== undefined && profRatio > 1.08) || (skinRes && skinRes.yawDegrees >= 8);
+            isPoseAngleValid = isSynthetic || (skinRes && (dYaw >= 8 || isProfRight));
+          }
         } else if (step === 'POSE_BLINK') {
           targetPose = 'BLINK';
-          const isBlinking = isSynthetic || (skinRes && skinRes.blink && skinRes.blink.isBlinking);
-          const eyeOpen = skinRes?.blink?.eyeOpenness ?? 0.5;
-          isPoseAngleValid = isSynthetic || isBlinking || eyeOpen < 0.35;
+          if (mpRes && mpRes.isValidFace) {
+            isPoseAngleValid = isSynthetic || mpRes.isBlinking;
+          } else {
+            const isBlinking = isSynthetic || (skinRes && skinRes.blink && skinRes.blink.isBlinking);
+            const eyeOpen = skinRes?.blink?.eyeOpenness ?? 0.5;
+            isPoseAngleValid = isSynthetic || isBlinking || eyeOpen < 0.35;
+          }
         } else if (step === 'POSE_UP') {
           targetPose = 'UP';
-          const dPitch = skinRes ? (skinRes.pose.deltaPitch ?? (skinRes.pitchDegrees - (centerBaselineRef.current?.pitch0 ?? 0))) : 0;
-          isPoseAngleValid = isSynthetic || (skinRes && dPitch >= 9);
+          const dPitch = mpRes ? (mpRes.pitch - (centerBaselineRef.current?.pitch0 ?? 0)) : (skinRes ? (skinRes.pose.deltaPitch ?? (skinRes.pitchDegrees - (centerBaselineRef.current?.pitch0 ?? 0))) : 0);
+          isPoseAngleValid = isSynthetic || dPitch >= 9;
         }
 
         // Throttle frame caching to 1 frame every 95ms (~10 FPS), max 10 frames per pose
@@ -820,7 +957,8 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
     activeIntervalRef.current = setInterval(() => {
       const res = latestSkinResultRef.current;
-      const isLiveValid = isSynthetic || (res && res.isValidFace);
+      const mpRes = latestMediaPipeResultRef.current;
+      const isLiveValid = isSynthetic || (mpRes && mpRes.isValidFace) || (res && res.isValidFace);
 
       if (isLiveValid) {
         p += 10;
@@ -854,8 +992,11 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
     activeIntervalRef.current = setInterval(() => {
       const res = latestSkinResultRef.current;
-      const isLiveValid = isSynthetic || (res && res.isValidFace);
-      const isAngleMatched = isSynthetic || (res && Math.abs(res.yawDegrees) <= 12 && Math.abs(res.pitchDegrees) <= 12);
+      const mpRes = latestMediaPipeResultRef.current;
+      const isLiveValid = isSynthetic || (mpRes && mpRes.isValidFace) || (res && res.isValidFace);
+      const yawVal = mpRes ? mpRes.yaw : (res ? res.yawDegrees : 0);
+      const pitchVal = mpRes ? mpRes.pitch : (res ? res.pitchDegrees : 0);
+      const isAngleMatched = isSynthetic || (Math.abs(yawVal) <= 12 && Math.abs(pitchVal) <= 12);
 
       if (isLiveValid && isAngleMatched) {
         progress += 7;
@@ -869,15 +1010,18 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           setSnapshots((prev) => ({ ...prev, center: centerSnap }));
 
           // Calibrate baseline angles, identity descriptor, and open-eye baseline from user's locked center pose
+          centerBaselineRef.current = {
+            yaw0: mpRes ? mpRes.yaw : (res ? res.yawDegrees : 0),
+            pitch0: mpRes ? mpRes.pitch : (res ? res.pitchDegrees : 0)
+          };
           if (res) {
-            centerBaselineRef.current = {
-              yaw0: res.yawDegrees,
-              pitch0: res.pitchDegrees
-            };
             centerDescriptorRef.current = res.featureDescriptor || res.hybridProfile.featureDescriptor || res.hybridProfile.eigenVector;
             if (res.blink && res.blink.eyeOpenness > 0.15) {
               centerEyeOpenBaselineRef.current = res.blink.eyeOpenness;
             }
+          }
+          if (mpRes) {
+            centerEyeOpenBaselineRef.current = Math.max(0.25, 1.0 - (mpRes.eyeBlinkLeft + mpRes.eyeBlinkRight) * 0.5);
           }
 
           // Command 1 finished: PAUSE frame counting immediately until Command 2 starts!
@@ -907,7 +1051,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     }, 60);
   };
 
-  // Pose 2: Turn Left (Requires Actual Left Profile Rotation: deltaYaw <= -16 deg or yawDegrees <= -16 deg)
+  // Pose 2: Turn Left (Requires Actual Left Profile Rotation: deltaYaw <= -18 deg or yawDegrees <= -18 deg)
   const runPose2Left = () => {
     isTransitionPausedRef.current = false;
     biometricFrameCache.resume();
@@ -917,32 +1061,38 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     setCurrentStep('POSE_LEFT');
     currentStepRef.current = 'POSE_LEFT';
     setPoseProgress(0);
-    console.info('[BiometricEngine] COMMAND 2 (LEFT) STARTED. Awaiting actual Left Profile head rotation (<= -16 deg).');
+    console.info('[BiometricEngine] COMMAND 2 (LEFT) STARTED. Awaiting actual Left Profile head rotation (<= -18 deg).');
 
     let holdTicks = 0;
-    const REQUIRED_HOLD_TICKS = 8; // 8 * 60ms = ~480ms continuous stable left-turn hold
+    let warmupTicks = 10; // ~600ms warm-up grace period so user can comfortably rotate head
+    const REQUIRED_HOLD_TICKS = 14; // 14 * 60ms = ~840ms continuous stable left-turn hold
 
     if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
     activeIntervalRef.current = setInterval(() => {
       const res = latestSkinResultRef.current;
-      const isLiveValid = isSynthetic || (res && res.isValidFace);
-      const deltaYaw = res ? (res.pose.deltaYaw ?? (res.yawDegrees - (centerBaselineRef.current?.yaw0 ?? 0))) : 0;
+      const mpRes = latestMediaPipeResultRef.current;
+      const isLiveValid = isSynthetic || (mpRes && mpRes.isValidFace) || (res && res.isValidFace);
 
-      let isIdentityMatched = true;
-      if (res && centerDescriptorRef.current && res.featureDescriptor) {
-        const sim = evaluateCosineSimilarity(centerDescriptorRef.current, res.featureDescriptor);
-        isIdentityMatched = sim >= 0.40; // Rotated profile continuity tolerance
+      let isAngleMatched = false;
+      if (isSynthetic) {
+        if (warmupTicks > 0) {
+          warmupTicks--;
+        } else {
+          isAngleMatched = true;
+        }
+      } else if (mpRes && mpRes.isValidFace) {
+        const deltaYaw = mpRes.yaw - (centerBaselineRef.current?.yaw0 ?? 0);
+        // Strict Left Profile threshold via 3D matrix (Picture 4: ~ -90° / -25° rotation)
+        isAngleMatched = mpRes.yaw <= -18 && deltaYaw <= -12;
+      } else if (res && res.isValidFace) {
+        const deltaYaw = res.pose.deltaYaw ?? (res.yawDegrees - (centerBaselineRef.current?.yaw0 ?? 0));
+        let isIdentityMatched = true;
+        if (centerDescriptorRef.current && res.featureDescriptor) {
+          const sim = evaluateCosineSimilarity(centerDescriptorRef.current, res.featureDescriptor);
+          isIdentityMatched = sim >= 0.35;
+        }
+        isAngleMatched = res.yawDegrees <= -18 && deltaYaw <= -12 && Math.abs(res.yawDegrees) >= 15 && isIdentityMatched;
       }
-
-      // Strict Left Profile threshold: requires genuine head rotation left (absolute yaw <= -14 deg AND deltaYaw <= -10 deg)
-      // Stationary forward face (yaw ~ 0 deg) is strictly rejected!
-      const isAngleMatched = isSynthetic || (
-        Boolean(res) &&
-        res!.yawDegrees <= -14 &&
-        deltaYaw <= -10 &&
-        Math.abs(res!.yawDegrees) >= 12 &&
-        isIdentityMatched
-      );
 
       if (isLiveValid && isAngleMatched) {
         holdTicks = Math.min(REQUIRED_HOLD_TICKS, holdTicks + 1);
@@ -982,7 +1132,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     }, 60);
   };
 
-  // Pose 3: Turn Right (Requires Actual Right Profile Rotation: deltaYaw >= +16 deg or yawDegrees >= +16 deg)
+  // Pose 3: Turn Right (Requires Actual Right Profile Rotation: deltaYaw >= +18 deg or yawDegrees >= +18 deg)
   const runPose3Right = () => {
     isTransitionPausedRef.current = false;
     biometricFrameCache.resume();
@@ -992,32 +1142,38 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     setCurrentStep('POSE_RIGHT');
     currentStepRef.current = 'POSE_RIGHT';
     setPoseProgress(0);
-    console.info('[BiometricEngine] COMMAND 3 (RIGHT) STARTED. Awaiting actual Right Profile head rotation (>= +16 deg).');
+    console.info('[BiometricEngine] COMMAND 3 (RIGHT) STARTED. Awaiting actual Right Profile head rotation (>= +18 deg).');
 
     let holdTicks = 0;
-    const REQUIRED_HOLD_TICKS = 8; // 8 * 60ms = ~480ms continuous stable right-turn hold
+    let warmupTicks = 10; // ~600ms warm-up grace period so user can comfortably rotate head
+    const REQUIRED_HOLD_TICKS = 14; // 14 * 60ms = ~840ms continuous stable right-turn hold
 
     if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
     activeIntervalRef.current = setInterval(() => {
       const res = latestSkinResultRef.current;
-      const isLiveValid = isSynthetic || (res && res.isValidFace);
-      const deltaYaw = res ? (res.pose.deltaYaw ?? (res.yawDegrees - (centerBaselineRef.current?.yaw0 ?? 0))) : 0;
+      const mpRes = latestMediaPipeResultRef.current;
+      const isLiveValid = isSynthetic || (mpRes && mpRes.isValidFace) || (res && res.isValidFace);
 
-      let isIdentityMatched = true;
-      if (res && centerDescriptorRef.current && res.featureDescriptor) {
-        const sim = evaluateCosineSimilarity(centerDescriptorRef.current, res.featureDescriptor);
-        isIdentityMatched = sim >= 0.40; // Rotated profile continuity tolerance
+      let isAngleMatched = false;
+      if (isSynthetic) {
+        if (warmupTicks > 0) {
+          warmupTicks--;
+        } else {
+          isAngleMatched = true;
+        }
+      } else if (mpRes && mpRes.isValidFace) {
+        const deltaYaw = mpRes.yaw - (centerBaselineRef.current?.yaw0 ?? 0);
+        // Strict Right Profile threshold via 3D matrix (Picture 5: ~ +90° / +25° rotation)
+        isAngleMatched = mpRes.yaw >= 18 && deltaYaw >= 12;
+      } else if (res && res.isValidFace) {
+        const deltaYaw = res.pose.deltaYaw ?? (res.yawDegrees - (centerBaselineRef.current?.yaw0 ?? 0));
+        let isIdentityMatched = true;
+        if (centerDescriptorRef.current && res.featureDescriptor) {
+          const sim = evaluateCosineSimilarity(centerDescriptorRef.current, res.featureDescriptor);
+          isIdentityMatched = sim >= 0.35;
+        }
+        isAngleMatched = res.yawDegrees >= 18 && deltaYaw >= 12 && Math.abs(res.yawDegrees) >= 15 && isIdentityMatched;
       }
-
-      // Strict Right Profile threshold: requires genuine head rotation right (absolute yaw >= +14 deg AND deltaYaw >= +10 deg)
-      // Stationary forward face (yaw ~ 0 deg) is strictly rejected!
-      const isAngleMatched = isSynthetic || (
-        Boolean(res) &&
-        res!.yawDegrees >= 14 &&
-        deltaYaw >= 10 &&
-        Math.abs(res!.yawDegrees) >= 12 &&
-        isIdentityMatched
-      );
 
       if (isLiveValid && isAngleMatched) {
         holdTicks = Math.min(REQUIRED_HOLD_TICKS, holdTicks + 1);
@@ -1073,49 +1229,110 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     let openBaselineTicks = 0;
     let closedTicks = 0;
     let postBlinkHold = 0;
+    let synthBlinkTicks = 0;
+    let capturedClosedBlinkSnap: string | null = null;
 
     if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
     activeIntervalRef.current = setInterval(() => {
       const res = latestSkinResultRef.current;
-      const isLiveValid = isSynthetic || (res && res.isValidFace);
-      const isBlinkingSignal = isSynthetic || (res && res.blink && res.blink.isBlinking);
-      const eyeOpenness = res?.blink?.eyeOpenness ?? 0.5;
-
-      const baselineEye = Math.max(0.28, centerEyeOpenBaselineRef.current || 0.45);
-      const openThresh = baselineEye * 0.78;
-      const closedThresh = Math.min(0.22, baselineEye * 0.48);
-      const reopenThresh = baselineEye * 0.72;
+      const mpRes = latestMediaPipeResultRef.current;
+      const isLiveValid = isSynthetic || (mpRes && mpRes.isValidFace) || (res && res.isValidFace);
 
       if (isSynthetic) {
-        // In synthetic test mode, simulate natural blink progression
-        blinkPhase = 'REOPENED_CONFIRMED';
-      } else if (blinkPhase === 'WAITING_FOR_OPEN_BASELINE') {
-        // Pre-condition: User's eyes must be visibly open relative to personal baseline
-        if (eyeOpenness >= openThresh && !isBlinkingSignal) {
-          openBaselineTicks++;
-          if (openBaselineTicks >= 3) {
-            blinkPhase = 'WAITING_FOR_DIP';
-            setPoseProgress(15);
+        synthBlinkTicks++;
+        if (synthBlinkTicks < 5) {
+          blinkPhase = 'WAITING_FOR_OPEN_BASELINE';
+          setPoseProgress(25);
+        } else if (synthBlinkTicks < 11) {
+          blinkPhase = 'CLOSED_DIP_DETECTED';
+          setPoseProgress(65);
+          if (!capturedClosedBlinkSnap) {
+            capturedClosedBlinkSnap = captureCurrentFrame();
           }
         } else {
-          openBaselineTicks = 0;
-        }
-      } else if (blinkPhase === 'WAITING_FOR_DIP') {
-        // Phase 1: User must genuinely close their eyelids (eye openness drops below closedThresh)
-        if (isBlinkingSignal || eyeOpenness <= closedThresh) {
-          closedTicks++;
-          if (closedTicks >= 2) { // held closed for ~120ms
-            blinkPhase = 'CLOSED_DIP_DETECTED';
-            setPoseProgress(55);
-          }
-        } else {
-          closedTicks = 0;
-        }
-      } else if (blinkPhase === 'CLOSED_DIP_DETECTED') {
-        // Phase 2: User must reopen eyes (eye openness rises back above reopenThresh)
-        if (eyeOpenness >= reopenThresh) {
           blinkPhase = 'REOPENED_CONFIRMED';
-          setPoseProgress(85);
+          setPoseProgress(95);
+        }
+      } else if (mpRes && mpRes.isValidFace) {
+        const eyeBlinkScore = (mpRes.eyeBlinkLeft + mpRes.eyeBlinkRight) * 0.5;
+        if (blinkPhase === 'WAITING_FOR_OPEN_BASELINE') {
+          // Pre-condition: Eyes visibly open
+          if (eyeBlinkScore <= 0.35 && !mpRes.isBlinking) {
+            openBaselineTicks++;
+            if (openBaselineTicks >= 3) {
+              blinkPhase = 'WAITING_FOR_DIP';
+              setPoseProgress(20);
+            }
+          } else {
+            openBaselineTicks = 0;
+          }
+        } else if (blinkPhase === 'WAITING_FOR_DIP') {
+          // Phase 1: Eyelids close (blendshape blink score >= 0.45 or isBlinking)
+          if (mpRes.isBlinking || eyeBlinkScore >= 0.45) {
+            closedTicks++;
+            if (closedTicks >= 2) {
+              blinkPhase = 'CLOSED_DIP_DETECTED';
+              setPoseProgress(60);
+              if (!capturedClosedBlinkSnap) {
+                capturedClosedBlinkSnap = captureCurrentFrame();
+              }
+            }
+          } else {
+            closedTicks = 0;
+          }
+        } else if (blinkPhase === 'CLOSED_DIP_DETECTED') {
+          // Capture closed-eye frame during the dip
+          if (!capturedClosedBlinkSnap) {
+            capturedClosedBlinkSnap = captureCurrentFrame();
+          }
+          // Phase 2: Eyelids reopen (blendshape blink score <= 0.35)
+          if (eyeBlinkScore <= 0.35 && !mpRes.isBlinking) {
+            blinkPhase = 'REOPENED_CONFIRMED';
+            setPoseProgress(90);
+          }
+        }
+      } else if (res && res.isValidFace) {
+        const isBlinkingSignal = res.blink && res.blink.isBlinking;
+        const eyeOpenness = res.blink?.eyeOpenness ?? 0.5;
+        const baselineEye = Math.max(0.28, centerEyeOpenBaselineRef.current || 0.45);
+        const openThresh = baselineEye * 0.78;
+        const closedThresh = Math.min(0.22, baselineEye * 0.48);
+        const reopenThresh = baselineEye * 0.72;
+
+        if (blinkPhase === 'WAITING_FOR_OPEN_BASELINE') {
+          // Pre-condition: User's eyes must be visibly open relative to personal baseline
+          if (eyeOpenness >= openThresh && !isBlinkingSignal) {
+            openBaselineTicks++;
+            if (openBaselineTicks >= 3) {
+              blinkPhase = 'WAITING_FOR_DIP';
+              setPoseProgress(15);
+            }
+          } else {
+            openBaselineTicks = 0;
+          }
+        } else if (blinkPhase === 'WAITING_FOR_DIP') {
+          // Phase 1: User must genuinely close their eyelids
+          if (isBlinkingSignal || eyeOpenness <= closedThresh) {
+            closedTicks++;
+            if (closedTicks >= 2) { // held closed for ~120ms
+              blinkPhase = 'CLOSED_DIP_DETECTED';
+              setPoseProgress(55);
+              if (!capturedClosedBlinkSnap) {
+                capturedClosedBlinkSnap = captureCurrentFrame();
+              }
+            }
+          } else {
+            closedTicks = 0;
+          }
+        } else if (blinkPhase === 'CLOSED_DIP_DETECTED') {
+          if (!capturedClosedBlinkSnap) {
+            capturedClosedBlinkSnap = captureCurrentFrame();
+          }
+          // Phase 2: User must reopen eyes
+          if (eyeOpenness >= reopenThresh) {
+            blinkPhase = 'REOPENED_CONFIRMED';
+            setPoseProgress(85);
+          }
         }
       }
 
@@ -1126,7 +1343,8 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         if (postBlinkHold >= 2) {
           if (activeIntervalRef.current) clearInterval(activeIntervalRef.current);
           activeIntervalRef.current = null;
-          const blinkSnap = captureCurrentFrame();
+          // Capture the closed eyelid snapshot saved during CLOSED_DIP_DETECTED!
+          const blinkSnap = capturedClosedBlinkSnap || captureCurrentFrame();
           snapshotsRef.current.up = blinkSnap;
           setSnapshots((prev) => ({ ...prev, up: blinkSnap }));
 
@@ -1391,9 +1609,9 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         <div className="absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-sky-400/90 pointer-events-none z-20" />
         <div className="absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-sky-400/90 pointer-events-none z-20" />
 
-        {/* Top-left Telemetry Tag */}
-        <div className="absolute top-2.5 left-3 z-20 pointer-events-none flex flex-col items-start gap-1">
-          <div className={`font-mono text-[8.5px] px-2 py-0.5 rounded border flex items-center gap-1.5 backdrop-blur-sm ${
+        {/* Top-left Telemetry Tag positioned below Geometric Pose Header */}
+        <div className="absolute top-10 left-3 z-20 pointer-events-none flex flex-col items-start gap-1">
+          <div className={`font-mono text-[8px] px-2 py-0.5 rounded border flex items-center gap-1.5 backdrop-blur-sm ${
             isFramePaused && framePauseReason === 'NO_FACE_DETECTED'
               ? 'text-rose-400 bg-rose-950/90 border-rose-500/60 animate-pulse'
               : isFramePaused
@@ -1421,34 +1639,27 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
                 : 'FACE: POSITION IN VIEWPORT'}
             </span>
           </div>
-          <div className="font-mono text-[8px] text-slate-400 bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
+          <div className="font-mono text-[7.5px] text-slate-400 bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
             FPS: {fps} | FRAME #{frameCount} | E: {motionEnergy.toFixed(1)}
-          </div>
-          <div className="font-mono text-[8px] text-sky-200/90 bg-black/60 px-1.5 py-0.5 rounded border border-sky-500/20 backdrop-blur-sm">
-            YAW: {skinYaw.toFixed(1)}&deg; | PITCH: {skinPitch.toFixed(1)}&deg;
           </div>
         </div>
 
-        {/* Top-right Anti-Spoof status & Live Caching Badge */}
-        <div className="absolute top-2.5 right-3 z-20 pointer-events-none flex flex-col items-end gap-1">
-          <div className="font-mono text-[8.5px] text-emerald-300 bg-black/75 px-2 py-0.5 rounded border border-emerald-500/30 backdrop-blur-sm flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>LAPLACIAN: {laplacianVariance.toFixed(1)} [ACTIVE]</span>
-          </div>
-          {cachedCount > 0 && (
-            <div className={`font-mono text-[8.5px] px-2 py-0.5 rounded border backdrop-blur-sm flex items-center gap-1 ${
+        {/* Top-center Caching Badge */}
+        {cachedCount > 0 && (
+          <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+            <div className={`font-mono text-[8px] px-2 py-0.5 rounded border backdrop-blur-sm flex items-center gap-1 ${
               isFramePaused
                 ? 'text-amber-300 bg-amber-950/90 border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.4)]'
                 : 'text-emerald-300 bg-emerald-950/90 border-emerald-400/50 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.4)]'
             }`}>
-              {isFramePaused ? <Pause className="w-3 h-3 text-amber-400" /> : <Database className="w-3 h-3 text-emerald-400" />}
+              {isFramePaused ? <Pause className="w-2.5 h-2.5 text-amber-400" /> : <Database className="w-2.5 h-2.5 text-emerald-400" />}
               <span>
                 CACHED: {cachedCount} FRAMES [C:{poseCounts.CENTER} L:{poseCounts.LEFT} R:{poseCounts.RIGHT} B:{poseCounts.BLINK ?? poseCounts.UP}]
                 {isFramePaused && <span className="ml-1 text-amber-300 font-bold uppercase">[PAUSED]</span>}
               </span>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Command Transition Pause Banner Overlay */}
         {transitionBanner && transitionBanner.visible && (
@@ -1468,79 +1679,13 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         )}
 
         {/* ======================================================== */}
-        {/* Open Full-Viewport Tactical HUD Reticles (No Oval / No Dark Vignette) */}
+        {/* Traditional Geometric Pattern Blueprint HUD Engine       */}
+        {/* (Matching Pictures 1 through 7: Bounding Box, Blue Center*/}
+        {/* Lines with Arrows, Key Points, Facial Triangle, Jawline  */}
+        {/* Profile Angle ~90° Indicator, Red Calipers, 5 Checks)    */}
         {/* ======================================================== */}
         {!verifiedPayload && (
-          <svg
-            className="absolute inset-0 w-full h-full pointer-events-none z-10"
-            viewBox="0 0 480 360"
-            preserveAspectRatio="xMidYMid meet"
-          >
-            {/* Precision Corner Brackets */}
-            <path
-              d="M 32 60 L 32 32 L 60 32"
-              fill="none"
-              stroke={getOvalStrokeColor()}
-              strokeWidth="2.5"
-              className="transition-colors duration-300"
-            />
-            <path
-              d="M 448 60 L 448 32 L 420 32"
-              fill="none"
-              stroke={getOvalStrokeColor()}
-              strokeWidth="2.5"
-              className="transition-colors duration-300"
-            />
-            <path
-              d="M 32 300 L 32 328 L 60 328"
-              fill="none"
-              stroke={getOvalStrokeColor()}
-              strokeWidth="2.5"
-              className="transition-colors duration-300"
-            />
-            <path
-              d="M 448 300 L 448 328 L 420 328"
-              fill="none"
-              stroke={getOvalStrokeColor()}
-              strokeWidth="2.5"
-              className="transition-colors duration-300"
-            />
-
-            {/* Subtle center crosshair guide */}
-            <line
-              x1="225"
-              y1="180"
-              x2="255"
-              y2="180"
-              stroke="rgba(56, 189, 248, 0.4)"
-              strokeWidth="1.5"
-            />
-            <line
-              x1="240"
-              y1="165"
-              x2="240"
-              y2="195"
-              stroke="rgba(56, 189, 248, 0.4)"
-              strokeWidth="1.5"
-            />
-
-            {/* Real-time Facial Landmark Reticles */}
-            {landmarks && landmarks.isValidLandmarks && (
-              <g className="pointer-events-none opacity-70">
-                <circle cx={landmarks.leftEye.x * 1.5} cy={landmarks.leftEye.y * 1.5} r="3.5" fill="#38bdf8" />
-                <circle cx={landmarks.rightEye.x * 1.5} cy={landmarks.rightEye.y * 1.5} r="3.5" fill="#38bdf8" />
-                <circle cx={landmarks.noseTip.x * 1.5} cy={landmarks.noseTip.y * 1.5} r="3" fill="#34d399" />
-                <line
-                  x1={(landmarks.mouthCenter.x - 12) * 1.5}
-                  y1={landmarks.mouthCenter.y * 1.5}
-                  x2={(landmarks.mouthCenter.x + 12) * 1.5}
-                  y2={landmarks.mouthCenter.y * 1.5}
-                  stroke="#38bdf8"
-                  strokeWidth="1.5"
-                />
-              </g>
-            )}
-          </svg>
+          <GeometricFacePatternHUD result={liveGeometricResult} width={480} height={360} />
         )}
 
         {/* ======================================================== */}
@@ -1612,12 +1757,12 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
 
             {/* Pose 1 Completed badge */}
             {poseProgress >= 100 ? (
-              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95">
+              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95 mb-10">
                 <Check className="w-4 h-4 text-emerald-400" />
                 <span>CENTER POSITION VERIFIED</span>
               </div>
             ) : (
-              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-2">
+              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-10">
                 <div
                   className="bg-sky-400 h-full transition-all duration-150 shadow-[0_0_10px_#38bdf8]"
                   style={{ width: `${poseProgress}%` }}
@@ -1645,12 +1790,12 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
 
             {/* Completed badge */}
             {poseProgress >= 100 ? (
-              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95">
+              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95 mb-10">
                 <Check className="w-4 h-4 text-emerald-400" />
                 <span>LEFT PROFILE VERIFIED</span>
               </div>
             ) : (
-              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-2">
+              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-10">
                 <div
                   className="bg-indigo-400 h-full transition-all duration-150 shadow-[0_0_10px_#818cf8]"
                   style={{ width: `${poseProgress}%` }}
@@ -1678,12 +1823,12 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
 
             {/* Completed badge */}
             {poseProgress >= 100 ? (
-              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95">
+              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95 mb-10">
                 <Check className="w-4 h-4 text-emerald-400" />
                 <span>RIGHT PROFILE VERIFIED</span>
               </div>
             ) : (
-              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-2">
+              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-10">
                 <div
                   className="bg-indigo-400 h-full transition-all duration-150 shadow-[0_0_10px_#818cf8]"
                   style={{ width: `${poseProgress}%` }}
@@ -1715,12 +1860,12 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
 
             {/* Completed badge */}
             {poseProgress >= 100 ? (
-              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95">
+              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95 mb-10">
                 <Check className="w-4 h-4 text-emerald-400" />
                 <span>EYE BLINK LIVENESS VERIFIED</span>
               </div>
             ) : (
-              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-2">
+              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-10">
                 <div
                   className="bg-sky-400 h-full transition-all duration-150 shadow-[0_0_10px_#38bdf8]"
                   style={{ width: `${poseProgress}%` }}

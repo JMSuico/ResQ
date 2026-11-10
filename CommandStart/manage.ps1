@@ -666,11 +666,12 @@ function Show-MainMenu {
         Write-Host "  [13] HARD HOT REFRESH (Purge Vite caches & restart)"
         Write-Host "  [14] CLEAN BUILD / REBUILD (.NET clean & build, frontend check)"
         Write-Host "  [15] DOCKER BUILD / REBUILD (Compose down, rebuild, boot)"
+        Write-Host "  [16] AUTO-INSTALL ALL REQUIREMENTS (.NET 10, Node.js, SSMS/PG, npm modules)" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "  [0]  Exit Console"
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
 
-        $choice = Read-Host "Select an Option [0-15]"
+        $choice = Read-Host "Select an Option [0-16]"
 
         switch ($choice) {
             "1"  { Start-AllEngines; Pause-Console }
@@ -688,8 +689,17 @@ function Show-MainMenu {
             "13" { Invoke-HardHotRefresh; Pause-Console }
             "14" { Invoke-CleanRebuild; Pause-Console }
             "15" { Invoke-DockerRebuild; Pause-Console }
+            "16" { 
+                $installScript = Join-Path $PSScriptRoot "install_requirements.ps1"
+                if (Test-Path $installScript) {
+                    & $installScript
+                } else {
+                    Write-Err "Installer script not found at $installScript"
+                }
+                Pause-Console 
+            }
             "0"  { Write-Host "Exiting ResQTrack Management Console. Goodbye!" -ForegroundColor Cyan; break }
-            default { Write-Warn "Invalid choice. Please enter a number between 0 and 15."; Start-Sleep -Milliseconds 800 }
+            default { Write-Warn "Invalid choice. Please enter a number between 0 and 16."; Start-Sleep -Milliseconds 800 }
         }
     }
 }
@@ -704,6 +714,10 @@ if ($Action) {
         "refresh"      { Invoke-HardHotRefresh }
         "rebuild"      { Invoke-CleanRebuild }
         "docker"       { Invoke-DockerRebuild }
+        "install"      { 
+            $installScript = Join-Path $PSScriptRoot "install_requirements.ps1"
+            & $installScript
+        }
         default        { Show-MainMenu }
     }
 } else {
