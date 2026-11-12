@@ -15,6 +15,9 @@ public class User
     [Required, MaxLength(180)]
     public string Email { get; set; } = string.Empty;
 
+    [MaxLength(100)]
+    public string DisplayName { get; set; } = string.Empty;
+
     [MaxLength(80)]
     public string EmployeeOrResidentId { get; set; } = string.Empty;
 
@@ -38,6 +41,18 @@ public class User
 
     public bool FaceVerified { get; set; } = false;
 
+    [MaxLength(40)]
+    public string IdentityVerificationStatus { get; set; } = "PendingReview";
+
+    [MaxLength(40)]
+    public string FacialVerificationStatus { get; set; } = "PendingReview";
+
+    [MaxLength(60)]
+    public string IdentityVerificationProvider { get; set; } = "ManualIdentityVerificationProvider";
+
+    [MaxLength(60)]
+    public string FacialVerificationProvider { get; set; } = "ManualFacialReviewProvider";
+
     [MaxLength(50)]
     public string? ValidIdType { get; set; }
 
@@ -45,7 +60,16 @@ public class User
     public string? IdCapturePath { get; set; }
 
     [MaxLength(500)]
+    public string? IdBackCapturePath { get; set; }
+
+    [MaxLength(500)]
     public string? FaceCapturePath { get; set; }
+
+    [MaxLength(20)]
+    public string? Weight { get; set; }
+
+    [MaxLength(20)]
+    public string? Height { get; set; }
 
     [MaxLength(150)]
     public string? DepartmentOrBarangay { get; set; }
@@ -184,6 +208,9 @@ public class User
     public ICollection<Session> Sessions { get; set; } = new List<Session>();
     public ICollection<Report> Reports { get; set; } = new List<Report>();
     public ICollection<AlertReadState> AlertReadStates { get; set; } = new List<AlertReadState>();
+    public ICollection<IdentityVerificationRecord> IdentityVerificationRecords { get; set; } = new List<IdentityVerificationRecord>();
+    public ICollection<BiometricEnrollment> BiometricEnrollments { get; set; } = new List<BiometricEnrollment>();
+    public ICollection<UserConsent> UserConsents { get; set; } = new List<UserConsent>();
 
     // --- Universal Lambdas (Expression-Bodied Helpers) ---
     public string FullAddress =>
@@ -191,6 +218,11 @@ public class User
 
     public string ComputedFullName =>
         string.Join(" ", new[] { FirstName, MiddleName, Surname, Suffix }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
+    public string EffectiveDisplayName =>
+        !string.IsNullOrWhiteSpace(DisplayName)
+            ? DisplayName
+            : (!string.IsNullOrWhiteSpace(FullName) ? FullName : ComputedFullName);
 
     public void SoftDelete(string deletedBy) =>
         (IsDeleted, DeletedAt, DeletedBy, UpdatedAt) = (true, DateTime.UtcNow, deletedBy, DateTime.UtcNow);

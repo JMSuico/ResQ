@@ -1,10 +1,10 @@
 # ==============================================================================
 # ResQTrack Incident AI System Detection -- Master Multi-Container Topology
 # Services:
-#   1. resqtrack-backend     (:5000) - .NET 10 Web API Core Engine
-#   2. resqtrack-admin       (:5174) - LDRRMO Admin Executive Command Center
-#   3. resqtrack-responders  (:5173) - Emergency Responders (RHU / Fire / PNP)
-#   4. resqtrack-civilian    (:5175) - Civilian SOS Emergency Incident Portal
+#   1. resqtrack-backend     (:1999) - .NET 10 Web API Core Engine
+#   2. resqtrack-admin       (:1996) - LDRRMO Admin Executive Command Center
+#   3. resqtrack-responders  (:1997) - Emergency Responders (RHU / Fire / PNP)
+#   4. resqtrack-civilian    (:1998) - Civilian SOS Emergency Incident Portal
 #   5. resqtrack-cache       (:6379) - Redis 7 Alpine Caching & Session Store
 #   6. resqtrack-db-primary  (:5432) - PostgreSQL 16 Alpine Primary Relational DB
 #   7. resqtrack-db-replica  (:5433) - PostgreSQL 16 Alpine Standby Read Replica
@@ -102,14 +102,14 @@ services:
     container_name: resqtrack-api-backend
     restart: unless-stopped
     environment:
-      ASPNETCORE_URLS: http://0.0.0.0:5000
+      ASPNETCORE_URLS: http://0.0.0.0:1999
       ASPNETCORE_ENVIRONMENT: Production
       DatabaseProvider: PostgreSql
       ConnectionStrings__PostgreSqlConnection: Host=resqtrack-db-primary;Port=5432;Database=ResQTrackDb;Username=postgres;Password=YourPassword123!;
       ConnectionStrings__PostgreSqlConnection_Replica: Host=resqtrack-db-replica;Port=5432;Database=ResQTrackDb;Username=postgres;Password=YourPassword123!;
       RedisConnection: resqtrack-cache:6379
     ports:
-      - "5000:5000"
+      - "1999:1999"
     depends_on:
       resqtrack-db-primary:
         condition: service_healthy
@@ -119,7 +119,7 @@ services:
       - resqtrack-network
 
   # ----------------------------------------------------------------------------
-  # 5. Dedicated LDRRMO Admin Executive Command Center (:5174)
+  # 5. Dedicated LDRRMO Admin Executive Command Center (:1996)
   # ----------------------------------------------------------------------------
   resqtrack-admin:
     build:
@@ -128,10 +128,10 @@ services:
     container_name: resqtrack-admin-ui
     restart: unless-stopped
     environment:
-      PORT: 5174
-      BACKEND_URL: http://resqtrack-backend:5000
+      PORT: 1996
+      BACKEND_URL: http://resqtrack-backend:1999
     ports:
-      - "5174:5174"
+      - "1996:1996"
     volumes:
       - "./Project system ENGINE/Frontend/src:/app/src"
       - "./Project system ENGINE/Frontend/index.html:/app/index.html"
@@ -142,7 +142,7 @@ services:
       - resqtrack-network
 
   # ----------------------------------------------------------------------------
-  # 6. Dedicated Emergency Responders Portal (:5173) (RHU / Fire / PNP)
+  # 6. Dedicated Emergency Responders Portal (:1997) (RHU / Fire / PNP)
   # ----------------------------------------------------------------------------
   resqtrack-responders:
     build:
@@ -151,10 +151,10 @@ services:
     container_name: resqtrack-responders-ui
     restart: unless-stopped
     environment:
-      PORT: 5173
-      BACKEND_URL: http://resqtrack-backend:5000
+      PORT: 1997
+      BACKEND_URL: http://resqtrack-backend:1999
     ports:
-      - "5173:5173"
+      - "1997:1997"
     volumes:
       - "./Project system ENGINE/Frontend/src:/app/src"
       - "./Project system ENGINE/Frontend/index.html:/app/index.html"
@@ -165,7 +165,7 @@ services:
       - resqtrack-network
 
   # ----------------------------------------------------------------------------
-  # 7. Dedicated Civilian Emergency SOS Portal (:5175)
+  # 7. Dedicated Civilian Emergency SOS Portal (:1998)
   # ----------------------------------------------------------------------------
   resqtrack-civilian:
     build:
@@ -174,10 +174,10 @@ services:
     container_name: resqtrack-civilian-ui
     restart: unless-stopped
     environment:
-      PORT: 5175
-      BACKEND_URL: http://resqtrack-backend:5000
+      PORT: 1998
+      BACKEND_URL: http://resqtrack-backend:1999
     ports:
-      - "5175:5175"
+      - "1998:1998"
     volumes:
       - "./Project system ENGINE/Frontend/src:/app/src"
       - "./Project system ENGINE/Frontend/index.html:/app/index.html"

@@ -74,6 +74,16 @@ export interface ExtractedFieldsPayload {
   readonly height?: string;
   readonly licenseNumber?: string;
   readonly rankOrTitle?: string;
+  readonly nationality?: string;
+  readonly agencyCode?: string;
+  readonly bloodType?: string;
+  readonly eyesColor?: string;
+  readonly dlCodes?: string;
+  readonly restrictions?: string;
+  readonly conditions?: string;
+  readonly cardSerialNumber?: string;
+  readonly profession?: string;
+  readonly registrationDate?: string;
 }
 
 export interface WorkerIdScanResult {
@@ -255,7 +265,6 @@ export const ocrFieldRegion = (
       const dd = dateDigits.slice(6, 8);
       if (mm.startsWith('9')) mm = '0' + mm[1];
       if (yyyy.startsWith('29')) yyyy = '20' + yyyy.slice(2);
-      if (yyyy === '2008' || yyyy === '2009' || yyyy === '2998' || yyyy === '2000' || yyyy === '2006') yyyy = '2004';
       repaired = `${yyyy}/${mm}/${dd}`;
     }
   }
@@ -330,29 +339,65 @@ export const executeFullCardScan = (
     ];
     const frameAspect = Math.max(width, height) / Math.max(1, Math.min(width, height));
 
-    // Measure interior edge stroke density across the uploaded image (excluding a 5% margin)
+    // Measure interior edge stroke density and compute projection profiles to isolate card from desk/tabletop
     let interiorEdgeCount = 0;
     let interiorPixelCount = 0;
-    const minX = Math.floor(width * 0.05);
-    const maxX = Math.ceil(width * 0.95);
-    const minY = Math.floor(height * 0.05);
-    const maxY = Math.ceil(height * 0.95);
-    for (let y = minY; y < maxY; y += 2) {
+    const colEdges = new Int32Array(width);
+    const rowEdges = new Int32Array(height);
+
+    for (let y = 0; y < height; y += 2) {
       const rowOffset = y * width;
-      for (let x = minX; x < maxX; x += 2) {
+      for (let x = 0; x < width; x += 2) {
         interiorPixelCount++;
         if (edges[rowOffset + x] > 0) {
           interiorEdgeCount++;
+          colEdges[x]++;
+          rowEdges[y]++;
         }
       }
     }
     const interiorStrokeRatio = interiorEdgeCount / Math.max(1, interiorPixelCount);
 
-    if (frameAspect >= 1.05 && frameAspect <= 2.45 && interiorStrokeRatio >= 0.005) {
+    // Determine active card bounding box to segment card from dark background/tabletop clutter
+    let maxColEdge = 0;
+    for (let x = 0; x < width; x++) if (colEdges[x] > maxColEdge) maxColEdge = colEdges[x];
+    let maxRowEdge = 0;
+    for (let y = 0; y < height; y++) if (rowEdges[y] > maxRowEdge) maxRowEdge = rowEdges[y];
+
+    const colThresh = Math.max(2, Math.floor(maxColEdge * 0.08));
+    const rowThresh = Math.max(2, Math.floor(maxRowEdge * 0.08));
+
+    let cropXMin = 0;
+    while (cropXMin < width * 0.35 && colEdges[cropXMin] < colThresh) cropXMin++;
+    let cropXMax = width - 1;
+    while (cropXMax > width * 0.65 && colEdges[cropXMax] < colThresh) cropXMax--;
+
+    let cropYMin = 0;
+    while (cropYMin < height * 0.35 && rowEdges[cropYMin] < rowThresh) cropYMin++;
+    let cropYMax = height - 1;
+    while (cropYMax > height * 0.65 && rowEdges[cropYMax] < rowThresh) cropYMax--;
+
+    const cropW = Math.max(10, cropXMax - cropXMin);
+    const cropH = Math.max(10, cropYMax - cropYMin);
+    const cropAspect = Math.max(cropW, cropH) / Math.min(cropW, cropH);
+
+    const activeCorners: Point2D[] =
+      cropAspect >= 1.25 && cropAspect <= 1.95 && (cropW < width * 0.95 || cropH < height * 0.95)
+        ? [
+            { x: cropXMin, y: cropYMin },
+            { x: cropXMax, y: cropYMin },
+            { x: cropXMax, y: cropYMax },
+            { x: cropXMin, y: cropYMax }
+          ]
+        : fullFrameCorners;
+
+    const resolvedAspect = activeCorners === fullFrameCorners ? frameAspect : cropAspect;
+
+    if (resolvedAspect >= 1.05 && resolvedAspect <= 2.45 && interiorStrokeRatio >= 0.005) {
       quadResult = {
-        corners: fullFrameCorners,
-        aspect: frameAspect,
-        score: 0.86
+        corners: activeCorners,
+        aspect: resolvedAspect,
+        score: activeCorners === fullFrameCorners ? 0.86 : 0.92
       };
       cardPresence = {
         ...cardPresence,
@@ -429,7 +474,7 @@ export const executeFullCardScan = (
     (l) => recognizeLineText(headerCrop.data, headerCrop.width, l.charBoxes).text
   );
 
-  let detectedCategory: GovernmentIdCategory = targetCategory || 'philsys';
+  let detectedCategory: GovernmentIdCategory = targetCategory || 'unknown';
   let classificationScore = targetCategory ? 0.35 : 0.0;
 
   const joinedHeaderText = headerTexts.join(' ');
@@ -660,8 +705,6 @@ export const executeFullCardScan = (
     const dobMatch = rawDob.match(/\b((?:19|20)\d{2})[-/.](0[1-9]|1[0-2])[-/.](0[1-9]|[12]\d|3[01])\b/);
     if (dobMatch) {
       dateOfBirth = `${dobMatch[1]}/${dobMatch[2]}/${dobMatch[3]}`;
-    } else if (rawDob.includes('20040220') || rawDob.includes('3035050') || rawDob.includes('304000045')) {
-      dateOfBirth = '2004/02/20';
     }
   }
 
@@ -747,7 +790,10 @@ export const executeFullCardScan = (
         idNumber: idNumber || undefined,
         licenseNumber: (detectedCategory === 'drivers' ? idNumber : undefined) || extractedMap['licenseNumber'] || undefined,
         employeeId: employeeId || undefined,
-        expirationDate: expirationDate || undefined
+        expirationDate: expirationDate || undefined,
+        cardSerialNumber: extractedMap['cardSerialNumber'] || extractedMap['serialNumber'] || undefined,
+        dlCodes: extractedMap['dlCodes'] || undefined,
+        conditions: extractedMap['conditions'] || undefined
       }
     : {
         fullname: prioritizedFullname || undefined,
@@ -764,7 +810,13 @@ export const executeFullCardScan = (
         address: cleanAddress || undefined,
         weight: cleanWeight || undefined,
         height: cleanHeight || undefined,
-        rankOrTitle: rankOrTitle || undefined
+        rankOrTitle: rankOrTitle || undefined,
+        nationality: extractedMap['nationality'] || undefined,
+        agencyCode: extractedMap['agencyCode'] || undefined,
+        bloodType: extractedMap['bloodType'] || undefined,
+        eyesColor: extractedMap['eyesColor'] || undefined,
+        dlCodes: extractedMap['dlCodes'] || undefined,
+        conditions: extractedMap['conditions'] || undefined
       };
 
   const hasCoreFields = Boolean(
@@ -792,7 +844,7 @@ export const executeFullCardScan = (
       : Boolean(hasCoreFields && rawConfidence >= 0.40);
 
   const confidence = scanSuccess
-    ? Math.max(rawConfidence, side === 'back' ? 0.78 : 0.68)
+    ? Number(Math.max(0.0, Math.min(1.0, rawConfidence)).toFixed(4))
     : Math.min(rawConfidence, 0.40);
 
   const confidenceTier: IdScanConfidenceTier = getIdScanConfidenceTier(confidence);

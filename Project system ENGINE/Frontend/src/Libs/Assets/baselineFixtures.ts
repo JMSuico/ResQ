@@ -16,64 +16,88 @@ import type { AnalyticsSummaryDto } from '@/Endpoints/analyticsApi';
 // ============================================================================
 export const BASELINE_INCIDENT_FIXTURES: IncidentFixture[] = [
   {
-    id: 'fix-c2-01',
-    fixtureCode: 'KAT-C2-001',
-    title: 'Katipunan Municipal Hall C2 Command Staging',
-    category: 'CommandCenter',
+    id: 'fix-marine-01',
+    fixtureCode: 'KAT-CST-001',
+    title: 'Katipunan Marine Emergency & Rescue Station',
+    category: 'MarineRescue',
     severity: 'Low',
-    latitude: 8.5147,
-    longitude: 123.2842,
+    latitude: 8.52100,
+    longitude: 123.28920,
     assignedUnitType: 'LDRRMO',
     isActive: true,
-    description: 'Central Katipunan Multi-Agency Command & Communications Headquarters'
+    description: 'Offshore coastal surveillance buoy and marine search-and-rescue beacon'
   },
   {
-    id: 'fix-med-02',
-    fixtureCode: 'KAT-RHU-002',
+    id: 'fix-beacon-02',
+    fixtureCode: 'KAT-BCN-002',
+    title: 'Katipunan Bay Telemetry Coordinate Beacon',
+    category: 'DistressBeacon',
+    severity: 'Low',
+    latitude: 8.51882,
+    longitude: 123.28714,
+    assignedUnitType: 'LDRRMO',
+    isActive: true,
+    description: 'Offshore marine GPS navigation and distress beacon marker'
+  },
+  {
+    id: 'fix-amb-03',
+    fixtureCode: 'KAT-AMB-003',
+    title: 'Coastal Sector Rapid Ambulance',
+    category: 'Ambulance',
+    severity: 'Medium',
+    latitude: 8.51593,
+    longitude: 123.28086,
+    assignedUnitType: 'RHU',
+    isActive: true,
+    description: 'Shoreline emergency ambulance rapid deployment staging'
+  },
+  {
+    id: 'fix-clinic-04',
+    fixtureCode: 'KAT-MED-004',
+    title: 'Katipunan Seaside Health & First-Aid Post',
+    category: 'MedicalEmergency',
+    severity: 'Low',
+    latitude: 8.51532,
+    longitude: 123.28299,
+    assignedUnitType: 'RHU',
+    isActive: true,
+    description: 'Seaside primary stabilization and casualty triage point'
+  },
+  {
+    id: 'fix-car-05',
+    fixtureCode: 'KAT-PAT-005',
+    title: 'Coastal Highway Security Patrol Car',
+    category: 'Vehicle',
+    severity: 'Low',
+    latitude: 8.51379,
+    longitude: 123.27750,
+    assignedUnitType: 'PNP',
+    isActive: true,
+    description: 'Arterial coastal patrol and traffic guidance vehicle'
+  },
+  {
+    id: 'fix-rhu-06',
+    fixtureCode: 'KAT-RHU-006',
     title: 'Katipunan Rural Health Unit Primary Trauma Facility',
     category: 'MedicalEmergency',
     severity: 'Medium',
-    latitude: 8.5165,
-    longitude: 123.2861,
+    latitude: 8.51015,
+    longitude: 123.28505,
     assignedUnitType: 'RHU',
     isActive: true,
-    description: 'EMS Ambulance dispatch bay and emergency obstetric stabilization suite'
+    description: 'Barangay Uno Poblacion emergency obstetric and trauma stabilization suite'
   },
   {
-    id: 'fix-fire-03',
-    fixtureCode: 'KAT-BFP-003',
-    title: 'BFP Municipal Fire Station & HazMat Depo',
-    category: 'StructuralFire',
-    severity: 'High',
-    latitude: 8.5122,
-    longitude: 123.2825,
-    assignedUnitType: 'FIRE',
-    isActive: true,
-    description: 'Engine company apparatus readiness & high-flow pressurized hydrant point'
-  },
-  {
-    id: 'fix-pnp-04',
-    fixtureCode: 'KAT-PNP-004',
-    title: 'PNP Katipunan Municipal Police Station',
-    category: 'CrimeOrSecurity',
-    severity: 'Medium',
-    latitude: 8.5178,
-    longitude: 123.2874,
-    assignedUnitType: 'PNP',
-    isActive: true,
-    description: 'Tactical patrol coordination base & community peace security grid'
-  },
-  {
-    id: 'fix-hwy-05',
-    fixtureCode: 'KAT-HWY-005',
-    title: 'Dipolog-Sindangan National Highway Junction Radar',
-    category: 'VehicularAccident',
-    severity: 'Critical',
-    latitude: 8.5105,
-    longitude: 123.2801,
+    id: 'fix-doc-07',
+    fixtureCode: 'KAT-DOC-007',
+    title: 'Poblacion Medical Officer Station',
+    category: 'Stethoscope',
+    severity: 'Low',
+    latitude: 8.51022,
+    longitude: 123.28663,
     assignedUnitType: 'RHU',
     isActive: true,
-    description: 'High-incidence arterial intersection equipped with optical sensor monitoring'
+    description: 'Dr. Maria Clara Santos MD on-scene clinical consultation'
   }
 ];
 

@@ -1,10 +1,10 @@
-# ResQTrack Incident AI -- Dedicated LDRRMO Admin Portal (:5174)
+# ResQTrack Incident AI -- Dedicated LDRRMO Admin Portal (:1996)
 FROM node:20-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-EXPOSE 5174
-ENV PORT=5174
-ENV BACKEND_URL=http://resqtrack-backend:5000
+EXPOSE 1996
+ENV PORT=1996
+ENV BACKEND_URL=http://resqtrack-backend:1999
 CMD ["npm", "run", "dev:admin"]

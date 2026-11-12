@@ -42,6 +42,8 @@ import {
   DEFAULT_VERIFICATION_CLOSE_SECONDS
 } from './radarPointerCategories';
 import { ImageLightboxModal, LightboxMediaItem } from './ImageLightboxModal';
+import { DeployRespondersModal } from './DeployRespondersModal';
+import { DutyUnit } from '@/Endpoints/responderOpsApi';
 import {
   calculateHaversineDistanceKm,
   calculateDynamicEtaMinutes
@@ -50,6 +52,7 @@ import { useFluidResposiveness, useDraggable } from '@/Hooks';
 
 export interface IncidentPinData {
   id: string;
+  title?: string;
   type: string;
   status: 'critical' | 'active' | 'resolved' | 'Responded' | 'Verified' | string;
   statusLabel?: string;
@@ -139,8 +142,8 @@ export const KATIPUNAN_MAX_PAN_BOUNDS: [[number, number], [number, number]] = [
   [8.5550, 123.3750]  // Northeast hard boundary stop
 ];
 
-export const KATIPUNAN_CENTER: [number, number] = [8.5125, 123.2842];
-export const DEFAULT_KATIPUNAN_ZOOM = 13;
+export const KATIPUNAN_CENTER: [number, number] = [8.51145, 123.28261];
+export const DEFAULT_KATIPUNAN_ZOOM = 15.25;
 export const MIN_KATIPUNAN_ZOOM = 12; // Strictly locks minimum zoom to Katipunan Municipal Sector
 export const MAX_KATIPUNAN_ZOOM = 19; // Ultra-high resolution satellite zoom
 const BOUNDS_PADDING: [number, number] = [16, 16];
@@ -149,6 +152,95 @@ const PAN_DURATION_SECONDS = 0.8;
 
 const DEFAULT_EVIDENCE_PHOTO =
   'https://images.unsplash.com/photo-1587745416684-47953f16f02f?auto=format&fit=crop&w=900&q=80';
+
+// Deterministic icon vector provider for tactical emerald pin badges matching reference system
+const getTacticalBadgeIconMarkup = (categoryOrType: string, metaSvg?: string): string => {
+  const norm = (categoryOrType || '').toLowerCase();
+
+  // 1. Marine Rescue / Emergency Station / Star of Life / Lifebuoy / ShieldPlus / Rescue Cross
+  if (
+    norm.includes('marine') ||
+    norm.includes('rescue') ||
+    norm.includes('buoy') ||
+    norm.includes('cst') ||
+    norm.includes('star') ||
+    norm.includes('lifebuoy')
+  ) {
+    return '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>';
+  }
+
+  // 2. Stethoscope / Doctor / Physician / On-Duty Medical Officer
+  if (
+    norm.includes('stethoscope') ||
+    norm.includes('doctor') ||
+    norm.includes('physician') ||
+    norm.includes('under_medical_care') ||
+    norm.includes('doc') ||
+    norm.includes('care')
+  ) {
+    return '<path d="M4.5 3h2v7a6 6 0 0 0 12 0V3h2"/><circle cx="18.5" cy="4" r="1.5"/><circle cx="5.5" cy="4" r="1.5"/><path d="M10.5 16v3a4 4 0 0 0 4 4h0a4 4 0 0 0 4-4v-1.5"/><circle cx="18.5" cy="17.5" r="2.5"/>';
+  }
+
+  // 3. Ambulance / EMS Van
+  if (
+    norm.includes('ambulance') ||
+    norm.includes('amb') ||
+    norm.includes('ems') ||
+    norm.includes('van')
+  ) {
+    return '<path d="M10 10H6"/><path d="M8 8v4"/><path d="M19 17h2c.6 0 1-.4 1-1v-4a2 2 0 0 0-2-2h-3l-2.4-3.6A2 2 0 0 0 13 6H5a2 2 0 0 0-2 2v8c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>';
+  }
+
+  // 4. Medical Emergency / Primary Trauma / Clinic / Hospital / First-Aid (Heart with Cross)
+  if (
+    norm.includes('medical') ||
+    norm.includes('trauma') ||
+    norm.includes('hospital') ||
+    norm.includes('heart') ||
+    norm.includes('clinic') ||
+    norm.includes('rhu') ||
+    norm.includes('health') ||
+    norm.includes('injur') ||
+    norm.includes('aid')
+  ) {
+    return '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M12 8v5"/><path d="M9.5 10.5h5"/>';
+  }
+
+  // 5. MapPin / Location Beacon / GPS Fixture / Target Marker
+  if (
+    norm.includes('distress') ||
+    norm.includes('beacon') ||
+    norm.includes('bcn') ||
+    norm.includes('pin') ||
+    norm.includes('point') ||
+    norm.includes('fixture') ||
+    norm.includes('gps')
+  ) {
+    return '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>';
+  }
+
+  // 6. Vehicle / Automobile / Patrol / Traffic
+  if (
+    norm.includes('vehicle') ||
+    norm.includes('car') ||
+    norm.includes('traffic') ||
+    norm.includes('mob') ||
+    norm.includes('patrol') ||
+    norm.includes('4w')
+  ) {
+    return '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>';
+  }
+
+  // 7. Fire / BFP
+  if (norm.includes('fire') || norm.includes('bfp')) {
+    return '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>';
+  }
+
+  return (
+    metaSvg ||
+    '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>'
+  );
+};
 
 const generateDeterministicIp = (seedId: string): string => {
   let hash = 0;
@@ -174,7 +266,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   centerLng,
   height,
   roleFilter,
-  showMedicHud = true,
+  showMedicHud = false,
   onMapReady,
   className = 'mapview__map',
   isMinimap: isMinimapProp = false,
@@ -187,6 +279,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   const accuracyCirclesLayerRef = useRef<L.LayerGroup | null>(null);
   const dispatchRoutesLayerRef = useRef<L.LayerGroup | null>(null);
   const respondersLayerRef = useRef<L.LayerGroup | null>(null);
+  const radarRingsLayerRef = useRef<L.LayerGroup | null>(null);
   const closedIncidentIdRef = useRef<string | null>(null);
   const markerInstancesRef = useRef<Map<string, { marker: L.Marker; circle?: L.Circle }>>(new Map());
 
@@ -200,6 +293,13 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   const [tickNow, setTickNow] = useState<number>(() => Date.now());
   const [lightboxOpen, setLightboxOpen] = useState<boolean>(false);
   const [calloutPoint, setCalloutPoint] = useState<{ x: number; y: number } | null>(null);
+  const [isDeployModalOpen, setIsDeployModalOpen] = useState<boolean>(false);
+  const [deployTargetIncident, setDeployTargetIncident] = useState<IncidentPinData | null>(null);
+
+  const isViewerMedic = useMemo(
+    () => (roleFilter || '').toUpperCase().includes('MEDIC') || (roleFilter || '').toUpperCase().includes('RHU'),
+    [roleFilter]
+  );
 
   const lastFocusedIdRef = useRef<string | null>(null);
   const animFrameRef = useRef<number | null>(null);
@@ -289,6 +389,10 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       map.off('zoomend', updateCalloutPosition);
     };
   }, [updateCalloutPosition]);
+
+  useEffect(() => {
+    updateCalloutPosition();
+  }, [activePointer, updateCalloutPosition]);
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -400,6 +504,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
           combined.push({
             id: m.id,
+            title: m.title,
             type: m.title,
             status: m.status || (m.severity === 'critical' ? 'critical' : 'active'),
             statusLabel: m.status || m.severity || 'Active',
@@ -480,6 +585,8 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
     const map = L.map(mapContainerRef.current, {
       zoomControl: false,
+      zoomSnap: 0.25,
+      zoomDelta: 0.5,
       minZoom: MIN_KATIPUNAN_ZOOM,
       maxZoom: MAX_KATIPUNAN_ZOOM,
       maxBounds: maxBounds,
@@ -508,18 +615,38 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
     const accuracyCirclesLayer = L.layerGroup().addTo(map);
     const dispatchRoutesLayer = L.layerGroup().addTo(map);
+    const radarRingsLayer = L.layerGroup().addTo(map);
     const respondersLayer = L.layerGroup().addTo(map);
     const markersLayer = L.layerGroup().addTo(map);
 
     accuracyCirclesLayerRef.current = accuracyCirclesLayer;
     dispatchRoutesLayerRef.current = dispatchRoutesLayer;
+    radarRingsLayerRef.current = radarRingsLayer;
     respondersLayerRef.current = respondersLayer;
     markersLayerRef.current = markersLayer;
     mapInstanceRef.current = map;
 
-    // Firmly fit the Katipunan Sector bounding box so that the entire municipal sector
-    // (from Nabilid/Tuburan on the West to Malugas/Punta on the East) is centered and displayed
-    map.fitBounds(homeBounds, { padding: BOUNDS_PADDING, animate: false });
+    // Firmly center and frame Katipunan Sector & Poblacion cluster matching tactical satellite view
+    map.setView(initialCenter, DEFAULT_KATIPUNAN_ZOOM, { animate: false });
+
+    // Draw initial tactical radar rings matching reference Katipunan Poblacion cluster
+    const initialRings: Array<{ center: [number, number]; radius: number; weight: number; opacity: number }> = [
+      { center: [8.51015, 123.28505], radius: 120, weight: 1.8, opacity: 0.85 }, // RHU Trauma Facility
+      { center: [8.51022, 123.28663], radius: 110, weight: 1.8, opacity: 0.85 }, // Doctor Stethoscope Station
+      { center: [8.51018, 123.28584], radius: 260, weight: 1.8, opacity: 0.70 }  // Enclosing Poblacion Cluster
+    ];
+    initialRings.forEach((r, idx) => {
+      const circle = L.circle(r.center, {
+        radius: r.radius,
+        color: '#10b981', // Crisp emerald green matching reference picture
+        weight: r.weight,
+        opacity: r.opacity,
+        fillColor: '#10b981',
+        fillOpacity: 0.04,
+        className: `resqtrack-radar-concentric-ring resqtrack-ring-${idx}`
+      });
+      radarRingsLayer.addLayer(circle);
+    });
 
     // Staggered layout size invalidation passes to prevent partial tile clipping
     requestAnimationFrame(() => {
@@ -592,8 +719,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
   const handleRecenterSector = useCallback(() => {
     if (!mapInstanceRef.current) return;
-    const homeBounds = L.latLngBounds(KATIPUNAN_SECTOR_BOUNDS[0], KATIPUNAN_SECTOR_BOUNDS[1]);
-    mapInstanceRef.current.fitBounds(homeBounds, { padding: BOUNDS_PADDING, animate: true });
+    mapInstanceRef.current.setView(KATIPUNAN_CENTER, DEFAULT_KATIPUNAN_ZOOM, { animate: true });
   }, []);
 
   const handleZoomIn = useCallback(() => {
@@ -622,10 +748,10 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   // Sync external selectedIncidentId
   useEffect(() => {
     if (!selectedIncidentId) {
-      if (activePointer) {
+      if (lastFocusedIdRef.current !== null) {
         setActivePointer(null);
+        lastFocusedIdRef.current = null;
       }
-      lastFocusedIdRef.current = null;
       return;
     }
     // If the user explicitly closed this callout, do not auto-reopen until closedIncidentIdRef is reset
@@ -679,38 +805,28 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         : 'opacity: 1;';
 
       const isCritical = (inc.severity || '').toLowerCase() === 'critical';
-      const isUnallocated = !inc.allocatedUnitCode && !inc.allocatedUnitId && !isResponded;
-      const isPulsing = (isUnallocated || isCritical) && !isResponded;
-      const pulseColor = isCritical ? '#ef4444' : '#f59e0b';
-      const glowAnimation = isCritical
-        ? 'resqtrackBeaconGlow 1.6s ease-in-out infinite'
-        : 'resqtrackAmberGlow 1.8s ease-in-out infinite';
+      const isPulsing = false;
+      const pulsingRingHtml = '';
 
-      const pulsingRingHtml = isPulsing
-        ? `
-          <span style="position:absolute;inset:-6px;border-radius:9999px;border:2.5px solid ${pulseColor};animation:resqtrackPulseRing 1.8s cubic-bezier(0,0,0.2,1) infinite;"></span>
-          <span style="position:absolute;inset:-2px;border-radius:9999px;background:${pulseColor};opacity:0.35;animation:resqtrackPulseRing 1.8s cubic-bezier(0,0,0.2,1) infinite;animation-delay:0.45s;"></span>
-          <span style="position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:9999px;background:${pulseColor};border:2px solid #ffffff;box-shadow:0 0 6px ${pulseColor};z-index:2;"></span>
-        `
-        : '';
+      const iconMarkup = getTacticalBadgeIconMarkup(
+        `${inc.category || ''} ${inc.pointerCategory || ''} ${inc.type || ''} ${meta.code || ''}`,
+        meta.svgPathMarkup
+      );
 
       const pinIcon = L.divIcon({
         className: 'resqtrack-tactical-pointer',
         html: `
-          <div style="position:relative;width:38px;height:38px;display:flex;align-items:center;justify-content:center;${paleStyle};transition:all 200ms ease;">
+          <div style="position:relative;width:42px;height:42px;display:flex;align-items:center;justify-content:center;${paleStyle};transition:all 200ms ease;cursor:pointer;">
             ${pulsingRingHtml}
-            <span style="position:absolute;inset:0;border-radius:9999px;background:${pointerBgColor};opacity:0.28;transform:scale(1.25);"></span>
-            <div style="position:relative;width:32px;height:32px;border-radius:9999px;background:${pointerBgColor};border:2px solid #ffffff;box-shadow:0 4px 14px rgba(0,0,0,0.65);${
-              isPulsing ? `animation:${glowAnimation};` : ''
-            }display:flex;align-items:center;justify-content:center;color:#ffffff;z-index:1;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-                ${meta.svgPathMarkup}
+            <div style="position:relative;width:38px;height:38px;border-radius:9999px;background:radial-gradient(circle at 35% 35%, #2dd4bf 0%, #0d9488 40%, #059669 75%, #064e3b 100%);border:2px solid rgba(255,255,255,0.95);box-shadow:0 4px 14px rgba(0,0,0,0.7), 0 0 10px rgba(13,148,136,0.6);display:flex;align-items:center;justify-content:center;color:#ffffff;z-index:1;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));">
+                ${iconMarkup}
               </svg>
             </div>
           </div>
         `,
-        iconSize: [38, 38],
-        iconAnchor: [19, 19]
+        iconSize: [42, 42],
+        iconAnchor: [21, 21]
       });
 
       // Smooth distress signal live repositioning:
@@ -747,17 +863,8 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         title: `${meta.label} — ${inc.id}`
       });
 
+      // Accuracy circles disabled to maintain clean tactical satellite view matching reference standard
       let accuracyCircle: L.Circle | undefined;
-      if (inc.gpsAccuracyMeters && inc.gpsAccuracyMeters > 0) {
-        accuracyCircle = L.circle([lat, lng], {
-          radius: Math.max(inc.gpsAccuracyMeters, MIN_ACCURACY_RADIUS_METERS),
-          color: pointerBgColor,
-          weight: 1.5,
-          fillColor: pointerBgColor,
-          fillOpacity: isPaleNonMedic ? 0.04 : 0.14
-        });
-        circlesLayer.addLayer(accuracyCircle);
-      }
 
       marker.on('click', (e) => {
         if (e && e.originalEvent) {
@@ -798,33 +905,24 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       const lng = Number(unit.lng);
       if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
 
-      const agencyUpper = (unit.agency || '').toUpperCase();
-      let agencyColor = '#0284c7'; // default sky
-      let badgeLetter = 'U';
-      if (agencyUpper.includes('FIRE') || agencyUpper.includes('BFP')) {
-        agencyColor = '#ea580c'; // fire orange
-        badgeLetter = 'F';
-      } else if (agencyUpper.includes('PNP') || agencyUpper.includes('POLICE')) {
-        agencyColor = '#2563eb'; // police blue
-        badgeLetter = 'P';
-      } else if (agencyUpper.includes('RHU') || agencyUpper.includes('MEDIC')) {
-        agencyColor = '#10b981'; // medical emerald
-        badgeLetter = 'M';
-      }
+      const responderSvg = getTacticalBadgeIconMarkup(
+        `${unit.agency || ''} ${unit.name || ''}`,
+        undefined
+      );
 
       const unitIcon = L.divIcon({
-        className: 'resqtrack-responder-unit-icon',
+        className: 'resqtrack-responder-unit-icon resqtrack-tactical-pointer',
         html: `
-          <div style="position:relative;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
-            <div style="position:relative;width:24px;height:24px;border-radius:6px;background:${agencyColor};border:2px solid #ffffff;box-shadow:0 3px 10px rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;color:#ffffff;transform:rotate(45deg);">
-              <div style="transform:rotate(-45deg);font-size:10px;font-weight:900;font-family:monospace;">
-                ${badgeLetter}
-              </div>
+          <div style="position:relative;width:42px;height:42px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+            <div style="position:relative;width:38px;height:38px;border-radius:9999px;background:radial-gradient(circle at 35% 35%, #2dd4bf 0%, #0d9488 40%, #059669 75%, #064e3b 100%);border:2px solid rgba(255,255,255,0.95);box-shadow:0 4px 14px rgba(0,0,0,0.7), 0 0 10px rgba(13,148,136,0.5);display:flex;align-items:center;justify-content:center;color:#ffffff;transition:transform 200ms ease;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));">
+                ${responderSvg}
+              </svg>
             </div>
           </div>
         `,
-        iconSize: [30, 30],
-        iconAnchor: [15, 15]
+        iconSize: [42, 42],
+        iconAnchor: [21, 21]
       });
 
       const marker = L.marker([unit.lat, unit.lng], {
@@ -834,7 +932,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
       marker.bindTooltip(
         `<div style="text-align:left;">` +
-          `<strong style="color:${agencyColor};">${unit.name}</strong><br/>` +
+          `<strong style="color:#2dd4bf;">${unit.name}</strong><br/>` +
           `Agency: ${unit.agency || 'Emergency Services'}<br/>` +
           `Status: <strong>${unit.status || 'OnDuty'}</strong>` +
         `</div>`,
@@ -844,6 +942,41 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       respondersLayer.addLayer(marker);
     });
   }, [allResponderUnits]);
+
+  // Render high-tech concentric radar sonar rings matching Katipunan Poblacion cluster
+  useEffect(() => {
+    const radarLayer = radarRingsLayerRef.current;
+    if (!radarLayer) return;
+
+    radarLayer.clearLayers();
+
+    // Draw tactical radar rings centered on active pointer or default Katipunan Poblacion cluster
+    const rings: Array<{ center: [number, number]; radius: number; weight: number; opacity: number }> =
+      activePointer && typeof activePointer.lat === 'number' && typeof activePointer.lng === 'number'
+        ? [
+            { center: [activePointer.lat, activePointer.lng], radius: 120, weight: 2.0, opacity: 0.9 },
+            { center: [activePointer.lat, activePointer.lng], radius: 240, weight: 1.8, opacity: 0.75 },
+            { center: [activePointer.lat, activePointer.lng], radius: 380, weight: 1.6, opacity: 0.6 }
+          ]
+        : [
+            { center: [8.51015, 123.28505], radius: 120, weight: 1.8, opacity: 0.85 }, // RHU Trauma Facility
+            { center: [8.51022, 123.28663], radius: 110, weight: 1.8, opacity: 0.85 }, // Doctor Stethoscope Station
+            { center: [8.51018, 123.28584], radius: 260, weight: 1.8, opacity: 0.70 }  // Enclosing Poblacion Cluster
+          ];
+
+    rings.forEach((r, idx) => {
+      const circle = L.circle(r.center, {
+        radius: r.radius,
+        color: '#10b981', // Crisp emerald green matching reference picture
+        weight: r.weight,
+        opacity: r.opacity,
+        fillColor: '#10b981',
+        fillOpacity: 0.04,
+        className: `resqtrack-radar-concentric-ring resqtrack-ring-${idx}`
+      });
+      radarLayer.addLayer(circle);
+    });
+  }, [activePointer]);
 
   // When a report is clicked, dynamically center map and draw proximity circles or lines to closest on-duty units
   useEffect(() => {
@@ -1005,8 +1138,10 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     }
     if (onRequestDeploy) {
       onRequestDeploy(inc);
-    } else if (typeof window !== 'undefined') {
-      window.location.assign('/responder/request-deploy');
+    } else {
+      // In-place modal deployment without navigation or session drop
+      setDeployTargetIncident(inc);
+      setIsDeployModalOpen(true);
     }
   };
 
@@ -1071,12 +1206,46 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           100% { transform: scale(2.2); opacity: 0; }
         }
         @keyframes resqtrackBeaconGlow {
-          0%, 100% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.7), 0 0 20px rgba(239, 68, 68, 0.5); }
-          50% { box-shadow: 0 0 22px rgba(239, 68, 68, 0.95), 0 0 35px rgba(239, 68, 68, 0.75); }
+          0%, 100% { box-shadow: 0 0 10px rgba(20, 184, 166, 0.8), 0 0 20px rgba(13, 148, 136, 0.6); }
+          50% { box-shadow: 0 0 22px rgba(45, 212, 191, 0.95), 0 0 35px rgba(20, 184, 166, 0.75); }
         }
         @keyframes resqtrackAmberGlow {
           0%, 100% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.7), 0 0 20px rgba(245, 158, 11, 0.5); }
           50% { box-shadow: 0 0 22px rgba(245, 158, 11, 0.95), 0 0 35px rgba(245, 158, 11, 0.75); }
+        }
+        @keyframes resqtrackRadarBreathe {
+          0%, 100% {
+            opacity: 0.85;
+            stroke-width: 1.8px;
+          }
+          50% {
+            opacity: 0.45;
+            stroke-width: 2.2px;
+          }
+        }
+        .resqtrack-radar-concentric-ring {
+          animation: resqtrackRadarBreathe 4s ease-in-out infinite;
+          pointer-events: none !important;
+        }
+        .resqtrack-ring-1 {
+          animation-delay: 0.9s;
+        }
+        .resqtrack-ring-2 {
+          animation-delay: 1.8s;
+        }
+        .leaflet-control-attribution {
+          background: rgba(11, 19, 41, 0.78) !important;
+          color: #94a3b8 !important;
+          font-size: 10px !important;
+          padding: 3px 8px !important;
+          border-radius: 4px !important;
+          margin: 0 0 5px 6px !important;
+          backdrop-filter: blur(4px) !important;
+          border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        }
+        .leaflet-control-attribution a {
+          color: #cbd5e1 !important;
+          text-decoration: none !important;
         }
         .tactical-map-tooltip {
           background: rgba(15, 23, 42, 0.95) !important;
@@ -1110,78 +1279,48 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         }
       `}</style>
 
-      {/* Top RHU Medic Radar HUD Overlay */}
+      {/* Top RHU Medic Radar HUD Overlay (Streamlined & Clean) */}
       {showMedicHud && (
-        <div className="absolute top-3 left-3 right-3 z-[400] flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-          <div className="flex flex-wrap items-center gap-1.5 bg-slate-950/90 border border-slate-800/90 backdrop-blur-md px-2.5 py-1.5 rounded-xl shadow-xl pointer-events-auto">
+        <div className="absolute top-3 left-3 z-[400] flex items-center gap-1.5 pointer-events-none">
+          <div className="flex items-center gap-1.5 bg-slate-950/85 border border-slate-800/90 backdrop-blur-md px-2 py-1 rounded-xl shadow-xl pointer-events-auto">
             <button
               type="button"
-              onClick={() => setSortMode('ALL')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                sortMode === 'ALL'
-                  ? 'bg-sky-600 text-white shadow'
-                  : 'bg-slate-900 text-slate-400 hover:text-white'
-              }`}
-            >
-              <Filter className="w-3 h-3" />
-              <span>SORT / ALL (16)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSortMode('FOR_MEDICS')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              onClick={() => setSortMode((prev) => (prev === 'ALL' ? 'FOR_MEDICS' : 'ALL'))}
+              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center gap-1 cursor-pointer ${
                 sortMode === 'FOR_MEDICS'
                   ? 'bg-emerald-600 text-white shadow'
                   : 'bg-slate-900 text-slate-400 hover:text-white'
               }`}
             >
-              <CheckCircle2 className="w-3 h-3" />
-              <span>SORT / FOR MEDICS (7)</span>
+              <Filter className="w-3 h-3" />
+              <span>{sortMode === 'FOR_MEDICS' ? 'MEDICS ONLY (7)' : 'ALL (16)'}</span>
             </button>
 
             <button
               type="button"
               onClick={handleTogglePaleNonMedic}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
+              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center gap-1 border cursor-pointer ${
                 pointerSettings.paleNonMedicEnabled
                   ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
                   : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
               }`}
-              title="Make 9 non-medic pointers pale to indicate they are not RHU Medic assignments"
+              title="Toggle pale non-medic pointers"
             >
               {pointerSettings.paleNonMedicEnabled ? (
                 <EyeOff className="w-3 h-3 text-amber-400" />
               ) : (
                 <Eye className="w-3 h-3" />
               )}
-              <span>
-                PALE NON-MEDIC: {pointerSettings.paleNonMedicEnabled ? 'ON' : 'OFF'}
-              </span>
+              <span>PALE: {pointerSettings.paleNonMedicEnabled ? 'ON' : 'OFF'}</span>
             </button>
-          </div>
 
-          <div className="flex items-center gap-1.5 bg-slate-950/90 border border-slate-800/90 backdrop-blur-md px-2.5 py-1.5 rounded-xl shadow-xl pointer-events-auto">
             <button
               type="button"
               onClick={() => setShowLegendDrawer((prev) => !prev)}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 flex items-center gap-1.5 cursor-pointer"
+              className="px-2 py-1 rounded-lg text-[10px] font-mono font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1 cursor-pointer"
             >
               <Layers className="w-3 h-3 text-sky-400" />
-              <span>16 POINTERS LEGEND</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleExpandMap}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold bg-sky-950/90 hover:bg-sky-900 text-sky-200 border border-sky-700/70 flex items-center gap-1.5 cursor-pointer"
-            >
-              {effectiveExpanded ? (
-                <Minimize2 className="w-3 h-3" />
-              ) : (
-                <Maximize2 className="w-3 h-3" />
-              )}
-              <span>{effectiveExpanded ? 'EXIT FULL MAP' : 'EXPAND MAP'}</span>
+              <span>LEGEND</span>
             </button>
           </div>
         </div>
@@ -1594,7 +1733,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                     </span>
                   </button>
 
-                  {activeCategoryMeta.isMedicAllowed ? (
+                  {(!isViewerMedic || activeCategoryMeta.isMedicAllowed) ? (
                     <button
                       type="button"
                       onClick={() => handleRequestDeployClick(activePointer)}
@@ -1651,48 +1790,49 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         }}
       />
 
-      {/* Floating Tactical Zoom & Recenter Controls Bar */}
+      {/* Floating Tactical Zoom & Recenter Controls Bar (Matching Reference Picture) */}
       {!hideZoomControls && (
-        <div className="absolute bottom-5 right-3 z-[400] flex flex-col items-center gap-1.5 bg-slate-950/90 border border-slate-700/80 backdrop-blur-md p-1.5 rounded-xl shadow-2xl pointer-events-auto">
+        <div className="absolute bottom-4 right-4 z-[400] flex flex-col items-center bg-[#0b1329]/95 border border-slate-700/80 backdrop-blur-md rounded-xl shadow-2xl p-0.5 pointer-events-auto select-none divide-y divide-slate-800/80">
           <button
             type="button"
             onClick={handleZoomIn}
-            className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 hover:text-white flex items-center justify-center border border-slate-700/60 transition-all cursor-pointer shadow-sm"
+            className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-lg transition-all cursor-pointer"
             title="Zoom In (+)"
             aria-label="Zoom in"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 stroke-[2.2]" />
           </button>
           <button
             type="button"
             onClick={handleZoomOut}
-            className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 hover:text-white flex items-center justify-center border border-slate-700/60 transition-all cursor-pointer shadow-sm"
+            className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-lg transition-all cursor-pointer"
             title="Zoom Out (-)"
             aria-label="Zoom out"
           >
-            <Minus className="w-4 h-4" />
+            <Minus className="w-4 h-4 stroke-[2.2]" />
           </button>
-          <div className="w-5 h-px bg-slate-700/60 my-0.5" />
           <button
             type="button"
             onClick={handleRecenterSector}
-            className="w-8 h-8 rounded-lg bg-sky-950/80 hover:bg-sky-900 active:scale-95 text-sky-400 hover:text-sky-200 flex items-center justify-center border border-sky-600/50 transition-all cursor-pointer shadow-sm"
+            className="w-8 h-8 flex items-center justify-center text-[#38bdf8] hover:text-cyan-300 hover:bg-slate-800/60 rounded-lg transition-all cursor-pointer"
             title="Recenter Katipunan Sector View (7109)"
             aria-label="Recenter on Katipunan Sector"
           >
-            <Crosshair className="w-4 h-4" />
+            <Crosshair className="w-4 h-4 stroke-[2.2] text-[#38bdf8]" />
           </button>
-          {(onExpandMap || onToggleExpand) && (
-            <button
-              type="button"
-              onClick={onToggleExpand || onExpandMap}
-              className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-200 hover:text-white flex items-center justify-center border border-slate-700/60 transition-all cursor-pointer shadow-sm"
-              title={isExpanded ? 'Minimize Map' : 'Maximize Map'}
-              aria-label="Toggle map size"
-            >
-              {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleExpandMap}
+            className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-lg transition-all cursor-pointer"
+            title={effectiveExpanded ? 'Minimize Map' : 'Maximize Map'}
+            aria-label="Toggle map size"
+          >
+            {effectiveExpanded ? (
+              <Minimize2 className="w-4 h-4 stroke-[2.2]" />
+            ) : (
+              <Maximize2 className="w-4 h-4 stroke-[2.2]" />
+            )}
+          </button>
         </div>
       )}
 
@@ -1708,6 +1848,29 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             ? `${activeCategoryMeta.label} — ${activePointer.id}`
             : 'Incident Evidence Inspection'
         }
+      />
+
+      {/* Tactical Multi-Agency Responder Deployment & Workload Optimization Deck */}
+      <DeployRespondersModal
+        isOpen={isDeployModalOpen}
+        onClose={() => {
+          setIsDeployModalOpen(false);
+          setDeployTargetIncident(null);
+        }}
+        incident={deployTargetIncident}
+        rosterProp={responders as unknown as DutyUnit[]}
+        onDeploySuccess={(unit, inc) => {
+          setActivePointer((prev) =>
+            prev && prev.id === inc.id
+              ? {
+                  ...prev,
+                  status: 'Allocated',
+                  allocatedUnitCode: unit.unitCode,
+                  allocatedUnitId: unit.id
+                }
+              : prev
+          );
+        }}
       />
     </div>
   );

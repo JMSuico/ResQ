@@ -18,6 +18,7 @@ import {
   type CharBoxInput
 } from './glyphMatcher';
 import { FONT_BANK } from './fontBank';
+import { parseDynamicIdAnchors } from './dynamicAnchorParser';
 import {
   repairAlphaField,
   repairNumericField,
@@ -497,7 +498,6 @@ export const postProcessFieldText = (
         const dd = digits.slice(6, 8);
         if (mm.startsWith('9')) mm = '0' + mm[1];
         if (yyyy.startsWith('29')) yyyy = '20' + yyyy.slice(2);
-        if (yyyy === '2008' || yyyy === '2009' || yyyy === '2998' || yyyy === '2000' || yyyy === '2006') yyyy = '2004';
         return `${yyyy}/${mm}/${dd}`;
       }
       return repairedNum;
@@ -941,468 +941,27 @@ export const isPascalCaseLabel = (text: string): boolean => {
 export const parseFieldsByPascalCaseIndications = (
   input: string | readonly ExtractedLine[]
 ): ParsedIdCardFields => {
-  const result: {
-    idNumber?: string;
-    lastName?: string;
-    firstName?: string;
-    middleName?: string;
-    fullName?: string;
-    birthDate?: string;
-    sex?: string;
-    address?: string;
-    nationality?: string;
-    weight?: string;
-    height?: string;
-    expirationDate?: string;
-    agencyCode?: string;
-    bloodType?: string;
-    eyesColor?: string;
-    dlCodes?: string;
-    conditions?: string;
-  } = {};
-
-  const rawLines: string[] = typeof input === 'string'
-    ? sanitizeOcrTextAndLigatures(input, false).split('\n').map((l) => l.trim()).filter(Boolean)
-    : sortBoxesByToleranceReadingOrder(
-        input.map((l) => ({ x: l.box.x, y: l.box.y, text: l.text })),
-        8
-      )
-      .map((item) => sanitizeOcrTextAndLigatures(item.text, false))
-      .filter(Boolean);
-
   const fullText = typeof input === 'string'
     ? input
-    : rawLines.join('\n');
-
-  // Helper repair functions
-  const repairLicense = (val: string): string => {
-    const clean = val.replace(/[^A-Za-z0-9-]/g, '').toUpperCase();
-    if (clean.includes('Y7E') || clean.includes('735') || clean.includes('302560') || clean.includes('296332')) {
-      return 'J07-22-302560';
-    }
-    const m = clean.match(/([A-Z0-9]{3})-?([0-9]{2})-?([0-9]{6})/);
-    if (m) {
-      let region = m[1];
-      // Do not accept three alphabetic letters as region code (e.g. ATE from DATE)
-      if (/^[A-Z]{3}$/.test(region)) {
-        return '';
-      }
-      // First character is always an alphabetic letter
-      if (region.startsWith('3') || region.startsWith('9') || region.startsWith('Y') || region.startsWith('7')) region = 'J' + region.slice(1);
-      else if (region.startsWith('0') || region.startsWith('O')) region = 'D' + region.slice(1);
-      else if (region.startsWith('1') || region.startsWith('I')) region = 'N' + region.slice(1);
-
-      const rDigits = region.slice(1).replace(/O/g, '0').replace(/I/g, '1').replace(/Z/g, '2').replace(/E/g, '0').replace(/3/g, '0').replace(/5/g, '7');
-      const year = m[2].replace(/O/g, '0').replace(/Z/g, '2');
-      const serial = m[3].replace(/O/g, '0').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
-      return `${region[0]}${rDigits}-${year}-${serial}`;
-    }
-    return val;
-  };
-
-  const repairDate = (val: string): string => {
-    const clean = val.replace(/[^0-9/ -]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (clean.includes('304000045') || clean.includes('3035050') || clean.includes('20040220')) {
-      return '2004/02/20';
-    }
-    const m = clean.match(/\b((?:19|20)\d{2})[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])\b/);
-    if (m) {
-      let yr = m[1];
-      if (yr === '2006' && m[2] === '02' && m[3] === '20') {
-        yr = '2004';
-      }
-      return `${yr}/${m[2]}/${m[3]}`;
-    }
-    const expConfusion = clean.match(/\b([79]0[27][27])[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])\b/);
-    if (expConfusion) {
-      return `2027/${expConfusion[2]}/${expConfusion[3]}`;
-    }
-    const fuzzy = clean.match(/\b([12][09O][0-9O]{2})[-/]([0-9O]{2})[-/]([0-9O]{2})\b/);
-    if (fuzzy) {
-      const yr = fuzzy[1].replace(/O/g, '0');
-      const mo = fuzzy[2].replace(/O/g, '0');
-      const dy = fuzzy[3].replace(/O/g, '0');
-      return `${yr}/${mo}/${dy}`;
-    }
-    return '';
-  };
-
-  const cleanPersonName = (raw: string): string => {
-    return raw
-      .toUpperCase()
-      .replace(/\bSNNCO\b|\bSU1CO\b|\bSVICO\b|\bSUNCO\b|\bOFTHI\b|-MMM\s*XO/g, 'SUICO')
-      .replace(/\bGHONMARK\b|\bJH0NMARK\b|\bJHONMARN\b|\bJHONMARNC\b|\bMRQZMM[^\n,]*|\bLRNSCDCDJNLL[^\n,]*/g, 'JHONMARK')
-      .replace(/JHONMARNCAMACA|JHONMARKAMACA|\bFFNRMNMFR\b|\bLMMMMMM[^\n,]*/g, 'AMACA')
-      .replace(/[^A-ZÑ\s,-]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  };
-
-  const repairAddress = (val: string): string => {
-    const clean = val
-      .toUpperCase()
-      .replace(/M3RTE9Z93[0O]|M3RTE\s*9Z93[0O]|M3RTE9Z93O/gi, 'NORTE, 7110')
-      .replace(/^[\s,.\-|IMZNOADRES_]+(?=POBLACION)/i, '')
-      .replace(/\bSP38LACN3N\b|\bSP38LACNON\b|\bPO3LACNON\b|\bPOBLACN3N\b|\bACNOM\b/gi, 'POBLACION')
-      .replace(/\bMANUNCAN\b|\bMANUKAN\b|\bMAMUKAM\b|\bMAMUKAN\b/gi, 'MANUKAN')
-      .replace(/\bKAT1PUNAN\b|\bKATIPUNAM\b|\bKATIPUN4N\b/gi, 'KATIPUNAN')
-      .replace(/\bZAM9OANGAOCL\b|\bZAM3OANGAOEL\b|\bZAMBOANGAOCL\b|\bZAMBOANGA\b|\bZAM3OAMGA\b|\bZAM3OANGA\b/gi, 'ZAMBOANGA')
-      .replace(/\bM3RTE\b|\bM3RTC\b|\bN3RTC\b|\bN3RTE\b|\bDEL\s*N3RTC\b|\bOCLN3RTC\b|\bOEL\b|\bOCLMOR7C\b|\bDELMORTE\b/gi, 'DEL NORTE')
-      .replace(/\b[7ZS]\s*[I1|]\s*[I1|]\s*[0OU]\b|\b7110\b|\bZR3O\b|\bZR1O\b|\b9Z93O\b|\b9Z930\b/gi, '7110')
-      .replace(/\b[7ZS]\s*[I1|]\s*[0OU]\s*[9G]\b|\b7109\b|\bZR09\b/gi, '7109');
-
-    if (clean.includes('KATIPUNAN') || clean.includes('7109')) {
-      return `-, -, POBLACION, KATIPUNAN, ZAMBOANGA DEL NORTE, 7109`;
-    }
-
-    if (
-      clean.includes('POBLACION') ||
-      clean.includes('MANUKAN') ||
-      clean.includes('ZAMBOANGA') ||
-      clean.includes('MAMUKAM') ||
-      clean.includes('ZAM3OAMGA') ||
-      clean.includes('ZZ3M') ||
-      clean.includes('7110') ||
-      clean.includes('M3RTE') ||
-      clean.includes('NORTE') ||
-      /M3RTE|9Z93O|9Z930/i.test(val)
-    ) {
-      return `-, -, POBLACION, MANUKAN, ZAMBOANGA DEL NORTE, 7110`;
-    }
-
-    const trimmed = clean.trim();
-    if (trimmed && !trimmed.startsWith('-, -,')) {
-      return `-, -, ${trimmed}`;
-    }
-    return trimmed;
-  };
-
-  // 1. Invariant Fast Scan
-  const licDirect = fullText.match(/\b([A-Za-z][0-9]{2}[-\s][0-9]{2}[-\s][0-9]{6})\b/);
-  if (licDirect) {
-    const repaired = repairLicense(licDirect[1]);
-    if (repaired) result.idNumber = repaired;
-  }
-
-  if (
-    /KATIPUNAN|7109/i.test(fullText)
-  ) {
-    result.address = '-, -, POBLACION, KATIPUNAN, ZAMBOANGA DEL NORTE, 7109';
-  } else if (
-    /POBLACION|POBLACN|MANUKAN|MANUNCAN|MAMUKAM|MAMUKAN|ZAMBOANGA|ZAM3OAMGA|ZAM9OANGA/i.test(fullText) ||
-    /7110|ZR3O|ZR1O|ZZ3M|M3RTE|9Z93O/i.test(fullText)
-  ) {
-    result.address = '-, -, POBLACION, MANUKAN, ZAMBOANGA DEL NORTE, 7110';
-  }
-
-  if (
-    /SUICO|SNNCO|OFTHI|-MMM\s*XO/i.test(fullText) ||
-    /JHONMARK|GHONMARK|MRQZMM|LRNSCDCDJNLL/i.test(fullText) ||
-    /FFNRMNMFR|LMMMMMM|AMACA/i.test(fullText) ||
-    /3035050|735-30|68440|9857833|ZZ3M/i.test(fullText) ||
-    (result.address && result.address.includes('MANUKAN'))
-  ) {
-    result.lastName = 'SUICO';
-    result.firstName = 'JHONMARK';
-    result.middleName = 'AMACA';
-    result.fullName = 'SUICO, JHONMARK AMACA';
-    result.nationality = 'PHL';
-    result.sex = 'MALE';
-    result.birthDate = '2004/02/20';
-    result.weight = '52';
-    result.height = '1.71';
-    result.idNumber = 'J07-22-302560';
-    result.expirationDate = '2027/02/20';
-    result.agencyCode = 'J07';
-    result.address = '-, -, POBLACION, MANUKAN, ZAMBOANGA DEL NORTE, 7110';
-  } else {
-    const nameDirect = fullText.match(/([A-ZÑ]{3,15}),\s*([A-ZÑ]{3,15})\s+([A-ZÑ]{3,15})/);
-    if (nameDirect) {
-      const last = cleanPersonName(nameDirect[1]);
-      const first = cleanPersonName(nameDirect[2]);
-      const mid = cleanPersonName(nameDirect[3]);
-      result.lastName = last;
-      result.firstName = first;
-      result.middleName = mid;
-      result.fullName = `${last}, ${first} ${mid}`;
-    }
-  }
-
-  // 2. Line-by-Line Indication-to-Target Pairing (Protected: NEVER overwrites already-resolved fields)
-  for (let i = 0; i < rawLines.length; i++) {
-    const line = rawLines[i];
-
-    // Indication 8: Last Name, First Name, Middle Name
-    if (/(?:Last\s*Name|Surname|Apelyido)/i.test(line) && /(?:First\s*Name|Given|Middle)/i.test(line)) {
-      if (!result.lastName || !result.firstName) {
-        const nextLine = rawLines[i + 1] || '';
-        if (nextLine && !isPascalCaseLabel(nextLine)) {
-          const cleaned = cleanPersonName(nextLine);
-          if (cleaned.includes(',')) {
-            const parts = cleaned.split(',').map((p) => p.trim());
-            result.lastName = parts[0];
-            const rest = (parts[1] || '').split(/\s+/).filter(Boolean);
-            if (rest.length > 1) {
-              result.middleName = rest[rest.length - 1];
-              result.firstName = rest.slice(0, -1).join(' ');
-            } else if (rest.length === 1) {
-              result.firstName = rest[0];
-            }
-            result.fullName = cleaned;
-          }
-        }
-      }
-      continue;
-    }
-
-    // Indications 1, 2, 3, 4, 5 in Demographics Row
-    if (/Nationality/i.test(line) && (/Sex/i.test(line) || /Birth/i.test(line) || /Weight/i.test(line))) {
-      let j = i + 1;
-      while (j < rawLines.length && isPascalCaseLabel(rawLines[j])) j++;
-      const valLine = rawLines[j] || '';
-      if (valLine) {
-        // 1. Nationality: mostly PHL
-        if (!result.nationality && (/\b(PHL|PHI|FIL)\b/i.test(valLine) || /PHL/i.test(fullText))) {
-          result.nationality = 'PHL';
-        }
-
-        // 2. Sex: M or F
-        if (!result.sex) {
-          if (/\bF\b/i.test(valLine) || /FEMALE/i.test(valLine)) {
-            result.sex = 'FEMALE';
-          } else if (/\bM\b/i.test(valLine) || /MALE/i.test(valLine)) {
-            result.sex = 'MALE';
-          }
-        }
-
-        // 3. Date of Birth: YYYY/MM/DD
-        if (!result.birthDate) {
-          const dob = repairDate(valLine);
-          if (dob) result.birthDate = dob;
-        }
-
-        // 4. Weight: 2 or 3 digits (e.g. 52)
-        if (!result.weight) {
-          const wtMatch = valLine.match(/\b([3-9]\d|1\d{2}|2[0-4]\d)\b/) || valLine.match(/\b([S5][2Z])\b/);
-          if (wtMatch) {
-            result.weight = wtMatch[1].replace(/S/g, '5').replace(/Z/g, '2');
-          }
-        }
-
-        // 5. Height: decimal or 2-3 digits (e.g. 1.71)
-        if (!result.height) {
-          const htMatch = valLine.match(/\b(1\.\d{2})\b/) || valLine.match(/\b(1[.,]7[1I])\b/);
-          if (htMatch) {
-            result.height = htMatch[1].replace(',', '.').replace(/I/g, '1');
-          }
-        }
-      }
-      continue;
-    }
-
-    // Indication 1: Standalone Nationality
-    if (/^Nationality\b/i.test(line) && !result.nationality) {
-      const nextLine = rawLines[i + 1] || '';
-      if (/\b(PHL|PHI|FIL)\b/i.test(nextLine) || /PHL/i.test(nextLine)) result.nationality = 'PHL';
-      continue;
-    }
-
-    // Indication 2: Standalone Sex
-    if (/^Sex\b/i.test(line) && !result.sex) {
-      const nextLine = rawLines[i + 1] || '';
-      if (/\bF\b/i.test(nextLine) || /FEMALE/i.test(nextLine)) result.sex = 'FEMALE';
-      else if (/\bM\b/i.test(nextLine) || /MALE/i.test(nextLine)) result.sex = 'MALE';
-      continue;
-    }
-
-    // Indication 3: Standalone Date of Birth
-    if (/(?:Date\s*of\s*Birth|Birth\s*Date)/i.test(line) && !result.birthDate) {
-      const nextLine = rawLines[i + 1] || '';
-      const dob = repairDate(nextLine) || repairDate(line);
-      if (dob) result.birthDate = dob;
-      continue;
-    }
-
-    // Indication 4: Standalone Weight(kg)
-    if (/Weight(?:\s*\([a-z]+\))?/i.test(line) && !result.weight) {
-      const nextLine = rawLines[i + 1] || '';
-      const wtMatch = nextLine.match(/\b([3-9]\d|1\d{2}|2[0-4]\d)\b/) || nextLine.match(/\b([S5][2Z])\b/);
-      if (wtMatch) result.weight = wtMatch[1].replace(/S/g, '5').replace(/Z/g, '2');
-      continue;
-    }
-
-    // Indication 5: Standalone Height(m)
-    if (/Height(?:\s*\([a-z]+\))?/i.test(line) && !result.height) {
-      const nextLine = rawLines[i + 1] || '';
-      const htMatch = nextLine.match(/\b(1\.\d{2})\b/) || nextLine.match(/\b(1[.,]7[1I])\b/);
-      if (htMatch) result.height = htMatch[1].replace(',', '.').replace(/I/g, '1');
-      continue;
-    }
-
-    // Indication 6: Address
-    if ((/^Address\b/i.test(line) || /^Tirahan\b/i.test(line)) && !result.address) {
-      const addrParts: string[] = [];
-      const inlineRemainder = line.replace(/^(?:Address|Tirahan)[:\s]*/i, '').trim();
-      if (inlineRemainder) {
-        addrParts.push(inlineRemainder);
-      }
-      let j = i + 1;
-      while (
-        j < rawLines.length &&
-        !isPascalCaseLabel(rawLines[j]) &&
-        !/(?:Driver'?s?\s*)?License\s*No/i.test(rawLines[j]) &&
-        !/Expiration/i.test(rawLines[j])
-      ) {
-        addrParts.push(rawLines[j]);
-        j++;
-      }
-      if (addrParts.length > 0) {
-        result.address = repairAddress(addrParts.join(' '));
-      }
-      continue;
-    }
-
-    // Indication 7 & Optional 1 & Optional 2: License No., Expiration Date, Agency Code
-    if (/License\s*(?:No\.?|Number)/i.test(line)) {
-      const nextLine = rawLines[i + 1] || '';
-      if (nextLine && !result.idNumber) {
-        const lic = repairLicense(nextLine);
-        if (lic) result.idNumber = lic;
-      }
-      if (/Expiration\s*Date/i.test(line) && nextLine && !result.expirationDate) {
-        const exp = repairDate(nextLine);
-        if (exp) result.expirationDate = exp;
-      }
-      if (/Agency\s*Code/i.test(line) && nextLine && !result.agencyCode) {
-        const agMatch = nextLine.match(/\b([A-Z]\d{2})\b/i);
-        if (agMatch) result.agencyCode = agMatch[1].toUpperCase();
-      }
-      continue;
-    }
-
-    // Optional Indication: Standalone Expiration Date
-    if (/^Expiration\s*Date\b/i.test(line)) {
-      const nextLine = rawLines[i + 1] || '';
-      const exp = repairDate(nextLine) || repairDate(line);
-      if (exp) result.expirationDate = exp;
-      continue;
-    }
-
-    // Optional Indication: Standalone Agency Code
-    if (/^Agency\s*Code\b/i.test(line)) {
-      const nextLine = rawLines[i + 1] || '';
-      const agMatch = nextLine.match(/\b([A-Z0-9]{2,4})\b/i);
-      if (agMatch) result.agencyCode = agMatch[1].toUpperCase();
-      continue;
-    }
-
-    // Optional Indications: Blood Type & Eyes Color
-    if (/Blood\s*Type/i.test(line) || /Eyes\s*Color/i.test(line)) {
-      const nextLine = rawLines[i + 1] || '';
-      if (nextLine && !isPascalCaseLabel(nextLine)) {
-        if (/Blood\s*Type/i.test(line)) {
-          const btMatch = nextLine.match(/\b(AB|A|B|O)[+-]?\b/i);
-          if (btMatch) result.bloodType = btMatch[0].toUpperCase();
-          else if (nextLine.includes('-')) result.bloodType = '-';
-        }
-        if (/Eyes\s*Color/i.test(line)) {
-          const eyeMatch = nextLine.match(/\b(BLACK|BROWN|BLUE|GREEN|GRAY|HAZEL)\b/i);
-          if (eyeMatch) result.eyesColor = eyeMatch[1].toUpperCase();
-        }
-      }
-      continue;
-    }
-
-    // Optional Indications: DL Codes & Conditions
-    if (/DL\s*Codes/i.test(line) || /Conditions/i.test(line)) {
-      const nextLine = rawLines[i + 1] || '';
-      if (nextLine && !isPascalCaseLabel(nextLine)) {
-        if (/DL\s*Codes/i.test(line)) {
-          const dlMatch = nextLine.match(/\b([A-Z0-9]+(?:,[A-Z0-9]+)+|[A-Z]\d?)\b/i);
-          if (dlMatch) result.dlCodes = dlMatch[1].toUpperCase();
-        }
-        if (/Conditions/i.test(line)) {
-          if (/\bNONE\b/i.test(nextLine)) {
-            result.conditions = 'NONE';
-          } else {
-            const remainder = result.dlCodes ? nextLine.replace(result.dlCodes, '').trim() : nextLine;
-            const condMatch = remainder.match(/\b(\d(?:,\d)*|[1-5]|[A-E])\b/i);
-            if (condMatch) result.conditions = condMatch[1].toUpperCase();
-          }
-        }
-      }
-      continue;
-    }
-  }
-
-  // 3. Global Regex Sweeps for Missing Fields
-  if (!result.nationality && /PHL/i.test(fullText)) {
-    result.nationality = 'PHL';
-  }
-  if (!result.sex) {
-    if (/\bSex[:\s]*M\b/i.test(fullText) || /\bMALE\b/i.test(fullText) || /\bM\b/.test(fullText)) {
-      result.sex = 'MALE';
-    } else if (/\bSex[:\s]*F\b/i.test(fullText) || /\bFEMALE\b/i.test(fullText)) {
-      result.sex = 'FEMALE';
-    }
-  }
-  if (!result.birthDate) {
-    const dobMatch = fullText.match(/\b((?:19|20)\d{2}[-/](?:0[1-9]|1[0-2])[-/](?:0[1-9]|[12]\d|3[01]))\b/);
-    if (dobMatch) result.birthDate = dobMatch[1].replace(/-/g, '/');
-  }
-  if (!result.weight) {
-    const wtMatch = fullText.match(/(?:WT|WEIGHT|W)[:\s]*([0-9]{2,3})/i) || fullText.match(/\b([S5][2Z])\b/);
-    if (wtMatch) result.weight = wtMatch[1].replace(/S/g, '5').replace(/Z/g, '2');
-  }
-  if (!result.height) {
-    const htMatch = fullText.match(/(?:HT|HEIGHT|H)[:\s]*(1[.,]\d{2})/i) || fullText.match(/\b(1\.\d{2})\b/);
-    if (htMatch) result.height = htMatch[1].replace(',', '.');
-  }
-  if (!result.expirationDate) {
-    const expMatch = fullText.match(/(?:EXPIRATION|EXPIRY|EXP)[:\s]*((?:19|20)\d{2}[-/](?:0[1-9]|1[0-2])[-/](?:0[1-9]|[12]\d|3[01]))/i);
-    if (expMatch) result.expirationDate = expMatch[1].replace(/-/g, '/');
-  }
-  if (!result.agencyCode && result.idNumber) {
-    const agPrefix = result.idNumber.match(/^([A-Z]\d{2})-/);
-    if (agPrefix) result.agencyCode = agPrefix[1];
-  }
-  if (!result.eyesColor) {
-    const eyeGlobal = fullText.match(/\b(BLACK|BROWN|BLUE|GREEN|HAZEL)\b/i);
-    if (eyeGlobal) result.eyesColor = eyeGlobal[1].toUpperCase();
-  }
-  if (!result.dlCodes) {
-    const dlGlobal = fullText.match(/\b(A,A1(?:,[A-Z0-9]+)*)\b/i);
-    if (dlGlobal) result.dlCodes = dlGlobal[1].toUpperCase();
-  }
-  if (!result.conditions) {
-    if (/\bNONE\b/i.test(fullText)) result.conditions = 'NONE';
-  }
-
-  // 4. Sanitation: Enforce that NO field contains PascalCase / Title Case labels
-  const sanitizeField = (val?: string): string | undefined => {
-    if (!val) return undefined;
-    if (isPascalCaseLabel(val)) return undefined;
-    return val;
-  };
-
+    : input.map((l) => l.text).join('\n');
+  const anchor = parseDynamicIdAnchors(fullText);
   return {
-    idNumber: sanitizeField(result.idNumber),
-    lastName: sanitizeField(result.lastName),
-    firstName: sanitizeField(result.firstName),
-    middleName: sanitizeField(result.middleName),
-    fullName: sanitizeField(result.fullName),
-    birthDate: sanitizeField(result.birthDate),
-    sex: sanitizeField(result.sex),
-    address: sanitizeField(result.address),
-    nationality: sanitizeField(result.nationality),
-    weight: sanitizeField(result.weight),
-    height: sanitizeField(result.height),
-    expirationDate: sanitizeField(result.expirationDate),
-    agencyCode: sanitizeField(result.agencyCode),
-    bloodType: sanitizeField(result.bloodType),
-    eyesColor: sanitizeField(result.eyesColor),
-    dlCodes: sanitizeField(result.dlCodes),
-    conditions: sanitizeField(result.conditions)
+    idNumber: anchor.licenseNumber || anchor.idNumber,
+    lastName: anchor.lastName,
+    firstName: anchor.firstName,
+    middleName: anchor.middleName,
+    fullName: anchor.fullName,
+    birthDate: anchor.dateOfBirth,
+    sex: anchor.sex,
+    address: anchor.address,
+    nationality: anchor.nationality,
+    weight: anchor.weight,
+    height: anchor.height,
+    expirationDate: anchor.expirationDate,
+    agencyCode: anchor.agencyCode,
+    bloodType: anchor.bloodType,
+    eyesColor: anchor.eyesColor,
+    conditions: anchor.conditions
   };
 };
 
@@ -1493,7 +1052,7 @@ export const parseIdFieldsWithSpatialFsm = (
       continue;
     }
 
-    const lastLabel = labelValueMatch(/^(?:LAST\s*NAME|SURNAME|APELYIDO)(?:\s*\/\s*APELYIDO)?/i);
+    const lastLabel = labelValueMatch(/^(?:LAST\s*NAME|SURNAME|APELYIDO)(?:\s*\/\s*(?:APELYIDO|LAST\s*NAME|SURNAME))?/i);
     if (lastLabel.matched && !/FIRST\s*NAME/i.test(line)) {
       if (lastLabel.inlineValue) {
         fields.lastName = repairAlphaField(lastLabel.inlineValue);
@@ -1504,7 +1063,7 @@ export const parseIdFieldsWithSpatialFsm = (
       continue;
     }
 
-    const firstLabel = labelValueMatch(/^(?:GIVEN\s*NAMES?|FIRST\s*NAME|MGA\s*PANGALAN)(?:\s*\/\s*MGA\s*PANGALAN)?/i);
+    const firstLabel = labelValueMatch(/^(?:GIVEN\s*NAMES?|FIRST\s*NAME|MGA\s*PANGALAN)(?:\s*\/\s*(?:MGA\s*PANGALAN|GIVEN\s*NAMES?|FIRST\s*NAME))?/i);
     if (firstLabel.matched) {
       if (firstLabel.inlineValue) {
         fields.firstName = repairAlphaField(firstLabel.inlineValue);
@@ -1515,7 +1074,7 @@ export const parseIdFieldsWithSpatialFsm = (
       continue;
     }
 
-    const middleLabel = labelValueMatch(/^(?:MIDDLE\s*NAME|GITNANG\s*APELYIDO)(?:\s*\/\s*GITNANG\s*APELYIDO)?/i);
+    const middleLabel = labelValueMatch(/^(?:MIDDLE\s*NAME|GITNANG\s*APELYIDO)(?:\s*\/\s*(?:GITNANG\s*APELYIDO|MIDDLE\s*NAME))?/i);
     if (middleLabel.matched) {
       if (middleLabel.inlineValue) {
         fields.middleName = repairAlphaField(middleLabel.inlineValue);
@@ -1537,7 +1096,7 @@ export const parseIdFieldsWithSpatialFsm = (
       continue;
     }
 
-    const dobLabel = labelValueMatch(/^(?:DATE\s*OF\s*BIRTH|BIRTH\s*DATE|PETSA\s*NG\s*KAPANGANAKAN|DOB)/i);
+    const dobLabel = labelValueMatch(/^(?:DATE\s*OF\s*BIRTH|BIRTH\s*DATE|PETSA\s*NG\s*KAPANGANAKAN|DOB)(?:\s*\/\s*(?:DATE\s*OF\s*BIRTH|PETSA\s*NG\s*KAPANGANAKAN))?/i);
     if (dobLabel.matched) {
       if (dobLabel.inlineValue) {
         fields.birthDate = postProcessFieldText(dobLabel.inlineValue, 'DATE');
@@ -1548,7 +1107,7 @@ export const parseIdFieldsWithSpatialFsm = (
       continue;
     }
 
-    const sexLabel = labelValueMatch(/^(?:SEX|GENDER|KASARIAN)/i);
+    const sexLabel = labelValueMatch(/^(?:SEX|GENDER|KASARIAN)(?:\s*\/\s*(?:SEX|GENDER|KASARIAN))?/i);
     if (sexLabel.matched) {
       if (sexLabel.inlineValue && /^(M|F|MALE|FEMALE|LALAKI|BABAE)\b/i.test(sexLabel.inlineValue)) {
         const tok = sexLabel.inlineValue.split(/\s+/)[0];
@@ -1560,7 +1119,7 @@ export const parseIdFieldsWithSpatialFsm = (
       continue;
     }
 
-    const addrLabel = labelValueMatch(/^(?:ADDRESS|TIRAHAN|HOME\s*ADDRESS)/i);
+    const addrLabel = labelValueMatch(/^(?:ADDRESS|TIRAHAN|HOME\s*ADDRESS)(?:\s*\/\s*(?:ADDRESS|TIRAHAN))?/i);
     if (addrLabel.matched) {
       if (addrLabel.inlineValue) {
         fields.address = addrLabel.inlineValue;
@@ -1574,7 +1133,21 @@ export const parseIdFieldsWithSpatialFsm = (
     // 3. Consume line according to active FSM state
     switch (state) {
       case 'EXPECT_ID_NUMBER': {
-        fields.idNumber = line;
+        const cleaned = line.replace(/[^A-Z0-9\-\s]/gi, '').trim();
+        const lto = cleaned.match(/\b([A-Z]\d{2}[-\s]?\d{2}[-\s]?\d{6})\b/i);
+        const pcn = cleaned.match(/\b(\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4})\b/);
+        const crn = cleaned.match(/\b(\d{4}[-\s]?\d{7}[-\s]?\d)\b/);
+        const genericAlphaNum = cleaned.match(/\b([A-Z0-9]{6,20})\b/i);
+
+        if (lto) {
+          fields.idNumber = lto[1].replace(/\s+/g, '-');
+        } else if (pcn) {
+          fields.idNumber = pcn[1].replace(/\s+/g, '-');
+        } else if (crn) {
+          fields.idNumber = crn[1].replace(/\s+/g, '-');
+        } else if (genericAlphaNum && /\d/.test(genericAlphaNum[1]) && /[A-Z]/i.test(genericAlphaNum[1])) {
+          fields.idNumber = genericAlphaNum[1];
+        }
         state = 'IDLE';
         break;
       }

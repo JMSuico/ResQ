@@ -351,7 +351,7 @@ export const AnalyticsReportsPage: FC = () => {
 
     return [
       { milestone: 'Real-time GPS sensor telemetry pipeline', progress: gpsRate, date: 'October 2026' },
-      { milestone: 'Multi-port role clearance isolation (Port 5174 / 5173)', progress: 100, date: 'October 2026' },
+      { milestone: 'Multi-port role clearance isolation (Port 1996 / 1997 / 1998)', progress: 100, date: 'October 2026' },
       { milestone: 'Automated triage severity auto-dispatch matrix', progress: triageAutoRate, date: 'In Production' },
       { milestone: 'Automated Excel/PDF intelligence digest engine', progress: 100, date: 'Active' }
     ];

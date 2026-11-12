@@ -51,7 +51,8 @@ public record CreateUserRequest(
     string? SidearmSerial = null,
     string? PlantillaNumber = null,
     string? ExecutiveDesignation = null,
-    string? ClearanceLevel = null
+    string? ClearanceLevel = null,
+    string? DisplayName = null
 );
 
 public record UpdateUserRequest(
@@ -97,7 +98,10 @@ public record UpdateUserRequest(
     string? SidearmSerial = null,
     string? PlantillaNumber = null,
     string? ExecutiveDesignation = null,
-    string? ClearanceLevel = null
+    string? ClearanceLevel = null,
+    string? DisplayName = null,
+    string? IdentityVerificationStatus = null,
+    string? FacialVerificationStatus = null
 );
 
 public record UserDetailResponse(
@@ -158,7 +162,11 @@ public record UserDetailResponse(
     DateTime? DeletedAt,
     string? DeletedBy,
     DateTime CreatedAt,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    string DisplayName = "",
+    string IdentityVerificationStatus = "PendingReview",
+    string FacialVerificationStatus = "PendingReview",
+    bool HasIdBackCapture = false
 );
 
 public record PagedResult<T>(

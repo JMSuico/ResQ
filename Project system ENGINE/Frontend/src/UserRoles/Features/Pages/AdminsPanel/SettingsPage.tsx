@@ -370,7 +370,7 @@ export const SettingsPage: FC = () => {
                 Administrator Identity & Access Profile
               </h2>
               <p className="text-xs text-slate-400 font-mono">
-                Official credentials associated with Port 5174 executive clearance
+                Official credentials associated with Port 1996 executive clearance
               </p>
             </div>
             <Button variant="primary" size="sm" type="submit" icon={<Save className="w-3.5 h-3.5" />}>

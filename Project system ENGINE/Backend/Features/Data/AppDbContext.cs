@@ -20,6 +20,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PatientCareRecord> PatientCareRecords => Set<PatientCareRecord>();
     public DbSet<PoliceBlotterEntry> PoliceBlotterEntries => Set<PoliceBlotterEntry>();
     public DbSet<FireAlarmStatusRecord> FireAlarmStatuses => Set<FireAlarmStatusRecord>();
+    public DbSet<IdentityVerificationRecord> IdentityVerificationRecords => Set<IdentityVerificationRecord>();
+    public DbSet<BiometricEnrollment> BiometricEnrollments => Set<BiometricEnrollment>();
+    public DbSet<UserConsent> UserConsents => Set<UserConsent>();
+    public DbSet<LoginAttempt> LoginAttempts => Set<LoginAttempt>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,6 +47,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(u => u.Province).HasDefaultValue("Zamboanga del Norte");
             entity.Property(u => u.CityOrMunicipality).HasDefaultValue("Dipolog City");
             entity.Property(u => u.IsDeleted).HasDefaultValue(false);
+            entity.Property(u => u.DisplayName).HasDefaultValue(string.Empty);
+            entity.Property(u => u.IdentityVerificationStatus).HasDefaultValue("PendingReview");
+            entity.Property(u => u.FacialVerificationStatus).HasDefaultValue("PendingReview");
+            entity.Property(u => u.IdentityVerificationProvider).HasDefaultValue("ManualIdentityVerificationProvider");
+            entity.Property(u => u.FacialVerificationProvider).HasDefaultValue("ManualFacialReviewProvider");
         });
 
         // Session indexes and relationships
@@ -132,6 +141,61 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.HasIndex(f => f.ReportId);
             entity.HasIndex(f => f.UpdatedAt);
+        });
+
+        // IdentityVerificationRecord configuration
+        modelBuilder.Entity<IdentityVerificationRecord>(entity =>
+        {
+            entity.HasIndex(v => v.UserId);
+            entity.HasIndex(v => v.GovernmentIdType);
+            entity.HasIndex(v => v.GovernmentIdNumber);
+            entity.HasIndex(v => v.OverallVerificationStatus);
+
+            entity.HasQueryFilter(v => v.User == null || !v.User.IsDeleted);
+
+            entity.HasOne(v => v.User)
+                  .WithMany(u => u.IdentityVerificationRecords)
+                  .HasForeignKey(v => v.UserId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // BiometricEnrollment configuration
+        modelBuilder.Entity<BiometricEnrollment>(entity =>
+        {
+            entity.HasIndex(b => b.UserId);
+            entity.HasIndex(b => b.EnrollmentStatus);
+
+            entity.HasQueryFilter(b => b.User == null || !b.User.IsDeleted);
+
+            entity.HasOne(b => b.User)
+                  .WithMany(u => u.BiometricEnrollments)
+                  .HasForeignKey(b => b.UserId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // UserConsent configuration
+        modelBuilder.Entity<UserConsent>(entity =>
+        {
+            entity.HasIndex(c => c.UserId);
+            entity.HasIndex(c => c.NoticeVersion);
+
+            entity.HasQueryFilter(c => c.User == null || !c.User.IsDeleted);
+
+            entity.HasOne(c => c.User)
+                  .WithMany(u => u.UserConsents)
+                  .HasForeignKey(c => c.UserId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // LoginAttempt configuration
+        modelBuilder.Entity<LoginAttempt>(entity =>
+        {
+            entity.HasIndex(l => l.AccountIdentifier);
+            entity.HasIndex(l => l.AttemptedAtUtc);
+            entity.HasIndex(l => new { l.AccountIdentifier, l.AttemptedAtUtc, l.Success });
         });
     }
 }

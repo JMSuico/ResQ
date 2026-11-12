@@ -11,12 +11,15 @@ export type AccountStatus = 'Verified' | 'Suspended' | 'Pending';
 export interface UserSession {
   userId: string;
   fullName: string;
+  displayName?: string;
   email: string;
   employeeOrResidentId: string;
   role: UserRole;
   unit: ResponderUnit;
   status: AccountStatus;
   faceVerified: boolean;
+  identityVerificationStatus?: string;
+  facialVerificationStatus?: string;
   departmentOrBarangay?: string;
   rankOrTitle?: string;
   targetDashboardUrl: string;
@@ -24,29 +27,103 @@ export interface UserSession {
 
 export interface RegisterPayload {
   email: string;
+  displayName?: string;
   password: string;
+  confirmPassword?: string;
   fullName: string;
+  firstName?: string;
+  middleName?: string;
+  surname?: string;
+  suffix?: string;
+  dateOfBirth?: string;
+  sex?: string;
+  age?: number | string;
+  province?: string;
+  cityOrMunicipality?: string;
+  barangay?: string;
+  streetOrPurok?: string;
+  weight?: string;
+  height?: string;
   phoneNumber?: string;
   employeeOrResidentId?: string;
   validIdType?: string;
+  governmentIdType?: string;
+  governmentIdNumber?: string;
   role: UserRole;
   unit: ResponderUnit;
   departmentOrBarangay?: string;
   rankOrTitle?: string;
   idCaptureDataUrl?: string;
+  idBackCaptureDataUrl?: string;
   faceCaptureDataUrl?: string;
+  consentAccepted?: boolean;
+  consentNoticeVersion?: string;
+  minImageDimension?: number;
+  biometricDescriptorVector?: number[];
+  ocrConfidenceScore?: number;
+  documentVersion?: string;
+  issuingAgency?: string;
+  detectedSide?: string;
+  documentCheckStatus?: string;
+  officialVerificationStatus?: string;
+  fieldProvenanceJson?: string;
+}
+
+export interface IdentityDocumentAnalysisRequest {
+  selectedIdCategory?: string;
+  manualTemplateOverride?: string;
+  frontRawText?: string;
+  backRawText?: string;
+  frontImageDataUrl?: string;
+  backImageDataUrl?: string;
+  extractedFields?: Record<string, string | undefined>;
+}
+
+export interface IdentityDocumentAnalysisResponse {
+  documentFamily: string;
+  categoryKey: string;
+  issuer: string;
+  version: string;
+  detectedSide: string;
+  templateId: string;
+  calibratedConfidence: number;
+  overallStatus: 'READY_FOR_PREFILL' | 'OCR_NEEDS_REVIEW' | 'UNSUPPORTED_DOCUMENT';
+  officialVerificationStatus: 'not_checked' | 'verified' | 'failed';
+  allowBiometricProfiling: boolean;
+  warnings: string[];
+  normalizedFields: Record<string, string>;
 }
 
 export interface RegisterResponse {
   message: string;
-  faceVerified: boolean;
+  userId?: string;
+  email?: string;
+  displayName?: string;
+  fullName?: string;
+  role?: UserRole;
+  unit?: ResponderUnit;
   status: string;
+  faceVerified: boolean;
+  identityVerificationStatus?: string;
+  facialVerificationStatus?: string;
+  identityVerificationProvider?: string;
+  facialVerificationProvider?: string;
+  hasIdFrontCapture?: boolean;
+  hasIdBackCapture?: boolean;
+  hasFaceCapture?: boolean;
+  createdAt?: string;
 }
 
 export interface LoginPayload {
   email: string;
   password: string;
   selectedTabRole?: string;
+  portalOrigin?: string;
+}
+
+export interface BiometricLoginPayload {
+  email: string;
+  liveDescriptorVector: number[];
   portalOrigin?: string;
 }
 
@@ -62,8 +139,22 @@ export const registerUser = (payload: RegisterPayload): Promise<RegisterResponse
     body: JSON.stringify(payload)
   });
 
+export const analyzeIdentityDocument = (
+  payload: IdentityDocumentAnalysisRequest
+): Promise<IdentityDocumentAnalysisResponse> =>
+  requestJson<IdentityDocumentAnalysisResponse>('/api/identity-documents/analyze', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
 export const loginUser = (payload: LoginPayload): Promise<LoginResponse> =>
   requestJson<LoginResponse>('/api/login', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+export const biometricLoginUser = (payload: BiometricLoginPayload): Promise<LoginResponse> =>
+  requestJson<LoginResponse>('/api/biometric-login', {
     method: 'POST',
     body: JSON.stringify(payload)
   });

@@ -5,14 +5,15 @@
 
 import React, { useState, FC } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { User, Lock, Eye, EyeOff, Check, ArrowRight } from 'lucide-react';
-import { loginUser } from '@/Endpoints/authApi';
+import { User, Lock, Eye, EyeOff, Check, ArrowRight, Camera } from 'lucide-react';
+import { loginUser, LoginResponse } from '@/Endpoints/authApi';
 import { Button, Checkbox } from '@/Shared';
 import { useFluidResposiveness } from '@/Hooks';
+import { BiometricLoginModal } from './BiometricLoginModal';
 
 export const LoginPage: FC = () => {
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
-  const isDedicatedAdminPort = currentPort === '5174';
+  const isDedicatedAdminPort = currentPort === '1996' || currentPort === '5174';
 
   const { isMobile } = useFluidResposiveness();
   const navigate = useNavigate();
@@ -28,6 +29,7 @@ export const LoginPage: FC = () => {
   const [statusTone, setStatusTone] = useState<'ok' | 'bad' | ''>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  const [isBiometricModalOpen, setIsBiometricModalOpen] = useState<boolean>(false);
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -49,6 +51,85 @@ export const LoginPage: FC = () => {
     e.preventDefault();
     setStatusMessage('Password reset is governed via local terminal CLI: .\\start.ps1 createsuperadmin');
     setStatusTone('');
+  };
+
+  const processSuccessfulSession = (res: LoginResponse) => {
+    if (res?.token) {
+      const portKey = currentPort || '1997';
+      const normUnit = (res.session?.unit || 'none').toLowerCase().trim();
+      const normRole = (res.session?.role || '').toLowerCase().trim();
+      const isAdminUser = normRole.includes('admin') || normRole.includes('ldrrmo');
+
+      // 1. Tab-isolated session storage (Guarantees Tab 1 Medic never turns into Tab 2 Fire)
+      sessionStorage.setItem('resqtrack_token', res.token);
+      sessionStorage.setItem('resqtrack_unit', normUnit);
+      if (res.session) {
+        sessionStorage.setItem('resqtrack_user', JSON.stringify(res.session));
+        sessionStorage.setItem('resqtrack_session', JSON.stringify(res.session));
+      }
+
+      // 2. Unit-scoped local storage (Guarantees RHU, FIRE, and PNP co-exist without collision)
+      if (normUnit && normUnit !== 'none') {
+        localStorage.setItem(`resqtrack_token_${normUnit}`, res.token);
+        if (res.session) {
+          localStorage.setItem(`resqtrack_user_${normUnit}`, JSON.stringify(res.session));
+          localStorage.setItem(`resqtrack_session_${normUnit}`, JSON.stringify(res.session));
+        }
+      }
+
+      // 3. Port-scoped storage
+      if (isAdminUser || portKey === '1996' || portKey === '5174') {
+        localStorage.setItem('resqtrack_token_1996', res.token);
+        localStorage.setItem('resqtrack_token_5174', res.token);
+        if (res.session) {
+          localStorage.setItem('resqtrack_user_1996', JSON.stringify(res.session));
+          localStorage.setItem('resqtrack_session_1996', JSON.stringify(res.session));
+          localStorage.setItem('resqtrack_user_5174', JSON.stringify(res.session));
+          localStorage.setItem('resqtrack_session_5174', JSON.stringify(res.session));
+        }
+      } else {
+        localStorage.setItem(`resqtrack_token_${portKey}`, res.token);
+        if (res.session) {
+          localStorage.setItem(`resqtrack_user_${portKey}`, JSON.stringify(res.session));
+          localStorage.setItem(`resqtrack_session_${portKey}`, JSON.stringify(res.session));
+        }
+      }
+    }
+
+    setIsLoading(false);
+    setIsSuccess(true);
+
+    const sessionUser = res.session;
+    const rawRole = (sessionUser?.role ?? '').toString().toLowerCase();
+    const rawUnit = (sessionUser?.unit ?? '').toString();
+
+    const isLdrrmo = rawRole.includes('admin') || rawRole.includes('ldrrmo') || rawRole === '0';
+    const isResp = rawRole.includes('responder') || rawRole === '1';
+    const isCiv = rawRole.includes('civilian') || rawRole === '2';
+
+    const okMsg = isLdrrmo
+      ? 'LDRRMO Executive Command clearance verified. Redirecting to Command Console…'
+      : isResp
+      ? `Verified ${rawUnit || 'Emergency'} Responder. Redirecting to Operations Hub…`
+      : 'Verified Citizen Resident. Redirecting to Emergency SOS Portal…';
+
+    setStatusMessage(okMsg);
+    setStatusTone('ok');
+
+    setTimeout(() => {
+      if (isLdrrmo) {
+        const host = window.location.hostname || '127.0.0.1';
+        if (currentPort === '1997' || currentPort === '5173') {
+          window.location.href = `http://${host}:1996/admin/dashboard?session_token=${encodeURIComponent(res.token)}`;
+        } else {
+          navigate('/admin/dashboard');
+        }
+      } else if (isCiv) {
+        navigate('/civilian/dashboard');
+      } else {
+        navigate('/responder/dashboard');
+      }
+    }, 900);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -81,79 +162,7 @@ export const LoginPage: FC = () => {
         portalOrigin
       });
 
-      if (res?.token) {
-        const portKey = currentPort || '5173';
-        const normUnit = (res.session?.unit || 'none').toLowerCase().trim();
-        const normRole = (res.session?.role || '').toLowerCase().trim();
-        const isAdminUser = normRole.includes('admin') || normRole.includes('ldrrmo');
-
-        // 1. Tab-isolated session storage (Guarantees Tab 1 Medic never turns into Tab 2 Fire)
-        sessionStorage.setItem('resqtrack_token', res.token);
-        sessionStorage.setItem('resqtrack_unit', normUnit);
-        if (res.session) {
-          sessionStorage.setItem('resqtrack_user', JSON.stringify(res.session));
-          sessionStorage.setItem('resqtrack_session', JSON.stringify(res.session));
-        }
-
-        // 2. Unit-scoped local storage (Guarantees RHU, FIRE, and PNP co-exist without collision)
-        if (normUnit && normUnit !== 'none') {
-          localStorage.setItem(`resqtrack_token_${normUnit}`, res.token);
-          if (res.session) {
-            localStorage.setItem(`resqtrack_user_${normUnit}`, JSON.stringify(res.session));
-            localStorage.setItem(`resqtrack_session_${normUnit}`, JSON.stringify(res.session));
-          }
-        }
-
-        // 3. Port-scoped storage
-        if (isAdminUser || portKey === '5174') {
-          localStorage.setItem('resqtrack_token_5174', res.token);
-          if (res.session) {
-            localStorage.setItem('resqtrack_user_5174', JSON.stringify(res.session));
-            localStorage.setItem('resqtrack_session_5174', JSON.stringify(res.session));
-          }
-        } else {
-          localStorage.setItem(`resqtrack_token_${portKey}`, res.token);
-          if (res.session) {
-            localStorage.setItem(`resqtrack_user_${portKey}`, JSON.stringify(res.session));
-            localStorage.setItem(`resqtrack_session_${portKey}`, JSON.stringify(res.session));
-          }
-        }
-      }
-
-      setIsLoading(false);
-      setIsSuccess(true);
-
-      const sessionUser = res.session;
-      const rawRole = (sessionUser?.role ?? '').toString().toLowerCase();
-      const rawUnit = (sessionUser?.unit ?? '').toString();
-
-      const isLdrrmo = rawRole.includes('admin') || rawRole.includes('ldrrmo') || rawRole === '0';
-      const isResp = rawRole.includes('responder') || rawRole === '1';
-      const isCiv = rawRole.includes('civilian') || rawRole === '2';
-
-      const okMsg = isLdrrmo
-        ? 'LDRRMO Executive Command clearance verified. Redirecting to Command Console…'
-        : isResp
-        ? `Verified ${rawUnit || 'Emergency'} Responder. Redirecting to Operations Hub…`
-        : 'Verified Citizen Resident. Redirecting to Emergency SOS Portal…';
-
-      setStatusMessage(okMsg);
-      setStatusTone('ok');
-
-      setTimeout(() => {
-        if (isLdrrmo) {
-          const host = window.location.hostname || '127.0.0.1';
-          if (currentPort === '5173') {
-            window.location.href = `http://${host}:5174/admin/dashboard?session_token=${encodeURIComponent(res.token)}`;
-          } else {
-            navigate('/admin/dashboard');
-          }
-        } else if (isCiv) {
-          navigate('/civilian/dashboard');
-        } else {
-          navigate('/responder/dashboard');
-        }
-      }, 900);
+      processSuccessfulSession(res);
     } catch (err: unknown) {
       setIsLoading(false);
       const msg = err instanceof Error ? err.message : 'Authentication failed. Please verify credentials.';
@@ -384,7 +393,7 @@ export const LoginPage: FC = () => {
             )}
 
             {/* Submit Action Button using Atomic Shared Primitive */}
-            <div style={{ marginTop: statusMessage ? '0' : '10px' }}>
+            <div style={{ marginTop: statusMessage ? '0' : '10px' }} className="space-y-2">
               <Button
                 type="submit"
                 id="submit"
@@ -402,6 +411,16 @@ export const LoginPage: FC = () => {
               >
                 {isLoading ? 'Authenticating...' : isSuccess ? 'Access Granted' : 'AUTHENTICATE & ENTER'}
               </Button>
+
+              <button
+                type="button"
+                id="biometric-login-btn"
+                onClick={() => setIsBiometricModalOpen(true)}
+                className="w-full !h-[42px] rounded-lg border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-200 font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-[0_0_12px_rgba(6,182,212,0.15)] hover:border-cyan-400"
+              >
+                <Camera className="w-4 h-4 text-cyan-400" />
+                <span>Sign In with Facial Biometrics</span>
+              </button>
             </div>
 
             {/* Civilian & Responder Registration Redirection */}
@@ -418,6 +437,18 @@ export const LoginPage: FC = () => {
           </form>
         </section>
       </div>
+
+      {/* 1:1 Biometric Authentication Modal */}
+      <BiometricLoginModal
+        isOpen={isBiometricModalOpen}
+        onClose={() => setIsBiometricModalOpen(false)}
+        initialEmail={email}
+        portalOrigin={isDedicatedAdminPort ? 'Admin' : 'ResponderCivilian'}
+        onLoginSuccess={(res) => {
+          setIsBiometricModalOpen(false);
+          processSuccessfulSession(res);
+        }}
+      />
     </main>
   );
 };

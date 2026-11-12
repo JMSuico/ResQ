@@ -41,8 +41,11 @@ All `/diagram-design` structure flowcharts, flowchains, sequence flows, state ma
 1. **Universal Lambda Expressions (`=>`)**: Express all synchronous and asynchronous functions/methods across C# Repositories, Services, Controllers, Helpers, and TypeScript Endpoints/Hooks/Components with clean arrow expressions (`=>`).
 2. **Global Calling Imports (`@/Shared` & `@/Hooks`)**: Consume reusable modals (`DefaultFloatingModalCard`, `StatusConfirmModal`, `PatientCareRecordModal`, `ImageLightboxModal`, `BackupOptionsModal`), tables/cards (`TableCardToggle`, `Pagination`, `SearchBar`), and hooks (`useDebounce`, `useFluidResposiveness`) from `@/Shared` and `@/Hooks`.
 3. **Pure `lucide-react` Icons**: Zero emojis (`🚨`, `🚑`, `⚠️`) in UI components; use strongly-typed `lucide-react` icons exclusively.
-4. **Dual-Port Physical RBAC Isolation**:
-   - **Port 5174**: LDRRMO Executive Admin Command Portal
-   - **Port 5173**: Responders (`RHU`, `FIRE`, `PNP`) & Civilian SOS Portal
-   - **Port 5000**: .NET 10 ASP.NET Core Web API backed by Microsoft SQL Server (`ResQTrackDb`, Zero SQLite)
-5. **Non-Destructive Obsidian Logging**: Preserve all existing logs and structure in `Obsidian Memory Engine/` (`index.md`, `log.md`, `10 - Projects/.../Session-Notes/`, `20 - Areas/`, `30 - Resources/Zettelkasten/`, and `Diagram/`).
+4. **Multi-Port Physical RBAC Isolation**:
+   - **Port 1996**: LDRRMO Executive Admin Command Portal (`/admin/login`)
+   - **Port 1997**: Tactical Responders (`RHU`, `FIRE`, `PNP`) Portal (`/login`)
+   - **Port 1998**: Civilian Emergency SOS Portal
+   - **Port 1999**: .NET 10 ASP.NET Core Web API backed by Microsoft SQL Server (`ResQTrackDb`, Zero SQLite)
+   - **Database**: SQL Server localhost (`1433`) and PostgreSQL container (`5432`) preserved intact.
+5. **Centralized Testing Directory Standard**: All test suites, test runners, and test files must always be placed and maintained exclusively in `C:\Users\provu\Desktop\INCIDENT AI SYSTEM DETECTION\Testing`.
+6. **Non-Destructive Obsidian Logging**: Preserve all existing logs and structure in `Obsidian Memory Engine/` (`index.md`, `log.md`, `10 - Projects/.../Session-Notes/`, `20 - Areas/`, `30 - Resources/Zettelkasten/`, and `Diagram/`).

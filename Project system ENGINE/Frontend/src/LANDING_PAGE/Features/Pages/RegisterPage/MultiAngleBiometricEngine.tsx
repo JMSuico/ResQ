@@ -89,6 +89,8 @@ export interface MultiAngleBiometricEngineProps {
       right: string;
       up: string;
     };
+    descriptor?: number[];
+    isSynthetic?: boolean;
   }) => void;
   onRetake?: () => void;
   initialVerified?: boolean;
@@ -234,6 +236,13 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
   const centerBaselineRef = useRef<{ yaw0: number; pitch0: number } | undefined>(undefined);
   const centerDescriptorRef = useRef<Float32Array | null>(null);
   const centerEyeOpenBaselineRef = useRef<number>(0.5);
+  const challengeOrderRef = useRef<('LEFT' | 'RIGHT')[]>(['LEFT', 'RIGHT']);
+  const isDevSyntheticAllowed = Boolean(
+    import.meta.env.DEV &&
+      typeof window !== 'undefined' &&
+      (window as unknown as { __RESQTRACK_DEV_SYNTHETIC_BIOMETRICS__?: boolean })
+        .__RESQTRACK_DEV_SYNTHETIC_BIOMETRICS__ === true
+  );
 
   // Pre-load MediaPipe FaceLandmarker for GPU 3D Landmark & Blendshape tracking
   useEffect(() => {
@@ -311,11 +320,17 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
       setIsSynthetic(false);
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.warn('Physical camera unavailable or blocked, activating synthetic biometric feed:', errorMsg);
-      setIsSynthetic(true);
-      setCameraError('Physical camera unavailable. Running high-precision biometric simulation.');
+      if (isDevSyntheticAllowed) {
+        console.warn('Physical camera unavailable, activating explicit dev test simulation:', errorMsg);
+        setIsSynthetic(true);
+        setCameraError('DEV TEST MOCK: Running synthetic biometric simulation (non-production).');
+      } else {
+        console.warn('Physical camera unavailable or blocked:', errorMsg);
+        setIsSynthetic(false);
+        setCameraError('Physical camera access is required for biometric verification. Please connect a camera and allow browser camera access.');
+      }
     }
-  }, []);
+  }, [isDevSyntheticAllowed]);
 
   // Initialize camera or simulation upon entering STANDBY
   useEffect(() => {
@@ -927,7 +942,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
       ctx.fillRect(0, 500, 640, 20);
       ctx.fillStyle = '#94a3b8';
       ctx.font = '10px monospace';
-      ctx.fillText(`HASH: ${biometricHash} \u00b7 CONFIDENCE: 99.8% \u00b7 BUFFER: ${cachedCount} FRAMES`, 15, 514);
+      ctx.fillText(`HASH: ${biometricHash} \u00b7 STATUS: LIVENESS PASSED \u00b7 BUFFER: ${cachedCount} FRAMES`, 15, 514);
 
       return collage.toDataURL('image/png');
     },
@@ -936,6 +951,15 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
 
   // Start the entire Biometric Calibration & Multi-Angle Scan Sequence
   const startBiometricSequence = () => {
+    if (!streamRef.current && !isSynthetic) {
+      setCameraError('Physical camera access is required before starting the biometric scan. Please connect a camera and allow permissions.');
+      startCamera();
+      return;
+    }
+
+    // Randomize profile challenge order (LEFT -> RIGHT or RIGHT -> LEFT) per session
+    challengeOrderRef.current = Math.random() < 0.5 ? ['LEFT', 'RIGHT'] : ['RIGHT', 'LEFT'];
+
     biometricFrameCache.clear();
     isTransitionPausedRef.current = false;
     setIsFramePaused(false);
@@ -1024,6 +1048,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
             centerEyeOpenBaselineRef.current = Math.max(0.25, 1.0 - (mpRes.eyeBlinkLeft + mpRes.eyeBlinkRight) * 0.5);
           }
 
+          const firstChallenge = challengeOrderRef.current[0];
           // Command 1 finished: PAUSE frame counting immediately until Command 2 starts!
           isTransitionPausedRef.current = true;
           biometricFrameCache.pause('COMMAND_1_FINISHED_TRANSITION');
@@ -1032,13 +1057,17 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           setTransitionBanner({
             visible: true,
             title: 'COMMAND 1 (CENTER) VERIFIED',
-            subtitle: 'FRAMES PAUSED // PREPARING COMMAND 2: TURN LEFT'
+            subtitle: `FRAMES PAUSED // PREPARING COMMAND 2: TURN ${firstChallenge}`
           });
           console.info('[BiometricEngine] COMMAND 1 (CENTER) COMPLETED. Frame caching PAUSED during transition to Command 2.');
 
           stepTimerRef.current = setTimeout(() => {
             setTransitionBanner(null);
-            runPose2Left();
+            if (firstChallenge === 'LEFT') {
+              runPose2Left(1);
+            } else {
+              runPose3Right(1);
+            }
           }, 1000);
         }
       } else if (!isLiveValid) {
@@ -1052,7 +1081,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
   };
 
   // Pose 2: Turn Left (Requires Actual Left Profile Rotation: deltaYaw <= -18 deg or yawDegrees <= -18 deg)
-  const runPose2Left = () => {
+  const runPose2Left = (challengeIdx = 1) => {
     isTransitionPausedRef.current = false;
     biometricFrameCache.resume();
     setIsFramePaused(false);
@@ -1061,7 +1090,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     setCurrentStep('POSE_LEFT');
     currentStepRef.current = 'POSE_LEFT';
     setPoseProgress(0);
-    console.info('[BiometricEngine] COMMAND 2 (LEFT) STARTED. Awaiting actual Left Profile head rotation (<= -18 deg).');
+    console.info('[BiometricEngine] COMMAND (LEFT) STARTED. Awaiting actual Left Profile head rotation (<= -18 deg).');
 
     let holdTicks = 0;
     let warmupTicks = 10; // ~600ms warm-up grace period so user can comfortably rotate head
@@ -1107,21 +1136,24 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           snapshotsRef.current.left = leftSnap;
           setSnapshots((prev) => ({ ...prev, left: leftSnap }));
 
-          // Command 2 finished: PAUSE frame counting immediately until Command 3 starts!
           isTransitionPausedRef.current = true;
-          biometricFrameCache.pause('COMMAND_2_FINISHED_TRANSITION');
+          biometricFrameCache.pause('COMMAND_LEFT_FINISHED_TRANSITION');
           setIsFramePaused(true);
-          setFramePauseReason('COMMAND_2_COMPLETE');
+          setFramePauseReason('COMMAND_LEFT_COMPLETE');
           setTransitionBanner({
             visible: true,
-            title: 'COMMAND 2 (LEFT PROFILE) VERIFIED',
-            subtitle: 'FRAMES PAUSED // PREPARING COMMAND 3: TURN RIGHT'
+            title: 'LEFT PROFILE VERIFIED',
+            subtitle: challengeIdx === 1 ? 'FRAMES PAUSED // PREPARING COMMAND 3: TURN RIGHT' : 'FRAMES PAUSED // PREPARING COMMAND 4: RETURN TO FRONT & BLINK'
           });
-          console.info('[BiometricEngine] COMMAND 2 (LEFT) COMPLETED with true left pose. Frame caching PAUSED.');
+          console.info('[BiometricEngine] COMMAND (LEFT) COMPLETED with true left pose. Frame caching PAUSED.');
 
           stepTimerRef.current = setTimeout(() => {
             setTransitionBanner(null);
-            runPose3Right();
+            if (challengeIdx === 1) {
+              runPose3Right(2);
+            } else {
+              runPose4Blink();
+            }
           }, 1000);
         }
       } else {
@@ -1133,7 +1165,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
   };
 
   // Pose 3: Turn Right (Requires Actual Right Profile Rotation: deltaYaw >= +18 deg or yawDegrees >= +18 deg)
-  const runPose3Right = () => {
+  const runPose3Right = (challengeIdx = 2) => {
     isTransitionPausedRef.current = false;
     biometricFrameCache.resume();
     setIsFramePaused(false);
@@ -1142,7 +1174,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
     setCurrentStep('POSE_RIGHT');
     currentStepRef.current = 'POSE_RIGHT';
     setPoseProgress(0);
-    console.info('[BiometricEngine] COMMAND 3 (RIGHT) STARTED. Awaiting actual Right Profile head rotation (>= +18 deg).');
+    console.info('[BiometricEngine] COMMAND (RIGHT) STARTED. Awaiting actual Right Profile head rotation (>= +18 deg).');
 
     let holdTicks = 0;
     let warmupTicks = 10; // ~600ms warm-up grace period so user can comfortably rotate head
@@ -1188,21 +1220,24 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           snapshotsRef.current.right = rightSnap;
           setSnapshots((prev) => ({ ...prev, right: rightSnap }));
 
-          // Command 3 finished: PAUSE frame counting immediately until Command 4 starts!
           isTransitionPausedRef.current = true;
           biometricFrameCache.pause('COMMAND_3_FINISHED_TRANSITION');
           setIsFramePaused(true);
           setFramePauseReason('COMMAND_3_COMPLETE');
           setTransitionBanner({
             visible: true,
-            title: 'COMMAND 3 (RIGHT PROFILE) VERIFIED',
-            subtitle: 'FRAMES PAUSED // PREPARING COMMAND 4: BLINK EYES'
+            title: 'RIGHT PROFILE VERIFIED',
+            subtitle: challengeIdx === 1 ? 'FRAMES PAUSED // PREPARING COMMAND 3: TURN LEFT' : 'FRAMES PAUSED // PREPARING COMMAND 4: RETURN TO FRONT & BLINK'
           });
-          console.info('[BiometricEngine] COMMAND 3 (RIGHT) COMPLETED with true right pose. Frame caching PAUSED.');
+          console.info('[BiometricEngine] COMMAND (RIGHT) COMPLETED with true right pose. Frame caching PAUSED.');
 
           stepTimerRef.current = setTimeout(() => {
             setTransitionBanner(null);
-            runPose4Blink();
+            if (challengeIdx === 1) {
+              runPose2Left(2);
+            } else {
+              runPose4Blink();
+            }
           }, 1000);
         }
       } else {
@@ -1292,6 +1327,15 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           }
         }
       } else if (res && res.isValidFace) {
+        // Return-to-front consistency check against initial center descriptor
+        const isFrontReturned = Math.abs(res.yawDegrees) <= 18;
+        let isIdentityConsistent = true;
+        if (centerDescriptorRef.current && res.featureDescriptor) {
+          isIdentityConsistent = evaluateCosineSimilarity(centerDescriptorRef.current, res.featureDescriptor) >= 0.40;
+        }
+        if (!isFrontReturned || !isIdentityConsistent) {
+          return;
+        }
         const isBlinkingSignal = res.blink && res.blink.isBlinking;
         const eyeOpenness = res.blink?.eyeOpenness ?? 0.5;
         const baselineEye = Math.max(0.28, centerEyeOpenBaselineRef.current || 0.45);
@@ -1402,7 +1446,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         stepTimerRef.current = setTimeout(executeNextChromaFlash, item.duration);
       } else {
         setFlashColor(null);
-        setFlashStageText('3D CHROMA SCATTERING VERIFIED (99.8% Biological Human Tissue)');
+        setFlashStageText('3D CHROMA SCATTERING VERIFIED (Biological Liveness Passed)');
         setTransitionBanner({
           visible: true,
           title: '3D BIOMETRIC LIVENESS VERIFIED',
@@ -1459,7 +1503,9 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
       onVerified(compositeUrl, {
         hash: persistResult.biometricHash,
         laplacianScore: persistResult.score,
-        poseSnapshots: finalPoseSnaps
+        poseSnapshots: finalPoseSnaps,
+        descriptor: centerDescriptorRef.current ? Array.from(centerDescriptorRef.current) : undefined,
+        isSynthetic
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1542,15 +1588,17 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
             )}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setIsSynthetic(!isSynthetic)}
-            className="text-[8.5px] px-1.5 py-0.5 rounded border border-slate-700 bg-slate-900/80 text-sky-300 hover:border-sky-500 cursor-pointer"
-          >
-            {isSynthetic ? 'SWITCH TO WEBCAM' : 'SWITCH TO SIMULATION'}
-          </button>
-        </div>
+        {isDevSyntheticAllowed && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsSynthetic(!isSynthetic)}
+              className="text-[8.5px] px-1.5 py-0.5 rounded border border-slate-700 bg-slate-900/80 text-sky-300 hover:border-sky-500 cursor-pointer"
+            >
+              {isSynthetic ? 'SWITCH TO WEBCAM' : 'SWITCH TO SIMULATION'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Camera / Oval Viewport Container */}
@@ -2002,7 +2050,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         {currentStep === 'VERIFIED' && (
           <div className="absolute bottom-2.5 right-3 z-20 font-mono text-[10.5px] font-bold px-3 py-1 rounded bg-emerald-950/95 border border-emerald-400 text-emerald-300 flex items-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.7)] animate-in fade-in">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>BIOMETRIC PROOF VERIFIED [99.8%]</span>
+            <span>BIOMETRIC LIVENESS CAPTURED [PENDING REVIEW]</span>
           </div>
         )}
       </div>

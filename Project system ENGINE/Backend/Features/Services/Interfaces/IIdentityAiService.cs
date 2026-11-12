@@ -10,4 +10,5 @@ public interface IIdentityAiService
 {
     AiProviderStatusDto GetAiStatus();
     Task<AiExtractResponseDto> ExtractIdentityAsync(AiExtractRequestDto request, CancellationToken ct = default);
+    Task<IdentityDocumentAnalyzeResponseDto> AnalyzeDocumentAsync(IdentityDocumentAnalyzeRequestDto request, CancellationToken ct = default);
 }

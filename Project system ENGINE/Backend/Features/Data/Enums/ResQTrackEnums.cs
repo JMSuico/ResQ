@@ -71,5 +71,6 @@ public enum CaptureKind
 {
     Id = 1,
     Face = 2,
-    Report = 3
+    Report = 3,
+    IdBack = 4
 }

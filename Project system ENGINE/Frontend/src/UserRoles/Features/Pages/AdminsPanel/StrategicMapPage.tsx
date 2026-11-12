@@ -400,6 +400,8 @@ export const StrategicMapPage: FC = () => {
                 const matched = reports.find((r) => r.id === inc.id);
                 if (matched) {
                   handleSelectIncident(matched);
+                } else if (typeof inc.lat === 'number' && typeof inc.lng === 'number') {
+                  setActiveCenter({ lat: inc.lat, lng: inc.lng });
                 }
               }}
               centerLat={activeCenter.lat}

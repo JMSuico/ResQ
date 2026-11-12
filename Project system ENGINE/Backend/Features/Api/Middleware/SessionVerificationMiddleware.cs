@@ -15,8 +15,16 @@ public class SessionVerificationMiddleware(RequestDelegate next)
         "/api/health",
         "/health",
         "/api/login",
+        "/api/auth/login",
         "/api/logout",
+        "/api/auth/logout",
         "/api/register",
+        "/api/auth/register",
+        "/api/auth/verification-providers",
+        "/api/biometric-login",
+        "/api/auth/biometric-login",
+        "/api/login/biometric",
+        "/api/auth/login/biometric",
         "/api/openapi/v1.json",
         "/scalar/v1",
         "/api/identity/ai-extract",
@@ -28,20 +36,21 @@ public class SessionVerificationMiddleware(RequestDelegate next)
         if (request.Headers.TryGetValue("Origin", out var originVal) && !string.IsNullOrWhiteSpace(originVal))
         {
             var str = originVal.ToString();
-            if (Uri.TryCreate(str, UriKind.Absolute, out var uri) && uri.Port == 5174) return true;
-            if (str.Contains(":5174")) return true;
+            if (Uri.TryCreate(str, UriKind.Absolute, out var uri) && (uri.Port == 1996 || uri.Port == 5174)) return true;
+            if (str.Contains(":1996") || str.Contains(":5174")) return true;
         }
 
         if (request.Headers.TryGetValue("Referer", out var refererVal) && !string.IsNullOrWhiteSpace(refererVal))
         {
             var str = refererVal.ToString();
-            if (Uri.TryCreate(str, UriKind.Absolute, out var uri) && uri.Port == 5174) return true;
-            if (str.Contains(":5174")) return true;
+            if (Uri.TryCreate(str, UriKind.Absolute, out var uri) && (uri.Port == 1996 || uri.Port == 5174)) return true;
+            if (str.Contains(":1996") || str.Contains(":5174")) return true;
         }
 
-        if (request.Headers.TryGetValue("X-Client-Port", out var portVal) && portVal.ToString().Trim() == "5174")
+        if (request.Headers.TryGetValue("X-Client-Port", out var portVal))
         {
-            return true;
+            var p = portVal.ToString().Trim();
+            if (p == "1996" || p == "5174") return true;
         }
 
         return false;
@@ -63,7 +72,7 @@ public class SessionVerificationMiddleware(RequestDelegate next)
         if (string.IsNullOrWhiteSpace(token))
         {
             // For session endpoint, allow null to return empty/unauthorized without throwing
-            if (path == "/api/session")
+            if (path == "/api/session" || path == "/api/auth/session")
             {
                 await next(context);
                 return;
@@ -97,11 +106,11 @@ public class SessionVerificationMiddleware(RequestDelegate next)
             return;
         }
 
-        // Enforce Port 5174 Restriction: Only LDRRMO_Admin is permitted on port 5174
+        // Enforce Port 1996 Restriction: Only LDRRMO_Admin is permitted on port 1996
         if (IsAdminPortRequest(context.Request) && user.Role != UserRole.LDRRMO_Admin)
         {
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsJsonAsync(new { message = "Port 5174 is restricted to LDRRMO Admin personnel." });
+            await context.Response.WriteAsJsonAsync(new { message = "Port 1996 is restricted to LDRRMO Admin personnel." });
             return;
         }
 

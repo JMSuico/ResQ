@@ -19,4 +19,9 @@ public class IdentityController(IIdentityAiService aiService) : ControllerBase
     [HttpPost("ai-extract")]
     public async Task<IActionResult> AiExtractAsync([FromBody] AiExtractRequestDto request, CancellationToken ct) =>
         Ok(await aiService.ExtractIdentityAsync(request, ct));
+
+    [HttpPost("analyze-document")]
+    [HttpPost("/api/identity-documents/analyze")]
+    public async Task<IActionResult> AnalyzeDocumentAsync([FromBody] IdentityDocumentAnalyzeRequestDto request, CancellationToken ct) =>
+        Ok(await aiService.AnalyzeDocumentAsync(request, ct));
 }

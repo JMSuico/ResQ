@@ -188,7 +188,7 @@ const runE2EVerification = async (): Promise<void> => {
   console.log(`${BOLD}Target Coordinates: Katipunan Municipal Hall (${KATIPUNAN_COORDINATES.latitude}, ${KATIPUNAN_COORDINATES.longitude})${RESET}`);
   console.log(`${BOLD}========================================================================${RESET}\n`);
 
-  const baseUrl = process.env.API_BASE_URL || 'http://127.0.0.1:5000';
+  const baseUrl = process.env.API_BASE_URL || 'http://127.0.0.1:1999';
   logInfo(`Connecting to backend on: ${baseUrl}`);
 
   const isLive = await checkBackendAvailability(baseUrl);

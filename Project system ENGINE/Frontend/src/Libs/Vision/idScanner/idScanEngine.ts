@@ -18,6 +18,11 @@ import {
   parseNameComponents
 } from './validators';
 import { providerRegistry, IdOcrResult } from './ai';
+import { scanCardWithOnDeviceWasm, OnDeviceOcrResult } from './onDeviceWasmOcr';
+import {
+  runPhilippineIdRecognitionPipeline,
+  type DocumentAnalysisResult,
+} from './idRecognitionPipeline';
 import {
   WorkerRequest,
   WorkerResponse,
@@ -50,6 +55,7 @@ export interface IdScanResult {
   readonly rawText: string;
   readonly error?: string;
   readonly cardPresence?: CardPresenceEvaluation;
+  readonly documentAnalysis?: DocumentAnalysisResult;
 }
 
 export interface IdScannerEngineConfig {
@@ -271,11 +277,47 @@ export class IdScanEngine {
       ? imageDataToDataUrl(workerResult.portraitImageData)
       : undefined;
 
-    // Evaluate if AI Standby Fallback is necessary
+    // 100% Client-Side On-Device WebAssembly OCR Pass (Tesseract.js WebWorker)
+    // Only run whole-card anchor OCR on front/data-page uploads, and NEVER overwrite validated ROI fields.
+    let wasmResult: OnDeviceOcrResult | null = null;
+    const wasmInput = rectifiedImageUrl || (typeof document !== 'undefined' ? imageDataToDataUrl(imageData) : imageData);
+    if (wasmInput && side === 'front') {
+      try {
+        wasmResult = await scanCardWithOnDeviceWasm(wasmInput);
+      } catch (wasmErr: unknown) {
+        console.warn('[IdScanEngine] On-Device WebAssembly OCR execution warning:', wasmErr);
+      }
+    }
+
+    // Merge on-device WASM OCR extracted fields ONLY for missing worker fields (ROI takes precedence)
+    let mergedFields: ExtractedFieldsPayload = { ...workerResult.fields };
+    let rawTextCombined = workerResult.rawText || '';
+
+    if (wasmResult && wasmResult.success && side === 'front') {
+      const validWasmEntries = Object.entries(wasmResult.fields).filter(([k, v]) => {
+        const existingVal = (mergedFields as Record<string, string | undefined>)[k];
+        return Boolean(v) && !existingVal;
+      });
+      mergedFields = {
+        ...mergedFields,
+        ...Object.fromEntries(validWasmEntries)
+      };
+      if (wasmResult.rawText) {
+        rawTextCombined = rawTextCombined
+          ? `${rawTextCombined}\n${wasmResult.rawText}`
+          : wasmResult.rawText;
+      }
+    }
+
+    const hasWasmResolvedFront = Boolean(
+      mergedFields.fullname || mergedFields.lastName || mergedFields.licenseNumber || mergedFields.idNumber
+    );
+
+    // Evaluate if AI Standby Fallback is necessary (only if on-device WASM and deterministic CV could not resolve core fields)
     if (
       this.config.enableAiStandbyFallback &&
       (workerResult.confidence < this.config.minConfidenceToAutofill ||
-        (side === 'front' && !workerResult.fields.fullname && !workerResult.fields.lastName)) &&
+        (side === 'front' && !hasWasmResolvedFront)) &&
       rectifiedImageUrl
     ) {
       try {
@@ -287,75 +329,75 @@ export class IdScanEngine {
         if (aiResult && Object.keys(aiResult.fields).length > 0) {
           const rawAiName = aiResult.fields['FullName']?.value || aiResult.fields['fullname']?.value;
           const sanitizedAiName = rawAiName ? sanitizeExtractedPersonName(rawAiName) : null;
-          const finalFullname = sanitizedAiName || workerResult.fields.fullname;
+          const finalFullname = sanitizedAiName || mergedFields.fullname || workerResult.fields.fullname;
 
           const rawAiId = aiResult.fields['IdNumber']?.value || aiResult.fields['idNumber']?.value;
-          let finalIdNumber = workerResult.fields.idNumber;
+          let finalIdNumber = mergedFields.idNumber || workerResult.fields.idNumber;
           if (rawAiId) {
             const val = validateIdNumber(workerResult.idCategory, rawAiId);
             finalIdNumber = val.isValid ? val.normalized : rawAiId;
           }
 
           const nameParts = parseNameComponents(finalFullname || '');
-          const mergedFields: ExtractedFieldsPayload = {
+          const aiMergedFields: ExtractedFieldsPayload = {
             fullname: finalFullname,
             firstName:
               aiResult.fields['FirstName']?.value ||
               aiResult.fields['firstName']?.value ||
-              workerResult.fields.firstName ||
+              mergedFields.firstName ||
               nameParts.firstName ||
               undefined,
             middleName:
               aiResult.fields['MiddleName']?.value ||
               aiResult.fields['middleName']?.value ||
-              workerResult.fields.middleName ||
+              mergedFields.middleName ||
               nameParts.middleName ||
               undefined,
             lastName:
               aiResult.fields['LastName']?.value ||
               aiResult.fields['lastName']?.value ||
-              workerResult.fields.lastName ||
+              mergedFields.lastName ||
               nameParts.lastName ||
               undefined,
             idNumber: finalIdNumber,
             licenseNumber:
               aiResult.fields['LicenseNumber']?.value ||
               aiResult.fields['licenseNumber']?.value ||
-              workerResult.fields.licenseNumber ||
+              mergedFields.licenseNumber ||
               (workerResult.idCategory === 'drivers' ? finalIdNumber : undefined),
             employeeId:
               aiResult.fields['EmployeeId']?.value ||
               aiResult.fields['employeeId']?.value ||
-              workerResult.fields.employeeId ||
+              mergedFields.employeeId ||
               (userRole === 'Responder' ? finalIdNumber : undefined),
             dateOfBirth:
               aiResult.fields['DateOfBirth']?.value ||
               aiResult.fields['dateOfBirth']?.value ||
-              workerResult.fields.dateOfBirth,
+              mergedFields.dateOfBirth,
             expirationDate:
               aiResult.fields['ExpirationDate']?.value ||
               aiResult.fields['expirationDate']?.value ||
-              workerResult.fields.expirationDate,
+              mergedFields.expirationDate,
             sex:
               aiResult.fields['Sex']?.value ||
               aiResult.fields['sex']?.value ||
-              workerResult.fields.sex,
+              mergedFields.sex,
             address:
               aiResult.fields['Address']?.value ||
               aiResult.fields['address']?.value ||
-              workerResult.fields.address,
+              mergedFields.address,
             weight:
               aiResult.fields['Weight']?.value ||
               aiResult.fields['weight']?.value ||
-              workerResult.fields.weight,
+              mergedFields.weight,
             height:
               aiResult.fields['Height']?.value ||
               aiResult.fields['height']?.value ||
-              workerResult.fields.height,
+              mergedFields.height,
             rankOrTitle:
               aiResult.fields['Rank']?.value ||
               aiResult.fields['rank']?.value ||
-              workerResult.fields.rankOrTitle
+              mergedFields.rankOrTitle
           };
 
           const idValidationPass = finalIdNumber
@@ -377,17 +419,17 @@ export class IdScanEngine {
             idCategory: workerResult.idCategory,
             confidence: aiConfidence,
             confidenceTier: aiTier,
-            fields: mergedFields,
+            fields: aiMergedFields,
             quality: workerResult.quality,
             corners: workerResult.corners,
             rectifiedImageData: workerResult.rectifiedImageData,
             rectifiedImageUrl,
             portraitImageData: workerResult.portraitImageData,
             portraitImageUrl,
-            executionTimeMs: workerResult.executionTimeMs + aiResult.executionTimeMs,
+            executionTimeMs: workerResult.executionTimeMs + aiResult.executionTimeMs + (wasmResult?.executionTimeMs || 0),
             method: 'AI_STANDBY_FALLBACK',
             aiProviderUsed: aiResult.providerUsed,
-            rawText: aiResult.rawText || workerResult.rawText,
+            rawText: aiResult.rawText || rawTextCombined,
             cardPresence: workerResult.cardPresence
           };
         }
@@ -397,40 +439,72 @@ export class IdScanEngine {
     }
 
     const hasCoreFields = Boolean(
-      workerResult.fields &&
-        (workerResult.fields.fullname ||
-          workerResult.fields.firstName ||
-          workerResult.fields.lastName ||
-          workerResult.fields.licenseNumber ||
-          workerResult.fields.idNumber ||
-          workerResult.fields.employeeId ||
-          workerResult.fields.address ||
-          workerResult.fields.weight ||
-          workerResult.fields.height)
+      mergedFields &&
+        (mergedFields.fullname ||
+          mergedFields.firstName ||
+          mergedFields.lastName ||
+          mergedFields.licenseNumber ||
+          mergedFields.idNumber ||
+          mergedFields.employeeId ||
+          mergedFields.address ||
+          mergedFields.weight ||
+          mergedFields.height)
     );
 
+    const calculatedConfidence = wasmResult?.success
+      ? Math.max(workerResult.confidence, wasmResult.confidence)
+      : workerResult.confidence;
+    const finalTier = getIdScanConfidenceTier(calculatedConfidence);
+
+    const documentAnalysis = runPhilippineIdRecognitionPipeline({
+      rawText: rawTextCombined,
+      extractedFields: mergedFields as Record<string, string | undefined>,
+      targetCategory,
+      expectedSide: side,
+      qualityGate: {
+        passed: workerResult.quality.passed,
+        blurVariance: workerResult.quality.details.laplacian,
+        glareRatio: workerResult.quality.details.glare,
+        brightness: workerResult.quality.details.exposure,
+        failureReason: workerResult.quality.reasons[0] ?? null,
+      },
+    });
+
+    const resolvedCategory: GovernmentIdCategory =
+      documentAnalysis.classification.categoryKey !== 'unknown'
+        ? documentAnalysis.classification.categoryKey
+        : workerResult.idCategory;
+
+    // Enforce NCDA AO No. 001 (2026) PWD biometric profiling prohibition
+    const safePortraitData =
+      documentAnalysis.privacyCompliance.allowBiometricProfiling ? workerResult.portraitImageData : undefined;
+    const safePortraitUrl =
+      documentAnalysis.privacyCompliance.allowBiometricProfiling ? portraitImageUrl : undefined;
+
     const isSuccessful = Boolean(
-      workerResult.success &&
-        (side === 'back' || hasCoreFields || workerResult.confidence >= this.config.minConfidenceToAutofill)
+      (workerResult.success || (wasmResult && wasmResult.success)) &&
+        documentAnalysis.overallStatus !== 'UNSUPPORTED_DOCUMENT' &&
+        (side === 'back' || hasCoreFields || calculatedConfidence >= this.config.minConfidenceToAutofill)
     );
 
     return {
       success: isSuccessful,
       side,
-      idCategory: workerResult.idCategory,
-      confidence: workerResult.confidence,
-      confidenceTier: workerResult.confidenceTier,
-      fields: workerResult.fields,
+      idCategory: resolvedCategory,
+      confidence: calculatedConfidence,
+      confidenceTier: finalTier,
+      fields: mergedFields,
       quality: workerResult.quality,
       corners: workerResult.corners,
       rectifiedImageData: workerResult.rectifiedImageData,
       rectifiedImageUrl,
-      portraitImageData: workerResult.portraitImageData,
-      portraitImageUrl,
-      executionTimeMs: workerResult.executionTimeMs,
+      portraitImageData: safePortraitData,
+      portraitImageUrl: safePortraitUrl,
+      executionTimeMs: workerResult.executionTimeMs + (wasmResult?.executionTimeMs || 0),
       method: 'DETERMINISTIC_CV',
-      rawText: workerResult.rawText,
+      rawText: rawTextCombined,
       cardPresence: workerResult.cardPresence,
+      documentAnalysis,
       error: isSuccessful ? undefined : workerResult.error || 'Failed to detect or parse valid government ID'
     };
   };

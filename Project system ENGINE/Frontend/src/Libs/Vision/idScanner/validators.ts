@@ -371,40 +371,14 @@ export const normalizePhilippineAddress = (rawAddress: string): string => {
     .replace(/\b[7ZS]\s*[I1|]\s*[I1|]\s*[0OU]\b|\b9Z93O\b|\b9Z930\b|\bZR3O\b|\bZR1O\b|\b7\s*I\s*IO\b|\bZ\s*I\s*I\s*O\b|\b7110\b/gi, '7110')
     .replace(/\b[7ZS]\s*[I1|]\s*[0OU]\s*[9G]\b|\b7\s*I\s*0\s*9\b|\bZR09\b|\b7109\b/gi, '7109');
 
-  // Katipunan 7109 territorial priority check
-  if (cleaned.includes('KATIPUNAN') || cleaned.includes('7109')) {
-    return '-, -, POBLACION, KATIPUNAN, ZAMBOANGA DEL NORTE, 7109';
-  }
-
-  // Manukan 7110 & general Zamboanga del Norte detection (with optical noise resilience)
-  if (
-    cleaned.includes('POBLACION') ||
-    cleaned.includes('MANUKAN') ||
-    cleaned.includes('ZAMBOANGA') ||
-    cleaned.includes('MAMUKAM') ||
-    cleaned.includes('ZZ3M') ||
-    cleaned.includes('7110') ||
-    cleaned.includes('NORTE') ||
-    cleaned.includes('M3RTE') ||
-    /M3RTE|9Z93O|9Z930/i.test(rawAddress)
-  ) {
-    return '-, -, POBLACION, MANUKAN, ZAMBOANGA DEL NORTE, 7110';
-  }
-
-  // Standardize leading hyphens and remove leading punctuation/label noise without wiping string
-  cleaned = cleaned.replace(/^[\s,.\-|IMZNOADRES_]+(?=POBLACION)/i, '');
-  if (cleaned.startsWith(',') || cleaned.startsWith('-') || cleaned.startsWith('.') || cleaned.startsWith('I ')) {
-    cleaned = cleaned.replace(/^[\s,.\-|I]+/, '').trim();
-    cleaned = `-, -, ${cleaned}`;
-  } else if (!cleaned.startsWith('-, -') && cleaned.includes('POBLACION')) {
-    cleaned = `-, -, ${cleaned}`;
-  }
-
+  // Clean trailing and leading punctuation noise without replacing the true citizen address
+  cleaned = cleaned.replace(/^[,\s.\-|]+/, '').replace(/[,\s.\-|]+$/, '').replace(/\s+/g, ' ');
   return cleaned;
 };
 
 /**
- * Normalizes weight (e.g. "S2" / "92" -> "52") and height (e.g. "I Z I" / "1 71" -> "1.71")
+ * Normalizes weight (e.g. "84" -> "84") and height (e.g. "1.70" -> "1.70")
+ * Zero hardcoded fallback defaults.
  */
 export const normalizePhysicalMeasurement = (
   rawVal: string,
@@ -414,40 +388,26 @@ export const normalizePhysicalMeasurement = (
   const trimmed = rawVal.trim().toUpperCase();
 
   if (type === 'weight') {
-    // If string contains a plausible 2 or 3 digit weight (30 to 250), e.g. "9 9 3 52" -> "52"
+    // If string contains a plausible 2 or 3 digit weight (30 to 250 kg)
     const wtNumMatch = trimmed.match(/\b([3-9]\d|1\d{2}|2[0-4]\d)\b/);
     if (wtNumMatch) {
       const val = parseInt(wtNumMatch[1], 10);
       if (val >= 30 && val <= 250) return String(val);
     }
-    let rep = repairNumericField(trimmed).replace(/\D/g, '');
-    if (rep.endsWith('52') || rep.endsWith('92') || rep.endsWith('S2') || rep.includes('52')) {
-      return '52';
-    }
-    if (rep === '92' || rep === 'S2') {
-      return '52';
-    }
-    if (rep.length >= 2 && rep.length <= 3) {
-      const val = parseInt(rep, 10);
+    const cleanDigits = trimmed.replace(/\D/g, '');
+    if (cleanDigits.length >= 2 && cleanDigits.length <= 3) {
+      const val = parseInt(cleanDigits, 10);
       if (val >= 30 && val <= 250) return String(val);
-    }
-    // Reject barcode / watermark noisy digit streams like "68440"
-    if (rep.length > 3) {
-      return '52';
     }
     return '';
   }
 
   if (type === 'height') {
-    // If string contains decimal height like "1.71"
-    const htDecMatch = trimmed.match(/\b([12]\.\d{2})\b/) || trimmed.match(/\b(1[.,]7[1I])\b/);
+    // If string contains decimal height like "1.70", "1.75", "1.82"
+    const htDecMatch = trimmed.match(/\b([0-2]\.\d{2})\b/) || trimmed.match(/\b([0-2],\d{2})\b/);
     if (htDecMatch) {
-      const parsed = parseFloat(htDecMatch[1].replace(',', '.').replace(/I/g, '1'));
+      const parsed = parseFloat(htDecMatch[1].replace(',', '.'));
       if (parsed >= 0.90 && parsed <= 2.50) return parsed.toFixed(2);
-    }
-    // Optical OCR confusion on blue background: "3.73" or "1.73" or "3.71" -> "1.71"
-    if (/[13][.,]7[13I]/i.test(trimmed) || trimmed.includes('1.71') || trimmed.includes('171') || trimmed.includes('1 71') || trimmed.includes('71')) {
-      return '1.71';
     }
     let rep = trimmed
       .replace(/I/g, '1')
@@ -464,8 +424,7 @@ export const normalizePhysicalMeasurement = (
     if (!isNaN(parsed) && parsed >= 0.90 && parsed <= 2.50) {
       return parsed.toFixed(2);
     }
-    // Reject noisy OCR numbers like "9857833"
-    return '1.71';
+    return '';
   }
 
   return trimmed;
@@ -739,32 +698,10 @@ export const validateIdNumber = (
         .replace(/^N[O0]\.?\s*/gi, '')
         .trim();
       const uppercaseRaw = strippedLabel.toUpperCase().replace(/[\s-]+/g, '');
-      let firstChar = uppercaseRaw[0] ?? '';
-      if (firstChar === 'I' || firstChar === '1' || firstChar === 'T' || firstChar === '3' || firstChar === '9') {
-        firstChar = 'J';
-      } else {
-        firstChar = repairAlphaField(firstChar);
-      }
+      const firstChar = repairAlphaField(uppercaseRaw[0] ?? '');
 
-      // Repair the numeric portion (10 digits) with OCR optical character repairs
-      let restRaw = uppercaseRaw.slice(1);
-      restRaw = restRaw
-        .replace(/O/g, '0')
-        .replace(/D/g, '0')
-        .replace(/Q/g, '0')
-        .replace(/I/g, '1')
-        .replace(/L/g, '1')
-        .replace(/S/g, '5')
-        .replace(/B/g, '8')
-        .replace(/R/g, '2');
-
-      // If agency prefix starts with '0Z', 'Z' is optical confusion for '7' (e.g. Agency J07)
-      if (restRaw.length >= 2 && restRaw[0] === '0' && (restRaw[1] === 'Z' || restRaw[1] === 'z')) {
-        restRaw = '07' + restRaw.slice(2);
-      }
-      // Any remaining 'Z' represents '2' (e.g. year of issue 22, serial digits)
-      restRaw = restRaw.replace(/Z/g, '2').replace(/X/g, '2');
-
+      // Repair the numeric portion (10 digits) with generic OCR optical character repairs
+      const restRaw = uppercaseRaw.slice(1);
       const repairedRest = repairNumericField(restRaw);
       const digitsOnly = repairedRest.replace(/\D/g, '');
 
@@ -778,10 +715,7 @@ export const validateIdNumber = (
 
       const p1 = digitsOnly.slice(0, 2);
       const p2 = digitsOnly.slice(2, 4);
-      let p3 = digitsOnly.slice(4, 10);
-      if (p3.endsWith('88') || p3.endsWith('80') || p3.endsWith('68')) {
-        p3 = p3.slice(0, 4) + '60';
-      }
+      const p3 = digitsOnly.slice(4, 10);
       const canonical = `${firstChar}${p1}-${p2}-${p3}`;
       return { isValid: true, normalized: canonical };
     }
@@ -910,6 +844,98 @@ export const validateIdNumber = (
         };
       }
       return { isValid: true, normalized: cleaned };
+    }
+
+    case 'sss': {
+      const withoutPrefix = rawClean.toUpperCase().replace(/^(?:SSS|CRN)-?/i, '').trim();
+      const digitsOnly = repairNumericField(withoutPrefix).replace(/\D/g, '');
+      if (digitsOnly.length === 10) {
+        return {
+          isValid: true,
+          normalized: `${digitsOnly.slice(0, 2)}-${digitsOnly.slice(2, 9)}-${digitsOnly.slice(9, 10)}`,
+        };
+      }
+      if (digitsOnly.length === 12) {
+        return {
+          isValid: true,
+          normalized: `${digitsOnly.slice(0, 4)}-${digitsOnly.slice(4, 11)}-${digitsOnly.slice(11, 12)}`,
+        };
+      }
+      return {
+        isValid: false,
+        normalized: rawClean,
+        error: 'SSS Number must contain 10 digits (NN-NNNNNNN-N) or 12-digit CRN',
+      };
+    }
+
+    case 'gsis': {
+      const cleaned = rawClean.toUpperCase().replace(/^(?:GSIS|BP|CRN)[\s:-]*/i, '').trim();
+      const digitsOnly = repairNumericField(cleaned).replace(/\D/g, '');
+      if (digitsOnly.length >= 10 && digitsOnly.length <= 12) {
+        return { isValid: true, normalized: digitsOnly };
+      }
+      return {
+        isValid: false,
+        normalized: rawClean,
+        error: 'GSIS BP / eCard number must contain 10 to 12 digits',
+      };
+    }
+
+    case 'philhealth': {
+      const withoutPin = rawClean.toUpperCase().replace(/^PIN[\s:-]*/i, '').trim();
+      const digitsOnly = repairNumericField(withoutPin).replace(/\D/g, '');
+      if (digitsOnly.length !== 12) {
+        return {
+          isValid: false,
+          normalized: rawClean,
+          error: `PhilHealth Identification Number (PIN) must contain 12 digits (got ${digitsOnly.length})`,
+        };
+      }
+      const canonical = `${digitsOnly.slice(0, 2)}-${digitsOnly.slice(2, 11)}-${digitsOnly.slice(11, 12)}`;
+      return { isValid: true, normalized: canonical };
+    }
+
+    case 'owwa': {
+      const cleaned = rawClean.toUpperCase().replace(/^OWWA[\s:-]*/i, '').trim();
+      if (/^[A-Z0-9-]{8,18}$/.test(cleaned) && /\d{4,}/.test(cleaned)) {
+        return { isValid: true, normalized: cleaned };
+      }
+      return {
+        isValid: false,
+        normalized: rawClean,
+        error: 'OWWA e-Card number must be 8-18 alphanumeric characters',
+      };
+    }
+
+    case 'pwd': {
+      const cleaned = rawClean.toUpperCase().replace(/^PWD[\s:-]*/i, '').trim();
+      const digitsOnly = repairNumericField(cleaned).replace(/\D/g, '');
+      if (digitsOnly.length === 16) {
+        const canonical = `${digitsOnly.slice(0, 2)}-${digitsOnly.slice(2, 6)}-${digitsOnly.slice(6, 9)}-${digitsOnly.slice(9, 16)}`;
+        return { isValid: true, normalized: canonical };
+      }
+      if (/^[A-Z0-9-]{6,20}$/.test(cleaned) && /\d{3,}/.test(cleaned)) {
+        return { isValid: true, normalized: cleaned };
+      }
+      return {
+        isValid: false,
+        normalized: rawClean,
+        error: 'PWD ID number must follow RR-PPMM-BBB-NNNNNNN (16 digits) or valid LGU PDAO control number',
+      };
+    }
+
+    case 'senior_citizen':
+    case 'solo_parent':
+    case 'barangay': {
+      const cleaned = rawClean.toUpperCase().trim();
+      if (/^[A-Z0-9-]{4,20}$/.test(cleaned) && /\d{2,}/.test(cleaned)) {
+        return { isValid: true, normalized: cleaned };
+      }
+      return {
+        isValid: false,
+        normalized: rawClean,
+        error: `${normalizedType.replace('_', ' ').toUpperCase()} control number must be 4-20 alphanumeric characters with digits`,
+      };
     }
 
     default: {
@@ -1087,6 +1113,15 @@ export const isPlausibleHumanName = (rawText: string): boolean => {
   const tokens = clean.split(/[\s,]+/).filter((t) => t.length > 0);
   if (tokens.length < 1 || tokens.length > 7) return false;
 
+  // Single-token 3-letter acronym check (e.g. "RMI", "LTO", "DOB" from ID card markings)
+  const statutoryAcronyms = new Set([
+    'RMI', 'LTO', 'PCN', 'CRN', 'DOB', 'DLN', 'LGU', 'PSA', 'SSS',
+    'TIN', 'GSIS', 'BIR', 'PRC', 'NBI', 'PNP', 'BFP', 'RHU', 'LDRRMO', 'DOTR'
+  ]);
+  if (tokens.length === 1 && (clean.length <= 3 || statutoryAcronyms.has(tokens[0].toUpperCase()))) {
+    return false;
+  }
+
   // Average token length check: single-letter sequences (e.g., "N NR NW AW NWN W ZDMWR")
   if (tokens.length >= 4) {
     const totalChars = tokens.reduce((acc, t) => acc + t.length, 0);
@@ -1229,37 +1264,17 @@ export const parseNameComponents = (rawFullName: string): ParsedNameComponents =
   // Format 1: "SURNAME, FIRSTNAME MIDDLENAME" (standard Philippine government ID format)
   if (cleaned.includes(',')) {
     const parts = cleaned.split(',').map((p) => p.trim());
-    let lastName = parts[0] || '';
-    if (lastName === 'SUNCO' || lastName === 'SU1CO' || lastName === 'SVICO') {
-      lastName = 'SUICO';
-    }
-    const remainder = parts[1] || '';
+    const lastName = parts[0] || '';
+    const remainder = parts.slice(1).join(',').trim();
     const tokens = remainder.split(/\s+/).filter(Boolean);
     if (tokens.length === 0) {
       return { firstName: '', middleName: '', lastName };
     }
     if (tokens.length === 1) {
-      const single = tokens[0];
-      const amacaMatch = single.match(/^([A-ZÑ]+?)(AMACA|AMAC4)$/i);
-      if (amacaMatch) {
-        let first = amacaMatch[1];
-        if (first.startsWith('JHONMAR') || first === 'GHONMARK' || first === 'JH0NMARK') {
-          first = 'JHONMARK';
-        }
-        return { firstName: first, middleName: 'AMACA', lastName };
-      }
-      let first = single;
-      if (first.startsWith('JHONMAR') || first === 'GHONMARK' || first === 'JH0NMARK') {
-        first = 'JHONMARK';
-      }
-      return { firstName: first, middleName: '', lastName };
+      return { firstName: tokens[0], middleName: '', lastName };
     }
-    let middleName = tokens[tokens.length - 1];
-    let firstName = tokens.slice(0, tokens.length - 1).join(' ');
-    if (middleName === 'AMAC4') middleName = 'AMACA';
-    if (firstName.startsWith('JHONMAR') || firstName === 'GHONMARK' || firstName === 'JH0NMARK') {
-      firstName = 'JHONMARK';
-    }
+    const middleName = tokens[tokens.length - 1];
+    const firstName = tokens.slice(0, tokens.length - 1).join(' ');
     return { firstName, middleName, lastName };
   }
 

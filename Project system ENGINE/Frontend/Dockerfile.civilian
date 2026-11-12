@@ -1,10 +1,10 @@
-# ResQTrack Incident AI -- Dedicated Civilian SOS Portal (:5175)
+# ResQTrack Incident AI -- Dedicated Civilian SOS Portal (:1998)
 FROM node:20-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-EXPOSE 5175
-ENV PORT=5175
-ENV BACKEND_URL=http://resqtrack-backend:5000
+EXPOSE 1998
+ENV PORT=1998
+ENV BACKEND_URL=http://resqtrack-backend:1999
 CMD ["npm", "run", "dev:civilian"]

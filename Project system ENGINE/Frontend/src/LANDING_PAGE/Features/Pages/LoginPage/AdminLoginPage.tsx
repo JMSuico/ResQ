@@ -1,15 +1,16 @@
 // [Layer: LANDING_PAGE/Features/Pages/LoginPage]
-// Responsibility: Dedicated LDRRMO Executive Command & Control Login Portal for Port 5174.
+// Responsibility: Dedicated LDRRMO Executive Command & Control Login Portal for Port 1996.
 // Strict UserRole.LDRRMO_Admin enforcement; non-admins receive HTTP 403 Forbidden.
 // Mission-critical tactical HUD aesthetic with zero unit selector tabs/buttons.
 // Katipuneros architecture with Universal Lambdas (=>), Shared primitives, and useFluidResposiveness.
 
 import React, { useState, FC } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Lock, Eye, EyeOff, Check, ArrowRight } from 'lucide-react';
-import { loginUser } from '@/Endpoints/authApi';
+import { Shield, Lock, Eye, EyeOff, Check, ArrowRight, Camera } from 'lucide-react';
+import { loginUser, LoginResponse } from '@/Endpoints/authApi';
 import { Button, Checkbox } from '@/Shared';
 import { useFluidResposiveness } from '@/Hooks';
+import { BiometricLoginModal } from './BiometricLoginModal';
 
 export const AdminLoginPage: FC = () => {
   const { isMobile } = useFluidResposiveness();
@@ -26,6 +27,7 @@ export const AdminLoginPage: FC = () => {
   const [statusTone, setStatusTone] = useState<'ok' | 'bad' | ''>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  const [isBiometricModalOpen, setIsBiometricModalOpen] = useState<boolean>(false);
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -53,6 +55,36 @@ export const AdminLoginPage: FC = () => {
     e.preventDefault();
     setStatusMessage('Emergency admin credentials reset must be performed via local terminal CLI: .\\start.ps1 createsuperadmin');
     setStatusTone('');
+  };
+
+  const processAdminSession = (res: LoginResponse) => {
+    if (res?.token) {
+      const currentPort = typeof window !== 'undefined' ? (window.location.port || '1996') : '1996';
+      sessionStorage.setItem('resqtrack_token', res.token);
+      if (res.session) {
+        sessionStorage.setItem('resqtrack_user', JSON.stringify(res.session));
+        sessionStorage.setItem('resqtrack_session', JSON.stringify(res.session));
+      }
+      localStorage.setItem(`resqtrack_token_${currentPort}`, res.token);
+      if (res.session) {
+        localStorage.setItem(`resqtrack_user_${currentPort}`, JSON.stringify(res.session));
+        localStorage.setItem(`resqtrack_session_${currentPort}`, JSON.stringify(res.session));
+      }
+      localStorage.setItem('resqtrack_token', res.token);
+      if (res.session) {
+        localStorage.setItem('resqtrack_user', JSON.stringify(res.session));
+        localStorage.setItem('resqtrack_session', JSON.stringify(res.session));
+      }
+    }
+
+    setIsLoading(false);
+    setIsSuccess(true);
+    setStatusMessage('LDRRMO Command Session Verified. Launching Tactical Command Center…');
+    setStatusTone('ok');
+
+    setTimeout(() => {
+      navigate('/admin/dashboard');
+    }, 900);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,36 +116,10 @@ export const AdminLoginPage: FC = () => {
         portalOrigin: 'Admin'
       });
 
-      if (res?.token) {
-        const currentPort = typeof window !== 'undefined' ? (window.location.port || '5174') : '5174';
-        sessionStorage.setItem('resqtrack_token', res.token);
-        if (res.session) {
-          sessionStorage.setItem('resqtrack_user', JSON.stringify(res.session));
-          sessionStorage.setItem('resqtrack_session', JSON.stringify(res.session));
-        }
-        localStorage.setItem(`resqtrack_token_${currentPort}`, res.token);
-        if (res.session) {
-          localStorage.setItem(`resqtrack_user_${currentPort}`, JSON.stringify(res.session));
-          localStorage.setItem(`resqtrack_session_${currentPort}`, JSON.stringify(res.session));
-        }
-        localStorage.setItem('resqtrack_token', res.token);
-        if (res.session) {
-          localStorage.setItem('resqtrack_user', JSON.stringify(res.session));
-          localStorage.setItem('resqtrack_session', JSON.stringify(res.session));
-        }
-      }
-
-      setIsLoading(false);
-      setIsSuccess(true);
-      setStatusMessage('LDRRMO Command Session Verified. Launching Tactical Command Center…');
-      setStatusTone('ok');
-
-      setTimeout(() => {
-        navigate('/admin/dashboard');
-      }, 900);
+      processAdminSession(res);
     } catch (err: unknown) {
       setIsLoading(false);
-      const msg = err instanceof Error ? err.message : 'Authentication failed. Access denied to Port 5174.';
+      const msg = err instanceof Error ? err.message : 'Authentication failed. Access denied to Port 1996.';
       setStatusMessage(msg);
       setStatusTone('bad');
     }
@@ -153,7 +159,7 @@ export const AdminLoginPage: FC = () => {
         C2-ISOLATE // SEC-GRID: KAT-01 // 8.5074°N, 123.3414°E
       </div>
       <div className="absolute top-4 right-6 hidden md:block font-mono text-[9px] text-rose-300/40 tracking-widest pointer-events-none">
-        HSM-ENCRYPT: AES-256-GCM // PORT: 5174
+        HSM-ENCRYPT: AES-256-GCM // PORT: 1996
       </div>
 
       <div className="relative w-full max-w-[520px] my-auto z-10">
@@ -324,14 +330,14 @@ export const AdminLoginPage: FC = () => {
               </p>
             )}
 
-            {/* Port 5173 Redirect Link if Responder/Civilian */}
+            {/* Port 1997 Redirect Link if Responder/Civilian */}
             <div className="font-mono text-[11px] text-center my-3 text-slate-400 border border-slate-700/40 bg-slate-900/40 py-1.5 px-2 rounded">
               Emergency Responder or Citizen Resident?{' '}
               <a
-                href="http://127.0.0.1:5173/login"
+                href="http://127.0.0.1:1997/login"
                 className="text-rose-400 hover:text-rose-300 underline font-bold tracking-wide"
               >
-                Go to Port 5173 Gateway &rarr;
+                Go to Port 1997 Gateway &rarr;
               </a>
             </div>
 
@@ -354,7 +360,7 @@ export const AdminLoginPage: FC = () => {
             )}
 
             {/* Submit Button using Shared Atomic Primitive */}
-            <div style={{ marginTop: statusMessage ? '0' : '4px' }}>
+            <div style={{ marginTop: statusMessage ? '0' : '4px' }} className="space-y-2">
               <Button
                 type="submit"
                 id="admin-submit"
@@ -372,10 +378,32 @@ export const AdminLoginPage: FC = () => {
               >
                 {isLoading ? 'Verifying clearance…' : isSuccess ? 'Clearance Granted' : 'ACCESS COMMAND CONSOLE'}
               </Button>
+
+              <button
+                type="button"
+                id="admin-biometric-btn"
+                onClick={() => setIsBiometricModalOpen(true)}
+                className="w-full !h-[42px] rounded-lg border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-200 font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-[0_0_12px_rgba(6,182,212,0.15)] hover:border-cyan-400"
+              >
+                <Camera className="w-4 h-4 text-cyan-400" />
+                <span>Command Clearance via 1:1 Biometrics</span>
+              </button>
             </div>
           </form>
         </section>
       </div>
+
+      {/* 1:1 Biometric Authentication Modal for Admin Portal */}
+      <BiometricLoginModal
+        isOpen={isBiometricModalOpen}
+        onClose={() => setIsBiometricModalOpen(false)}
+        initialEmail={email}
+        portalOrigin="Admin"
+        onLoginSuccess={(res) => {
+          setIsBiometricModalOpen(false);
+          processAdminSession(res);
+        }}
+      />
     </main>
   );
 };

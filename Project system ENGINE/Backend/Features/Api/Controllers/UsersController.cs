@@ -15,9 +15,12 @@ namespace Backend.Features.Api.Controllers;
 public class UsersController(IUserGovernanceService governanceService) : ControllerBase
 {
     private bool IsAdmin => HttpContext.Items["UserRole"] is UserRole role && role == UserRole.LDRRMO_Admin;
-    private Guid AdminId => HttpContext.Items["UserId"] is Guid uid ? uid : Guid.Empty;
+    private Guid CurrentUserId => HttpContext.Items["UserId"] is Guid uid ? uid : Guid.Empty;
+    private Guid AdminId => CurrentUserId;
     private string AdminEmail => HttpContext.Items["UserEmail"] as string ?? "admin@resqtrack.gov.ph";
+    private bool IsAdminOrOwner(Guid resourceUserId) => IsAdmin || (CurrentUserId != Guid.Empty && CurrentUserId == resourceUserId);
     private IActionResult ForbiddenNonAdmin(string message) => StatusCode(StatusCodes.Status403Forbidden, new { message });
+    private IActionResult Forbidden(string message) => StatusCode(StatusCodes.Status403Forbidden, new { message });
 
     [HttpGet]
     public async Task<IActionResult> GetAllUsersAsync(CancellationToken ct) =>
@@ -33,8 +36,8 @@ public class UsersController(IUserGovernanceService governanceService) : Control
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetUserDetailAsync(Guid id, CancellationToken ct) =>
-        !IsAdmin
-            ? ForbiddenNonAdmin("Only LDRRMO Administrators may inspect detailed user records.")
+        !IsAdminOrOwner(id)
+            ? Forbidden("You are not authorized to inspect this user record.")
             : await governanceService.GetUserDetailAsync(id, ct) is { } user
                 ? Ok(user)
                 : NotFound(new { message = "User not found." });
@@ -81,17 +84,23 @@ public class UsersController(IUserGovernanceService governanceService) : Control
 
     [HttpGet("{id:guid}/captures/{kind}")]
     public async Task<IActionResult> GetCaptureAsync(Guid id, string kind, CancellationToken ct) =>
-        !IsAdmin
-            ? ForbiddenNonAdmin("Access to biometric captures is restricted to administrators.")
+        !IsAdminOrOwner(id)
+            ? Forbidden("You are not authorized to access biometric captures for this user.")
             : kind.ToLowerInvariant() switch
             {
-                "id" or "front" or "back" => await ServeCaptureFileAsync(id, CaptureKind.Id, ct),
+                "id" or "front" => await ServeCaptureFileAsync(id, CaptureKind.Id, ct),
+                "back" or "idback" => await ServeCaptureFileAsync(id, CaptureKind.IdBack, ct),
                 "face" => await ServeCaptureFileAsync(id, CaptureKind.Face, ct),
                 _ => BadRequest(new { message = "Invalid capture kind. Expected 'id', 'front', 'back', or 'face'." })
             };
 
-    private async Task<IActionResult> ServeCaptureFileAsync(Guid id, CaptureKind kind, CancellationToken ct) =>
-        await governanceService.GetUserCapturePathAsync(id, kind, ct) is { } path && System.IO.File.Exists(path)
-            ? File(await System.IO.File.ReadAllBytesAsync(path, ct), "image/png")
-            : File(CaptureStorageHelper.GenerateSyntheticFallbackPng(), "image/png");
+    private async Task<IActionResult> ServeCaptureFileAsync(Guid id, CaptureKind kind, CancellationToken ct)
+    {
+        string? path = await governanceService.GetUserCapturePathAsync(id, kind, ct);
+        if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
+            return File(CaptureStorageHelper.GenerateSyntheticFallbackPng(), "image/png");
+
+        var (bytes, contentType) = await CaptureStorageHelper.ReadCaptureFileAsync(path, ct);
+        return File(bytes, contentType);
+    }
 }

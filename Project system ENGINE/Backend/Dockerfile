@@ -9,8 +9,8 @@ WORKDIR /app
 # Copy pre-compiled release publish output
 COPY publish/ .
 
-EXPOSE 5000
-ENV ASPNETCORE_URLS=http://0.0.0.0:5000
+EXPOSE 1999
+ENV ASPNETCORE_URLS=http://0.0.0.0:1999
 ENV ASPNETCORE_ENVIRONMENT=Production
 
 ENTRYPOINT ["dotnet", "Backend.dll"]

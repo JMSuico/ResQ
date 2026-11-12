@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title ResQTrack Incident AI Management Console [Backend :5000 ^| Responders :5173 ^| Admin :5174 ^| Civilian :5175]
+title ResQTrack Incident AI Management Console [Backend :1999 ^| Admin :1996 ^| Responders :1997 ^| Civilian :1998]
 
 cd /d "%~dp0"
 

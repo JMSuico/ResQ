@@ -15,6 +15,7 @@ export * from './ImageLightboxModal';
 export * from './CameraCaptureModal';
 export * from './CaptureViewerModal';
 export * from './AccidentReportModal';
+export * from './DeployRespondersModal';
 export * from './SatelliteCommandMap';
 export * from './ResQTrackSvgSprite';
 export * from './Charts';
