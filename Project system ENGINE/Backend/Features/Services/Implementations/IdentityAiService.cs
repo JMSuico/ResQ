@@ -40,6 +40,9 @@ public class IdentityAiService(
     public async Task<AiExtractResponseDto> ExtractIdentityAsync(AiExtractRequestDto request, CancellationToken ct = default) =>
         await ExecuteAiExtractionAsync(request, ct);
 
+    public Task<IdentityDocumentAnalyzeResponseDto> AnalyzeDocumentAsync(IdentityDocumentAnalyzeRequestDto request, CancellationToken ct = default) =>
+        Task.FromResult(ExecuteDeterministicDocumentAnalysis(request));
+
     private async Task<AiExtractResponseDto> ExecuteAiExtractionAsync(AiExtractRequestDto request, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
@@ -639,5 +642,115 @@ public class IdentityAiService(
         if (!string.IsNullOrWhiteSpace(GetSecret("OPENAI_API_KEY"))) active.Add("openai");
 
         return active.Count > 0 ? string.Join(", ", active) : "deterministic-standby";
+    }
+
+    private static IdentityDocumentAnalyzeResponseDto ExecuteDeterministicDocumentAnalysis(IdentityDocumentAnalyzeRequestDto request)
+    {
+        string rawFront = (request.FrontRawText ?? string.Empty).ToUpperInvariant();
+        string rawBack = (request.BackRawText ?? string.Empty).ToUpperInvariant();
+        string combined = $"{rawFront}\n{rawBack}".Trim();
+        string selectedCat = (request.SelectedIdCategory ?? "unknown").Trim().ToLowerInvariant();
+
+        var response = new IdentityDocumentAnalyzeResponseDto
+        {
+            CategoryKey = selectedCat,
+            OfficialVerificationStatus = "not_checked",
+            AllowBiometricProfiling = selectedCat != "pwd"
+        };
+
+        if (combined.Contains("P<PHL") || combined.Contains("PASAPORTE") || selectedCat == "passport")
+        {
+            response.CategoryKey = "passport";
+            response.DocumentFamily = "Philippine Passport";
+            response.Issuer = "DFA";
+            response.Version = "icao-9303-td3-v1";
+            response.DetectedSide = "data-page";
+            response.TemplateId = "PH-DFA-PASSPORT-TD3-DATAPAGE";
+            response.CalibratedConfidence = combined.Contains("P<PHL") ? 0.94 : 0.78;
+        }
+        else if (combined.Contains("DRIVER'S LICENSE") || combined.Contains("LAND TRANSPORTATION OFFICE") || selectedCat == "drivers")
+        {
+            response.CategoryKey = "drivers";
+            response.DocumentFamily = "LTO Driver's License";
+            response.Issuer = "LTO";
+            bool isLegacy = combined.Contains("RESTRICTIONS") && !combined.Contains("DL CODES");
+            response.Version = isLegacy ? "legacy-restrictions-v1" : "2021-dl-code-v1";
+            response.DetectedSide = !string.IsNullOrWhiteSpace(rawFront) ? "front" : (!string.IsNullOrWhiteSpace(rawBack) ? "back" : "front");
+            response.TemplateId = isLegacy ? "PH-LTO-DL-OLD-FRONT" : "PH-LTO-DL-2021-NEW-FRONT";
+            response.CalibratedConfidence = combined.Contains("LAND TRANSPORTATION OFFICE") ? 0.92 : 0.76;
+        }
+        else if (combined.Contains("PAMBANSANG PAGKAKAKILANLAN") || combined.Contains("PHILIPPINE IDENTIFICATION") || selectedCat == "philsys")
+        {
+            response.CategoryKey = "philsys";
+            response.DocumentFamily = "PhilSys National ID";
+            response.Issuer = "PSA";
+            bool isPaper = combined.Contains("EPHILID");
+            bool isDigital = combined.Contains("DIGITAL NATIONAL ID");
+            response.Version = isPaper ? "ephilid-paper-v1" : (isDigital ? "digital-national-id-v1" : "pvc-v1");
+            response.DetectedSide = isPaper || isDigital ? "document" : "front";
+            response.TemplateId = isPaper ? "PH-PSA-EPHILID-PAPER" : (isDigital ? "PH-PSA-NATIONAL-ID-DIGITAL" : "PH-PSA-PHILSYS-PVC-FRONT");
+            response.CalibratedConfidence = combined.Contains("PAMBANSANG PAGKAKAKILANLAN") ? 0.93 : 0.78;
+        }
+        else if (combined.Contains("PERSONS WITH DISABILITY") || combined.Contains("NCDA") || selectedCat == "pwd")
+        {
+            response.CategoryKey = "pwd";
+            response.DocumentFamily = "PWD ID";
+            response.Issuer = "NCDA / LGU PDAO";
+            bool isUnified = combined.Contains("NCDA") || combined.Contains("AO NO. 001") || combined.Contains("UNIFIED");
+            response.Version = isUnified ? "ncda-ao001-2026-unified-v1" : "lgu-legacy-pwd-v1";
+            response.DetectedSide = "front";
+            response.TemplateId = isUnified ? "PH-NCDA-PWD-ID-2026-UNIFIED" : "PH-NCDA-PWD-ID-LEGACY-LGU";
+            response.AllowBiometricProfiling = false;
+            response.CalibratedConfidence = 0.86;
+            response.Warnings.Add("NCDA AO No. 001 (2026): PWD cardholder portrait is restricted from automated facial profiling.");
+        }
+        else if (combined.Contains("PROFESSIONAL REGULATION COMMISSION") || selectedCat == "prc")
+        {
+            response.CategoryKey = "prc";
+            response.DocumentFamily = "PRC Professional Identification Card";
+            response.Issuer = "PRC";
+            response.Version = combined.Contains("E-PIC") ? "prc-epic-digital-v1" : "prc-pic-v1";
+            response.DetectedSide = combined.Contains("E-PIC") ? "document" : "front";
+            response.TemplateId = combined.Contains("E-PIC") ? "PH-PRC-EPIC-DIGITAL" : "PH-PRC-PIC-FRONT";
+            response.CalibratedConfidence = 0.88;
+        }
+        else if (combined.Contains("UNIFIED MULTI-PURPOSE") || combined.Contains("CRN") || selectedCat == "umid")
+        {
+            response.CategoryKey = "umid";
+            response.DocumentFamily = "Unified Multi-Purpose ID (UMID)";
+            response.Issuer = "SSS / GSIS / PhilHealth / Pag-IBIG";
+            response.Version = "umid-crn-v1";
+            response.DetectedSide = "front";
+            response.TemplateId = "PH-UMID-GENERIC-FRONT";
+            response.CalibratedConfidence = 0.88;
+        }
+        else
+        {
+            response.DocumentFamily = string.IsNullOrWhiteSpace(selectedCat) || selectedCat == "unknown"
+                ? "Unclassified Philippine Document"
+                : selectedCat.ToUpperInvariant();
+            response.Issuer = "Republic of the Philippines";
+            response.Version = "generic-v1";
+            response.DetectedSide = "front";
+            response.TemplateId = $"PH-{response.CategoryKey.ToUpperInvariant()}-GENERIC";
+            response.CalibratedConfidence = !string.IsNullOrWhiteSpace(combined) ? 0.72 : 0.45;
+        }
+
+        if (request.ExtractedFields != null)
+        {
+            foreach (var kvp in request.ExtractedFields)
+            {
+                if (!string.IsNullOrWhiteSpace(kvp.Value))
+                {
+                    response.NormalizedFields[kvp.Key] = kvp.Value.Trim();
+                }
+            }
+        }
+
+        response.OverallStatus = response.CalibratedConfidence >= 0.80
+            ? "READY_FOR_PREFILL"
+            : (response.CategoryKey == "unknown" ? "UNSUPPORTED_DOCUMENT" : "OCR_NEEDS_REVIEW");
+
+        return response;
     }
 }

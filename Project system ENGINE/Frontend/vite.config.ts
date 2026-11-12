@@ -4,7 +4,7 @@ import { fileURLToPath, URL } from 'node:url'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 // https://vite.dev/config/
-const backendTarget = process.env.BACKEND_URL || 'http://127.0.0.1:5000';
+const backendTarget = process.env.BACKEND_URL || 'http://127.0.0.1:1999';
 
 export default defineConfig({
   plugins: [react()],
@@ -15,7 +15,7 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
-    port: 5173,
+    port: 1997,
     watch: {
       usePolling: true,
       interval: 800
@@ -41,7 +41,7 @@ export default defineConfig({
                 serverRes.end(JSON.stringify({
                   error: 'Backend API Offline / ECONNREFUSED',
                   code: errorCode,
-                  message: 'ResQTrack .NET 10 backend on port 5000 is unreachable. Please launch the backend with ".\\start.ps1 -Dev" or "dotnet run".',
+                  message: 'ResQTrack .NET 10 backend on port 1999 is unreachable. Please launch the backend with ".\\start.ps1 -Dev" or "dotnet run".',
                   timestamp: new Date().toISOString()
                 }));
               }

@@ -19,18 +19,49 @@ public record RegisterRequest(
     string? DepartmentOrBarangay = null,
     string? RankOrTitle = null,
     string? IdCaptureDataUrl = null,
+    string? IdBackCaptureDataUrl = null,
     string? FaceCaptureDataUrl = null,
     string? Sex = null,
     int? Age = null,
     string? GovernmentIdType = null,
-    string? GovernmentIdNumber = null
+    string? GovernmentIdNumber = null,
+    string? FirstName = null,
+    string? MiddleName = null,
+    string? Surname = null,
+    string? Suffix = null,
+    DateTime? DateOfBirth = null,
+    string? Province = null,
+    string? CityOrMunicipality = null,
+    string? Barangay = null,
+    string? StreetOrPurok = null,
+    string? Weight = null,
+    string? Height = null,
+    string? ConsentNoticeVersion = null,
+    float[]? BiometricDescriptorVector = null,
+    double? OcrConfidenceScore = null,
+    string? DocumentVersion = null,
+    string? IssuingAgency = null,
+    string? DetectedSide = null,
+    string? DocumentCheckStatus = null,
+    string? OfficialVerificationStatus = null,
+    string? FieldProvenanceJson = null,
+    string? DisplayName = null,
+    string? ConfirmPassword = null,
+    bool? ConsentAccepted = null,
+    int? MinImageDimension = null
 );
 
 public record LoginRequest(
     [Required, EmailAddress] string Email,
     [Required] string Password,
-    string? SelectedTabRole, // Presentation only, actual role determined by user account
-    string? PortalOrigin // "Admin" (Port 5174) or "ResponderCivilian" (Port 5173)
+    string? SelectedTabRole = null, // Presentation only, actual role determined by user account
+    string? PortalOrigin = null // "Admin" (Port 1996) or "ResponderCivilian" (Port 1997/1998)
+);
+
+public record BiometricLoginRequest(
+    [Required, EmailAddress] string Email,
+    [Required] float[] LiveDescriptorVector,
+    string? PortalOrigin = null
 );
 
 public record CreateReportRequest(
@@ -100,7 +131,8 @@ public record UpdateProfileRequest(
     string? RankOrTitle = null,
     string? EmployeeOrResidentId = null,
     string? GovernmentIdType = null,
-    string? GovernmentIdNumber = null
+    string? GovernmentIdNumber = null,
+    string? DisplayName = null
 );
 
 public record UpdateUserStatusRequest(

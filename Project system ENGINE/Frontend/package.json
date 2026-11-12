@@ -4,10 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 5173",
-    "dev:responder": "vite --host 0.0.0.0 --port 5173",
-    "dev:admin": "vite --host 0.0.0.0 --port 5174",
-    "dev:civilian": "vite --host 0.0.0.0 --port 5175",
+    "dev": "vite --host 0.0.0.0 --port 1997",
+    "dev:admin": "vite --host 0.0.0.0 --port 1996",
+    "dev:responder": "vite --host 0.0.0.0 --port 1997",
+    "dev:civilian": "vite --host 0.0.0.0 --port 1998",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
@@ -17,7 +17,8 @@
     "lucide-react": "^1.61.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.3"
+    "react-router-dom": "^7.18.3",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/leaflet": "^1.9.12",

@@ -1,10 +1,10 @@
-# ResQTrack Incident AI -- Dedicated Emergency Responders Portal (:5173)
+# ResQTrack Incident AI -- Dedicated Emergency Responders Portal (:1997)
 FROM node:20-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-EXPOSE 5173
-ENV PORT=5173
-ENV BACKEND_URL=http://resqtrack-backend:5000
+EXPOSE 1997
+ENV PORT=1997
+ENV BACKEND_URL=http://resqtrack-backend:1999
 CMD ["npm", "run", "dev:responder"]

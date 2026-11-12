@@ -62,8 +62,8 @@ const resolveBackendEndpoint = (path: string): string => {
   }
   if (!base && typeof window !== 'undefined') {
     const port = window.location.port;
-    if (['5173', '5174', '5175'].includes(port)) {
-      base = `${window.location.protocol}//${window.location.hostname}:5000`;
+    if (['1996', '1997', '1998', '5173', '5174', '5175'].includes(port)) {
+      base = `${window.location.protocol}//${window.location.hostname}:1999`;
     }
   }
   return `${base}${path.startsWith('/') ? path : `/${path}`}`;

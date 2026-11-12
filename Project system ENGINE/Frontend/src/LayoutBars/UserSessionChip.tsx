@@ -10,6 +10,7 @@ export interface UserSessionChipProps {
   user?: {
     name?: string;
     fullName?: string;
+    displayName?: string;
     role?: string;
     unit?: string;
     id?: string;
@@ -68,7 +69,7 @@ export const UserSessionChip: React.FC<UserSessionChipProps> = ({ user }) => {
     };
   }, [getStoredAvatar]);
 
-  const name = user?.fullName || user?.name || DEFAULT_OPERATOR_NAME;
+  const name = user?.displayName || user?.fullName || user?.name || DEFAULT_OPERATOR_NAME;
   const unit = user?.unit && user.unit !== 'None' ? user.unit : undefined;
   const roleDisplay = unit ? `${user?.role || DEFAULT_ROLE_FALLBACK} [${unit}]` : (user?.role || DEFAULT_ROLE_FALLBACK);
   const operatorId = user?.employeeOrResidentId || user?.employeeId || user?.id || DEFAULT_OPERATOR_ID;

@@ -177,15 +177,16 @@ export const CivilianLiveMapPage: React.FC = () => {
 
   // Build markers based on active layer filter
   const markers: MapMarker[] = useMemo(() => {
-    const list: MapMarker[] = [
-      {
+    const list: MapMarker[] = [];
+    if (isHardwareGeolocated && coords.latitude && coords.longitude) {
+      list.push({
         id: 'citizen-gps',
         lat: coords.latitude,
         lng: coords.longitude,
         title: 'Your Current Position',
         type: 'gps' as const
-      }
-    ];
+      });
+    }
 
     if (activeLayer === 'ALL' || activeLayer === 'SHELTERS') {
       fixtures.forEach((f) => {
@@ -366,11 +367,11 @@ export const CivilianLiveMapPage: React.FC = () => {
           <span>{markers.length} Active Spatial Entities</span>
         </div>
 
-        <div className="h-[520px] w-full rounded-xl overflow-hidden border border-slate-800 relative">
+        <div className="h-[577px] w-full rounded-xl overflow-hidden border border-slate-800 relative">
           <SatelliteCommandMap
             markers={markers}
-            centerLat={coords.latitude}
-            centerLng={coords.longitude}
+            centerLat={8.51145}
+            centerLng={123.28261}
             roleFilter="Civilian"
             className="h-full w-full"
           />

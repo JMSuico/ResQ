@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 export interface UserSession {
   userId: string;
   fullName: string;
+  displayName?: string;
   email: string;
   employeeOrResidentId?: string;
   employeeId?: string;

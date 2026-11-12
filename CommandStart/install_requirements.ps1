@@ -362,7 +362,7 @@ Write-Host " [v] Node.js & npm    : Installed (Node $(node --version 2>$null) / 
 Write-Host " [v] Database Target  : $selectedProvider (SSMS 19 / SQL Server / PostgreSQL)" -ForegroundColor White
 Write-Host " [v] Backend API      : Restored, Compiled & Seed Ready" -ForegroundColor White
 Write-Host " [v] Frontend Portal  : node_modules Installed & Production Bundle Built" -ForegroundColor White
-Write-Host " [v] 4-Port Topology  : Backend (:5000) | Responders (:5173) | Admin (:5174) | Civilian (:5175)" -ForegroundColor White
+Write-Host " [v] 4-Port Topology  : Backend (:1999) | Admin (:1996) | Responders (:1997) | Civilian (:1998)" -ForegroundColor White
 Write-Host "================================================================================" -ForegroundColor Cyan
 
 Write-Host "`nYou can now launch the entire system using any of the following:" -ForegroundColor Yellow

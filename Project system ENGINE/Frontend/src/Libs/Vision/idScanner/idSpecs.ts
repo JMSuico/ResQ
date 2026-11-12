@@ -10,9 +10,19 @@ export type GovernmentIdCategory =
   | 'passport'
   | 'prc'
   | 'umid'
+  | 'sss'
+  | 'gsis'
   | 'postal'
+  | 'philhealth'
+  | 'owwa'
+  | 'comelec'
+  | 'senior_citizen'
+  | 'pwd'
+  | 'solo_parent'
+  | 'barangay'
   | 'fire'
-  | 'police';
+  | 'police'
+  | 'unknown';
 
 export interface RelativeRoi {
   x: number;
@@ -1011,6 +1021,164 @@ const policeSpec: GovernmentIdSpec = {
 };
 
 // ---------------------------------------------------------------------------
+// 9. Additional Wave 1 & Wave 2 Philippine Government & Local ID Specifications
+// ---------------------------------------------------------------------------
+const buildStandardLguOrNationalSpec = (
+  idType: GovernmentIdCategory,
+  officialName: string,
+  headerDictionary: string[],
+  idRegex: RegExp,
+  idLabel: string
+): GovernmentIdSpec => ({
+  idType,
+  officialName,
+  standardForm: 'ID-1',
+  targetDimensions: { width: 856, height: 540, aspectRatio: 856 / 540 },
+  headerDictionary,
+  photoRoi: { x: 0.05, y: 0.22, w: 0.24, h: 0.52 },
+  fields: [
+    {
+      fieldKey: 'idNumber',
+      label: idLabel,
+      relativeRoi: { x: 0.32, y: 0.18, w: 0.62, h: 0.10 },
+      expectedCharType: 'ALPHANUMERIC',
+      regexPattern: idRegex,
+      required: true,
+    },
+    {
+      fieldKey: 'fullName',
+      label: 'Full Name',
+      relativeRoi: { x: 0.32, y: 0.30, w: 0.62, h: 0.14 },
+      expectedCharType: 'ALPHA',
+      regexPattern: /^[A-ZÑ,\s.-]+$/i,
+      required: true,
+    },
+    {
+      fieldKey: 'dateOfBirth',
+      label: 'Date of Birth',
+      relativeRoi: { x: 0.32, y: 0.46, w: 0.32, h: 0.10 },
+      expectedCharType: 'DATE',
+      regexPattern: /^(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2}[-/]\d{4})$/,
+      required: false,
+    },
+    {
+      fieldKey: 'sex',
+      label: 'Sex',
+      relativeRoi: { x: 0.66, y: 0.46, w: 0.20, h: 0.10 },
+      expectedCharType: 'ALPHA',
+      regexPattern: /^(M|F|MALE|FEMALE)$/i,
+      required: false,
+    },
+    {
+      fieldKey: 'address',
+      label: 'Address',
+      relativeRoi: { x: 0.32, y: 0.58, w: 0.64, h: 0.18 },
+      expectedCharType: 'ALPHANUMERIC',
+      regexPattern: /^.+$/,
+      required: false,
+    },
+    {
+      fieldKey: 'expirationDate',
+      label: 'Expiration Date / Valid Until',
+      relativeRoi: { x: 0.32, y: 0.78, w: 0.36, h: 0.10 },
+      expectedCharType: 'DATE',
+      regexPattern: /^(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2}[-/]\d{4})$/,
+      required: false,
+    },
+  ],
+  reverseFields: [
+    {
+      fieldKey: 'barcode',
+      label: 'Verification QR / Barcode',
+      relativeRoi: { x: 0.15, y: 0.20, w: 0.70, h: 0.60 },
+      expectedCharType: 'ALPHANUMERIC',
+      regexPattern: /^.+$/,
+      required: false,
+    },
+  ],
+});
+
+const sssSpec = buildStandardLguOrNationalSpec(
+  'sss',
+  'Social Security System (SSS) ID / UMID',
+  ['SOCIAL SECURITY SYSTEM', 'SSS', 'SS NUMBER', 'REPUBLIC OF THE PHILIPPINES'],
+  /^(?:\d{2}-\d{7}-\d|\d{4}-\d{7}-\d)$/,
+  'SSS / CRN Number'
+);
+
+const gsisSpec = buildStandardLguOrNationalSpec(
+  'gsis',
+  'Government Service Insurance System (GSIS) eCard / UMID',
+  ['GOVERNMENT SERVICE INSURANCE SYSTEM', 'GSIS', 'GSIS ECARD', 'BP NO', 'CRN'],
+  /^[A-Z0-9-]{8,18}$/i,
+  'GSIS BP / CRN Number'
+);
+
+const philhealthSpec = buildStandardLguOrNationalSpec(
+  'philhealth',
+  'Philippine Health Insurance Corporation (PhilHealth) ID / MDR',
+  ['PHILIPPINE HEALTH INSURANCE CORPORATION', 'PHILHEALTH', 'MEMBER DATA RECORD', 'I-PHILHEALTHY', 'PIN'],
+  /^\d{2}-\d{9}-\d$/,
+  'PhilHealth Identification Number (PIN)'
+);
+
+const owwaSpec = buildStandardLguOrNationalSpec(
+  'owwa',
+  'Overseas Workers Welfare Administration (OWWA) OFW e-Card',
+  ['OVERSEAS WORKERS WELFARE ADMINISTRATION', 'OWWA', 'OFW E-CARD', 'DEPARTMENT OF MIGRANT WORKERS'],
+  /^[A-Z0-9-]{8,18}$/i,
+  'OWWA e-Card Number'
+);
+
+const comelecSpec = buildStandardLguOrNationalSpec(
+  'comelec',
+  "COMELEC Voter's ID / Voter's Certification",
+  ['COMMISSION ON ELECTIONS', 'COMELEC', "VOTER'S IDENTIFICATION", "VOTER'S CERTIFICATION", 'VIN', 'PRECINCT'],
+  /^[A-Z0-9-]{10,26}$/i,
+  "Voter's Identification Number (VIN)"
+);
+
+const seniorCitizenSpec = buildStandardLguOrNationalSpec(
+  'senior_citizen',
+  'OSCA Senior Citizen Identification Card',
+  ['OFFICE OF THE SENIOR CITIZENS AFFAIRS', 'OSCA', 'SENIOR CITIZEN', 'SENIOR CITIZENS ID'],
+  /^[A-Z0-9-]{4,18}$/i,
+  'OSCA Senior Citizen ID Number'
+);
+
+const pwdSpec = buildStandardLguOrNationalSpec(
+  'pwd',
+  'NCDA / PDAO Persons with Disability (PWD) ID',
+  ['NATIONAL COUNCIL ON DISABILITY AFFAIRS', 'NCDA', 'PERSONS WITH DISABILITY', 'PERSON WITH DISABILITY', 'PDAO', 'PWD ID', 'UNIFIED PWD ID'],
+  /^(?:\d{2}-\d{4}-\d{3}-\d{7}|[A-Z0-9-]{6,20})$/i,
+  'PWD Identification Number'
+);
+
+const soloParentSpec = buildStandardLguOrNationalSpec(
+  'solo_parent',
+  'DSWD / LGU Solo Parent Identification Card (RA 11861)',
+  ['SOLO PARENT', 'SOLO PARENTS WELFARE', 'SOLO PARENT ID', 'CSWDO', 'MSWDO', 'DSWD'],
+  /^[A-Z0-9-]{4,18}$/i,
+  'Solo Parent ID Number'
+);
+
+const barangaySpec = buildStandardLguOrNationalSpec(
+  'barangay',
+  'Barangay Resident Identification Card / Certification',
+  ['BARANGAY', 'SANGGUNIANG BARANGAY', 'OFFICE OF THE PUNONG BARANGAY', 'BARANGAY ID', 'BARANGAY RESIDENT'],
+  /^[A-Z0-9-]{4,18}$/i,
+  'Barangay ID Control Number'
+);
+
+const unknownSpec = buildStandardLguOrNationalSpec(
+  'unknown',
+  'Unclassified / Manual Selection Required Document',
+  [],
+  /^.+$/,
+  'Document Number'
+);
+
+// ---------------------------------------------------------------------------
 // Registry Mapping & Deterministic Spec Dictionary
 // ---------------------------------------------------------------------------
 const ID_SPECS_MAP: Readonly<Record<GovernmentIdCategory, GovernmentIdSpec>> = {
@@ -1019,9 +1187,19 @@ const ID_SPECS_MAP: Readonly<Record<GovernmentIdCategory, GovernmentIdSpec>> = {
   passport: passportSpec,
   prc: prcSpec,
   umid: umidSpec,
+  sss: sssSpec,
+  gsis: gsisSpec,
   postal: postalSpec,
+  philhealth: philhealthSpec,
+  owwa: owwaSpec,
+  comelec: comelecSpec,
+  senior_citizen: seniorCitizenSpec,
+  pwd: pwdSpec,
+  solo_parent: soloParentSpec,
+  barangay: barangaySpec,
   fire: fireSpec,
   police: policeSpec,
+  unknown: unknownSpec,
 };
 
 // ---------------------------------------------------------------------------
@@ -1032,15 +1210,12 @@ const ID_SPECS_MAP: Readonly<Record<GovernmentIdCategory, GovernmentIdSpec>> = {
  * Retrieves the complete layout and ROI spec for a given Government ID category.
  */
 export const getIdSpec = (type: GovernmentIdCategory): GovernmentIdSpec => {
-  const spec = ID_SPECS_MAP[type];
-  if (!spec) {
-    throw new Error(`[idSpecs] Unsupported Government ID category: "${type}"`);
-  }
+  const spec = ID_SPECS_MAP[type] || ID_SPECS_MAP.unknown;
   return spec;
 };
 
 /**
- * Returns all 8 supported Government ID specifications.
+ * Returns all supported Government ID specifications (excluding 'unknown').
  */
 export const getAllIdSpecs = (): GovernmentIdSpec[] => {
   return [
@@ -1049,7 +1224,16 @@ export const getAllIdSpecs = (): GovernmentIdSpec[] => {
     passportSpec,
     prcSpec,
     umidSpec,
+    sssSpec,
+    gsisSpec,
     postalSpec,
+    philhealthSpec,
+    owwaSpec,
+    comelecSpec,
+    seniorCitizenSpec,
+    pwdSpec,
+    soloParentSpec,
+    barangaySpec,
     fireSpec,
     policeSpec,
   ];
@@ -1124,8 +1308,35 @@ export const identifyIdCategoryFromHeader = (
       case 'umid':
         if (/UNIFIED|MULTI-PURPOSE|UMID|CRN/i.test(normalized)) score += 3.5;
         break;
+      case 'sss':
+        if (/SOCIAL\s+SECURITY\s+SYSTEM|\bSSS\b|SS\s+NUMBER/i.test(normalized)) score += 3.5;
+        break;
+      case 'gsis':
+        if (/GOVERNMENT\s+SERVICE\s+INSURANCE|\bGSIS\b|ECARD/i.test(normalized)) score += 3.5;
+        break;
       case 'postal':
         if (/POSTAL\s+ID|PHLPOST|POSTAL\s+IDENTITY/i.test(normalized)) score += 3.5;
+        break;
+      case 'philhealth':
+        if (/PHILHEALTH|HEALTH\s+INSURANCE|MEMBER\s+DATA\s+RECORD|I-PHILHEALTHY/i.test(normalized)) score += 3.8;
+        break;
+      case 'owwa':
+        if (/OVERSEAS\s+WORKERS\s+WELFARE|\bOWWA\b|OFW\s+E-CARD/i.test(normalized)) score += 3.8;
+        break;
+      case 'comelec':
+        if (/COMMISSION\s+ON\s+ELECTIONS|COMELEC|VOTER'?S?\s+ID|VOTER'?S?\s+CERTIFICATION/i.test(normalized)) score += 3.8;
+        break;
+      case 'senior_citizen':
+        if (/SENIOR\s+CITIZEN|\bOSCA\b/i.test(normalized)) score += 3.8;
+        break;
+      case 'pwd':
+        if (/PERSONS?\s+WITH\s+DISABILITY|\bNCDA\b|\bPDAO\b|PWD\s+ID/i.test(normalized)) score += 3.8;
+        break;
+      case 'solo_parent':
+        if (/SOLO\s+PARENTS?\b|\bCSWDO\b|\bMSWDO\b/i.test(normalized)) score += 3.8;
+        break;
+      case 'barangay':
+        if (/SANGGUNIANG\s+BARANGAY|PUNONG\s+BARANGAY|BARANGAY\s+ID|BARANGAY\s+CLEARANCE|BARANGAY\s+RESIDENT/i.test(normalized)) score += 3.5;
         break;
       case 'fire':
         if (/BUREAU\s+OF\s+FIRE|FIRE\s+PROTECTION|BFP/i.test(normalized)) score += 4.0;

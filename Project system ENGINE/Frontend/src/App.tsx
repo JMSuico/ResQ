@@ -44,7 +44,7 @@ import { CivilianLiveMapPage } from '@/UserRoles/Features/Pages/CiviliansPanel/C
 const getStoredSessionData = (): { role?: string; unit?: string } | null => {
   if (typeof window === 'undefined') return null;
   try {
-    const port = window.location.port || '5173';
+    const port = window.location.port || '1997';
     // 1. Tab-isolated session storage has top priority
     const tabRaw = sessionStorage.getItem('resqtrack_session') || sessionStorage.getItem('resqtrack_user');
     if (tabRaw) return JSON.parse(tabRaw) as { role?: string; unit?: string };
@@ -56,14 +56,14 @@ const getStoredSessionData = (): { role?: string; unit?: string } | null => {
       if (unitRaw) return JSON.parse(unitRaw) as { role?: string; unit?: string };
     }
 
-    if (port === '5174') {
-      const adminRaw = localStorage.getItem('resqtrack_session_5174') || localStorage.getItem('resqtrack_user_5174');
+    if (port === '1996' || port === '5174') {
+      const adminRaw = localStorage.getItem('resqtrack_session_1996') || localStorage.getItem('resqtrack_user_1996') || localStorage.getItem('resqtrack_session_5174') || localStorage.getItem('resqtrack_user_5174');
       if (adminRaw) return JSON.parse(adminRaw) as { role?: string; unit?: string };
     } else {
       const portRaw = localStorage.getItem(`resqtrack_session_${port}`) || localStorage.getItem(`resqtrack_user_${port}`);
       if (portRaw) {
         const parsed = JSON.parse(portRaw) as { role?: string; unit?: string };
-        // Never allow an old or stray Admin session on port 5173 to hijack Port 5173 routing!
+        // Never allow an old or stray Admin session on responder/civilian port to hijack routing!
         if (!(parsed.role || '').toLowerCase().includes('admin')) {
           return parsed;
         }
@@ -87,22 +87,22 @@ const SmartDashboardRouter: React.FC = () => {
   const role = (getStoredRole() || '').toLowerCase();
   const isAdmin = role.includes('admin') || role.includes('ldrrmo') || role === '1';
 
-  if (currentPort === '5174') {
+  if (currentPort === '1996' || currentPort === '5174') {
     if (!isAdmin) return <Navigate to="/admin/login" replace />;
     return <Navigate to="/admin/dashboard" replace />;
   }
 
   if (isAdmin) {
     const token = typeof window !== 'undefined'
-      ? (sessionStorage.getItem('resqtrack_token') || localStorage.getItem('resqtrack_token_5173') || localStorage.getItem('resqtrack_token'))
+      ? (sessionStorage.getItem('resqtrack_token') || localStorage.getItem('resqtrack_token_1997') || localStorage.getItem('resqtrack_token_5173') || localStorage.getItem('resqtrack_token'))
       : null;
     const targetUrl = token
-      ? `http://${host}:5174/admin/dashboard?session_token=${encodeURIComponent(token)}`
-      : `http://${host}:5174/admin/dashboard`;
+      ? `http://${host}:1996/admin/dashboard?session_token=${encodeURIComponent(token)}`
+      : `http://${host}:1996/admin/dashboard`;
     window.location.href = targetUrl;
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-slate-950 font-mono text-sm text-rose-400">
-        Admin account detected. Redirecting to Executive Command (5174)...
+        Admin account detected. Redirecting to Executive Command (1996)...
       </div>
     );
   }
@@ -118,22 +118,22 @@ const SmartIncidentsRouter: React.FC = () => {
   const role = (getStoredRole() || '').toLowerCase();
   const isAdmin = role.includes('admin') || role.includes('ldrrmo') || role === '1';
 
-  if (currentPort === '5174') {
+  if (currentPort === '1996' || currentPort === '5174') {
     if (!isAdmin) return <Navigate to="/admin/login" replace />;
     return <Navigate to="/admin/incidents" replace />;
   }
 
   if (isAdmin) {
     const token = typeof window !== 'undefined'
-      ? (sessionStorage.getItem('resqtrack_token') || localStorage.getItem('resqtrack_token_5173') || localStorage.getItem('resqtrack_token'))
+      ? (sessionStorage.getItem('resqtrack_token') || localStorage.getItem('resqtrack_token_1997') || localStorage.getItem('resqtrack_token_5173') || localStorage.getItem('resqtrack_token'))
       : null;
     const targetUrl = token
-      ? `http://${host}:5174/admin/incidents?session_token=${encodeURIComponent(token)}`
-      : `http://${host}:5174/admin/incidents`;
+      ? `http://${host}:1996/admin/incidents?session_token=${encodeURIComponent(token)}`
+      : `http://${host}:1996/admin/incidents`;
     window.location.href = targetUrl;
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-slate-950 font-mono text-sm text-rose-400">
-        Admin account detected. Redirecting to Executive Command (5174)...
+        Admin account detected. Redirecting to Executive Command (1996)...
       </div>
     );
   }
@@ -148,22 +148,22 @@ const SmartRosterRouter: React.FC = () => {
   const role = (getStoredRole() || '').toLowerCase();
   const isAdmin = role.includes('admin') || role.includes('ldrrmo') || role === '1';
 
-  if (currentPort === '5174') {
+  if (currentPort === '1996' || currentPort === '5174') {
     if (!isAdmin) return <Navigate to="/admin/login" replace />;
     return <Navigate to="/admin/roster" replace />;
   }
 
   if (isAdmin) {
     const token = typeof window !== 'undefined'
-      ? (sessionStorage.getItem('resqtrack_token') || localStorage.getItem('resqtrack_token_5173') || localStorage.getItem('resqtrack_token'))
+      ? (sessionStorage.getItem('resqtrack_token') || localStorage.getItem('resqtrack_token_1997') || localStorage.getItem('resqtrack_token_5173') || localStorage.getItem('resqtrack_token'))
       : null;
     const targetUrl = token
-      ? `http://${host}:5174/admin/roster?session_token=${encodeURIComponent(token)}`
-      : `http://${host}:5174/admin/roster`;
+      ? `http://${host}:1996/admin/roster?session_token=${encodeURIComponent(token)}`
+      : `http://${host}:1996/admin/roster`;
     window.location.href = targetUrl;
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-slate-950 font-mono text-sm text-rose-400">
-        Admin account detected. Redirecting to Executive Command (5174)...
+        Admin account detected. Redirecting to Executive Command (1996)...
       </div>
     );
   }
@@ -174,7 +174,7 @@ const SmartRosterRouter: React.FC = () => {
 
 export const App: React.FC = () => {
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
-  const isAdminPort = currentPort === '5174';
+  const isAdminPort = currentPort === '1996' || currentPort === '5174';
 
   return (
     <BrowserRouter>

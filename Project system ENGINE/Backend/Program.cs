@@ -12,11 +12,12 @@ using Backend.Features.Repositories.Implementations;
 using Backend.Features.Repositories.Interfaces;
 using Backend.Features.Services.Implementations;
 using Backend.Features.Services.Interfaces;
+using Backend.Features.Services.Verification;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Explicitly bind Kestrel to 0.0.0.0:5000 to listen on all interfaces (127.0.0.1 and localhost under IPv4/IPv6)
-builder.WebHost.UseUrls("http://0.0.0.0:5000");
+// Explicitly bind Kestrel to 0.0.0.0:1999 to listen on all interfaces (127.0.0.1 and localhost under IPv4/IPv6)
+builder.WebHost.UseUrls("http://0.0.0.0:1999");
 
 // Add Controllers and JSON Options
 builder.Services.AddControllers()
@@ -107,6 +108,15 @@ builder.Services.AddScoped<IAlertRepository, AlertRepository>();
 builder.Services.AddScoped<ISettingsRepository, SettingsRepository>();
 builder.Services.AddScoped<IAuditLogRepository, AuditLogRepository>();
 
+// Dependency Injection: Verification Strategy & Decorator Providers
+builder.Services.Configure<VerificationProviderOptions>(
+    builder.Configuration.GetSection(VerificationProviderOptions.SectionName));
+builder.Services.AddScoped<IVerificationProviderResolver, VerificationProviderResolver>();
+builder.Services.AddScoped<IIdentityVerificationProvider>(sp =>
+    sp.GetRequiredService<IVerificationProviderResolver>().ResolveIdentityProvider());
+builder.Services.AddScoped<IFacialVerificationProvider>(sp =>
+    sp.GetRequiredService<IVerificationProviderResolver>().ResolveFacialProvider());
+
 // Dependency Injection: Services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IReportService, ReportService>();
@@ -148,6 +158,14 @@ else
 // CORS configuration for React 19 Frontend (Multi-Port Separation Architecture)
 builder.Services.AddCors(options => options.AddPolicy("AllowViteFrontend", policy =>
     policy.WithOrigins(
+        "http://localhost:1996",
+        "http://127.0.0.1:1996",
+        "http://localhost:1997",
+        "http://127.0.0.1:1997",
+        "http://localhost:1998",
+        "http://127.0.0.1:1998",
+        "http://localhost:1999",
+        "http://127.0.0.1:1999",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5174",
@@ -185,7 +203,23 @@ using (var scope = app.Services.CreateScope())
                         ALTER TABLE [Reports] ADD [CurrentLongitude] FLOAT NULL;
                         ALTER TABLE [Reports] ADD [LastBeaconAt] DATETIME2 NULL;
                         ALTER TABLE [Reports] ADD [BeaconCount] INT NOT NULL DEFAULT 0;
-                    END");
+                    END
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'IdBackCapturePath')
+                        ALTER TABLE [Users] ADD [IdBackCapturePath] NVARCHAR(500) NULL;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'Weight')
+                        ALTER TABLE [Users] ADD [Weight] NVARCHAR(20) NULL;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'Height')
+                        ALTER TABLE [Users] ADD [Height] NVARCHAR(20) NULL;
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'DisplayName')
+                        ALTER TABLE [Users] ADD [DisplayName] NVARCHAR(100) NOT NULL CONSTRAINT DF_Users_DisplayName DEFAULT '';
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'IdentityVerificationStatus')
+                        ALTER TABLE [Users] ADD [IdentityVerificationStatus] NVARCHAR(40) NOT NULL CONSTRAINT DF_Users_IdentityVerifStatus DEFAULT 'PendingReview';
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FacialVerificationStatus')
+                        ALTER TABLE [Users] ADD [FacialVerificationStatus] NVARCHAR(40) NOT NULL CONSTRAINT DF_Users_FacialVerifStatus DEFAULT 'PendingReview';
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'IdentityVerificationProvider')
+                        ALTER TABLE [Users] ADD [IdentityVerificationProvider] NVARCHAR(60) NOT NULL CONSTRAINT DF_Users_IdentityVerifProvider DEFAULT 'ManualIdentityVerificationProvider';
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FacialVerificationProvider')
+                        ALTER TABLE [Users] ADD [FacialVerificationProvider] NVARCHAR(60) NOT NULL CONSTRAINT DF_Users_FacialVerifProvider DEFAULT 'ManualFacialReviewProvider';");
             }
             else
             {

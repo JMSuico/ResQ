@@ -20,10 +20,10 @@
 import { chromium } from 'playwright';
 import * as path from 'path';
 
-const API_BASE = 'http://127.0.0.1:5000';
-const ADMIN_PORTAL = 'http://127.0.0.1:5174';
-const RESPONDER_PORTAL = 'http://127.0.0.1:5173';
-const CIVILIAN_PORTAL = 'http://127.0.0.1:5175';
+const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:1999';
+const ADMIN_PORTAL = process.env.ADMIN_PORTAL || 'http://127.0.0.1:1996';
+const RESPONDER_PORTAL = process.env.RESPONDER_PORTAL || 'http://127.0.0.1:1997';
+const CIVILIAN_PORTAL = process.env.CIVILIAN_PORTAL || 'http://127.0.0.1:1998';
 
 const ARTIFACT_DIR = 'C:\\Users\\provu\\.gemini\\antigravity-cli\\brain\\f4db8cc5-1635-43fd-94bb-ed301c4741f1';
 
@@ -298,6 +298,9 @@ export const runStrictChallenge = async () => {
       sessionStorage.setItem('resqtrack_token', sess.token);
       sessionStorage.setItem('resqtrack_session', JSON.stringify(sess.session));
       sessionStorage.setItem('resqtrack_user', JSON.stringify(sess.session));
+      localStorage.setItem('resqtrack_token_1996', sess.token);
+      localStorage.setItem('resqtrack_session_1996', JSON.stringify(sess.session));
+      localStorage.setItem('resqtrack_user_1996', JSON.stringify(sess.session));
       localStorage.setItem('resqtrack_token_5174', sess.token);
       localStorage.setItem('resqtrack_session_5174', JSON.stringify(sess.session));
       localStorage.setItem('resqtrack_user_5174', JSON.stringify(sess.session));
@@ -386,6 +389,9 @@ export const runStrictChallenge = async () => {
       sessionStorage.setItem('resqtrack_session', JSON.stringify(sess.session));
       sessionStorage.setItem('resqtrack_user', JSON.stringify(sess.session));
       sessionStorage.setItem('resqtrack_unit', sess.session.unit || 'RHU');
+      localStorage.setItem('resqtrack_token_1997', sess.token);
+      localStorage.setItem('resqtrack_session_1997', JSON.stringify(sess.session));
+      localStorage.setItem('resqtrack_user_1997', JSON.stringify(sess.session));
       localStorage.setItem('resqtrack_token_5173', sess.token);
       localStorage.setItem('resqtrack_session_5173', JSON.stringify(sess.session));
       localStorage.setItem('resqtrack_user_5173', JSON.stringify(sess.session));

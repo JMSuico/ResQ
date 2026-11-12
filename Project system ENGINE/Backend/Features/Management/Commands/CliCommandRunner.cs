@@ -121,9 +121,9 @@ public static class CliCommandRunner
         string fullName = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3].Trim() : "LDRRMO Executive Admin";
         ResponderUnitType unit = args.Length > 4 ? ParseUnit(args[4], UserRole.LDRRMO_Admin) : ResponderUnitType.LDRRMO;
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
+        if (string.IsNullOrWhiteSpace(password) || password.Length < ScryptPasswordHelper.MinimumPasswordLength)
         {
-            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
+            Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
             return;
         }
 
@@ -185,9 +185,9 @@ public static class CliCommandRunner
         string fullName = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? args[4].Trim() : $"{unit} Unit Administrator";
         UserRole role = unit == ResponderUnitType.LDRRMO ? UserRole.LDRRMO_Admin : UserRole.Responder;
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
+        if (string.IsNullOrWhiteSpace(password) || password.Length < ScryptPasswordHelper.MinimumPasswordLength)
         {
-            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
+            Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
             return;
         }
 
@@ -252,9 +252,9 @@ public static class CliCommandRunner
         }
         string fullName = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? args[4].Trim() : $"{unit} Duty Responder";
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
+        if (string.IsNullOrWhiteSpace(password) || password.Length < ScryptPasswordHelper.MinimumPasswordLength)
         {
-            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
+            Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
             return;
         }
 
@@ -314,9 +314,9 @@ public static class CliCommandRunner
         string password = args[2];
         string fullName = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3].Trim() : "Resident Citizen";
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
+        if (string.IsNullOrWhiteSpace(password) || password.Length < ScryptPasswordHelper.MinimumPasswordLength)
         {
-            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
+            Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
             return;
         }
 
@@ -385,9 +385,9 @@ public static class CliCommandRunner
 
         if (!string.IsNullOrWhiteSpace(newPassword))
         {
-            if (newPassword.Length < 5)
+            if (newPassword.Length < ScryptPasswordHelper.MinimumPasswordLength)
             {
-                Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
+                Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
                 return;
             }
             var (hash, salt) = ScryptPasswordHelper.HashPassword(newPassword);
@@ -430,9 +430,9 @@ public static class CliCommandRunner
         ResponderUnitType unit = args.Length > 5 ? ParseUnit(args[5], role) : ParseUnit(null, role);
         string employeeOrResidentId = args.Length > 6 ? args[6].Trim() : $"{role}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 5)
+        if (string.IsNullOrWhiteSpace(password) || password.Length < ScryptPasswordHelper.MinimumPasswordLength)
         {
-            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
+            Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
             return;
         }
 
@@ -492,9 +492,9 @@ public static class CliCommandRunner
         string email = args[1].Trim();
         string newPassword = args[2];
 
-        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 5)
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < ScryptPasswordHelper.MinimumPasswordLength)
         {
-            Console.WriteLine("[CLI_ERROR] Password must be at least 5 characters long.");
+            Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
             return;
         }
 

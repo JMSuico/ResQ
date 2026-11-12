@@ -6,6 +6,26 @@ using Backend.Features.Data.Enums;
 
 namespace Backend.Features.Api.DTOs;
 
+public record RegistrationResponse(
+    string Message,
+    Guid UserId,
+    string Email,
+    string DisplayName,
+    string FullName,
+    UserRole Role,
+    ResponderUnitType Unit,
+    string Status,
+    bool FaceVerified,
+    string IdentityVerificationStatus,
+    string FacialVerificationStatus,
+    string IdentityVerificationProvider,
+    string FacialVerificationProvider,
+    bool HasIdFrontCapture,
+    bool HasIdBackCapture,
+    bool HasFaceCapture,
+    DateTime CreatedAt
+);
+
 public record SessionResponse(
     Guid UserId,
     string FullName,
@@ -17,7 +37,10 @@ public record SessionResponse(
     bool FaceVerified,
     string? DepartmentOrBarangay,
     string? RankOrTitle,
-    string TargetDashboardUrl
+    string TargetDashboardUrl,
+    string DisplayName = "",
+    string IdentityVerificationStatus = "PendingReview",
+    string FacialVerificationStatus = "PendingReview"
 );
 
 public record UserResponse(
@@ -35,7 +58,11 @@ public record UserResponse(
     string RankOrTitle,
     DateTime CreatedAt,
     string? FullAddress = null,
-    string? PhoneNumber = null
+    string? PhoneNumber = null,
+    string DisplayName = "",
+    string IdentityVerificationStatus = "PendingReview",
+    string FacialVerificationStatus = "PendingReview",
+    bool HasIdBackCapture = false
 );
 
 public record ReportResponse(

@@ -1,7 +1,7 @@
 # ==============================================================================
 # ResQTrack Incident AI System Detection -- Frontend Portals Service
 # Runtime: Node.js 20 on Alpine Linux
-# Portals: Admin (:5174), Responders (:5173), Civilian (:5175)
+# Portals: Admin (:1996), Responders (:1997), Civilian (:1998)
 # ==============================================================================
 
 # Base image with installed dependencies
@@ -12,28 +12,28 @@ RUN npm install
 COPY . .
 
 # ------------------------------------------------------------------------------
-# Target: Admin Command Center Portal (:5174)
+# Target: Admin Command Center Portal (:1996)
 # ------------------------------------------------------------------------------
 FROM base AS admin
-EXPOSE 5174
-ENV PORT=5174
-ENV BACKEND_URL=http://resqtrack-backend:5000
+EXPOSE 1996
+ENV PORT=1996
+ENV BACKEND_URL=http://resqtrack-backend:1999
 CMD ["npm", "run", "dev:admin"]
 
 # ------------------------------------------------------------------------------
-# Target: Emergency Responders Portal (:5173)
+# Target: Emergency Responders Portal (:1997)
 # ------------------------------------------------------------------------------
 FROM base AS responder
-EXPOSE 5173
-ENV PORT=5173
-ENV BACKEND_URL=http://resqtrack-backend:5000
+EXPOSE 1997
+ENV PORT=1997
+ENV BACKEND_URL=http://resqtrack-backend:1999
 CMD ["npm", "run", "dev:responder"]
 
 # ------------------------------------------------------------------------------
-# Target: Civilian Emergency SOS Portal (:5175)
+# Target: Civilian Emergency SOS Portal (:1998)
 # ------------------------------------------------------------------------------
 FROM base AS civilian
-EXPOSE 5175
-ENV PORT=5175
-ENV BACKEND_URL=http://resqtrack-backend:5000
+EXPOSE 1998
+ENV PORT=1998
+ENV BACKEND_URL=http://resqtrack-backend:1999
 CMD ["npm", "run", "dev:civilian"]

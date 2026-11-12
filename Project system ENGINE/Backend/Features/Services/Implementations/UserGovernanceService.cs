@@ -37,8 +37,8 @@ public class UserGovernanceService(
         if (await userRepo.ExistsEmailAsync(request.Email, ct))
             return (false, "An account with this email address already exists.", null);
 
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 5)
-            return (false, "Password must be at least 5 characters long.", null);
+        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 12)
+            return (false, "Password must be at least 12 characters long.", null);
 
         var (hash, salt) = ScryptPasswordHelper.HashPassword(request.Password);
 
@@ -46,11 +46,12 @@ public class UserGovernanceService(
         var fullName = string.IsNullOrWhiteSpace(computedName) ? $"{request.FirstName} {request.Surname}".Trim() : computedName;
 
         var province = string.IsNullOrWhiteSpace(request.Province) ? "Zamboanga del Norte" : InputSanitizer.Sanitize(request.Province);
-        var city = string.IsNullOrWhiteSpace(request.CityOrMunicipality) ? "Dipolog City" : InputSanitizer.Sanitize(request.CityOrMunicipality);
+        var city = string.IsNullOrWhiteSpace(request.CityOrMunicipality) ? "Katipunan" : InputSanitizer.Sanitize(request.CityOrMunicipality);
 
         var user = new User
         {
             Email = InputSanitizer.Sanitize(request.Email).ToLowerInvariant(),
+            DisplayName = !string.IsNullOrWhiteSpace(request.DisplayName) ? InputSanitizer.Sanitize(request.DisplayName) : fullName,
             FullName = fullName,
             FirstName = InputSanitizer.Sanitize(request.FirstName),
             MiddleName = InputSanitizer.Sanitize(request.MiddleName),
@@ -71,6 +72,10 @@ public class UserGovernanceService(
             Unit = request.Unit,
             Status = AccountStatus.Verified,
             FaceVerified = false,
+            IdentityVerificationStatus = "Verified",
+            FacialVerificationStatus = "Verified",
+            IdentityVerificationProvider = "AdminProvisioned",
+            FacialVerificationProvider = "AdminProvisioned",
             DepartmentOrBarangay = string.IsNullOrWhiteSpace(request.DepartmentOrBarangay) ? null : InputSanitizer.Sanitize(request.DepartmentOrBarangay),
             RankOrTitle = InputSanitizer.Sanitize(request.RankOrTitle ?? string.Empty),
             EmployeeOrResidentId = InputSanitizer.Sanitize(request.EmployeeOrResidentId ?? string.Empty),
@@ -182,6 +187,12 @@ public class UserGovernanceService(
         user.PlantillaNumber = InputSanitizer.Sanitize(request.PlantillaNumber);
         user.ExecutiveDesignation = InputSanitizer.Sanitize(request.ExecutiveDesignation);
         user.ClearanceLevel = InputSanitizer.Sanitize(request.ClearanceLevel);
+        if (!string.IsNullOrWhiteSpace(request.DisplayName))
+            user.DisplayName = InputSanitizer.Sanitize(request.DisplayName);
+        if (!string.IsNullOrWhiteSpace(request.IdentityVerificationStatus))
+            user.IdentityVerificationStatus = InputSanitizer.Sanitize(request.IdentityVerificationStatus);
+        if (!string.IsNullOrWhiteSpace(request.FacialVerificationStatus))
+            user.FacialVerificationStatus = InputSanitizer.Sanitize(request.FacialVerificationStatus);
 
         user.UpdatedAt = DateTime.UtcNow;
         await userRepo.UpdateAsync(user, ct);
@@ -244,6 +255,7 @@ public class UserGovernanceService(
         if (request.EmployeeOrResidentId != null) user.EmployeeOrResidentId = InputSanitizer.Sanitize(request.EmployeeOrResidentId);
         if (request.GovernmentIdType != null) user.GovernmentIdType = InputSanitizer.Sanitize(request.GovernmentIdType);
         if (request.GovernmentIdNumber != null) user.GovernmentIdNumber = InputSanitizer.Sanitize(request.GovernmentIdNumber);
+        if (!string.IsNullOrWhiteSpace(request.DisplayName)) user.DisplayName = InputSanitizer.Sanitize(request.DisplayName);
 
         user.UpdatedAt = DateTime.UtcNow;
         await userRepo.UpdateAsync(user, ct);
@@ -306,6 +318,16 @@ public class UserGovernanceService(
         if (targetUser == null) return (false, "User not found.");
 
         targetUser.Status = status;
+        if (status == AccountStatus.Verified)
+        {
+            targetUser.IdentityVerificationStatus = "Verified";
+            targetUser.FacialVerificationStatus = "Verified";
+        }
+        else if (status == AccountStatus.Suspended)
+        {
+            targetUser.IdentityVerificationStatus = "Rejected";
+            targetUser.FacialVerificationStatus = "Rejected";
+        }
         targetUser.UpdatedAt = DateTime.UtcNow;
         await userRepo.UpdateAsync(targetUser, ct);
 
@@ -338,6 +360,7 @@ public class UserGovernanceService(
         (await userRepo.GetByIdWithDeletedAsync(userId, ct)) switch
         {
             { } u when kind == CaptureKind.Id => u.IdCapturePath,
+            { } u when kind == CaptureKind.IdBack => u.IdBackCapturePath,
             { } u when kind == CaptureKind.Face => u.FaceCapturePath,
             _ => null
         };
@@ -357,7 +380,11 @@ public class UserGovernanceService(
         u.RankOrTitle,
         u.CreatedAt,
         u.FullAddress,
-        u.PhoneNumber
+        u.PhoneNumber,
+        u.EffectiveDisplayName,
+        u.IdentityVerificationStatus,
+        u.FacialVerificationStatus,
+        !string.IsNullOrWhiteSpace(u.IdBackCapturePath)
     );
 
     private static UserDetailResponse MapToUserDetailResponse(User u) => new(
@@ -418,6 +445,10 @@ public class UserGovernanceService(
         u.DeletedAt,
         u.DeletedBy,
         u.CreatedAt,
-        u.UpdatedAt
+        u.UpdatedAt,
+        u.EffectiveDisplayName,
+        u.IdentityVerificationStatus,
+        u.FacialVerificationStatus,
+        !string.IsNullOrWhiteSpace(u.IdBackCapturePath)
     );
 }

@@ -28,7 +28,7 @@ $BackendDir  = Join-Path $RootDir "Project system ENGINE\Backend"
 $FrontendDir = Join-Path $RootDir "Project system ENGINE\Frontend"
 $BackendProj = Join-Path $BackendDir "Backend.csproj"
 
-$Ports = @(5000, 5173, 5174, 5175)
+$Ports = @(1999, 1996, 1997, 1998)
 
 # --- Console Color Utility Functions ---
 function Write-Header {
@@ -170,26 +170,26 @@ function Start-AllEngines {
         Pop-Location
     }
 
-    Write-Info "Starting Backend Web API on Port 5000..."
+    Write-Info "Starting Backend Web API on Port 1999..."
     $backendProc = Start-Process -FilePath "dotnet" -ArgumentList "run --launch-profile http" `
         -WorkingDirectory $BackendDir -PassThru -WindowStyle Minimized
 
-    Write-Info "Waiting for Backend :5000 to become ready..."
-    if (Wait-ForPort -Port 5000 -TimeoutSeconds 30) {
-        Write-Success "Backend Web API is LIVE on http://localhost:5000"
+    Write-Info "Waiting for Backend :1999 to become ready..."
+    if (Wait-ForPort -Port 1999 -TimeoutSeconds 30) {
+        Write-Success "Backend Web API is LIVE on http://localhost:1999"
     } else {
         Write-Warn "Backend startup timed out; continuing with frontends..."
     }
 
-    Write-Info "Starting Responders Portal on Port 5173..."
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run dev:responder" `
-        -WorkingDirectory $FrontendDir -WindowStyle Minimized
-
-    Write-Info "Starting Admin (LDRRMO) Portal on Port 5174..."
+    Write-Info "Starting Admin (LDRRMO) Portal on Port 1996..."
     Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run dev:admin" `
         -WorkingDirectory $FrontendDir -WindowStyle Minimized
 
-    Write-Info "Starting Civilian Portal on Port 5175..."
+    Write-Info "Starting Responders Portal on Port 1997..."
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run dev:responder" `
+        -WorkingDirectory $FrontendDir -WindowStyle Minimized
+
+    Write-Info "Starting Civilian Portal on Port 1998..."
     Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run dev:civilian" `
         -WorkingDirectory $FrontendDir -WindowStyle Minimized
 
@@ -199,10 +199,10 @@ function Start-AllEngines {
     Write-Host "`n================================================================================" -ForegroundColor Cyan
     Write-Host "                ACTIVE ECOSYSTEM RUNTIME PORTALS                              " -ForegroundColor Green
     Write-Host "================================================================================" -ForegroundColor Cyan
-    Write-Host " [API & DB]   Backend Core & Docs :  http://localhost:5000/scalar/v1" -ForegroundColor Yellow
-    Write-Host " [PORT 5173]  Tactical Responders :  http://localhost:5173" -ForegroundColor Yellow
-    Write-Host " [PORT 5174]  Central Admin LDRRMO:  http://localhost:5174" -ForegroundColor Yellow
-    Write-Host " [PORT 5175]  Civilian Emergency  :  http://localhost:5175" -ForegroundColor Yellow
+    Write-Host " [API & DB]   Backend Core & Docs :  http://localhost:1999/scalar/v1" -ForegroundColor Yellow
+    Write-Host " [PORT 1996]  Central Admin LDRRMO:  http://localhost:1996" -ForegroundColor Yellow
+    Write-Host " [PORT 1997]  Tactical Responders :  http://localhost:1997" -ForegroundColor Yellow
+    Write-Host " [PORT 1998]  Civilian Emergency  :  http://localhost:1998" -ForegroundColor Yellow
     Write-Host "================================================================================`n" -ForegroundColor Cyan
 
     Write-Success "All 4 engines launched successfully."
@@ -369,20 +369,20 @@ function Create-SuperadminAccount {
     Write-Header "CREATE SUPERADMIN ACCOUNT (BYPASS TERMINAL CREATION)"
     Write-Host "Reminder: Enter email and password only. Default verified profile attributes are assigned.`n" -ForegroundColor Yellow
 
-    Write-Host "  [1] Create Default Superadmin (admin@resqtrack.gov.ph / Admin123!)"
+    Write-Host "  [1] Create Default Superadmin (admin@resqtrack.gov.ph / Admin123456!)"
     Write-Host "  [2] Create Custom Superadmin (Specify Email & Password)"
     Write-Host "  [0] Cancel`n"
 
     $choice = Read-Host "Select Option (0-2)"
     if ($choice -eq "1") {
         Write-Info "Creating default superadmin account..."
-        $res = Run-BackendCli -CliArgs @("createsuperadmin", "admin@resqtrack.gov.ph", "Admin123!")
+        $res = Run-BackendCli -CliArgs @("createsuperadmin", "admin@resqtrack.gov.ph", "Admin123456!")
         Write-Host ($res -join "`n") -ForegroundColor Green
     } elseif ($choice -eq "2") {
         $email = Read-Host "Enter Superadmin Email"
         if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return }
-        $pass = Read-Host "Enter Superadmin Password (min 5 chars)"
-        if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 5) { Write-Warn "Password too short."; return }
+        $pass = Read-Host "Enter Superadmin Password (min 12 chars)"
+        if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) { Write-Warn "Password too short (must be at least 12 characters)."; return }
 
         Write-Info "Creating superadmin '$email'..."
         $res = Run-BackendCli -CliArgs @("createsuperadmin", $email, $pass)
@@ -399,7 +399,12 @@ function Edit-SuperadminAccount {
 
     Write-Info "Selected Superadmin: $($user.email)"
     $newEmail = Read-Host "New Email [leave blank or press Enter to keep current]"
-    $newPass  = Read-Host "New Password [leave blank or press Enter to keep current]"
+    $newPass  = Read-Host "New Password (min 12 chars) [leave blank or press Enter to keep current]"
+
+    if (-not [string]::IsNullOrWhiteSpace($newPass) -and $newPass.Length -lt 12) {
+        Write-Warn "Password too short (must be at least 12 characters)."
+        return
+    }
 
     if ([string]::IsNullOrWhiteSpace($newEmail) -and [string]::IsNullOrWhiteSpace($newPass)) {
         Write-Warn "No changes provided."
@@ -446,8 +451,8 @@ function Create-ResponderAccount {
 
     $email = Read-Host "Enter $unit Responder Email"
     if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return }
-    $pass = Read-Host "Enter Password (min 5 chars)"
-    if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 5) { Write-Warn "Password too short."; return }
+    $pass = Read-Host "Enter Password (min 12 chars)"
+    if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) { Write-Warn "Password too short (must be at least 12 characters)."; return }
 
     Write-Info "Creating $unit responder '$email'..."
     $res = Run-BackendCli -CliArgs @("createresponder", $email, $pass, $unit)
@@ -478,7 +483,12 @@ function Edit-ResponderAccount {
 
     Write-Info "Selected Responder: $($user.email) [Unit: $($user.unit)]"
     $newEmail = Read-Host "New Email [leave blank or press Enter to keep current]"
-    $newPass  = Read-Host "New Password [leave blank or press Enter to keep current]"
+    $newPass  = Read-Host "New Password (min 12 chars) [leave blank or press Enter to keep current]"
+
+    if (-not [string]::IsNullOrWhiteSpace($newPass) -and $newPass.Length -lt 12) {
+        Write-Warn "Password too short (must be at least 12 characters)."
+        return
+    }
 
     if ([string]::IsNullOrWhiteSpace($newEmail) -and [string]::IsNullOrWhiteSpace($newPass)) {
         Write-Warn "No changes provided."
@@ -527,8 +537,8 @@ function Create-CivilianAccount {
 
     $email = Read-Host "Enter Civilian Email"
     if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return }
-    $pass = Read-Host "Enter Password (min 5 chars)"
-    if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 5) { Write-Warn "Password too short."; return }
+    $pass = Read-Host "Enter Password (min 12 chars)"
+    if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) { Write-Warn "Password too short (must be at least 12 characters)."; return }
 
     Write-Info "Creating civilian account '$email'..."
     $res = Run-BackendCli -CliArgs @("createcivilian", $email, $pass)
@@ -542,7 +552,12 @@ function Edit-CivilianAccount {
 
     Write-Info "Selected Civilian: $($user.email)"
     $newEmail = Read-Host "New Email [leave blank or press Enter to keep current]"
-    $newPass  = Read-Host "New Password [leave blank or press Enter to keep current]"
+    $newPass  = Read-Host "New Password (min 12 chars) [leave blank or press Enter to keep current]"
+
+    if (-not [string]::IsNullOrWhiteSpace($newPass) -and $newPass.Length -lt 12) {
+        Write-Warn "Password too short (must be at least 12 characters)."
+        return
+    }
 
     if ([string]::IsNullOrWhiteSpace($newEmail) -and [string]::IsNullOrWhiteSpace($newPass)) {
         Write-Warn "No changes provided."
@@ -643,7 +658,7 @@ function Show-MainMenu {
     while ($true) {
         Write-Header ""
         Write-Host " CORE ENGINE OPERATIONS" -ForegroundColor Green
-        Write-Host "  [1]  Start all Engines & Portals (:5000, :5173, :5174, :5175)"
+        Write-Host "  [1]  Start all Engines & Portals (:1999, :1996, :1997, :1998)"
         Write-Host "  [2]  Stop all Engines & Release Ports"
         Write-Host "  [3]  Database Migrations (Add Migration / Update Database / Auto-detect)"
         Write-Host ""

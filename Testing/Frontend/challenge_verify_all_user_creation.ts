@@ -11,7 +11,7 @@
  * 6. Live authentication and session token verification for each new role
  */
 
-const API_BASE = 'http://127.0.0.1:5000';
+const API_BASE = process.env.API_BASE_URL || 'http://127.0.0.1:1999';
 
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
@@ -85,15 +85,38 @@ const runChallenge = async () => {
   const regJson = await regRes.json();
   logPass(`New Civilian Registered successfully: ${civilianEmail} (Status: ${regJson.status}, FaceVerified: ${regJson.faceVerified})`);
 
-  // Verify newly registered civilian can log in
-  const civilianAuth = await executeLogin(civilianEmail, civilianPass, 'ResponderCivilian', 'Civilian');
-  logPass(`New Civilian Authenticated via JWT: ID=${civilianAuth.session.userId}, Name=${civilianAuth.session.fullName}`);
+  // Verify newly registered civilian is in Pending status and login is blocked until admin approval
+  const preApprovalLoginRes = await fetch(`${API_BASE}/api/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: civilianEmail, password: civilianPass, portalOrigin: 'ResponderCivilian', selectedTabRole: 'Civilian' })
+  });
+  if (preApprovalLoginRes.status === 401) {
+    logPass(`Pending Civilian Login Guard Verified: Access blocked prior to Admin review.`);
+  }
 
   // 2. ADMIN AUTHENTICATION
   logInfo('\n--- 2. LOGGING IN AS LDRRMO COMMAND ADMIN ---');
   const adminAuth = await executeLogin('ldrrmo.admin@resqtrack.gov.ph', 'LdrrmoCommand@2026!', 'Admin', 'LDRRMO_Admin');
   logPass(`Admin Authenticated: ${adminAuth.session.fullName} (Token secured)`);
   const adminToken = adminAuth.token;
+
+  // Admin approves the newly registered Civilian
+  const civilianId = regJson.userId || regJson.id;
+  const approveRes = await fetch(`${API_BASE}/api/users/${civilianId}/status`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminToken}`
+    },
+    body: JSON.stringify({ status: 1 }) // 1 = AccountStatus.Verified
+  });
+  if (!approveRes.ok) throw new Error(`Admin failed to approve civilian (${approveRes.status}): ${await approveRes.text()}`);
+  logPass(`Admin Approved Civilian Account: Status transitioned to Verified.`);
+
+  // Verify approved civilian logs in successfully
+  const civilianAuth = await executeLogin(civilianEmail, civilianPass, 'ResponderCivilian', 'Civilian');
+  logPass(`New Civilian Authenticated via JWT: ID=${civilianAuth.session.userId}, Name=${civilianAuth.session.fullName}`);
 
   // 3. CREATE BRAND NEW RHU MEDIC RESPONDER
   logInfo('\n--- 3. CREATING BRAND NEW RHU MEDIC RESPONDER ---');

@@ -20,3 +20,20 @@ export * from './idScanEngine';
 export * from './cardPresenceGate';
 export * from './face/skinFaceTracker';
 export * from './textExtractor';
+export * from './dynamicAnchorParser';
+export * from './onDeviceWasmOcr';
+export * from './idTemplateRegistry';
+export {
+  type ExtractedFieldStatus,
+  type ExtractedFieldSource,
+  type ExtractedField as ProvenanceExtractedField,
+  type DocumentClassificationCandidate,
+  type DocumentAnalysisResult,
+  type ClassifyDocumentInput,
+  classifyPhilippineDocumentSide,
+  classifyPhilippineDocument,
+  parseMachineReadableChannels,
+  extractLtoVersionedCodes,
+  normalizeStandardDate,
+  runPhilippineIdRecognitionPipeline
+} from './idRecognitionPipeline';

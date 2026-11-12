@@ -22,7 +22,7 @@ const DEFAULT_RESPONDER_NAME = 'Active Duty Responder';
 const DEFAULT_EMPLOYEE_ID = 'RES-773-009';
 const DEFAULT_VERIFIED_STATUS = 'Verified';
 
-const getTabSession = (): { unit?: string; fullName?: string; employeeOrResidentId?: string; employeeId?: string; role?: string; status?: string; faceVerified?: boolean } | null => {
+const getTabSession = (): { unit?: string; fullName?: string; displayName?: string; employeeOrResidentId?: string; employeeId?: string; role?: string; status?: string; faceVerified?: boolean } | null => {
   if (typeof window === 'undefined') return null;
   try {
     // 1. Tab-isolated session storage (Guarantees Tab 1 Medic never reads Fire)
@@ -72,7 +72,7 @@ export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) =>
   const normUnit = rawUnit.toUpperCase();
 
   const user = {
-    name: tabSession?.fullName || session?.fullName || DEFAULT_RESPONDER_NAME,
+    name: tabSession?.displayName || tabSession?.fullName || session?.displayName || session?.fullName || DEFAULT_RESPONDER_NAME,
     id: tabSession?.employeeOrResidentId || tabSession?.employeeId || session?.employeeOrResidentId || session?.employeeId || DEFAULT_EMPLOYEE_ID,
     role: activeRole,
     unit: normUnit,

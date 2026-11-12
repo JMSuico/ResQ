@@ -46,6 +46,30 @@ public static class DatabaseSeeder
                     IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FaceCapturePath' AND is_nullable = 0)
                         ALTER TABLE [Users] ALTER COLUMN [FaceCapturePath] NVARCHAR(500) NULL;
 
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'IdBackCapturePath')
+                        ALTER TABLE [Users] ADD [IdBackCapturePath] NVARCHAR(500) NULL;
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'Weight')
+                        ALTER TABLE [Users] ADD [Weight] NVARCHAR(20) NULL;
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'Height')
+                        ALTER TABLE [Users] ADD [Height] NVARCHAR(20) NULL;
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'DisplayName')
+                        ALTER TABLE [Users] ADD [DisplayName] NVARCHAR(100) NOT NULL CONSTRAINT DF_Users_DisplayName DEFAULT '';
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'IdentityVerificationStatus')
+                        ALTER TABLE [Users] ADD [IdentityVerificationStatus] NVARCHAR(40) NOT NULL CONSTRAINT DF_Users_IdentityVerifStatus DEFAULT 'PendingReview';
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FacialVerificationStatus')
+                        ALTER TABLE [Users] ADD [FacialVerificationStatus] NVARCHAR(40) NOT NULL CONSTRAINT DF_Users_FacialVerifStatus DEFAULT 'PendingReview';
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'IdentityVerificationProvider')
+                        ALTER TABLE [Users] ADD [IdentityVerificationProvider] NVARCHAR(60) NOT NULL CONSTRAINT DF_Users_IdentityVerifProvider DEFAULT 'ManualIdentityVerificationProvider';
+
+                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FacialVerificationProvider')
+                        ALTER TABLE [Users] ADD [FacialVerificationProvider] NVARCHAR(60) NOT NULL CONSTRAINT DF_Users_FacialVerifProvider DEFAULT 'ManualFacialReviewProvider';
+
                 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FirstName')
                     ALTER TABLE [Users] ADD [FirstName] NVARCHAR(80) NOT NULL CONSTRAINT DF_Users_FirstName DEFAULT '';
 
@@ -245,6 +269,86 @@ public static class DatabaseSeeder
                         [WaterSupplyGallons] INT NOT NULL,
                         [UpdatedAt] DATETIME2 NOT NULL
                     );
+                END
+
+                IF OBJECT_ID(N'dbo.IdentityVerificationRecords', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [IdentityVerificationRecords] (
+                        [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        [UserId] UNIQUEIDENTIFIER NOT NULL,
+                        [GovernmentIdType] NVARCHAR(60) NOT NULL,
+                        [GovernmentIdNumber] NVARCHAR(80) NULL,
+                        [Issuer] NVARCHAR(80) NULL,
+                        [IdSpecVersion] NVARCHAR(30) NULL,
+                        [ExtractionEngine] NVARCHAR(60) NOT NULL,
+                        [ExtractionEngineVersion] NVARCHAR(30) NOT NULL,
+                        [ConfidenceScore] FLOAT NOT NULL,
+                        [NormalizedFieldsJson] NVARCHAR(MAX) NOT NULL,
+                        [UserCorrectedFieldsJson] NVARCHAR(MAX) NOT NULL,
+                        [DocumentCheckStatus] NVARCHAR(50) NOT NULL,
+                        [FaceMatchStatus] NVARCHAR(50) NOT NULL,
+                        [LivenessStatus] NVARCHAR(50) NOT NULL,
+                        [OverallVerificationStatus] NVARCHAR(50) NOT NULL,
+                        [FrontIdEncryptedPath] NVARCHAR(500) NULL,
+                        [BackIdEncryptedPath] NVARCHAR(500) NULL,
+                        [VerifiedAtUtc] DATETIME2 NOT NULL,
+                        [CreatedAtUtc] DATETIME2 NOT NULL,
+                        CONSTRAINT FK_IdentityVerificationRecords_Users_UserId FOREIGN KEY ([UserId]) REFERENCES [Users] ([Id]) ON DELETE CASCADE
+                    );
+                    CREATE INDEX IX_IdentityVerificationRecords_UserId ON [IdentityVerificationRecords] ([UserId]);
+                END
+
+                IF OBJECT_ID(N'dbo.BiometricEnrollments', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [BiometricEnrollments] (
+                        [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        [UserId] UNIQUEIDENTIFIER NOT NULL,
+                        [EncryptedTemplateData] VARBINARY(MAX) NOT NULL,
+                        [TemplateFormat] NVARCHAR(50) NOT NULL,
+                        [ModelIdentifier] NVARCHAR(80) NOT NULL,
+                        [ModelVersion] NVARCHAR(30) NOT NULL,
+                        [EnrollmentQualityScore] FLOAT NOT NULL,
+                        [LivenessSummary] NVARCHAR(100) NOT NULL,
+                        [EnrollmentStatus] NVARCHAR(50) NOT NULL,
+                        [EnrolledAtUtc] DATETIME2 NOT NULL,
+                        [RevokedAtUtc] DATETIME2 NULL,
+                        [RevokedBy] NVARCHAR(180) NULL,
+                        CONSTRAINT FK_BiometricEnrollments_Users_UserId FOREIGN KEY ([UserId]) REFERENCES [Users] ([Id]) ON DELETE CASCADE
+                    );
+                    CREATE INDEX IX_BiometricEnrollments_UserId ON [BiometricEnrollments] ([UserId]);
+                END
+
+                IF OBJECT_ID(N'dbo.UserConsents', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [UserConsents] (
+                        [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        [UserId] UNIQUEIDENTIFIER NOT NULL,
+                        [NoticeVersion] NVARCHAR(30) NOT NULL,
+                        [PurposeCategory] NVARCHAR(100) NOT NULL,
+                        [UserAction] NVARCHAR(50) NOT NULL,
+                        [LegalBasis] NVARCHAR(80) NULL,
+                        [ClientIpAddress] NVARCHAR(60) NOT NULL,
+                        [ConsentedAtUtc] DATETIME2 NOT NULL,
+                        [WithdrawnAtUtc] DATETIME2 NULL,
+                        CONSTRAINT FK_UserConsents_Users_UserId FOREIGN KEY ([UserId]) REFERENCES [Users] ([Id]) ON DELETE CASCADE
+                    );
+                    CREATE INDEX IX_UserConsents_UserId ON [UserConsents] ([UserId]);
+                END
+
+                IF OBJECT_ID(N'dbo.LoginAttempts', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [LoginAttempts] (
+                        [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        [AccountIdentifier] NVARCHAR(180) NOT NULL,
+                        [AttemptType] NVARCHAR(30) NOT NULL,
+                        [Success] BIT NOT NULL,
+                        [FailureReason] NVARCHAR(100) NULL,
+                        [IpAddress] NVARCHAR(60) NOT NULL,
+                        [UserAgent] NVARCHAR(300) NULL,
+                        [AttemptedAtUtc] DATETIME2 NOT NULL
+                    );
+                    CREATE INDEX IX_LoginAttempts_AccountIdentifier ON [LoginAttempts] ([AccountIdentifier]);
+                    CREATE INDEX IX_LoginAttempts_AttemptedAtUtc ON [LoginAttempts] ([AttemptedAtUtc]);
                 END
             ");
         }
@@ -573,6 +677,49 @@ public static class DatabaseSeeder
             if (existing == null)
             {
                 await db.Settings.AddAsync(s);
+            }
+        }
+        await db.SaveChangesAsync();
+
+        // Seed Biometric Enrollments for Demo Accounts (Resident, Medic, Admin)
+        var demoUsers = await db.Users.Where(u =>
+            u.Email == "resident.juan@resqtrack.gov.ph" ||
+            u.Email == "rhu.medic@resqtrack.gov.ph" ||
+            u.Email == "ldrrmo.admin@resqtrack.gov.ph"
+        ).ToListAsync();
+
+        foreach (var demoUser in demoUsers)
+        {
+            bool hasEnrollment = await db.BiometricEnrollments.AnyAsync(b => b.UserId == demoUser.Id && b.RevokedAtUtc == null);
+            if (!hasEnrollment)
+            {
+                float[] demoVector = new float[128];
+                for (int i = 0; i < 128; i++)
+                {
+                    int charCode = (int)demoUser.Email[i % demoUser.Email.Length];
+                    demoVector[i] = (float)Math.Sin((i + 1) * (charCode + 1) * 0.17);
+                }
+                float norm = (float)Math.Sqrt(demoVector.Sum(x => x * x));
+                if (norm > 0)
+                {
+                    for (int i = 0; i < 128; i++) demoVector[i] /= norm;
+                }
+
+                byte[] templateBytes = new byte[128 * sizeof(float)];
+                Buffer.BlockCopy(demoVector, 0, templateBytes, 0, templateBytes.Length);
+
+                db.BiometricEnrollments.Add(new BiometricEnrollment
+                {
+                    UserId = demoUser.Id,
+                    EncryptedTemplateData = templateBytes,
+                    TemplateFormat = "128D_FLOAT32_NORMALIZED",
+                    ModelIdentifier = "ResQTrack_Hybrid_CSLBP_Gabor_Haar",
+                    ModelVersion = "v1.0.0",
+                    EnrollmentQualityScore = 0.98,
+                    LivenessSummary = "4_POSE_VIDEO_CHALLENGE_VERIFIED",
+                    EnrollmentStatus = "ACTIVE",
+                    EnrolledAtUtc = DateTime.UtcNow
+                });
             }
         }
         await db.SaveChangesAsync();

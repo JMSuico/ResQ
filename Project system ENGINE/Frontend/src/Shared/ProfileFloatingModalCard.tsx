@@ -17,6 +17,7 @@ export interface ProfileFloatingModalCardProps {
   user?: {
     name?: string;
     fullName?: string;
+    displayName?: string;
     role?: string;
     unit?: string;
     id?: string;
@@ -61,7 +62,7 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
   if (!isOpen) return null;
 
   // Resolved identity fields
-  const fullName = user?.fullName || user?.name || session?.fullName || 'Active Operator';
+  const fullName = user?.displayName || user?.fullName || user?.name || session?.displayName || session?.fullName || 'Active Operator';
   const roleRaw = (user?.role || session?.role || 'Responder');
   const roleLower = roleRaw.toLowerCase();
   const unit = (user?.unit && user.unit !== 'None') ? user.unit : (session?.unit && session.unit !== 'None' ? session.unit : null);

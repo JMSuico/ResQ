@@ -712,7 +712,7 @@ const runMultiRolePortVerification = async (): Promise<void> => {
   console.log(`${BOLD}Ports Tested: Port 5174 (Admin Dedicated), Port 5173 (Responders & Civilians)${RESET}`);
   console.log(`${BOLD}========================================================================${RESET}\n`);
 
-  const baseUrl = process.env.API_BASE_URL || 'http://127.0.0.1:5000';
+  const baseUrl = process.env.API_BASE_URL || 'http://127.0.0.1:1999';
   logInfo(`Probing backend on: ${baseUrl}`);
 
   const isLive = await checkBackendAvailability(baseUrl);

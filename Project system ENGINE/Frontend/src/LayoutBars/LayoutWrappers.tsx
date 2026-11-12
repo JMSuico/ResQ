@@ -17,7 +17,7 @@ export interface LayoutWrappersProps {
   defaultUnit?: string;
 }
 
-const getTabSession = (): { unit?: string; fullName?: string; employeeOrResidentId?: string; employeeId?: string; role?: string; status?: string; faceVerified?: boolean } | null => {
+const getTabSession = (): { unit?: string; fullName?: string; displayName?: string; employeeOrResidentId?: string; employeeId?: string; role?: string; status?: string; faceVerified?: boolean } | null => {
   if (typeof window === 'undefined') return null;
   try {
     // 1. Tab-isolated session storage (Guarantees independent sessions across tabs)
@@ -72,7 +72,7 @@ export const LayoutWrappers: React.FC<LayoutWrappersProps> = ({
   }
 
   const user = {
-    name: tabSession?.fullName || session?.fullName || (isAdmin ? 'LDRRMO Commander' : 'Active Duty Officer'),
+    name: tabSession?.displayName || tabSession?.fullName || session?.displayName || session?.fullName || (isAdmin ? 'LDRRMO Commander' : 'Active Duty Officer'),
     id: tabSession?.employeeOrResidentId || tabSession?.employeeId || session?.employeeOrResidentId || session?.employeeId || 'OP-773-567-009',
     role: activeRole,
     unit: activeUnit,
