@@ -457,6 +457,17 @@ body {
 .field__input::placeholder { color: rgba(236, 230, 234, 0.34); }
 .field__input:focus { outline: none; }
 
+.field__input:-webkit-autofill,
+.field__input:-webkit-autofill:hover,
+.field__input:-webkit-autofill:focus,
+.field__input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #3e1421 inset !important;
+  -webkit-text-fill-color: #ece6ea !important;
+  caret-color: #ff5c74;
+  color-scheme: dark;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
 .field__box:focus-within {
   border-color: var(--focus);
   box-shadow: 0 0 0 calc(3 * var(--u)) rgba(255, 92, 116, 0.12);
@@ -537,7 +548,7 @@ body {
   cursor: pointer;
 }
 
-.check input {
+.check:has(.check__box) input {
   position: absolute;
   width: 1px; height: 1px;
   opacity: 0;

@@ -523,7 +523,8 @@ export const matchGlyph = (
   glyph16: Uint8Array,
   aspect: number,
   fontBank: Record<string, GlyphTemplate[]> = FONT_BANK,
-  allowedChars?: string
+  allowedChars?: string,
+  minConfidence: number = 0.45
 ): GlyphMatchResult => {
   const queryZoning = computeZoningFeatures(glyph16);
   const bestScorePerChar = new Map<string, number>();
@@ -559,10 +560,11 @@ export const matchGlyph = (
 
   const topMatch = candidates[0];
   const alternatives = candidates.slice(1, 6);
+  const topConfidence = Number(topMatch.confidence.toFixed(4));
 
   return {
-    char: topMatch.char,
-    confidence: Number(topMatch.confidence.toFixed(4)),
+    char: topMatch.confidence < minConfidence ? '?' : topMatch.char,
+    confidence: topConfidence,
     alternatives: alternatives.map((alt) => ({
       char: alt.char,
       confidence: Number(alt.confidence.toFixed(4)),
@@ -578,13 +580,15 @@ export const matchGlyph = (
  * @param fullW Full image width.
  * @param lineBoxes Array of character bounding boxes in the line.
  * @param allowedChars Optional character whitelist.
+ * @param minConfidence Minimum glyph confidence threshold before emitting '?'.
  * @returns Recognized text string, overall confidence, and per-character confidence scores.
  */
 export const recognizeLineText = (
   binary: Uint8Array,
   fullW: number,
   lineBoxes: { x: number; y: number; w: number; h: number }[],
-  allowedChars?: string
+  allowedChars?: string,
+  minConfidence: number = 0.45
 ): RecognizedLineResult => {
   if (lineBoxes.length === 0) {
     return {
@@ -621,7 +625,7 @@ export const recognizeLineText = (
 
     const glyph16 = normalizeGlyphTo16x16(binary, fullW, currentBox);
     const aspect = currentBox.w / Math.max(1, currentBox.h);
-    const match = matchGlyph(glyph16, aspect, FONT_BANK, allowedChars);
+    const match = matchGlyph(glyph16, aspect, FONT_BANK, allowedChars, minConfidence);
 
     const isNumeric = Boolean(allowedChars && !/[A-Z]/.test(allowedChars));
     const lineH = Math.max(1, ...sortedBoxes.map((b) => b.h));
@@ -632,6 +636,16 @@ export const recognizeLineText = (
 
     reconstructedText += finalChar;
     charConfidences.push(match.confidence);
+  }
+
+  const nonSpaceChars = reconstructedText.replace(/\s+/g, '');
+  const questionMarkCount = (nonSpaceChars.match(/\?/g) || []).length;
+  if (nonSpaceChars.length === 0 || questionMarkCount / nonSpaceChars.length > 0.5) {
+    return {
+      text: '',
+      confidence: 0,
+      charConfidences: [],
+    };
   }
 
   const sumConfidence = charConfidences.reduce((sum, c) => sum + c, 0);

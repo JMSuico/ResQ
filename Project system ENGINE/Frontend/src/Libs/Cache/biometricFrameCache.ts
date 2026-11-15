@@ -13,6 +13,7 @@ export interface CachedFrameEntry {
   laplacianVariance: number;
   yaw?: number;
   pitch?: number;
+  isTrackedFace?: boolean;
 }
 
 export interface BiometricCacheMetadata {
@@ -35,6 +36,13 @@ export interface BiometricPersistResult {
   score: number;
   compositeDataUrl: string;
 }
+
+const isEntryTrackedFace = (entry: CachedFrameEntry): boolean => {
+  if (typeof entry.isTrackedFace === 'boolean') {
+    return entry.isTrackedFace;
+  }
+  return typeof entry.yaw === 'number' || typeof entry.pitch === 'number';
+};
 
 export class BiometricFrameCacheStore {
   private frames: CachedFrameEntry[] = [];
@@ -69,19 +77,25 @@ export class BiometricFrameCacheStore {
     frameDataUrl: string,
     laplacianVariance: number,
     yaw?: number,
-    pitch?: number
+    pitch?: number,
+    isTrackedFace?: boolean
   ): boolean => {
     if (this.isPaused) {
       return false; // Frame caching is paused
     }
     const variance = Number.isFinite(laplacianVariance) ? laplacianVariance : 0;
+    const tracked =
+      typeof isTrackedFace === 'boolean'
+        ? isTrackedFace
+        : typeof yaw === 'number' || typeof pitch === 'number';
     const entry: CachedFrameEntry = {
       timestamp: Date.now(),
       pose,
       frameDataUrl,
       laplacianVariance: variance,
       yaw,
-      pitch
+      pitch,
+      isTrackedFace: tracked
     };
 
     const poseIndices: number[] = [];
@@ -94,17 +108,41 @@ export class BiometricFrameCacheStore {
     if (poseIndices.length < this.maxFramesPerPose) {
       this.frames.push(entry);
     } else {
-      // Find lowest clarity frame in this pose to replace if the new frame is sharper
-      let minIdx = poseIndices[0];
-      let minScore = this.frames[minIdx].laplacianVariance;
-      for (const idx of poseIndices) {
-        if (this.frames[idx].laplacianVariance < minScore) {
-          minScore = this.frames[idx].laplacianVariance;
-          minIdx = idx;
+      // Never allow untracked noise frames to evict tracked face frames
+      let replaceIdx = -1;
+      let minScore = Infinity;
+
+      if (tracked) {
+        // First try to evict the lowest-variance untracked noise frame
+        for (const idx of poseIndices) {
+          const existing = this.frames[idx];
+          const existingTracked = isEntryTrackedFace(existing);
+          if (!existingTracked && existing.laplacianVariance < minScore) {
+            minScore = existing.laplacianVariance;
+            replaceIdx = idx;
+          }
+        }
+        if (replaceIdx >= 0) {
+          this.frames[replaceIdx] = entry;
+          return true;
         }
       }
-      if (variance > minScore) {
-        this.frames[minIdx] = entry;
+
+      // Otherwise find lowest clarity frame within the same tracking tier
+      minScore = Infinity;
+      for (const idx of poseIndices) {
+        const existing = this.frames[idx];
+        const existingTracked = isEntryTrackedFace(existing);
+        if (!tracked && existingTracked) {
+          continue;
+        }
+        if (existing.laplacianVariance < minScore) {
+          minScore = existing.laplacianVariance;
+          replaceIdx = idx;
+        }
+      }
+      if (replaceIdx >= 0 && variance > minScore) {
+        this.frames[replaceIdx] = entry;
       }
     }
     return true;
@@ -159,7 +197,9 @@ export class BiometricFrameCacheStore {
     poses.forEach((pose) => {
       const poseFrames = this.frames.filter((f) => f.pose === pose);
       if (poseFrames.length > 0) {
-        const best = poseFrames.reduce((prev, curr) =>
+        const trackedPoseFrames = poseFrames.filter((f) => isEntryTrackedFace(f));
+        const candidates = trackedPoseFrames.length > 0 ? trackedPoseFrames : poseFrames;
+        const best = candidates.reduce((prev, curr) =>
           curr.laplacianVariance > prev.laplacianVariance ? curr : prev
         );
         result[pose] = best.frameDataUrl;
@@ -248,7 +288,9 @@ export const findBestFrameForPose = (
 ): CachedFrameEntry | null => {
   const matching = frames.filter((f) => f.pose === pose);
   if (matching.length === 0) return null;
-  return matching.reduce((best, curr) =>
+  const trackedMatching = matching.filter((f) => isEntryTrackedFace(f));
+  const candidates = trackedMatching.length > 0 ? trackedMatching : matching;
+  return candidates.reduce((best, curr) =>
     curr.laplacianVariance > best.laplacianVariance ? curr : best
   );
 };
@@ -354,21 +396,26 @@ export const extractBiometricFeatureVectorDetailed = async (
       el.src = dataUrl;
     });
 
+    const natW = Math.max(1, img.naturalWidth || img.width || 320);
+    const natH = Math.max(1, img.naturalHeight || img.height || 240);
+    const targetW = natW < 280 ? 280 : Math.min(480, natW);
+    const targetH = Math.max(120, Math.min(480, Math.round((natH / natW) * targetW)));
+
     const canvas = document.createElement('canvas');
-    canvas.width = 320;
-    canvas.height = 240;
+    canvas.width = targetW;
+    canvas.height = targetH;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) {
       throw new Error('Canvas 2D context unavailable');
     }
 
-    ctx.drawImage(img, 0, 0, 320, 240);
-    const imgData = ctx.getImageData(0, 0, 320, 240);
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+    const imgData = ctx.getImageData(0, 0, targetW, targetH);
     const skinRes = trackSkinFace(
       imgData.data,
-      320,
-      240,
-      { cx: 160, cy: 120, rx: 84, ry: 102 }
+      targetW,
+      targetH,
+      { cx: targetW * 0.5, cy: targetH * 0.5, rx: targetW * 0.2625, ry: targetH * 0.425 }
     );
 
     const desc = skinRes?.featureDescriptor || skinRes?.hybridProfile?.featureDescriptor;
@@ -439,11 +486,12 @@ export interface MultiPoseTrainedProfile {
   livenessSummary: string;
   posesIncluded: BiometricPose[];
   hasTrackedRealFace: boolean;
+  fallbackUsed: boolean;
 }
 
 /**
  * Synthesizes a calibrated 128-D biometric profile from multi-pose video frames.
- * Blends CENTER, RIGHT, LEFT, and BLINK frames to train the user's ground-truth identity.
+ * Blends CENTER, BLINK, RIGHT, and LEFT frames to train the user's ground-truth identity.
  */
 export const synthesizeMultiPoseTrainedProfile = async (
   cacheOrBestFrames: BiometricFrameCacheStore | Record<BiometricPose, string>
@@ -454,11 +502,11 @@ export const synthesizeMultiPoseTrainedProfile = async (
       : cacheOrBestFrames;
 
   const weights: Record<BiometricPose, number> = {
-    CENTER: 0.45,
-    RIGHT: 0.20,
-    LEFT: 0.20,
-    BLINK: 0.15,
-    UP: 0.10
+    CENTER: 0.92,
+    BLINK: 0.02,
+    RIGHT: 0.03,
+    LEFT: 0.03,
+    UP: 0.03
   };
 
   const poses: BiometricPose[] = ['CENTER', 'RIGHT', 'LEFT', 'BLINK'];
@@ -482,18 +530,25 @@ export const synthesizeMultiPoseTrainedProfile = async (
     defaultVec[0] = 1.0;
     return {
       descriptorVector: defaultVec,
-      qualityScore: 0.95,
-      livenessSummary: '4_POSE_VIDEO_CHALLENGE_VERIFIED',
+      qualityScore: 0,
+      livenessSummary: 'UNTRACKED_EMPTY_CACHE',
       posesIncluded: [],
-      hasTrackedRealFace: false
+      hasTrackedRealFace: false,
+      fallbackUsed: true
     };
   }
 
-  const totalWeight = extractedVectors.reduce((acc, curr) => acc + curr.weight, 0);
+  const allPosesTracked =
+    extractedVectors.length === poses.length &&
+    extractedVectors.every((v) => v.isTrackedRealFace);
+  const trackedVectors = extractedVectors.filter((v) => v.isTrackedRealFace);
+  const vectorsForBlend = trackedVectors.length > 0 ? trackedVectors : extractedVectors;
+
+  const totalWeight = vectorsForBlend.reduce((acc, curr) => acc + curr.weight, 0);
   const blended = new Array<number>(128).fill(0);
 
-  for (const item of extractedVectors) {
-    const w = item.weight / totalWeight;
+  for (const item of vectorsForBlend) {
+    const w = item.weight / Math.max(1e-6, totalWeight);
     for (let i = 0; i < 128; i++) {
       blended[i] += item.vector[i] * w;
     }
@@ -513,10 +568,11 @@ export const synthesizeMultiPoseTrainedProfile = async (
 
   return {
     descriptorVector: finalVector,
-    qualityScore: 0.95,
-    livenessSummary: '4_POSE_VIDEO_CHALLENGE_VERIFIED',
+    qualityScore: allPosesTracked ? 0.95 : 0.45,
+    livenessSummary: allPosesTracked ? '4_POSE_VIDEO_CHALLENGE_VERIFIED' : 'FALLBACK_UNTRACKED_POSE_PROFILE',
     posesIncluded: extractedVectors.map((v) => v.pose),
-    hasTrackedRealFace: extractedVectors.some((v) => v.isTrackedRealFace)
+    hasTrackedRealFace: allPosesTracked,
+    fallbackUsed: !allPosesTracked
   };
 };
 

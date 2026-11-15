@@ -383,9 +383,9 @@ export const AdminLoginPage: FC = () => {
                 type="button"
                 id="admin-biometric-btn"
                 onClick={() => setIsBiometricModalOpen(true)}
-                className="w-full !h-[42px] rounded-lg border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-200 font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-[0_0_12px_rgba(6,182,212,0.15)] hover:border-cyan-400"
+                className="w-full !h-[42px] rounded-lg border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-[0_0_12px_rgba(232,17,76,0.15)] hover:border-rose-400"
               >
-                <Camera className="w-4 h-4 text-cyan-400" />
+                <Camera className="w-4 h-4 text-[#ff5c74]" />
                 <span>Command Clearance via 1:1 Biometrics</span>
               </button>
             </div>

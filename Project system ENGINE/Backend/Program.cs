@@ -13,8 +13,13 @@ using Backend.Features.Repositories.Interfaces;
 using Backend.Features.Services.Implementations;
 using Backend.Features.Services.Interfaces;
 using Backend.Features.Services.Verification;
+using ResQTrack.Backend.Features.Services.Biometrics;
+using ResQTrack.Backend.Features.Services.Standby;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration
+    .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
+    .AddEnvironmentVariables();
 
 // Explicitly bind Kestrel to 0.0.0.0:1999 to listen on all interfaces (127.0.0.1 and localhost under IPv4/IPv6)
 builder.WebHost.UseUrls("http://0.0.0.0:1999");
@@ -118,6 +123,7 @@ builder.Services.AddScoped<IFacialVerificationProvider>(sp =>
     sp.GetRequiredService<IVerificationProviderResolver>().ResolveFacialProvider());
 
 // Dependency Injection: Services
+builder.Services.AddHttpClient<IClaudeMessagesClient, ClaudeMessagesClient>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<IAlertService, AlertService>();
@@ -129,9 +135,21 @@ builder.Services.AddScoped<IUserGovernanceService, UserGovernanceService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 
+// Dependency Injection: Verification Token Cache, Account Auto-Approval, Gov-ID Forensics & Standby AI Governance Strategies
+builder.Services.AddOptions<VerificationTokenOptions>()
+    .Bind(builder.Configuration.GetSection(VerificationTokenOptions.SectionName));
+builder.Services.AddScoped<IVerificationTokenCacheStrategy, HmacVerificationTokenCacheStrategy>();
+builder.Services.AddScoped<IAccountAutoApprovalStrategy, TokenVerifiedAutoApprovalStrategy>();
+builder.Services.AddScoped<IGovIdAuthenticityEvaluator, SharedGovIdForensicsEvaluator>();
+builder.Services.AddScoped<IFaceToGovIdMatchStrategy, ClaudeFaceToGovIdMatchStrategy>();
+builder.Services.AddScoped<IStandbyGovIdAutoApproveStrategy, ClaudeAutoApproveGovIdStrategy>();
+builder.Services.AddScoped<IStandbyResponderAutoDispatchStrategy, ClaudeAutoDispatchResponderStrategy>();
+builder.Services.AddScoped<IClaudeBiometricIdentityStrategy, ClaudeCachedPoseIdentityStrategy>();
+builder.Services.AddScoped<IBiometricLoginValidationStrategy, MultiLayerBiometricLoginStrategy>();
+
 // Configure Distributed Cache (Redis 7 Alpine with resilient In-Memory fallback)
-var redisConnection = builder.Configuration.GetConnectionString("RedisConnection") 
-    ?? builder.Configuration["RedisConnection"] 
+var redisConnection = builder.Configuration.GetConnectionString("RedisConnection")
+    ?? builder.Configuration["RedisConnection"]
     ?? Environment.GetEnvironmentVariable("REDIS_CONNECTION")
     ?? "localhost:6379";
 
@@ -139,9 +157,16 @@ if (!string.IsNullOrWhiteSpace(redisConnection) && !redisConnection.Equals("none
 {
     try
     {
+        var effectiveRedisConfig =
+            !redisConnection.Contains("connectTimeout", StringComparison.OrdinalIgnoreCase)
+            && !redisConnection.StartsWith("redis://", StringComparison.OrdinalIgnoreCase)
+            && !redisConnection.StartsWith("rediss://", StringComparison.OrdinalIgnoreCase)
+                ? $"{redisConnection},connectTimeout=400,syncTimeout=400,asyncTimeout=400,connectRetry=0,abortConnect=false"
+                : redisConnection;
+
         builder.Services.AddStackExchangeRedisCache(options =>
         {
-            options.Configuration = redisConnection;
+            options.Configuration = effectiveRedisConfig;
             options.InstanceName = "ResQTrack_";
         });
     }
@@ -219,7 +244,32 @@ using (var scope = app.Services.CreateScope())
                     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'IdentityVerificationProvider')
                         ALTER TABLE [Users] ADD [IdentityVerificationProvider] NVARCHAR(60) NOT NULL CONSTRAINT DF_Users_IdentityVerifProvider DEFAULT 'ManualIdentityVerificationProvider';
                     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FacialVerificationProvider')
-                        ALTER TABLE [Users] ADD [FacialVerificationProvider] NVARCHAR(60) NOT NULL CONSTRAINT DF_Users_FacialVerifProvider DEFAULT 'ManualFacialReviewProvider';");
+                        ALTER TABLE [Users] ADD [FacialVerificationProvider] NVARCHAR(60) NOT NULL CONSTRAINT DF_Users_FacialVerifProvider DEFAULT 'ManualFacialReviewProvider';
+                    IF EXISTS (
+                        SELECT 1 FROM sys.indexes
+                        WHERE name = 'IX_Users_Email'
+                          AND object_id = OBJECT_ID('Users')
+                          AND filter_definition IS NULL
+                    )
+                    BEGIN
+                        DROP INDEX [IX_Users_Email] ON [Users];
+                        CREATE UNIQUE INDEX [IX_Users_Email] ON [Users]([Email]) WHERE [IsDeleted] = 0;
+                    END
+                    IF OBJECT_ID('BiometricEnrollments') IS NOT NULL
+                    BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BiometricEnrollments') AND name = 'GeometricSignatureJson')
+                            ALTER TABLE BiometricEnrollments ADD GeometricSignatureJson NVARCHAR(MAX) NULL;
+                        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BiometricEnrollments') AND name = 'PoseFramesJson')
+                            ALTER TABLE BiometricEnrollments ADD PoseFramesJson NVARCHAR(MAX) NULL;
+
+                        UPDATE be
+                        SET [EnrollmentStatus] = 'REVOKED',
+                            [RevokedAtUtc] = COALESCE(be.[RevokedAtUtc], GETUTCDATE())
+                        FROM [BiometricEnrollments] be
+                        INNER JOIN [Users] u ON u.[Id] = be.[UserId]
+                        WHERE u.[IsDeleted] = 1
+                          AND (be.[RevokedAtUtc] IS NULL OR be.[EnrollmentStatus] <> 'REVOKED');
+                    END");
             }
             else
             {
@@ -228,10 +278,16 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE ""Reports"" ADD COLUMN IF NOT EXISTS ""CurrentLongitude"" double precision;
                     ALTER TABLE ""Reports"" ADD COLUMN IF NOT EXISTS ""LastBeaconAt"" timestamp with time zone;
                     ALTER TABLE ""Reports"" ADD COLUMN IF NOT EXISTS ""BeaconCount"" integer NOT NULL DEFAULT 0;
+                    ALTER TABLE ""BiometricEnrollments"" ADD COLUMN IF NOT EXISTS ""GeometricSignatureJson"" text;
+                    ALTER TABLE ""BiometricEnrollments"" ADD COLUMN IF NOT EXISTS ""PoseFramesJson"" text;
                 ");
             }
         }
-        catch { }
+        catch (Exception ddlEx)
+        {
+            var ddlLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            ddlLogger.LogWarning(ddlEx, "Startup schema reconciliation encountered a non-fatal issue.");
+        }
         await DatabaseSeeder.SeedAsync(db, app.Environment);
     }
     catch (Exception ex)

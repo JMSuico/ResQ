@@ -7,9 +7,16 @@
 // Invariant: Strict TypeScript with ZERO 'any'. 100% Universal Lambda syntax (=>). Zero emojis.
 
 import { QualityGateEvaluation } from './qualityGates';
-import { Point2D } from './cannyHough';
+import { autoCanny, Point2D } from './cannyHough';
+import { rgbaToGrayscale } from './binarize';
+import { findCardQuad } from './contour';
 import { GovernmentIdCategory } from './idSpecs';
-import { CardPresenceEvaluation } from './cardPresenceGate';
+import { evaluateCardPresenceGate, CardPresenceEvaluation } from './cardPresenceGate';
+import {
+  rgbaToYCbCr,
+  segmentSkinMask,
+  computeSpatialMoments
+} from './face/skinFaceTracker';
 import {
   getIdScanConfidenceTier,
   IdScanConfidenceTier,
@@ -17,7 +24,7 @@ import {
   validateIdNumber,
   parseNameComponents
 } from './validators';
-import { providerRegistry, IdOcrResult } from './ai';
+import { providerRegistry, IdOcrResult, type OcrErrorCode } from './ai';
 import { scanCardWithOnDeviceWasm, OnDeviceOcrResult } from './onDeviceWasmOcr';
 import {
   runPhilippineIdRecognitionPipeline,
@@ -60,14 +67,14 @@ export interface IdScanResult {
 
 export interface IdScannerEngineConfig {
   readonly minConfidenceToAutofill: number; // default: 0.65
-  readonly enableAiStandbyFallback: boolean; // default: true
+  readonly enableAiStandbyFallback: boolean; // default: false
   readonly targetRatios: readonly number[]; // default: [1.5858, 1.4205]
   readonly useWebWorker: boolean; // default: true
 }
 
 export const DEFAULT_SCANNER_CONFIG: IdScannerEngineConfig = {
   minConfidenceToAutofill: 0.65,
-  enableAiStandbyFallback: true,
+  enableAiStandbyFallback: false,
   targetRatios: [1.5858, 1.4205],
   useWebWorker: true
 };
@@ -116,6 +123,365 @@ export const mergeFrontAndBackFields = (
     weight: front.weight || undefined,
     height: front.height || undefined,
     rankOrTitle: front.rankOrTitle || back.rankOrTitle
+  };
+};
+
+// ============================================================================
+// Dual-Side Registration Pre-Flight Gate (Duplicate / Blank / Anti-Selfie)
+// ============================================================================
+
+export interface DualSideRegistrationPreflightResult {
+  readonly passed: boolean;
+  readonly errorCode?: OcrErrorCode;
+  readonly reason?: string;
+  readonly frontImageDigest: string;
+  readonly backImageDigest: string;
+}
+
+const LARGE_IMAGE_PIXEL_THRESHOLD = 160_000;
+const BLANK_CHECK_MAX_SAMPLES = 80_000;
+const PREFLIGHT_ANALYSIS_MAX_DIM = 384;
+
+const computeImageDataFnv1aDigest = (
+  imageData: ImageData | null | undefined
+): string => {
+  if (
+    !imageData ||
+    !imageData.data ||
+    imageData.width <= 0 ||
+    imageData.height <= 0 ||
+    imageData.data.length === 0
+  ) {
+    return 'fnv1a:0x0:0000000000000000';
+  }
+
+  const { width, height, data } = imageData;
+  let hashA = 0x811c9dc5;
+  let hashB = 0x9e3779b1;
+
+  const mixInt32 = (value: number): void => {
+    for (let shift = 0; shift < 32; shift += 8) {
+      const byteVal = (value >>> shift) & 0xff;
+      hashA ^= byteVal;
+      hashA = Math.imul(hashA, 0x01000193);
+      hashB ^= byteVal ^ 0x5a;
+      hashB = Math.imul(hashB, 0x01000193);
+    }
+  };
+
+  mixInt32(width | 0);
+  mixInt32(height | 0);
+  mixInt32(data.length | 0);
+
+  const totalPixels = width * height;
+  if (
+    totalPixels <= LARGE_IMAGE_PIXEL_THRESHOLD &&
+    data.length <= LARGE_IMAGE_PIXEL_THRESHOLD * 4
+  ) {
+    for (let i = 0; i < data.length; i += 1) {
+      const byteVal = data[i];
+      hashA ^= byteVal;
+      hashA = Math.imul(hashA, 0x01000193);
+      if ((i & 3) !== 3) {
+        hashB ^= byteVal;
+        hashB = Math.imul(hashB, 0x01000193);
+      }
+    }
+  } else {
+    const safePixels = Math.min(totalPixels, Math.floor(data.length / 4));
+    const pixelStride = Math.max(1, Math.floor(safePixels / LARGE_IMAGE_PIXEL_THRESHOLD));
+    const mixPixel = (offset: number): void => {
+      for (let c = 0; c < 4; c += 1) {
+        const byteVal = data[offset + c];
+        hashA ^= byteVal;
+        hashA = Math.imul(hashA, 0x01000193);
+        if (c !== 3) {
+          hashB ^= byteVal;
+          hashB = Math.imul(hashB, 0x01000193);
+        }
+      }
+    };
+
+    for (let p = 0; p < safePixels; p += pixelStride) {
+      mixPixel(p * 4);
+    }
+
+    const tailStart = Math.max(0, safePixels - 64);
+    for (let p = tailStart; p < safePixels; p += 1) {
+      mixPixel(p * 4);
+    }
+  }
+
+  const hexA = (hashA >>> 0).toString(16).padStart(8, '0');
+  const hexB = (hashB >>> 0).toString(16).padStart(8, '0');
+  return `fnv1a:${width}x${height}:${hexA}${hexB}`;
+};
+
+const isImageDataBlankOrFlat = (imageData: ImageData): boolean => {
+  const { width, height, data } = imageData;
+  const totalPixels = width * height;
+  if (totalPixels <= 0 || data.length < totalPixels * 4) {
+    return true;
+  }
+
+  const pixelStride =
+    totalPixels <= LARGE_IMAGE_PIXEL_THRESHOLD
+      ? 1
+      : Math.max(1, Math.floor(totalPixels / BLANK_CHECK_MAX_SAMPLES));
+
+  let sampledPixels = 0;
+  let visibleCount = 0;
+  let sum = 0;
+  let sumSq = 0;
+  let minLuma = 255;
+  let maxLuma = 0;
+
+  for (let i = 0; i < totalPixels; i += pixelStride) {
+    sampledPixels += 1;
+    const offset = i * 4;
+    if (data[offset + 3] === 0) {
+      continue;
+    }
+    const luma =
+      0.299 * data[offset] +
+      0.587 * data[offset + 1] +
+      0.114 * data[offset + 2];
+    visibleCount += 1;
+    sum += luma;
+    sumSq += luma * luma;
+    if (luma < minLuma) {
+      minLuma = luma;
+    }
+    if (luma > maxLuma) {
+      maxLuma = luma;
+    }
+  }
+
+  if (
+    visibleCount === 0 ||
+    visibleCount < Math.min(sampledPixels, 16) ||
+    visibleCount * 100 < sampledPixels
+  ) {
+    return true;
+  }
+
+  const mean = sum / visibleCount;
+  const variance = Math.max(0, sumSq / visibleCount - mean * mean);
+  const stddev = Math.sqrt(variance);
+  const dynamicRange = maxLuma - minLuma;
+
+  return stddev < 4.5 || dynamicRange < 12;
+};
+
+const estimateQuickRgbaSkinRatio = (
+  data: Uint8ClampedArray,
+  totalPixels: number,
+  stride: number
+): number => {
+  let sampled = 0;
+  let skinCount = 0;
+
+  for (let i = 0; i < totalPixels; i += stride) {
+    sampled += 1;
+    const offset = i * 4;
+    if (data[offset + 3] === 0) {
+      continue;
+    }
+    const r = data[offset];
+    const g = data[offset + 1];
+    const b = data[offset + 2];
+    const cb = -0.1687 * r - 0.3313 * g + 0.5 * b + 128;
+    const cr = 0.5 * r - 0.4187 * g - 0.0813 * b + 128;
+    if (cb >= 76.5 && cb <= 127.5 && cr >= 132.5 && cr <= 173.5) {
+      skinCount += 1;
+    }
+  }
+
+  return sampled > 0 ? skinCount / sampled : 0;
+};
+
+const downsampleRgbaNearest = (
+  data: Uint8ClampedArray,
+  srcW: number,
+  srcH: number,
+  maxDim: number
+): { readonly width: number; readonly height: number; readonly data: Uint8ClampedArray } => {
+  const longest = Math.max(srcW, srcH);
+  if (longest <= maxDim) {
+    return { width: srcW, height: srcH, data };
+  }
+  const scale = maxDim / longest;
+  const dstW = Math.max(1, Math.round(srcW * scale));
+  const dstH = Math.max(1, Math.round(srcH * scale));
+  const out = new Uint8ClampedArray(dstW * dstH * 4);
+
+  for (let y = 0; y < dstH; y += 1) {
+    const srcY = Math.min(srcH - 1, Math.floor((y * srcH) / dstH));
+    const srcRowBase = srcY * srcW;
+    const dstRowBase = y * dstW;
+    for (let x = 0; x < dstW; x += 1) {
+      const srcX = Math.min(srcW - 1, Math.floor((x * srcW) / dstW));
+      const srcIdx = (srcRowBase + srcX) * 4;
+      const dstIdx = (dstRowBase + x) * 4;
+      out[dstIdx] = data[srcIdx];
+      out[dstIdx + 1] = data[srcIdx + 1];
+      out[dstIdx + 2] = data[srcIdx + 2];
+      out[dstIdx + 3] = data[srcIdx + 3];
+    }
+  }
+
+  return { width: dstW, height: dstH, data: out };
+};
+
+const isClearPortraitSelfieWithoutCardStructure = (imageData: ImageData): boolean => {
+  const { width, height, data } = imageData;
+  if (width < 40 || height < 40) {
+    return false;
+  }
+
+  const totalPixels = width * height;
+  if (data.length < totalPixels * 4) {
+    return false;
+  }
+
+  // Pre-screen skin ratio directly in RGBA before allocating YCbCr/Canny/Hough/Haar buffers
+  const isSmallFrame = totalPixels <= LARGE_IMAGE_PIXEL_THRESHOLD;
+  const stride = isSmallFrame
+    ? 1
+    : Math.max(1, Math.floor(totalPixels / BLANK_CHECK_MAX_SAMPLES));
+  const quickSkinRatio = estimateQuickRgbaSkinRatio(data, totalPixels, stride);
+  if (quickSkinRatio < (isSmallFrame ? 0.085 : 0.075)) {
+    return false;
+  }
+
+  const target = isSmallFrame
+    ? { width, height, data }
+    : downsampleRgbaNearest(data, width, height, PREFLIGHT_ANALYSIS_MAX_DIM);
+
+  const ycbcr = rgbaToYCbCr(target.data, target.width, target.height);
+  const skinMask = segmentSkinMask(ycbcr.cb, ycbcr.cr, target.width, target.height);
+  const moments = computeSpatialMoments(skinMask, target.width, target.height);
+  const skinRatio = moments.m00 / Math.max(1, target.width * target.height);
+  if (skinRatio < 0.09 || moments.majorAxis < 35) {
+    return false;
+  }
+
+  const gray = rgbaToGrayscale(target.data, target.width, target.height);
+  const edges = autoCanny(gray, target.width, target.height);
+  const quadResult = findCardQuad(
+    edges,
+    target.width,
+    target.height,
+    [...DEFAULT_SCANNER_CONFIG.targetRatios],
+    gray
+  );
+  const cardPresence = evaluateCardPresenceGate(
+    target.data,
+    gray,
+    edges,
+    target.width,
+    target.height,
+    quadResult?.corners ?? null,
+    false
+  );
+
+  return (
+    cardPresence.status === 'FACE_DETECTED' &&
+    cardPresence.isDominantFace &&
+    !cardPresence.hasCardStructure
+  );
+};
+
+/**
+ * Validates Front and Back Government ID RGBA frames prior to cloud OCR dispatch.
+ * Rejects missing, duplicate, blank/flat, or clear human selfie uploads locally.
+ */
+export const runDualSideRegistrationPreflight = (
+  frontImageData: ImageData,
+  backImageData: ImageData,
+  _selectedCategory?: string
+): DualSideRegistrationPreflightResult => {
+  const frontImageDigest = computeImageDataFnv1aDigest(frontImageData);
+  const backImageDigest = computeImageDataFnv1aDigest(backImageData);
+
+  if (!frontImageData || !frontImageData.data) {
+    return {
+      passed: false,
+      errorCode: 'MISSING_FRONT_IMAGE',
+      reason: 'Front Government ID image is required before verification.',
+      frontImageDigest,
+      backImageDigest
+    };
+  }
+
+  if (!backImageData || !backImageData.data) {
+    return {
+      passed: false,
+      errorCode: 'MISSING_BACK_IMAGE',
+      reason: 'Back Government ID image is required before verification.',
+      frontImageDigest,
+      backImageDigest
+    };
+  }
+
+  if (
+    frontImageData.width <= 0 ||
+    frontImageData.height <= 0 ||
+    frontImageData.data.length === 0 ||
+    backImageData.width <= 0 ||
+    backImageData.height <= 0 ||
+    backImageData.data.length === 0
+  ) {
+    return {
+      passed: false,
+      errorCode: 'UNREADABLE_OR_BLANK_IMAGE',
+      reason:
+        'The uploaded ID image appears blank or unreadable. Upload a sharp, well-lit photo of your Government ID.',
+      frontImageDigest,
+      backImageDigest
+    };
+  }
+
+  if (frontImageDigest === backImageDigest) {
+    return {
+      passed: false,
+      errorCode: 'DUPLICATE_FRONT_BACK_IMAGE',
+      reason:
+        'The same image was uploaded for both Front and Back ID slots. Upload distinct Front and Back photos of your ID.',
+      frontImageDigest,
+      backImageDigest
+    };
+  }
+
+  if (isImageDataBlankOrFlat(frontImageData) || isImageDataBlankOrFlat(backImageData)) {
+    return {
+      passed: false,
+      errorCode: 'UNREADABLE_OR_BLANK_IMAGE',
+      reason:
+        'The uploaded ID image appears blank or unreadable. Upload a sharp, well-lit photo of your Government ID.',
+      frontImageDigest,
+      backImageDigest
+    };
+  }
+
+  if (
+    isClearPortraitSelfieWithoutCardStructure(frontImageData) ||
+    isClearPortraitSelfieWithoutCardStructure(backImageData)
+  ) {
+    return {
+      passed: false,
+      errorCode: 'NON_ID_DOCUMENT',
+      reason:
+        'A human portrait or selfie was detected without Government ID card structure. Upload clear Front and Back photos of your physical Government ID.',
+      frontImageDigest,
+      backImageDigest
+    };
+  }
+
+  return {
+    passed: true,
+    frontImageDigest,
+    backImageDigest
   };
 };
 
@@ -326,7 +692,7 @@ export class IdScanEngine {
           workerResult.idCategory
         );
 
-        if (aiResult && Object.keys(aiResult.fields).length > 0) {
+        if (aiResult && aiResult.success !== false && Object.keys(aiResult.fields).length > 0) {
           const rawAiName = aiResult.fields['FullName']?.value || aiResult.fields['fullname']?.value;
           const sanitizedAiName = rawAiName ? sanitizeExtractedPersonName(rawAiName) : null;
           const finalFullname = sanitizedAiName || mergedFields.fullname || workerResult.fields.fullname;
@@ -369,7 +735,7 @@ export class IdScanEngine {
               aiResult.fields['EmployeeId']?.value ||
               aiResult.fields['employeeId']?.value ||
               mergedFields.employeeId ||
-              (userRole === 'Responder' ? finalIdNumber : undefined),
+              undefined,
             dateOfBirth:
               aiResult.fields['DateOfBirth']?.value ||
               aiResult.fields['dateOfBirth']?.value ||
@@ -403,12 +769,12 @@ export class IdScanEngine {
           const idValidationPass = finalIdNumber
             ? validateIdNumber(workerResult.idCategory, finalIdNumber).isValid
             : false;
-          const aiScore = aiResult.consensusScore ?? 0.88;
+          const aiScore = aiResult.consensusScore ?? 0;
           const aiConfidence = Math.min(
             0.98,
             Math.max(
               workerResult.confidence,
-              0.35 * workerResult.confidence + 0.45 * aiScore + (idValidationPass ? 0.20 : 0.05)
+              0.35 * workerResult.confidence + 0.45 * aiScore + (idValidationPass ? 0.20 : 0.0)
             )
           );
           const aiTier = getIdScanConfidenceTier(aiConfidence);
@@ -450,11 +816,11 @@ export class IdScanEngine {
           mergedFields.weight ||
           mergedFields.height)
     );
+    const hasReadableText = rawTextCombined.trim().length > 0;
 
-    const calculatedConfidence = wasmResult?.success
+    const rawCalculatedConfidence = wasmResult?.success
       ? Math.max(workerResult.confidence, wasmResult.confidence)
       : workerResult.confidence;
-    const finalTier = getIdScanConfidenceTier(calculatedConfidence);
 
     const documentAnalysis = runPhilippineIdRecognitionPipeline({
       rawText: rawTextCombined,
@@ -484,16 +850,24 @@ export class IdScanEngine {
     const isSuccessful = Boolean(
       (workerResult.success || (wasmResult && wasmResult.success)) &&
         documentAnalysis.overallStatus !== 'UNSUPPORTED_DOCUMENT' &&
-        (side === 'back' || hasCoreFields || calculatedConfidence >= this.config.minConfidenceToAutofill)
+        ((side === 'back' && (hasCoreFields || hasReadableText)) ||
+          hasCoreFields ||
+          (hasReadableText && rawCalculatedConfidence >= this.config.minConfidenceToAutofill))
     );
+
+    const finalConfidence = isSuccessful ? rawCalculatedConfidence : 0;
+    const finalTier: IdScanConfidenceTier = isSuccessful
+      ? getIdScanConfidenceTier(finalConfidence)
+      : 'MANUAL_ENTRY';
+    const finalFields: ExtractedFieldsPayload = isSuccessful ? mergedFields : {};
 
     return {
       success: isSuccessful,
       side,
       idCategory: resolvedCategory,
-      confidence: calculatedConfidence,
+      confidence: finalConfidence,
       confidenceTier: finalTier,
-      fields: mergedFields,
+      fields: finalFields,
       quality: workerResult.quality,
       corners: workerResult.corners,
       rectifiedImageData: workerResult.rectifiedImageData,
@@ -502,7 +876,7 @@ export class IdScanEngine {
       portraitImageUrl: safePortraitUrl,
       executionTimeMs: workerResult.executionTimeMs + (wasmResult?.executionTimeMs || 0),
       method: 'DETERMINISTIC_CV',
-      rawText: rawTextCombined,
+      rawText: isSuccessful ? rawTextCombined : '',
       cardPresence: workerResult.cardPresence,
       documentAnalysis,
       error: isSuccessful ? undefined : workerResult.error || 'Failed to detect or parse valid government ID'

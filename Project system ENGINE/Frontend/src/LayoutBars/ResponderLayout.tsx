@@ -102,8 +102,8 @@ export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) =>
         return {
           label: 'RHU EMS MEDIC TRAUMA DISPATCH',
           channel: 'CH-01 EMS NET',
-          accent: 'text-cyan-400',
-          bg: 'bg-cyan-950/30 border-cyan-800/40'
+          accent: 'text-[#ff5c74]',
+          bg: 'bg-rose-950/30 border-rose-800/40'
         };
     }
   };
@@ -135,12 +135,12 @@ export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) =>
 
                 <div className="flex items-center gap-3 text-[11px] text-slate-400">
                   <div className="flex items-center gap-1">
-                    <Radio className="w-3 h-3 text-emerald-400 flex-shrink-0" aria-hidden="true" />
-                    <span className="text-emerald-300 font-semibold">{branch.channel}</span>
+                    <Radio className="w-3 h-3 text-[#ff5c74] flex-shrink-0" aria-hidden="true" />
+                    <span className="text-rose-200 font-semibold">{branch.channel}</span>
                   </div>
 
                   <div className="flex items-center gap-1 hidden sm:flex">
-                    <Activity className="w-3 h-3 text-cyan-400 flex-shrink-0" aria-hidden="true" />
+                    <Activity className="w-3 h-3 text-[#ff5c74] flex-shrink-0" aria-hidden="true" />
                     <span>GPS 100% HARDWARE LOCK</span>
                   </div>
 

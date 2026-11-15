@@ -1,5 +1,5 @@
 // [Layer: Backend/Api/DTOs]
-// Responsibility: Data Transfer Objects for AI standby ID document extraction and vision provider orchestration.
+// Responsibility: Data Transfer Objects for AI standby ID document extraction, Claude Sonnet hybrid OCR, and facial geometry analysis.
 // Invariant: C# .NET 10 Web API standards, nullable reference types enabled, universal lambda expressions (=>).
 
 namespace Backend.Features.Api.DTOs;
@@ -9,19 +9,11 @@ namespace Backend.Features.Api.DTOs;
 /// </summary>
 public class AiExtractRequestDto
 {
-    /// <summary>
-    /// Base64 data URL (e.g. data:image/jpeg;base64,...) or raw base64 string of the captured ID document.
-    /// </summary>
     public string ImageDataUrl { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Optional hint indicating expected Philippine ID format (e.g., PH_NATIONAL_ID, DRIVERS_LICENSE, PASSPORT).
-    /// </summary>
+    public string? FrontImageBase64 { get; set; }
+    public string? BackImageBase64 { get; set; }
     public string? HintType { get; set; }
-
-    /// <summary>
-    /// Explicit preferred AI provider ('gemini', 'azure', 'openai') or null to invoke default fallback chain.
-    /// </summary>
+    public string? IdType { get; set; }
     public string? PreferredProvider { get; set; }
 }
 
@@ -44,13 +36,84 @@ public class ExtractedFieldDto
 /// </summary>
 public class AiExtractResponseDto
 {
-    public bool Success { get; set; }
-    public string? ProviderUsed { get; set; }
+    public bool Success { get; set; } = false;
+    public string ProviderUsed { get; set; } = string.Empty;
     public string? IdType { get; set; }
+    public double Confidence { get; set; } = 0.0;
+    public bool IsAuthentic { get; set; } = false;
+    public string? FirstName { get; set; }
+    public string? MiddleName { get; set; }
+    public string? Surname { get; set; }
+    public string? Suffix { get; set; }
+    public string? FullName { get; set; }
+    public string? DateOfBirth { get; set; }
+    public string? Age { get; set; }
+    public string? Sex { get; set; }
+    public string? LicenseNumber { get; set; }
+    public string? IdNumber { get; set; }
+    public string? ExpirationDate { get; set; }
+    public string? Barangay { get; set; }
+    public string? Street { get; set; }
+    public string? CityOrMunicipality { get; set; }
+    public string? Province { get; set; }
+    public string? Address { get; set; }
+    public string? Weight { get; set; }
+    public string? Height { get; set; }
+    public string? PhoneNumber { get; set; }
     public Dictionary<string, ExtractedFieldDto> ExtractedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, ExtractedFieldDto> Fields => ExtractedFields;
     public string? RawText { get; set; }
+    public string? ModelUsed { get; set; }
+    public string? IdVerificationToken { get; set; }
+    public string? DetectedIdType { get; set; }
+    public string? DetectedIdLabel { get; set; }
+    public bool MatchesSelectedIdType { get; set; } = true;
+    public string? FrontSlotDetectedSide { get; set; }
+    public string? BackSlotDetectedSide { get; set; }
+    public bool AreSidesIdentical { get; set; } = false;
+    public string? AuthenticityVerdict { get; set; }
+    public string? AuthenticityReason { get; set; }
+    public bool RequiresPendingManualReview { get; set; } = false;
+    public string? ErrorCode { get; set; }
     public string? ErrorMessage { get; set; }
+    public List<string> Warnings { get; set; } = [];
     public long ExecutionTimeMs { get; set; }
+}
+
+/// <summary>
+/// Extracted visible-only Philippine Government ID fields container used by shared forensics evaluators.
+/// </summary>
+public class AiOcrFieldsDto
+{
+    public string? IdType { get; set; }
+    public string? FirstName { get; set; }
+    public string? MiddleName { get; set; }
+    public string? Surname { get; set; }
+    public string? Suffix { get; set; }
+    public string? FullName { get; set; }
+    public string? DateOfBirth { get; set; }
+    public string? Age { get; set; }
+    public string? Sex { get; set; }
+    public string? LicenseNumber { get; set; }
+    public string? IdNumber { get; set; }
+    public string? ExpirationDate { get; set; }
+    public string? Barangay { get; set; }
+    public string? Street { get; set; }
+    public string? CityOrMunicipality { get; set; }
+    public string? Province { get; set; }
+    public string? Address { get; set; }
+    public string? Weight { get; set; }
+    public string? Height { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string? RawText { get; set; }
+    public Dictionary<string, ExtractedFieldDto> ExtractedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Dedicated response DTO for Claude Sonnet Hybrid Structural OCR extraction.
+/// </summary>
+public class AiOcrResponseDto : AiExtractResponseDto
+{
 }
 
 /// <summary>
@@ -58,10 +121,11 @@ public class AiExtractResponseDto
 /// </summary>
 public class AiProviderStatusDto
 {
+    public bool ClaudeConfigured { get; set; }
     public bool GeminiConfigured { get; set; }
     public bool OpenAiConfigured { get; set; }
     public bool AzureConfigured { get; set; }
-    public bool HasAnyProvider => GeminiConfigured || OpenAiConfigured || AzureConfigured;
+    public bool HasAnyProvider => ClaudeConfigured || GeminiConfigured || OpenAiConfigured || AzureConfigured;
     public string ActiveChain { get; set; } = string.Empty;
 }
 
@@ -96,4 +160,58 @@ public class IdentityDocumentAnalyzeResponseDto
     public bool AllowBiometricProfiling { get; set; } = true;
     public List<string> Warnings { get; set; } = [];
     public Dictionary<string, string> NormalizedFields { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Request payload for Claude Vision 4-Pose Facial Geometry & Pattern Analysis.
+/// </summary>
+public class FacialGeometryAnalysisRequestDto
+{
+    public string? CenterFrameBase64 { get; set; }
+    public string? RightFrameBase64 { get; set; }
+    public string? LeftFrameBase64 { get; set; }
+    public string? BlinkFrameBase64 { get; set; }
+    public string? CenterFrameDataUrl { get; set; }
+    public string? RightFrameDataUrl { get; set; }
+    public string? LeftFrameDataUrl { get; set; }
+    public string? BlinkFrameDataUrl { get; set; }
+    public int TotalCachedFrames { get; set; }
+    public int SamplingFps { get; set; }
+    public int? BlurVariance { get; set; }
+    public List<double>? ClientDescriptorVector { get; set; }
+    public List<double>? DescriptorVector { get; set; }
+    public string? GeometricSignatureJson { get; set; }
+    public string? PoseFramesJson { get; set; }
+    public string? FrontIdImageBase64 { get; set; }
+    public string? FrontIdDataUrl { get; set; }
+    public string? IdVerificationToken { get; set; }
+}
+
+/// <summary>
+/// Response payload for Claude Vision 4-Pose Facial Geometry & Pattern Analysis.
+/// </summary>
+public class FacialGeometryAnalysisResponseDto
+{
+    public bool IsValidFaceGeometry { get; set; }
+    public string StrategyName { get; set; } = "ClaudeVisionFacialBiometricStrategy";
+    public string ProviderUsed { get; set; } = "claude-sonnet-4-6";
+    public double LivenessConfidence { get; set; }
+    public double OvalCenterAlignmentScore { get; set; }
+    public double YawRightAngleDeg { get; set; }
+    public double YawLeftAngleDeg { get; set; }
+    public double BlinkEarDelta { get; set; }
+    public string GeometricPatternHash { get; set; } = string.Empty;
+    public string AnthropometricRatiosJson { get; set; } = "{}";
+    public Dictionary<string, double> GeometricRatios { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public string GeometricSignatureJson { get; set; } = "{}";
+    public List<double> NormalizedDescriptor128D { get; set; } = new();
+    public string Summary { get; set; } = string.Empty;
+    public bool IsLiveHuman { get; set; }
+    public bool IsFaceMatchedToId { get; set; }
+    public double FaceToIdSimilarity { get; set; }
+    public string? FacialVerificationToken { get; set; }
+    public bool IsAutoApproveEligible { get; set; }
+    public bool RequiresPendingManualReview { get; set; }
+    public string? ErrorCode { get; set; }
+    public string? ErrorMessage { get; set; }
 }

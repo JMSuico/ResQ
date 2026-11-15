@@ -232,7 +232,7 @@ export const LoginPage: FC = () => {
             {/* Live Telemetry HUD Status Row */}
             <div className="flex items-center justify-between font-mono text-[9.5px] tracking-wider text-rose-300/80 border-b border-rose-500/20 pb-2 mb-3">
               <span className="flex items-center gap-1.5 font-bold">
-                <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+                <span className="inline-block w-2 h-2 rounded-full bg-[#ff5c74] animate-pulse shadow-[0_0_8px_#e8114c]" />
                 AUTH ENGINE // SYS.ONLINE
               </span>
               <span className="text-slate-400 tracking-widest hidden sm:inline">GATEWAY // 256-BIT</span>
@@ -416,9 +416,9 @@ export const LoginPage: FC = () => {
                 type="button"
                 id="biometric-login-btn"
                 onClick={() => setIsBiometricModalOpen(true)}
-                className="w-full !h-[42px] rounded-lg border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-200 font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-[0_0_12px_rgba(6,182,212,0.15)] hover:border-cyan-400"
+                className="w-full !h-[42px] rounded-lg border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-[0_0_12px_rgba(232,17,76,0.15)] hover:border-rose-400"
               >
-                <Camera className="w-4 h-4 text-cyan-400" />
+                <Camera className="w-4 h-4 text-[#ff5c74]" />
                 <span>Sign In with Facial Biometrics</span>
               </button>
             </div>

@@ -22,11 +22,43 @@ public class BiometricEnrollment
     [Required]
     public byte[] EncryptedTemplateData { get; set; } = [];
 
+    public string? GeometricSignatureJson { get; set; }
+
+    public string? PoseFramesJson { get; set; }
+
+    [NotMapped]
+    public string? DescriptorVectorJson
+    {
+        get => EncryptedTemplateData.Length >= sizeof(float)
+            ? System.Text.Json.JsonSerializer.Serialize(ToFloatArray(EncryptedTemplateData))
+            : null;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                var arr = System.Text.Json.JsonSerializer.Deserialize<float[]>(value);
+                if (arr is { Length: > 0 })
+                {
+                    var bytes = new byte[arr.Length * sizeof(float)];
+                    Buffer.BlockCopy(arr, 0, bytes, 0, bytes.Length);
+                    EncryptedTemplateData = bytes;
+                }
+            }
+        }
+    }
+
     [MaxLength(50)]
     public string TemplateFormat { get; set; } = "128D_FLOAT32_NORMALIZED";
 
     [MaxLength(80)]
     public string ModelIdentifier { get; set; } = "ResQTrack_Hybrid_CSLBP_Gabor_Haar";
+
+    [NotMapped]
+    public string ModelName
+    {
+        get => ModelIdentifier;
+        set => ModelIdentifier = value;
+    }
 
     [MaxLength(30)]
     public string ModelVersion { get; set; } = "v1.0.0";
@@ -47,4 +79,11 @@ public class BiometricEnrollment
 
     [MaxLength(180)]
     public string? RevokedBy { get; set; }
+
+    private static float[] ToFloatArray(byte[] bytes)
+    {
+        var floats = new float[bytes.Length / sizeof(float)];
+        Buffer.BlockCopy(bytes, 0, floats, 0, floats.Length * sizeof(float));
+        return floats;
+    }
 }

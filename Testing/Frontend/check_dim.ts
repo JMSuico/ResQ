@@ -8,9 +8,10 @@ export const run = async (): Promise<void> => {
     headless: true
   });
   const page = await browser.newPage();
-  await page.goto('http://localhost:5173/register?step=1', { waitUntil: 'networkidle' });
+  await page.goto('http://127.0.0.1:1998/register?step=1', { waitUntil: 'networkidle' });
+  await page.locator('#phase-2-id-identity').waitFor({ state: 'visible', timeout: 8000 });
 
-  const info = await page.evaluate(async (path) => {
+  const info = await page.evaluate(async (): Promise<{ naturalWidth: number; naturalHeight: number } | null> => {
     // load image via blob / file
     return new Promise((resolve) => {
       const img = new Image();
@@ -18,9 +19,12 @@ export const run = async (): Promise<void> => {
         resolve({ naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight });
       };
       img.onerror = () => resolve(null);
-      img.src = 'data:image/jpeg;base64,' + (window as any).__testBase64;
+      const win = window as unknown as { __testBase64?: string };
+      img.src = 'data:image/jpeg;base64,' + (win.__testBase64 ?? '');
     });
   });
+  void TEST_FILE;
+  void info;
 
   await browser.close();
 };

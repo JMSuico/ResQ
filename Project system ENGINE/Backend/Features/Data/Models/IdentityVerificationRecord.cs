@@ -65,4 +65,14 @@ public class IdentityVerificationRecord
     public DateTime VerifiedAtUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    [MaxLength(64)]
+    public string? VerificationTokenId { get; set; }
+
+    [MaxLength(40)]
+    public string? AuthenticityVerdict { get; set; }
+
+    public decimal? FaceToIdMatchScore { get; set; }
+
+    public bool AutoApproved { get; set; } = false;
 }

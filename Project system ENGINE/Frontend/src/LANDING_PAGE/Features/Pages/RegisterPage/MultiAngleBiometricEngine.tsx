@@ -817,7 +817,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           isPoseAngleValid = isSynthetic || dPitch >= 9;
         }
 
-        // Throttle frame caching to 1 frame every 95ms (~10 FPS), max 10 frames per pose
+        // High-speed frame caching at 30-60 FPS (~33ms), max 60 frames per pose
         // Strictly suspended if cache is paused, in command transition, or no face detected!
         if (
           !biometricFrameCache.getIsPaused() &&
@@ -825,7 +825,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
           targetPose &&
           isFaceValid &&
           isPoseAngleValid &&
-          (now - lastCacheTimeRef.current >= 95)
+          (now - lastCacheTimeRef.current >= 33)
         ) {
           lastCacheTimeRef.current = now;
           let frameDataUrl = '';
@@ -1563,26 +1563,26 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
   return (
     <div className="multi-angle-biometrics w-full flex flex-col items-center">
       {/* Top telemetry and mode bar */}
-      <div className="w-full flex items-center justify-between px-1 mb-2 font-mono text-[9px] text-slate-400">
+      <div className="w-full flex items-center justify-between px-1 mb-2 font-mono text-[9px] text-rose-300/80">
         <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1 text-sky-400">
-            <Activity className="w-3 h-3 text-sky-400 animate-pulse" />
+          <span className="flex items-center gap-1 text-[#ff5c74]">
+            <Activity className="w-3 h-3 text-[#ff5c74] animate-pulse" />
             FEED: {isSynthetic ? 'SYNTHETIC WIREFRAME' : 'LIVE 30FPS'}
           </span>
-          <span className="text-slate-500">|</span>
-          <span className="text-emerald-400">FPS: {fps}</span>
-          <span className="text-slate-500">|</span>
-          <span className="text-emerald-300">LAPLACIAN: {laplacianVariance.toFixed(1)}</span>
-          <span className="text-slate-500">|</span>
+          <span className="text-rose-950">|</span>
+          <span className="text-rose-300">FPS: {fps}</span>
+          <span className="text-rose-950">|</span>
+          <span className="text-rose-300">LAPLACIAN: {laplacianVariance.toFixed(1)}</span>
+          <span className="text-rose-950">|</span>
           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold ${
             isFramePaused
-              ? 'bg-amber-950/80 border-amber-500/50 text-amber-300'
-              : 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.3)] animate-pulse'
+              ? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
+              : 'bg-rose-950/80 border-rose-500/40 text-rose-300 shadow-[0_0_8px_rgba(232,17,76,0.3)] animate-pulse'
           }`}>
-            {isFramePaused ? <Pause className="w-2.5 h-2.5 text-amber-400" /> : <Database className="w-2.5 h-2.5 text-emerald-400" />}
+            {isFramePaused ? <Pause className="w-2.5 h-2.5 text-[#ff5c74]" /> : <Database className="w-2.5 h-2.5 text-[#ff5c74]" />}
             CACHED: {cachedCount} FRAMES [C:{poseCounts.CENTER} L:{poseCounts.LEFT} R:{poseCounts.RIGHT} B:{poseCounts.BLINK ?? poseCounts.UP}]
             {isFramePaused && (
-              <span className="text-[7.5px] px-1 py-0.1 bg-amber-900/90 text-amber-200 rounded font-black uppercase">
+              <span className="text-[7.5px] px-1 py-0.1 bg-rose-900/90 text-rose-200 rounded font-black uppercase">
                 PAUSED
               </span>
             )}
@@ -1593,7 +1593,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
             <button
               type="button"
               onClick={() => setIsSynthetic(!isSynthetic)}
-              className="text-[8.5px] px-1.5 py-0.5 rounded border border-slate-700 bg-slate-900/80 text-sky-300 hover:border-sky-500 cursor-pointer"
+              className="text-[8.5px] px-1.5 py-0.5 rounded border border-rose-500/40 bg-rose-950/80 text-rose-200 hover:border-rose-400 cursor-pointer"
             >
               {isSynthetic ? 'SWITCH TO WEBCAM' : 'SWITCH TO SIMULATION'}
             </button>
@@ -1603,12 +1603,12 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
 
       {/* Main Camera / Oval Viewport Container */}
       <div
-        className="relative w-full h-[370px] sm:h-[400px] bg-[#030712] rounded-xl overflow-hidden flex items-center justify-center border transition-all"
+        className="relative w-full h-[370px] sm:h-[400px] bg-[#0e0106] rounded-xl overflow-hidden flex items-center justify-center border transition-all"
         style={{
-          borderColor: currentStep === 'VERIFIED' ? '#10b981' : 'rgba(56, 189, 248, 0.35)',
+          borderColor: currentStep === 'VERIFIED' ? '#e8114c' : 'rgba(255, 92, 116, 0.35)',
           boxShadow:
             currentStep === 'VERIFIED'
-              ? '0 0 20px rgba(16, 185, 129, 0.25)'
+              ? '0 0 20px rgba(232, 17, 76, 0.35)'
               : '0 0 15px rgba(0, 0, 0, 0.7)'
         }}
       >
@@ -1652,10 +1652,10 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         )}
 
         {/* Tactical HUD Corner Reticles */}
-        <div className="absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 border-sky-400/90 pointer-events-none z-20" />
-        <div className="absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 border-sky-400/90 pointer-events-none z-20" />
-        <div className="absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-sky-400/90 pointer-events-none z-20" />
-        <div className="absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-sky-400/90 pointer-events-none z-20" />
+        <div className="absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 border-rose-500/90 pointer-events-none z-20" />
+        <div className="absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 border-rose-500/90 pointer-events-none z-20" />
+        <div className="absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-rose-500/90 pointer-events-none z-20" />
+        <div className="absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-rose-500/90 pointer-events-none z-20" />
 
         {/* Top-left Telemetry Tag positioned below Geometric Pose Header */}
         <div className="absolute top-10 left-3 z-20 pointer-events-none flex flex-col items-start gap-1">
@@ -1664,7 +1664,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
               ? 'text-rose-400 bg-rose-950/90 border-rose-500/60 animate-pulse'
               : isFramePaused
               ? 'text-amber-300 bg-amber-950/90 border-amber-500/50'
-              : 'text-sky-300 bg-black/75 border-sky-500/30'
+              : 'text-rose-200 bg-rose-950/75 border-rose-500/30'
           }`}>
             <span
               className={`w-1.5 h-1.5 rounded-full ${
@@ -1673,7 +1673,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
                   : isFramePaused
                   ? 'bg-amber-400'
                   : faceDetected
-                  ? 'bg-emerald-400 animate-pulse'
+                  ? 'bg-[#ff5c74] animate-pulse'
                   : 'bg-amber-400'
               }`}
             />
@@ -1687,7 +1687,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
                 : 'FACE: POSITION IN VIEWPORT'}
             </span>
           </div>
-          <div className="font-mono text-[7.5px] text-slate-400 bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
+          <div className="font-mono text-[7.5px] text-rose-300/80 bg-black/60 px-1.5 py-0.5 rounded backdrop-blur-sm">
             FPS: {fps} | FRAME #{frameCount} | E: {motionEnergy.toFixed(1)}
           </div>
         </div>
@@ -1698,9 +1698,9 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
             <div className={`font-mono text-[8px] px-2 py-0.5 rounded border backdrop-blur-sm flex items-center gap-1 ${
               isFramePaused
                 ? 'text-amber-300 bg-amber-950/90 border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.4)]'
-                : 'text-emerald-300 bg-emerald-950/90 border-emerald-400/50 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.4)]'
+                : 'text-rose-200 bg-rose-950/90 border-rose-500/50 animate-pulse shadow-[0_0_10px_rgba(232,17,76,0.4)]'
             }`}>
-              {isFramePaused ? <Pause className="w-2.5 h-2.5 text-amber-400" /> : <Database className="w-2.5 h-2.5 text-emerald-400" />}
+              {isFramePaused ? <Pause className="w-2.5 h-2.5 text-amber-400" /> : <Database className="w-2.5 h-2.5 text-[#ff5c74]" />}
               <span>
                 CACHED: {cachedCount} FRAMES [C:{poseCounts.CENTER} L:{poseCounts.LEFT} R:{poseCounts.RIGHT} B:{poseCounts.BLINK ?? poseCounts.UP}]
                 {isFramePaused && <span className="ml-1 text-amber-300 font-bold uppercase">[PAUSED]</span>}
@@ -1712,11 +1712,11 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         {/* Command Transition Pause Banner Overlay */}
         {transitionBanner && transitionBanner.visible && (
           <div className="absolute inset-0 bg-black/65 backdrop-blur-[2px] flex flex-col items-center justify-center z-40 animate-in fade-in duration-200 pointer-events-none">
-            <div className="p-4 rounded-xl bg-slate-900/95 border border-sky-400/60 shadow-2xl text-center space-y-2 max-w-sm px-6">
-              <div className="w-10 h-10 rounded-full bg-sky-950/80 border border-sky-400 flex items-center justify-center mx-auto text-sky-400 animate-pulse">
+            <div className="p-4 rounded-xl bg-[#14020a]/95 border border-rose-500/60 shadow-2xl text-center space-y-2 max-w-sm px-6">
+              <div className="w-10 h-10 rounded-full bg-rose-950/80 border border-rose-500/80 flex items-center justify-center mx-auto text-[#ff5c74] animate-pulse">
                 <Pause className="w-5 h-5" />
               </div>
-              <h3 className="font-mono text-xs font-bold text-sky-200 tracking-wider uppercase">
+              <h3 className="font-mono text-xs font-bold text-rose-200 tracking-wider uppercase">
                 {transitionBanner.title}
               </h3>
               <p className="font-mono text-[10px] text-amber-300 font-semibold tracking-wide">
@@ -1759,8 +1759,8 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
               )}
               {distanceStatus === 'OPTIMAL' && (
                 <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-300">PERFECT DISTANCE - HOLD STILL</span>
+                  <Check className="w-3.5 h-3.5 text-[#ff5c74]" />
+                  <span className="text-rose-200">PERFECT DISTANCE - HOLD STILL</span>
                 </>
               )}
             </div>
@@ -1786,9 +1786,9 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
             )}
 
             {/* Distance calibration progress bar */}
-            <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-2">
+            <div className="w-48 bg-[#14020a] rounded-full h-1.5 border border-rose-950/80 overflow-hidden mb-2">
               <div
-                className="bg-emerald-400 h-full transition-all duration-150"
+                className="bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] h-full transition-all duration-150"
                 style={{ width: `${distanceProgress}%` }}
               />
             </div>
@@ -1798,21 +1798,21 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         {/* Step B1: Command 1 - Center Lock */}
         {currentStep === 'POSE_CENTER' && (
           <div className="absolute inset-0 flex flex-col items-center justify-between p-4 z-20 pointer-events-none">
-            <div className="mt-8 font-mono text-[11px] font-bold px-3 py-1 rounded bg-black/85 border border-sky-400 text-sky-200 shadow-[0_0_15px_rgba(56,189,248,0.4)] backdrop-blur-sm flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-sky-400 animate-spin" />
+            <div className="mt-8 font-mono text-[11px] font-bold px-3 py-1 rounded bg-black/85 border border-rose-500 text-rose-200 shadow-[0_0_15px_rgba(232,17,76,0.4)] backdrop-blur-sm flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-[#ff5c74] animate-spin" />
               <span>COMMAND 1: CENTER FACE IN CAMERA</span>
             </div>
 
             {/* Pose 1 Completed badge */}
             {poseProgress >= 100 ? (
-              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95 mb-10">
-                <Check className="w-4 h-4 text-emerald-400" />
+              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-rose-950/90 border border-rose-500 text-rose-200 flex items-center gap-2 shadow-[0_0_15px_rgba(232,17,76,0.6)] animate-in fade-in zoom-in-95 mb-10">
+                <Check className="w-4 h-4 text-[#ff5c74]" />
                 <span>CENTER POSITION VERIFIED</span>
               </div>
             ) : (
-              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-10">
+              <div className="w-48 bg-[#14020a] rounded-full h-1.5 border border-rose-950/80 overflow-hidden mb-10">
                 <div
-                  className="bg-sky-400 h-full transition-all duration-150 shadow-[0_0_10px_#38bdf8]"
+                  className="bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] h-full transition-all duration-150 shadow-[0_0_10px_#e8114c]"
                   style={{ width: `${poseProgress}%` }}
                 />
               </div>
@@ -1823,29 +1823,29 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         {/* Step B2: Command 2 - Turn Left (← ←) */}
         {currentStep === 'POSE_LEFT' && (
           <div className="absolute inset-0 flex flex-col items-center justify-between p-4 z-20 pointer-events-none">
-            <div className="mt-8 font-mono text-[11px] font-bold px-3 py-1 rounded bg-black/85 border border-indigo-400 text-indigo-200 shadow-[0_0_15px_rgba(129,140,248,0.4)] backdrop-blur-sm flex items-center gap-2">
-              <ArrowLeft className="w-4 h-4 text-indigo-400 animate-pulse" />
+            <div className="mt-8 font-mono text-[11px] font-bold px-3 py-1 rounded bg-black/85 border border-rose-500 text-rose-200 shadow-[0_0_15px_rgba(232,17,76,0.4)] backdrop-blur-sm flex items-center gap-2">
+              <ArrowLeft className="w-4 h-4 text-[#ff5c74] animate-pulse" />
               <span>COMMAND 2: SLOWLY TURN YOUR FACE LEFT</span>
             </div>
 
             {/* Animated left-pointing arrow widget on left side of oval */}
-            <div className="absolute left-6 top-1/2 -translate-y-1/2 flex items-center gap-1.5 bg-black/75 px-2.5 py-1.5 rounded-lg border border-indigo-500/50 shadow-lg shadow-indigo-950/50">
-              <div className="flex text-indigo-400 text-xl font-mono font-bold animate-pulse tracking-tighter">
+            <div className="absolute left-6 top-1/2 -translate-y-1/2 flex items-center gap-1.5 bg-black/75 px-2.5 py-1.5 rounded-lg border border-rose-500/50 shadow-lg shadow-rose-950/50">
+              <div className="flex text-[#ff5c74] text-xl font-mono font-bold animate-pulse tracking-tighter">
                 &larr; &larr;
               </div>
-              <span className="font-mono text-[9px] text-indigo-200 uppercase tracking-widest font-bold">TURN</span>
+              <span className="font-mono text-[9px] text-rose-200 uppercase tracking-widest font-bold">TURN</span>
             </div>
 
             {/* Completed badge */}
             {poseProgress >= 100 ? (
-              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95 mb-10">
-                <Check className="w-4 h-4 text-emerald-400" />
+              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-rose-950/90 border border-rose-500 text-rose-200 flex items-center gap-2 shadow-[0_0_15px_rgba(232,17,76,0.6)] animate-in fade-in zoom-in-95 mb-10">
+                <Check className="w-4 h-4 text-[#ff5c74]" />
                 <span>LEFT PROFILE VERIFIED</span>
               </div>
             ) : (
-              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-10">
+              <div className="w-48 bg-[#14020a] rounded-full h-1.5 border border-rose-950/80 overflow-hidden mb-10">
                 <div
-                  className="bg-indigo-400 h-full transition-all duration-150 shadow-[0_0_10px_#818cf8]"
+                  className="bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] h-full transition-all duration-150 shadow-[0_0_10px_#e8114c]"
                   style={{ width: `${poseProgress}%` }}
                 />
               </div>
@@ -1856,29 +1856,29 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         {/* Step B3: Command 3 - Turn Right (→ →) */}
         {currentStep === 'POSE_RIGHT' && (
           <div className="absolute inset-0 flex flex-col items-center justify-between p-4 z-20 pointer-events-none">
-            <div className="mt-8 font-mono text-[11px] font-bold px-3 py-1 rounded bg-black/85 border border-indigo-400 text-indigo-200 shadow-[0_0_15px_rgba(129,140,248,0.4)] backdrop-blur-sm flex items-center gap-2">
-              <ArrowRight className="w-4 h-4 text-indigo-400 animate-pulse" />
+            <div className="mt-8 font-mono text-[11px] font-bold px-3 py-1 rounded bg-black/85 border border-rose-500 text-rose-200 shadow-[0_0_15px_rgba(232,17,76,0.4)] backdrop-blur-sm flex items-center gap-2">
+              <ArrowRight className="w-4 h-4 text-[#ff5c74] animate-pulse" />
               <span>COMMAND 3: SLOWLY TURN YOUR FACE RIGHT</span>
             </div>
 
             {/* Animated right-pointing arrow widget on right side of oval */}
-            <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-1.5 bg-black/75 px-2.5 py-1.5 rounded-lg border border-indigo-500/50 shadow-lg shadow-indigo-950/50">
-              <span className="font-mono text-[9px] text-indigo-200 uppercase tracking-widest font-bold">TURN</span>
-              <div className="flex text-indigo-400 text-xl font-mono font-bold animate-pulse tracking-tighter">
+            <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-1.5 bg-black/75 px-2.5 py-1.5 rounded-lg border border-rose-500/50 shadow-lg shadow-rose-950/50">
+              <span className="font-mono text-[9px] text-rose-200 uppercase tracking-widest font-bold">TURN</span>
+              <div className="flex text-[#ff5c74] text-xl font-mono font-bold animate-pulse tracking-tighter">
                 &rarr; &rarr;
               </div>
             </div>
 
             {/* Completed badge */}
             {poseProgress >= 100 ? (
-              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95 mb-10">
-                <Check className="w-4 h-4 text-emerald-400" />
+              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-rose-950/90 border border-rose-500 text-rose-200 flex items-center gap-2 shadow-[0_0_15px_rgba(232,17,76,0.6)] animate-in fade-in zoom-in-95 mb-10">
+                <Check className="w-4 h-4 text-[#ff5c74]" />
                 <span>RIGHT PROFILE VERIFIED</span>
               </div>
             ) : (
-              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-10">
+              <div className="w-48 bg-[#14020a] rounded-full h-1.5 border border-rose-950/80 overflow-hidden mb-10">
                 <div
-                  className="bg-indigo-400 h-full transition-all duration-150 shadow-[0_0_10px_#818cf8]"
+                  className="bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] h-full transition-all duration-150 shadow-[0_0_10px_#e8114c]"
                   style={{ width: `${poseProgress}%` }}
                 />
               </div>
@@ -1889,33 +1889,33 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         {/* Step B4: Command 4 - Eye Blink Liveness */}
         {(currentStep === 'POSE_BLINK' || currentStep === 'POSE_UP') && (
           <div className="absolute inset-0 flex flex-col items-center justify-between p-4 z-20 pointer-events-none">
-            <div className="mt-8 font-mono text-[11px] font-bold px-3 py-1 rounded bg-black/85 border border-sky-400 text-sky-200 shadow-[0_0_15px_rgba(56,189,248,0.4)] backdrop-blur-sm flex items-center gap-2">
-              <Eye className="w-4 h-4 text-sky-400 animate-pulse" />
+            <div className="mt-8 font-mono text-[11px] font-bold px-3 py-1 rounded bg-black/85 border border-rose-500 text-rose-200 shadow-[0_0_15px_rgba(232,17,76,0.4)] backdrop-blur-sm flex items-center gap-2">
+              <Eye className="w-4 h-4 text-[#ff5c74] animate-pulse" />
               <span>COMMAND 4: BLINK YOUR EYES TO PROVE LIVENESS</span>
             </div>
 
             {/* Animated Eye Blink icon widget */}
-            <div className="absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5 bg-black/75 px-4 py-2.5 rounded-lg border border-sky-500/50 shadow-lg shadow-sky-950/50">
-              <div className="flex items-center gap-2.5 text-sky-400 text-xl font-mono font-bold">
-                <EyeOff className="w-6 h-6 text-sky-400 animate-pulse" />
+            <div className="absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5 bg-black/75 px-4 py-2.5 rounded-lg border border-rose-500/50 shadow-lg shadow-rose-950/50">
+              <div className="flex items-center gap-2.5 text-[#ff5c74] text-xl font-mono font-bold">
+                <EyeOff className="w-6 h-6 text-[#ff5c74] animate-pulse" />
                 <span className="text-slate-400 text-sm font-normal">→</span>
-                <Eye className="w-6 h-6 text-sky-300 animate-bounce" />
+                <Eye className="w-6 h-6 text-rose-300 animate-bounce" />
               </div>
-              <span className="font-mono text-[9px] text-sky-200 uppercase tracking-widest font-bold">
+              <span className="font-mono text-[9px] text-rose-200 uppercase tracking-widest font-bold">
                 BLINK EYES ON CAMERA
               </span>
             </div>
 
             {/* Completed badge */}
             {poseProgress >= 100 ? (
-              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-emerald-950/90 border border-emerald-400 text-emerald-300 flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.6)] animate-in fade-in zoom-in-95 mb-10">
-                <Check className="w-4 h-4 text-emerald-400" />
+              <div className="font-mono text-[12px] font-bold px-3 py-1 rounded bg-rose-950/90 border border-rose-500 text-rose-200 flex items-center gap-2 shadow-[0_0_15px_rgba(232,17,76,0.6)] animate-in fade-in zoom-in-95 mb-10">
+                <Check className="w-4 h-4 text-[#ff5c74]" />
                 <span>EYE BLINK LIVENESS VERIFIED</span>
               </div>
             ) : (
-              <div className="w-48 bg-slate-900/90 rounded-full h-1.5 border border-slate-700 overflow-hidden mb-10">
+              <div className="w-48 bg-[#14020a] rounded-full h-1.5 border border-rose-950/80 overflow-hidden mb-10">
                 <div
-                  className="bg-sky-400 h-full transition-all duration-150 shadow-[0_0_10px_#38bdf8]"
+                  className="bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] h-full transition-all duration-150 shadow-[0_0_10px_#e8114c]"
                   style={{ width: `${poseProgress}%` }}
                 />
               </div>
@@ -1964,26 +1964,26 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
             {/* Progress bar: 0% to 100% */}
             <div className="w-72 bg-slate-950 rounded-full h-2 border border-rose-500/40 overflow-hidden my-2 shadow-[0_0_12px_rgba(244,63,94,0.3)]">
               <div
-                className="bg-gradient-to-r from-rose-600 via-rose-500 to-emerald-400 h-full transition-all duration-300"
+                className="bg-gradient-to-r from-[#a5002e] via-[#e8114c] to-[#ff5c74] h-full transition-all duration-300"
                 style={{ width: `${storeProgress}%` }}
               />
             </div>
-            <div className="w-72 flex justify-between font-mono text-[8.5px] text-slate-400 mb-2 px-1">
+            <div className="w-72 flex justify-between font-mono text-[8.5px] text-rose-300/80 mb-2 px-1">
               <span>TRANSMITTING FRAMES BUFFER</span>
-              <span className="text-emerald-400 font-bold">{storeProgress}%</span>
+              <span className="text-[#ff5c74] font-bold">{storeProgress}%</span>
             </div>
 
             {/* Real-time status text driven by biometricFrameCache.persistToDatabaseSimulation */}
-            <p className="font-mono text-[9.5px] text-sky-300 text-center px-4 min-h-[22px] mb-2.5 animate-pulse">
+            <p className="font-mono text-[9.5px] text-rose-200 text-center px-4 min-h-[22px] mb-2.5 animate-pulse">
               {storeStageText || 'Transmitting cached frames from memory buffer to secure database...'}
             </p>
 
             {/* Diagnostic Stage Checklist */}
-            <div className="w-72 bg-slate-950/90 rounded-lg border border-slate-800 p-2 font-mono text-[8.5px] text-slate-300 space-y-1">
+            <div className="w-72 bg-slate-950/90 rounded-lg border border-rose-950/80 p-2 font-mono text-[8.5px] text-rose-200/90 space-y-1">
               <div
                 className={
                   storeProgress >= 20
-                    ? 'text-emerald-400 flex items-center justify-between'
+                    ? 'text-[#ff5c74] flex items-center justify-between'
                     : 'text-slate-600 flex items-center justify-between'
                 }
               >
@@ -1993,7 +1993,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
               <div
                 className={
                   storeProgress >= 50
-                    ? 'text-emerald-400 flex items-center justify-between'
+                    ? 'text-[#ff5c74] flex items-center justify-between'
                     : 'text-slate-600 flex items-center justify-between'
                 }
               >
@@ -2003,7 +2003,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
               <div
                 className={
                   storeProgress >= 80
-                    ? 'text-emerald-400 flex items-center justify-between'
+                    ? 'text-[#ff5c74] flex items-center justify-between'
                     : 'text-slate-600 flex items-center justify-between'
                 }
               >
@@ -2013,7 +2013,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
               <div
                 className={
                   storeProgress >= 100
-                    ? 'text-emerald-400 flex items-center justify-between'
+                    ? 'text-[#ff5c74] flex items-center justify-between'
                     : 'text-slate-600 flex items-center justify-between'
                 }
               >
@@ -2048,8 +2048,8 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
 
         {/* Verified Status Banner Overlay on top of image */}
         {currentStep === 'VERIFIED' && (
-          <div className="absolute bottom-2.5 right-3 z-20 font-mono text-[10.5px] font-bold px-3 py-1 rounded bg-emerald-950/95 border border-emerald-400 text-emerald-300 flex items-center gap-1.5 shadow-[0_0_15px_rgba(16,185,129,0.7)] animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <div className="absolute bottom-2.5 right-3 z-20 font-mono text-[10.5px] font-bold px-3 py-1 rounded bg-rose-950/95 border border-rose-500 text-rose-200 flex items-center gap-1.5 shadow-[0_0_15px_rgba(232,17,76,0.7)] animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 text-[#ff5c74]" />
             <span>BIOMETRIC LIVENESS CAPTURED [PENDING REVIEW]</span>
           </div>
         )}
@@ -2060,52 +2060,52 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         <div
           className={`px-2 py-1 rounded border text-center font-mono text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
             snapshots.center || currentStep === 'VERIFIED'
-              ? 'border-emerald-500/60 bg-emerald-950/40 text-emerald-300'
+              ? 'border-rose-500/60 bg-rose-950/40 text-rose-200'
               : currentStep === 'POSE_CENTER'
-              ? 'border-sky-400 bg-sky-950/50 text-sky-300 animate-pulse'
+              ? 'border-rose-500/80 bg-rose-950/50 text-rose-200 animate-pulse'
               : 'border-slate-800 bg-slate-900/60 text-slate-500'
           }`}
         >
-          {(snapshots.center || currentStep === 'VERIFIED') && <Check className="w-3 h-3 text-emerald-400 shrink-0" />}
+          {(snapshots.center || currentStep === 'VERIFIED') && <Check className="w-3 h-3 text-[#ff5c74] shrink-0" />}
           <span>{snapshots.center || currentStep === 'VERIFIED' ? '' : '1. '}CENTER (0°)</span>
         </div>
 
         <div
           className={`px-2 py-1 rounded border text-center font-mono text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
             snapshots.left || currentStep === 'VERIFIED'
-              ? 'border-emerald-500/60 bg-emerald-950/40 text-emerald-300'
+              ? 'border-rose-500/60 bg-rose-950/40 text-rose-200'
               : currentStep === 'POSE_LEFT'
-              ? 'border-indigo-400 bg-indigo-950/50 text-indigo-300 animate-pulse'
+              ? 'border-rose-500/80 bg-rose-950/50 text-rose-200 animate-pulse'
               : 'border-slate-800 bg-slate-900/60 text-slate-500'
           }`}
         >
-          {(snapshots.left || currentStep === 'VERIFIED') && <Check className="w-3 h-3 text-emerald-400 shrink-0" />}
+          {(snapshots.left || currentStep === 'VERIFIED') && <Check className="w-3 h-3 text-[#ff5c74] shrink-0" />}
           <span>{snapshots.left || currentStep === 'VERIFIED' ? '' : '2. '}LEFT (-25°)</span>
         </div>
 
         <div
           className={`px-2 py-1 rounded border text-center font-mono text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
             snapshots.right || currentStep === 'VERIFIED'
-              ? 'border-emerald-500/60 bg-emerald-950/40 text-emerald-300'
+              ? 'border-rose-500/60 bg-rose-950/40 text-rose-200'
               : currentStep === 'POSE_RIGHT'
-              ? 'border-indigo-400 bg-indigo-950/50 text-indigo-300 animate-pulse'
+              ? 'border-rose-500/80 bg-rose-950/50 text-rose-200 animate-pulse'
               : 'border-slate-800 bg-slate-900/60 text-slate-500'
           }`}
         >
-          {(snapshots.right || currentStep === 'VERIFIED') && <Check className="w-3 h-3 text-emerald-400 shrink-0" />}
+          {(snapshots.right || currentStep === 'VERIFIED') && <Check className="w-3 h-3 text-[#ff5c74] shrink-0" />}
           <span>{snapshots.right || currentStep === 'VERIFIED' ? '' : '3. '}RIGHT (+25°)</span>
         </div>
 
         <div
           className={`px-2 py-1 rounded border text-center font-mono text-[9px] font-bold transition-all flex items-center justify-center gap-1 ${
             snapshots.up || currentStep === 'VERIFIED'
-              ? 'border-emerald-500/60 bg-emerald-950/40 text-emerald-300'
+              ? 'border-rose-500/60 bg-rose-950/40 text-rose-200'
               : currentStep === 'POSE_BLINK' || currentStep === 'POSE_UP'
-              ? 'border-sky-400 bg-sky-950/50 text-sky-300 animate-pulse'
+              ? 'border-rose-500/80 bg-rose-950/50 text-rose-200 animate-pulse'
               : 'border-slate-800 bg-slate-900/60 text-slate-500'
           }`}
         >
-          {(snapshots.up || currentStep === 'VERIFIED') && <Check className="w-3 h-3 text-emerald-400 shrink-0" />}
+          {(snapshots.up || currentStep === 'VERIFIED') && <Check className="w-3 h-3 text-[#ff5c74] shrink-0" />}
           <span>{snapshots.up || currentStep === 'VERIFIED' ? '' : '4. '}BLINK EYES</span>
         </div>
       </div>
@@ -2124,7 +2124,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
         ) : (
           <div className="w-full flex items-center justify-between font-mono text-[9.5px] text-slate-400 px-1">
             <span className="flex items-center gap-1 text-slate-400">
-              <Shield className="w-3 h-3 text-emerald-400" />
+              <Shield className="w-3 h-3 text-[#ff5c74]" />
               Liveness Proof Secured via In-Memory Frame Cache &amp; SHA-256 Vector
             </span>
 
@@ -2142,7 +2142,7 @@ export const MultiAngleBiometricEngine: React.FC<MultiAngleBiometricEngineProps>
                 <button
                   type="button"
                   onClick={() => toggleDistanceSimulation('OPTIMAL')}
-                  className="px-1 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 text-[8px]"
+                  className="px-1 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-rose-300 text-[8px]"
                 >
                   Optimal
                 </button>

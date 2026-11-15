@@ -96,6 +96,8 @@ artifacts/
 *.key
 *.pem
 secrets.json
+appsettings.Local.json
+**/appsettings.Local.json
 
 # -----------------------------------------------------------------------------
 # 5. Database, Local Storage & Dump Files

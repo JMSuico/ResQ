@@ -1,12 +1,11 @@
-import { chromium } from 'playwright';
+import { chromium, Browser } from 'playwright';
 import path from 'path';
-import fs from 'fs';
 
 const ARTIFACT_DIR = 'C:/Users/provu/.gemini/antigravity-cli/brain/f4db8cc5-1635-43fd-94bb-ed301c4741f1';
 
-const runE2eGeometricHudTest = async () => {
-  console.log('--- Starting Chrome E2E Live Verification for Geometric Facial Pattern HUD ---');
-  let browser;
+const runE2eGeometricHudTest = async (): Promise<void> => {
+  console.log('--- Starting Chrome E2E Live Verification for Phase 3 Facial Record & Biometric HUD ---');
+  let browser: Browser | undefined;
   try {
     browser = await chromium.launch({ channel: 'chrome', headless: true });
   } catch {
@@ -18,53 +17,49 @@ const runE2eGeometricHudTest = async () => {
   const page = await context.newPage();
 
   try {
-    // 1. Navigate directly to Biometrics Step 2
-    console.log('Navigating to http://localhost:5173/register?step=2 ...');
-    await page.goto('http://localhost:5173/register?step=2', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(1500);
+    // 1. Navigate directly to Phase 3 Facial Record (?step=2 -> #phase-3-facial-record)
+    console.log('Navigating to http://127.0.0.1:1998/register?step=2 ...');
+    await page.goto('http://127.0.0.1:1998/register?step=2', { waitUntil: 'networkidle' });
+    await page.locator('#phase-3-facial-record').waitFor({ state: 'visible', timeout: 8000 });
+    await page.waitForTimeout(800);
 
     // Save initial load screenshot
     await page.screenshot({ path: path.join(ARTIFACT_DIR, 'geometric_hud_standby.png') });
-    console.log('[PASS] Biometrics Step 2 loaded.');
+    console.log('[PASS] Phase 3 Facial Record (#phase-3-facial-record) loaded.');
 
-    // Verify Biometric Engine viewport is visible
-    const scanBtn = page.locator('button:has-text("START BIOMETRIC SCAN")');
-    await scanBtn.waitFor({ state: 'visible', timeout: 8000 });
-    console.log('[PASS] Biometric Engine viewport is visible.');
+    // 2. Verify Biometric Engine viewport & SVG oval guide are visible
+    const requestCameraBtn = page.locator('#btn-request-camera');
+    await requestCameraBtn.waitFor({ state: 'visible', timeout: 8000 });
+    const simulateBtn = page.locator('#btn-simulate-4pose-capture');
+    await simulateBtn.waitFor({ state: 'visible', timeout: 8000 });
+    const ovalGuideCount = await page.locator('#phase-3-facial-record svg ellipse').count();
+    if (ovalGuideCount < 1) {
+      throw new Error('Expected SVG oval face guide inside #phase-3-facial-record');
+    }
+    console.log('[PASS] Biometric Engine camera viewport & single oval HUD guide are visible.');
 
-    // 3. Start Biometric Scan
-    await scanBtn.click();
-    console.log('Clicked START BIOMETRIC SCAN.');
-    await page.waitForTimeout(1000);
+    // 3. Trigger synthetic 4-pose biometric simulation (Center 0 deg, Right +25 deg, Left -25 deg, Blink)
+    await simulateBtn.click();
+    console.log('Clicked #btn-simulate-4pose-capture (4-Pose Simulation).');
+    await page.waitForSelector('text=4 of 4 Poses Qualified', { timeout: 15000 });
+    console.log('[PASS] All 4 geometric pose stages qualified (Center, Right, Left, Blink).');
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'geometric_hud_pose_qualified.png') });
 
-    // Step A: Distance Check -> Pose 1 Center
-    console.log('Awaiting POSE 1: CENTER (0°)...');
-    await page.waitForSelector('text=Face Forward (Frontal View)', { timeout: 12000 });
-    console.log('[PASS] Detected Geometric Blueprint HUD: Face Forward (Frontal View)!');
-    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'geometric_hud_pose1_front.png') });
+    // 4. Accept RA 10173 biometric consent & confirm 4-pose facial record
+    const consentCheckbox = page.locator('#chk-facial-consent');
+    await consentCheckbox.check();
+    const confirmFacialBtn = page.locator('#btn-confirm-facial-capture');
+    await confirmFacialBtn.waitFor({ state: 'visible', timeout: 8000 });
+    await confirmFacialBtn.click();
 
-    // Await POSE 2: LEFT PROFILE
-    console.log('Awaiting POSE 2: LEFT PROFILE (~90° / -25°)...');
-    await page.waitForSelector('text=Face Left (Left Profile View)', { timeout: 15000 });
-    console.log('[PASS] Detected Geometric Blueprint HUD: Face Left (Left Profile View)!');
-    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'geometric_hud_pose2_left.png') });
+    await page.locator('#badge-facial-confirmed').waitFor({ state: 'visible', timeout: 15000 });
+    console.log('[PASS] 4-Pose Facial Record confirmed (#badge-facial-confirmed).');
 
-    // Await POSE 3: RIGHT PROFILE
-    console.log('Awaiting POSE 3: RIGHT PROFILE (~90° / +25°)...');
-    await page.waitForSelector('text=Face Right (Right Profile View)', { timeout: 15000 });
-    console.log('[PASS] Detected Geometric Blueprint HUD: Face Right (Right Profile View)!');
-    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'geometric_hud_pose3_right.png') });
-
-    // Await POSE 4: EYE BLINK LIVENESS
-    console.log('Awaiting POSE 4: EYE BLINK LIVENESS [BLINK]...');
-    await page.waitForSelector('text=Blink (Eye Closure View)', { timeout: 15000 });
-    console.log('[PASS] Detected Geometric Blueprint HUD: Blink (Eye Closure View)!');
-    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'geometric_hud_pose4_blink.png') });
-
-    // Await final Verified Certificate
-    console.log('Awaiting Multi-Angle Biometric Certificate & Verification badge...');
-    await page.waitForSelector('text=BIOMETRIC PROOF VERIFIED [99.8%]', { timeout: 20000 });
-    console.log('[PASS] Final Composite Biometric Certificate generated & certified!');
+    const phase3NextEnabled = await page.locator('#btn-phase3-next').isEnabled();
+    if (!phase3NextEnabled) {
+      throw new Error('Expected #btn-phase3-next to become enabled after confirming 4-Pose Facial Record');
+    }
+    console.log('[PASS] #btn-phase3-next unlocked for Phase 4 credentials.');
     await page.screenshot({ path: path.join(ARTIFACT_DIR, 'geometric_hud_composite_verified.png') });
 
     console.log('================================================================');

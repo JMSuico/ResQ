@@ -12,7 +12,7 @@ import {
   computeGeometricBlinkPose,
   evaluateLiveGeometricPose,
   type GeometricFaceResult
-} from '../face/geometricFacePatternEngine';
+} from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/face/geometricFacePatternEngine';
 
 const assert = (condition: boolean, msg: string): void => {
   if (!condition) {

@@ -479,6 +479,12 @@ export const postProcessFieldText = (
   charType?: TextExtractorCharType
 ): string => {
   if (!rawText) return '';
+  const nonSpace = rawText.replace(/\s+/g, '');
+  if (nonSpace.length === 0) return '';
+  const questionCount = (nonSpace.match(/\?/g) || []).length;
+  if (questionCount / nonSpace.length > 0.5) {
+    return '';
+  }
 
   switch (charType) {
     case 'NUMERIC': {
@@ -598,6 +604,9 @@ export const extractTextFromRoi = (
     }
 
     const words: ExtractedWord[] = [];
+    const bandWordTexts: string[] = [];
+    let bandConfSum = 0;
+    let bandGlyphCount = 0;
     let currentWordGlyphs: ExtractedGlyph[] = [];
     let currentWordChars = '';
     let currentWordConfSum = 0;
@@ -628,7 +637,7 @@ export const extractTextFromRoi = (
           box: wordBox,
           glyphs: currentWordGlyphs
         });
-        allWordTexts.push(currentWordChars);
+        bandWordTexts.push(currentWordChars);
 
         currentWordGlyphs = [];
         currentWordChars = '';
@@ -657,8 +666,8 @@ export const extractTextFromRoi = (
 
       currentWordChars += finalChar;
       currentWordConfSum += matchRes.confidence;
-      totalConfidenceSum += matchRes.confidence;
-      totalGlyphCount++;
+      bandConfSum += matchRes.confidence;
+      bandGlyphCount++;
 
       lineMinX = Math.min(lineMinX, glyphBox.x);
       lineMaxX = Math.max(lineMaxX, glyphBox.x + glyphBox.width);
@@ -680,11 +689,23 @@ export const extractTextFromRoi = (
         box: wordBox,
         glyphs: currentWordGlyphs
       });
-      allWordTexts.push(currentWordChars);
+      bandWordTexts.push(currentWordChars);
     }
 
     if (words.length > 0) {
       const lineText = words.map((w) => w.text).join(' ');
+      const nonSpaceChars = lineText.replace(/\s+/g, '');
+      const questionCount = (nonSpaceChars.match(/\?/g) || []).length;
+      if (nonSpaceChars.length === 0 || questionCount / nonSpaceChars.length > 0.5) {
+        continue;
+      }
+
+      for (let wIdx = 0; wIdx < bandWordTexts.length; wIdx++) {
+        allWordTexts.push(bandWordTexts[wIdx]);
+      }
+      totalConfidenceSum += bandConfSum;
+      totalGlyphCount += bandGlyphCount;
+
       const lineConf = words.reduce((acc, w) => acc + w.confidence, 0) / words.length;
 
       recognizedLines.push({
@@ -713,11 +734,14 @@ export const extractTextFromRoi = (
   }
 
   const repairedText = postProcessFieldText(finalRawText, charType);
-  const avgConfidence = totalGlyphCount > 0 ? totalConfidenceSum / totalGlyphCount : 0.0;
+  const avgConfidence =
+    repairedText.length > 0 && totalGlyphCount > 0
+      ? totalConfidenceSum / totalGlyphCount
+      : 0.0;
 
   return {
     text: repairedText,
-    rawText: finalRawText,
+    rawText: repairedText.length > 0 ? finalRawText : '',
     confidence: Number(avgConfidence.toFixed(4)),
     lines: recognizedLines,
     layoutMode,
@@ -726,6 +750,11 @@ export const extractTextFromRoi = (
     preprocessedHeight: preprocessed.height
   };
 };
+
+const ALPHANUMERIC_ID_FIELD_KEYS: ReadonlySet<string> = new Set([
+  'idNumber',
+  'licenseNumber'
+]);
 
 /**
  * Convenient helper to extract text from a government ID specification field crop.
@@ -736,13 +765,18 @@ export const extractFieldText = (
   targetH: number,
   spec: FieldCropSpec
 ): { text: string; confidence: number; lines: readonly ExtractedLine[] } => {
+  const effectiveCharType: TextExtractorCharType =
+    ALPHANUMERIC_ID_FIELD_KEYS.has(spec.fieldKey) && spec.expectedCharType === 'NUMERIC'
+      ? 'ALPHANUMERIC'
+      : spec.expectedCharType;
+
   const result = extractTextFromRoi(
     rectifiedRgba,
     targetW,
     targetH,
     spec.relativeRoi,
     {
-      charType: spec.expectedCharType,
+      charType: effectiveCharType,
       layoutMode: spec.fieldKey === 'address' ? 'multi-line' : 'single-line',
       minDpiScale: 2.5
     }

@@ -335,7 +335,7 @@
 .steps {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: clamp(4px, 1vw, 10px);
   margin: clamp(4px, 1vw, 10px) 0 0;
   padding: 0 0 6px 0;
@@ -818,5 +818,88 @@
 
 .animate-laser-sweep {
   animation: laserSweep 1.8s ease-in-out infinite;
+}
+
+/* ---------- 9. Background ID Verification Banner (Deep Burgundy 5-Phase) ---------- */
+.id-verification-banner {
+  position: relative;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(10, 2, 6, 0.45);
+}
+
+.id-verification-banner--idle {
+  border-color: rgba(255, 92, 116, 0.28);
+  background: rgba(20, 2, 10, 0.82);
+}
+
+.id-verification-banner--verifying {
+  border-color: rgba(255, 92, 116, 0.48);
+  background: rgba(28, 8, 14, 0.92);
+  box-shadow: 0 0 18px rgba(255, 92, 116, 0.14);
+}
+
+.id-verification-banner--verified {
+  border-color: rgba(95, 224, 164, 0.45);
+  background: rgba(18, 28, 24, 0.92);
+  box-shadow: 0 0 20px rgba(95, 224, 164, 0.12);
+}
+
+.id-verification-banner--pending {
+  border-color: rgba(255, 180, 84, 0.48);
+  background: rgba(35, 20, 11, 0.92);
+}
+
+.id-verification-banner--rejected {
+  border-color: rgba(255, 92, 116, 0.65);
+  background: rgba(42, 9, 19, 0.96);
+  box-shadow: 0 0 20px rgba(255, 92, 116, 0.18);
+}
+
+.id-verification-banner__retry-btn:focus-visible {
+  outline: 2px solid #ff5c74;
+  outline-offset: 2px;
+}
+
+/* ---------- 10. Choose ID Type Gate & Locked Upload Notice ---------- */
+.page-register select#id-type,
+.page-register .select__input {
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+.page-register select#id-type option,
+.page-register .select__input option {
+  background: #2a0d17;
+  color: #ece6ea;
+}
+
+.page-register #id-type-error {
+  position: static;
+  margin-top: 8px;
+  line-height: 1.4;
+  color: #ff5c74;
+}
+
+.id-upload-locked-notice {
+  border-color: rgba(255, 92, 116, 0.34);
+  background: linear-gradient(155deg, rgba(28, 7, 15, 0.9) 0%, rgba(20, 4, 10, 0.94) 100%);
+  box-shadow: 0 8px 24px rgba(10, 2, 6, 0.42);
+}
+
+.id-upload-locked-notice__icon {
+  border-color: rgba(255, 92, 116, 0.4);
+  background: rgba(84, 18, 38, 0.55);
+  color: #ff5c74;
+}
+
+@media (max-width: 640px) {
+  .id-verification-banner {
+    padding: 12px;
+  }
+
+  .id-verification-banner__retry-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 

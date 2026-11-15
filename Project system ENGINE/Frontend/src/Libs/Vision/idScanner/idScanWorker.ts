@@ -229,33 +229,50 @@ export const ocrFieldRegion = (
     return { text: '', confidence: 0 };
   }
 
+  const isAlphanumericIdField =
+    spec.fieldKey === 'idNumber' || spec.fieldKey === 'licenseNumber';
+  const effectiveCharType =
+    isAlphanumericIdField && spec.expectedCharType === 'NUMERIC'
+      ? 'ALPHANUMERIC'
+      : spec.expectedCharType;
+
   let allowedChars: string | undefined;
-  if (spec.expectedCharType === 'NUMERIC') {
+  if (effectiveCharType === 'NUMERIC') {
     allowedChars = '0123456789-.';
-  } else if (spec.expectedCharType === 'DATE') {
+  } else if (effectiveCharType === 'DATE') {
     allowedChars = '0123456789/-DOZSIBLGQ';
-  } else if (spec.expectedCharType === 'ALPHA') {
+  } else if (effectiveCharType === 'ALPHA') {
     allowedChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ ,.-';
-  } else if (spec.expectedCharType === 'ALPHANUMERIC') {
+  } else if (effectiveCharType === 'ALPHANUMERIC') {
     allowedChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ,.-/';
-  } else if (spec.expectedCharType === 'MRZ') {
+  } else if (effectiveCharType === 'MRZ') {
     allowedChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<';
   }
 
-  const recognizedLines: RecognizedLineResult[] = lines.map((line) =>
-    recognizeLineText(crop.data, crop.width, line.charBoxes, allowedChars)
-  );
+  const recognizedLines: RecognizedLineResult[] = lines
+    .map((line) => recognizeLineText(crop.data, crop.width, line.charBoxes, allowedChars))
+    .filter((r) => r.text.trim().length > 0);
+
+  if (recognizedLines.length === 0) {
+    return { text: '', confidence: 0 };
+  }
 
   const rawJoined = recognizedLines.map((r) => r.text).join(' ').trim();
+  const nonSpace = rawJoined.replace(/\s+/g, '');
+  const questionCount = (nonSpace.match(/\?/g) || []).length;
+  if (nonSpace.length === 0 || questionCount / nonSpace.length > 0.5) {
+    return { text: '', confidence: 0 };
+  }
+
   const sumConf = recognizedLines.reduce((acc, curr) => acc + curr.confidence, 0);
   const avgConf = recognizedLines.length > 0 ? sumConf / recognizedLines.length : 0;
 
   let repaired = rawJoined;
-  if (spec.expectedCharType === 'NUMERIC') {
+  if (effectiveCharType === 'NUMERIC' && !isAlphanumericIdField) {
     repaired = repairNumericField(rawJoined);
-  } else if (spec.expectedCharType === 'ALPHA') {
+  } else if (effectiveCharType === 'ALPHA') {
     repaired = repairAlphaField(rawJoined);
-  } else if (spec.expectedCharType === 'DATE') {
+  } else if (effectiveCharType === 'DATE') {
     const withM = rawJoined.replace(/M/g, '4').replace(/W/g, '4').replace(/A/g, '4');
     const repairedNumeric = repairNumericField(withM);
     const dateDigits = repairedNumeric.replace(/\D/g, '');
@@ -470,9 +487,9 @@ export const executeFullCardScan = (
   const headerCrop = extractSubRegion(cleanBinary, targetW, targetH, 0, 0, targetW, targetH * 0.26);
   const headerCcl = findConnectedComponents(headerCrop.data, headerCrop.width, headerCrop.height);
   const headerLines = groupBoundingBoxesIntoLines(headerCcl.boxes);
-  const headerTexts = headerLines.map(
-    (l) => recognizeLineText(headerCrop.data, headerCrop.width, l.charBoxes).text
-  );
+  const headerTexts = headerLines
+    .map((l) => recognizeLineText(headerCrop.data, headerCrop.width, l.charBoxes).text)
+    .filter((t) => t.trim().length > 0);
 
   let detectedCategory: GovernmentIdCategory = targetCategory || 'unknown';
   let classificationScore = targetCategory ? 0.35 : 0.0;
@@ -723,15 +740,11 @@ export const executeFullCardScan = (
     }
   }
 
-  if (userRole === 'Responder' && !employeeId && idNumber) {
-    employeeId = idNumber;
-  }
-
   // 8. Composite Confidence Evaluation
   const meanFieldScore =
     fieldScores.length > 0
       ? fieldScores.reduce((acc, curr) => acc + curr, 0) / fieldScores.length
-      : 0.55;
+      : 0.0;
 
   const rawConfidence = computeIdScanConfidence({
     quadScore,
@@ -828,24 +841,29 @@ export const executeFullCardScan = (
     finalFields.employeeId
   );
 
+  const hasReadableText = rawTextParts.join('').trim().length > 0;
+
   const hasAnyBackFields = Boolean(
     hasCoreFields ||
     finalFields.address ||
     finalFields.weight ||
     finalFields.height ||
     finalFields.dateOfBirth ||
-    rawTextParts.join('').trim().length > 0 ||
-    quadScore >= 0.45
+    finalFields.expirationDate ||
+    finalFields.cardSerialNumber ||
+    finalFields.dlCodes ||
+    finalFields.conditions ||
+    hasReadableText
   );
 
   const scanSuccess =
     side === 'back'
-      ? Boolean(cardPresence.status !== 'FACE_DETECTED' && hasAnyBackFields)
-      : Boolean(hasCoreFields && rawConfidence >= 0.40);
+      ? Boolean(cardPresence.status !== 'FACE_DETECTED' && hasAnyBackFields && fieldScores.length > 0)
+      : Boolean(hasCoreFields && rawConfidence >= 0.40 && fieldScores.length > 0);
 
   const confidence = scanSuccess
     ? Number(Math.max(0.0, Math.min(1.0, rawConfidence)).toFixed(4))
-    : Math.min(rawConfidence, 0.40);
+    : 0;
 
   const confidenceTier: IdScanConfidenceTier = getIdScanConfidenceTier(confidence);
   const executionTimeMs = Math.round(performance.now() - startTime);
@@ -873,15 +891,16 @@ export const executeFullCardScan = (
     idCategory: detectedCategory,
     confidence,
     confidenceTier: scanSuccess ? confidenceTier : 'MANUAL_ENTRY',
-    fields: finalFields,
+    fields: scanSuccess ? finalFields : {},
     quality,
     corners: srcPts,
     rectifiedImageData: rectified,
     portraitImageData,
     executionTimeMs,
     method: 'DETERMINISTIC_CV',
-    rawText: rawTextParts.join('\n'),
+    rawText: scanSuccess ? rawTextParts.join('\n') : '',
     requiresAiFallback,
+    error: scanSuccess ? undefined : 'No readable identification fields detected in uploaded image.',
     cardPresence
   };
 };

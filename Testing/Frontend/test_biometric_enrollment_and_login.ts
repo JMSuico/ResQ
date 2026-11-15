@@ -4,8 +4,10 @@
 // Complies with Katipuneros Architecture: Universal Lambdas (=>), Zero 'any', Zero emojis, centralized in Testing/.
 
 import { chromium, Browser, Page } from 'playwright';
+import { deflateSync } from 'node:zlib';
 import * as fs from 'fs';
 import * as path from 'path';
+import { writeY4mAndMatchingIdArtifacts } from './fixtures/y4mFaceAndMatchingIdFixture';
 
 const REGISTER_URL = 'http://127.0.0.1:1998/register';
 const LOGIN_URL = 'http://127.0.0.1:1998/login';
@@ -15,11 +17,101 @@ const BIOMETRIC_LOGIN_SCREENSHOT = path.join(ARTIFACT_DIR, 'biometric_login_succ
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-const createSyntheticSamplePng = (filename: string, label: string): string => {
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+const computeCrc32 = (bytes: Uint8Array): number => {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc ^= bytes[i];
+    for (let bit = 0; bit < 8; bit += 1) {
+      const mask = -(crc & 1);
+      crc = (crc >>> 1) ^ (0xedb88320 & mask);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const createPngChunk = (type: string, data: Uint8Array): Buffer => {
+  const typeBytes = Buffer.from(type, 'ascii');
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeUInt32BE(data.length, 0);
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(computeCrc32(Buffer.concat([typeBytes, Buffer.from(data)])), 0);
+  return Buffer.concat([lenBuf, typeBytes, Buffer.from(data), crcBuf]);
+};
+
+const encodeRgbaPngBuffer = (width: number, height: number, pixels: Uint8Array): Buffer => {
+  const stride = width * 4 + 1;
+  const raw = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y += 1) {
+    const rowStart = y * stride;
+    raw[rowStart] = 0;
+    raw.set(pixels.subarray(y * width * 4, (y + 1) * width * 4), rowStart + 1);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([
+    PNG_SIGNATURE,
+    createPngChunk('IHDR', ihdr),
+    createPngChunk('IDAT', deflateSync(raw)),
+    createPngChunk('IEND', Buffer.alloc(0))
+  ]);
+};
+
+const fillRectRgba = (
+  pixels: Uint8Array,
+  width: number,
+  height: number,
+  x0: number,
+  y0: number,
+  w: number,
+  h: number,
+  r: number,
+  g: number,
+  b: number
+): void => {
+  for (let y = y0; y < y0 + h; y += 1) {
+    if (y < 0 || y >= height) continue;
+    for (let x = x0; x < x0 + w; x += 1) {
+      if (x < 0 || x >= width) continue;
+      const idx = (y * width + x) * 4;
+      pixels[idx] = r;
+      pixels[idx + 1] = g;
+      pixels[idx + 2] = b;
+      pixels[idx + 3] = 255;
+    }
+  }
+};
+
+const createProceduralBackIdPngBuffer = (): Buffer => {
+  const width = 856;
+  const height = 540;
+  const pixels = new Uint8Array(width * height * 4);
+  fillRectRgba(pixels, width, height, 0, 0, width, height, 232, 238, 246);
+  fillRectRgba(pixels, width, height, 14, 14, width - 28, height - 28, 250, 252, 255);
+  fillRectRgba(pixels, width, height, 14, 14, width - 28, 70, 18, 44, 86);
+  for (let row = 0; row < 5; row += 1) {
+    fillRectRgba(pixels, width, height, 48, 124 + row * 36, 700, 14, 30, 41, 59);
+  }
+  for (let bar = 0; bar < 90; bar += 1) {
+    const bw = (bar % 3 === 0) ? 5 : 3;
+    const x = 48 + bar * 8;
+    if (bar % 2 === 0 && x + bw < width - 48) {
+      fillRectRgba(pixels, width, height, x, 344, bw, 128, 15, 23, 42);
+    }
+  }
+  return encodeRgbaPngBuffer(width, height, pixels);
+};
+
+const writeArtifactPng = (filename: string, buffer: Buffer): string => {
+  if (!fs.existsSync(ARTIFACT_DIR)) {
+    fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
+  }
   const filePath = path.join(ARTIFACT_DIR, filename);
-  const base64Data =
-    'iVBORw0KGgoAAAANSUhEUgAAAoAAAAHgCAYAAAA10dzkAAAACXBIWXMAAAsTAAALEwEAmpwYAAAF1ElEQVR4nO3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgLsBAwABAAEA+1AAAAAElFTkSuQmCC';
-  fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+  fs.writeFileSync(filePath, buffer);
   return filePath;
 };
 
@@ -28,12 +120,15 @@ const runBiometricVerification = async (): Promise<void> => {
   console.log('   RESQTRACK BIOMETRIC TRAINING & 1:1 LOGIN VERIFICATION SUITE');
   console.log('========================================================================\n');
 
+  const y4mFixtures = writeY4mAndMatchingIdArtifacts(ARTIFACT_DIR);
+
   const browser: Browser = await chromium.launch({
     channel: 'chrome',
     headless: true,
     args: [
       '--use-fake-ui-for-media-stream',
       '--use-fake-device-for-media-stream',
+      `--use-file-for-fake-video-capture=${y4mFixtures.y4mPath}`,
       '--no-sandbox'
     ]
   });
@@ -41,8 +136,8 @@ const runBiometricVerification = async (): Promise<void> => {
   const timestamp = Date.now();
   const testEmail = `biometric.citizen.${timestamp}@resqtrack.gov.ph`;
   const testPassword = 'Password123!@#Secure';
-  const frontIdPath = createSyntheticSamplePng('test_bio_front.png', 'FRONT_ID');
-  const backIdPath = createSyntheticSamplePng('test_bio_back.png', 'BACK_ID');
+  const frontIdPath = y4mFixtures.frontIdPath;
+  const backIdPath = y4mFixtures.backIdPath;
 
   try {
     const context = await browser.newContext({
@@ -64,37 +159,40 @@ const runBiometricVerification = async (): Promise<void> => {
     await delay(600);
 
     // -------------------------------------------------------------------------
-    // TEST 2: Complete Phase 2 (Personal Information)
+    // TEST 2: Complete Phase 2 (Unified Gov ID Upload & Personal Information)
     // -------------------------------------------------------------------------
-    console.log('[Step 3] Populating personal information...');
+    console.log('[Step 3] Uploading Government ID Front & Back and unlocking Personal Info...');
+    await page.waitForSelector('#phase-2-id-identity', { state: 'visible', timeout: 5000 });
+    await page.waitForSelector('select#id-type', { state: 'visible', timeout: 5000 });
+    await page.selectOption('select#id-type', 'drivers');
+    await page.setInputFiles('input#front-id-input', frontIdPath);
+    await delay(300);
+    await page.setInputFiles('input#back-id-input', backIdPath);
+
+    await page.waitForSelector('#id-verification-banner', { state: 'visible', timeout: 25000 });
+    await page.waitForSelector('#badge-id-verified-genuine, #badge-id-pending-manual', {
+      state: 'visible',
+      timeout: 25000
+    });
+    await page.waitForSelector('#personal-info-section', { state: 'visible', timeout: 10000 });
+
+    console.log('[Step 4] Populating personal information inside unlocked #personal-info-section...');
     await page.waitForSelector('input#first-name', { state: 'visible', timeout: 5000 });
     await page.fill('input#first-name', 'Maria Clara');
     await page.fill('input#last-name', 'Rizal');
-    await page.fill('input#phone-number', '+639171234567');
+    await page.selectOption('select#sex', 'Female');
+    await page.fill('input#phone-number', '+639185550202');
     await page.fill('input#dob', '1998-05-12');
     await page.fill('input#barangay', 'Barangay Uno Poblacion');
     await page.fill('input#street-purok', 'Purok Rosal, Mabini Street');
     await page.click('button#btn-phase2-next');
-    await delay(600);
-
-    // -------------------------------------------------------------------------
-    // TEST 3: Complete Phase 3 (Government ID Upload)
-    // -------------------------------------------------------------------------
-    console.log('[Step 4] Uploading Government ID Front & Back...');
-    await page.waitForSelector('select#id-type', { state: 'visible', timeout: 5000 });
-    await page.selectOption('select#id-type', 'philsys');
-    await page.setInputFiles('input#front-id-input', frontIdPath);
-    await delay(300);
-    await page.setInputFiles('input#back-id-input', backIdPath);
-    await delay(400);
-
-    await page.click('button#btn-phase3-next');
     await delay(800);
 
     // -------------------------------------------------------------------------
-    // TEST 4: Phase 4 Biometric Model Training & 4-Pose Video Recording
+    // TEST 3: Phase 3 Biometric Model Training & 4-Pose Video Recording
     // -------------------------------------------------------------------------
-    console.log('[Step 5] Auditing Biometric Model Training Indicators in Phase 4...');
+    console.log('[Step 5] Auditing Biometric Model Training Indicators in Phase 3 (#phase-3-facial-record)...');
+    await page.waitForSelector('#phase-3-facial-record', { state: 'visible', timeout: 5000 });
     const trainingBanner = page.locator('#biometric-training-banner');
     await trainingBanner.waitFor({ state: 'visible', timeout: 5000 });
     const bannerText = await trainingBanner.innerText();
@@ -108,17 +206,17 @@ const runBiometricVerification = async (): Promise<void> => {
     await lockBtn.waitFor({ state: 'visible', timeout: 5000 });
 
     // Pose 1: Center -> Lock
-    console.log('   Locking Pose 1 (Center 0°)...');
+    console.log('   Locking Pose 1 (Center 0 deg)...');
     await lockBtn.click();
     await delay(600);
 
     // Pose 2: Right -> Lock
-    console.log('   Locking Pose 2 (Right +25°)...');
+    console.log('   Locking Pose 2 (Right +25 deg)...');
     await lockBtn.click();
     await delay(600);
 
     // Pose 3: Left -> Lock
-    console.log('   Locking Pose 3 (Left -25°)...');
+    console.log('   Locking Pose 3 (Left -25 deg)...');
     await lockBtn.click();
     await delay(600);
 
@@ -142,19 +240,21 @@ const runBiometricVerification = async (): Promise<void> => {
     // Confirm 4-pose facial record
     console.log('[Step 7] Confirming 4-Pose facial record...');
     await page.click('button#btn-confirm-facial-capture');
-    await delay(600);
+    await page.waitForSelector('span#badge-facial-confirmed', { state: 'visible', timeout: 15000 });
+    await delay(400);
 
     // Take screenshot of confirmed biometric record
     await page.screenshot({ path: ENROLLMENT_SCREENSHOT, fullPage: false });
     console.log(`   [Artifact] Captured enrollment screenshot to ${ENROLLMENT_SCREENSHOT}`);
 
-    await page.click('button#btn-phase4-next');
+    await page.click('button#btn-phase3-next');
     await delay(500);
 
     // -------------------------------------------------------------------------
-    // TEST 5: Complete Phase 5 (Account Credentials)
+    // TEST 4: Complete Phase 4 (Account Credentials)
     // -------------------------------------------------------------------------
-    console.log('[Step 8] Setting account credentials...');
+    console.log('[Step 8] Setting account credentials in Phase 4 (#phase-4-credentials)...');
+    await page.waitForSelector('#phase-4-credentials', { state: 'visible', timeout: 5000 });
     await page.fill('input#display-name', 'Maria Rizal');
     await page.fill('input#email', testEmail);
     await page.fill('input#password', testPassword);
@@ -162,26 +262,65 @@ const runBiometricVerification = async (): Promise<void> => {
 
     await page.locator('input#consent-1').setChecked(true, { force: true });
     await page.locator('input#consent-2').setChecked(true, { force: true });
-    await page.click('button#btn-phase5-next');
+    await page.click('button#btn-phase4-next');
     await delay(800);
 
     // -------------------------------------------------------------------------
-    // TEST 6: Phase 6 Review & Verification of Trained 128-D Biometric Vector
+    // TEST 5: Phase 5 Review & Verification of Trained 128-D Biometric Vector
     // -------------------------------------------------------------------------
-    console.log('[Step 9] Auditing Phase 6 Review screen for Biometric Training Badge...');
+    console.log('[Step 9] Auditing Phase 5 Review (#phase-5-review) for Biometric Training Badge...');
+    await page.waitForSelector('#phase-5-review', { state: 'visible', timeout: 5000 });
     const bioReviewBadge = page.locator('#review-biometric-training-status');
     await bioReviewBadge.waitFor({ state: 'visible', timeout: 5000 });
     const reviewText = await bioReviewBadge.innerText();
-    console.log(`   Phase 6 Review Status: ${reviewText}`);
+    console.log(`   Phase 5 Review Status: ${reviewText}`);
     if (!reviewText.includes('128-D Vector Ready for 1:1 Login')) {
-      throw new Error('Biometric training status not displayed in Phase 6 review.');
+      throw new Error('Biometric training status not displayed in Phase 5 review.');
     }
 
-    // Submit Registration
+    // Submit Registration & capture userId
     console.log('[Step 10] Submitting registration with trained biometric vector...');
+    const registerResPromise = page.waitForResponse(
+      (res) => res.url().includes('/api/register') && res.request().method() === 'POST',
+      { timeout: 15000 }
+    );
     await page.click('button#submit');
-    await delay(2500);
-    console.log('   [PASS] User registration submitted with active biometric training vector!');
+    const registerRes = await registerResPromise;
+    const registerJson = (await registerRes.json()) as { userId?: string };
+    await delay(1000);
+    if (!registerRes.ok() || !registerJson.userId) {
+      throw new Error(`Registration failed: HTTP ${registerRes.status()} (${JSON.stringify(registerJson)})`);
+    }
+    console.log(`   [PASS] User registration submitted with active biometric training vector (userId=${registerJson.userId})!`);
+
+    // Trigger Standby AI Auto-Approve so the newly registered Pending user is approved before 1:1 login
+    console.log('[Step 10.5] Triggering Standby AI Gov ID Auto-Approve Strategy...');
+    const standbyApproveRes = await fetch('http://127.0.0.1:1999/api/standby-ai/auto-approve-gov-id', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: registerJson.userId,
+        governmentIdType: 'drivers',
+        firstName: 'Maria Clara',
+        lastName: 'Rizal',
+        dateOfBirth: '1998-05-12',
+        applyToDatabase: true
+      })
+    });
+    if (!standbyApproveRes.ok) {
+      throw new Error(`Standby Auto-Approve failed with HTTP ${standbyApproveRes.status}`);
+    }
+    const standbyApproveData = (await standbyApproveRes.json()) as {
+      approved?: boolean;
+      decisionStatus?: string;
+      strategyName?: string;
+    };
+    if (!standbyApproveData.approved) {
+      throw new Error(`Expected Standby Auto-Approve to approve user, got ${JSON.stringify(standbyApproveData)}`);
+    }
+    console.log(
+      `   [PASS] Standby Auto-Approve completed via ${standbyApproveData.strategyName ?? 'ClaudeStandbyAutoApproveGovId'} (${standbyApproveData.decisionStatus ?? 'Approved'})`
+    );
 
     // -------------------------------------------------------------------------
     // TEST 7: 1:1 Biometric Login with Trained Profile
@@ -201,14 +340,33 @@ const runBiometricVerification = async (): Promise<void> => {
     await bioEmailInput.fill(testEmail);
     console.log(`   Entered account email: ${testEmail}`);
 
+    const biometricLoginResponsePromise = page.waitForResponse(
+      (res) =>
+        (res.url().includes('/api/biometric-login') || res.url().includes('/api/auth/biometric-login')) &&
+        res.request().method() === 'POST',
+      { timeout: 25000 }
+    );
+
     await page.locator('button[type="submit"]:has-text("Activate Live Camera")').click();
-    await delay(800);
 
     console.log('[Step 13] Executing 1:1 Biometric Optical Scan...');
-    const scanButton = page.locator('button#btn-synthetic-test-scan');
-    await scanButton.waitFor({ state: 'visible', timeout: 5000 });
-    await scanButton.click();
-    await delay(2000);
+    const settledEarly = await Promise.race([
+      biometricLoginResponsePromise.then(() => true),
+      delay(4500).then(() => false)
+    ]);
+    if (!settledEarly) {
+      const manualScanButton = page.locator('button#btn-scan-biometric-face');
+      const fallbackScanButton = page.locator('button#btn-synthetic-test-scan');
+      if (await manualScanButton.isVisible().catch(() => false) && !(await manualScanButton.isDisabled().catch(() => true))) {
+        await manualScanButton.click();
+      } else if (await fallbackScanButton.isVisible().catch(() => false) && !(await fallbackScanButton.isDisabled().catch(() => true))) {
+        await fallbackScanButton.click();
+      }
+    }
+    const loginRes = await biometricLoginResponsePromise;
+    console.log(`   [Biometric Login API] HTTP ${loginRes.status()}`);
+    await page.waitForURL(/\/(civilian\/)?dashboard/i, { timeout: 10000 }).catch(() => undefined);
+    await delay(1000);
 
     // Verify successful authentication and redirection
     await page.screenshot({ path: BIOMETRIC_LOGIN_SCREENSHOT, fullPage: false });
@@ -311,7 +469,7 @@ const runBiometricVerification = async (): Promise<void> => {
   }
 };
 
-runBiometricVerification().catch((err) => {
+runBiometricVerification().catch((err: unknown) => {
   console.error('\n[FATAL AUDIT FAILURE]:', err);
   process.exit(1);
 });

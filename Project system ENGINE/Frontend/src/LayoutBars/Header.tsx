@@ -599,15 +599,15 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
       case 'VERIFIED SUBMITTED INCIDENT LOGS':
         return {
           icon: ShieldCheck,
-          badgeClass: 'bg-cyan-950/90 text-cyan-300 border-cyan-500/60',
-          iconWrapClass: 'bg-cyan-950/80 border-cyan-500/50 text-cyan-400',
+          badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-500/60',
+          iconWrapClass: 'bg-rose-950/80 border-rose-500/50 text-[#ff5c74]',
           routeLabel: 'VIEW 5-MIN VERIFIED TIMER'
         };
       case 'CLOSE CASE':
         return {
           icon: CheckCircle2,
-          badgeClass: 'bg-emerald-950/90 text-emerald-300 border-emerald-500/60',
-          iconWrapClass: 'bg-emerald-950/80 border-emerald-500/50 text-emerald-400',
+          badgeClass: 'bg-rose-950/90 text-rose-200 border-rose-500/60',
+          iconWrapClass: 'bg-rose-950/80 border-rose-500/50 text-[#ff5c74]',
           routeLabel: 'VIEW CLOSED CASE LOG'
         };
     }
@@ -750,7 +750,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                         {unreadCount} NEW
                       </span>
                     ) : (
-                      <span className="text-[10px] font-mono text-emerald-400 flex-shrink-0">
+                      <span className="text-[10px] font-mono text-rose-300 flex-shrink-0">
                         ALL CLEAR
                       </span>
                     )}
@@ -798,7 +798,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                     <button
                       type="button"
                       onClick={handleMarkAllRead}
-                      className="flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded bg-emerald-950/40 border border-emerald-800/60 transition-colors"
+                      className="flex items-center gap-1 text-[10px] font-mono font-bold text-rose-300 hover:text-rose-200 px-2 py-1 rounded bg-rose-950/40 border border-rose-800/60 transition-colors"
                       title="Mark all notifications as read"
                     >
                       <CheckCheck className="w-3 h-3" />
@@ -942,14 +942,14 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                               <button
                                 type="button"
                                 onClick={(e) => handleMarkSingleRead(item, e)}
-                                className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/50 text-[10px] font-mono font-bold inline-flex items-center gap-1"
+                                className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/50 text-[10px] font-mono font-bold inline-flex items-center gap-1"
                               >
-                                <Check className="w-3 h-3" />
+                                <Check className="w-3 h-3 text-[#ff5c74]" />
                                 <span>ACK READ</span>
                               </button>
                             ) : (
                               <span className="text-[10px] font-mono text-slate-500 inline-flex items-center gap-1">
-                                <Check className="w-3 h-3 text-emerald-500" />
+                                <Check className="w-3 h-3 text-rose-400" />
                                 <span>ACKNOWLEDGED</span>
                               </span>
                             )}

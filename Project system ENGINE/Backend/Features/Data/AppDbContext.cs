@@ -24,6 +24,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<BiometricEnrollment> BiometricEnrollments => Set<BiometricEnrollment>();
     public DbSet<UserConsent> UserConsents => Set<UserConsent>();
     public DbSet<LoginAttempt> LoginAttempts => Set<LoginAttempt>();
+    public DbSet<VerificationTokenRecord> VerificationTokenRecords => Set<VerificationTokenRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,7 +33,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         // User indexes, defaults, and soft-delete global query filter
         modelBuilder.Entity<User>(entity =>
         {
-            entity.HasIndex(u => u.Email).IsUnique();
+            var emailIndex = entity.HasIndex(u => u.Email).IsUnique();
+            var providerName = Database.ProviderName ?? string.Empty;
+            if (providerName.Contains("SqlServer", StringComparison.OrdinalIgnoreCase))
+            {
+                emailIndex.HasFilter("[IsDeleted] = 0");
+            }
+            else if (providerName.Contains("Npgsql", StringComparison.OrdinalIgnoreCase))
+            {
+                emailIndex.HasFilter("\"IsDeleted\" = false");
+            }
             entity.HasIndex(u => u.Role);
             entity.HasIndex(u => u.Status);
             entity.HasIndex(u => u.IsDeleted);
@@ -150,6 +160,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(v => v.GovernmentIdType);
             entity.HasIndex(v => v.GovernmentIdNumber);
             entity.HasIndex(v => v.OverallVerificationStatus);
+            entity.Property(v => v.FaceToIdMatchScore).HasPrecision(5, 4);
 
             entity.HasQueryFilter(v => v.User == null || !v.User.IsDeleted);
 
@@ -196,6 +207,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(l => l.AccountIdentifier);
             entity.HasIndex(l => l.AttemptedAtUtc);
             entity.HasIndex(l => new { l.AccountIdentifier, l.AttemptedAtUtc, l.Success });
+        });
+
+        // VerificationTokenRecord configuration
+        modelBuilder.Entity<VerificationTokenRecord>(entity =>
+        {
+            entity.HasIndex(e => e.TokenId).IsUnique();
+            entity.HasIndex(e => new { e.ExpiresAtUtc, e.ConsumedAtUtc });
         });
     }
 }
