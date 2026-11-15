@@ -353,6 +353,53 @@ public static class DatabaseSeeder
             ");
         }
         catch { /* Fallback for InMemory or non-SQL Server providers */ }
+
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(@"
+                    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'VerificationTokenRecords' AND schema_id = SCHEMA_ID('dbo'))
+                    BEGIN
+                        CREATE TABLE [dbo].[VerificationTokenRecords] (
+                            [Id] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [PK_VerificationTokenRecords] PRIMARY KEY,
+                            [TokenId] NVARCHAR(64) NOT NULL,
+                            [TokenType] NVARCHAR(16) NOT NULL,
+                            [ImagePairSha256] NVARCHAR(128) NOT NULL,
+                            [Verdict] NVARCHAR(40) NOT NULL,
+                            [ProviderUsed] NVARCHAR(64) NOT NULL,
+                            [ModelUsed] NVARCHAR(64) NOT NULL DEFAULT '',
+                            [PayloadJson] NVARCHAR(MAX) NOT NULL,
+                            [HmacSignature] NVARCHAR(128) NOT NULL,
+                            [PairedIdTokenId] UNIQUEIDENTIFIER NULL,
+                            [IssuedAtUtc] DATETIME2 NOT NULL,
+                            [ExpiresAtUtc] DATETIME2 NOT NULL,
+                            [ConsumedAtUtc] DATETIME2 NULL,
+                            [ConsumedByUserId] UNIQUEIDENTIFIER NULL,
+                            [IsSyntheticTestToken] BIT NOT NULL DEFAULT 0
+                        );
+                        CREATE UNIQUE INDEX [IX_VerificationTokenRecords_TokenId] ON [dbo].[VerificationTokenRecords] ([TokenId]);
+                        CREATE INDEX [IX_VerificationTokenRecords_ExpiresAtUtc_ConsumedAtUtc] ON [dbo].[VerificationTokenRecords] ([ExpiresAtUtc], [ConsumedAtUtc]);
+                    END;
+
+                    IF COL_LENGTH('dbo.Users', 'IdVerificationTokenId') IS NULL
+                        ALTER TABLE [dbo].[Users] ADD [IdVerificationTokenId] NVARCHAR(64) NULL;
+                    IF COL_LENGTH('dbo.Users', 'FacialVerificationTokenId') IS NULL
+                        ALTER TABLE [dbo].[Users] ADD [FacialVerificationTokenId] NVARCHAR(64) NULL;
+                    IF COL_LENGTH('dbo.Users', 'AutoApprovedByAi') IS NULL
+                        ALTER TABLE [dbo].[Users] ADD [AutoApprovedByAi] BIT NOT NULL CONSTRAINT [DF_Users_AutoApprovedByAi] DEFAULT 0;
+                    IF COL_LENGTH('dbo.Users', 'AutoApprovedAtUtc') IS NULL
+                        ALTER TABLE [dbo].[Users] ADD [AutoApprovedAtUtc] DATETIME2 NULL;
+
+                    IF COL_LENGTH('dbo.IdentityVerificationRecords', 'VerificationTokenId') IS NULL
+                        ALTER TABLE [dbo].[IdentityVerificationRecords] ADD [VerificationTokenId] NVARCHAR(64) NULL;
+                    IF COL_LENGTH('dbo.IdentityVerificationRecords', 'AuthenticityVerdict') IS NULL
+                        ALTER TABLE [dbo].[IdentityVerificationRecords] ADD [AuthenticityVerdict] NVARCHAR(40) NULL;
+                    IF COL_LENGTH('dbo.IdentityVerificationRecords', 'FaceToIdMatchScore') IS NULL
+                        ALTER TABLE [dbo].[IdentityVerificationRecords] ADD [FaceToIdMatchScore] DECIMAL(5,4) NULL;
+                    IF COL_LENGTH('dbo.IdentityVerificationRecords', 'AutoApproved') IS NULL
+                        ALTER TABLE [dbo].[IdentityVerificationRecords] ADD [AutoApproved] BIT NOT NULL CONSTRAINT [DF_IdentityVerificationRecords_AutoApproved] DEFAULT 0;
+                ");
+            }
+            catch { /* Fallback for InMemory or non-SQL Server providers */ }
         }
 
         // Ensure capture and reports folders exist with fallback images

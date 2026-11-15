@@ -31,8 +31,8 @@ export const Footer: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400">
-        <Terminal className="w-3 h-3 text-cyan-400 flex-shrink-0" aria-hidden="true" />
-        <span className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-cyan-300 font-medium">
+        <Terminal className="w-3 h-3 text-[#ff5c74] flex-shrink-0" aria-hidden="true" />
+        <span className="px-1.5 py-0.5 rounded bg-rose-950/60 border border-rose-500/30 text-rose-200 font-medium">
           {CURRENT_RELEASE_VERSION}
         </span>
       </div>

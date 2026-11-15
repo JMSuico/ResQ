@@ -723,6 +723,9 @@ function Show-MainMenu {
 if ($Action) {
     switch ($Action.ToLowerInvariant()) {
         "start"        { Start-AllEngines }
+        "-start"       { Start-AllEngines }
+        "dev"          { Start-AllEngines }
+        "-dev"         { Start-AllEngines }
         "stop"         { Stop-PortProcesses }
         "migrate"      { Manage-DatabaseMigrations }
         "superadmin"   { Create-SuperadminAccount }

@@ -172,17 +172,45 @@ export const segmentSkinMask = (
   cb: Float32Array,
   cr: Float32Array,
   width: number,
-  height: number
+  height: number,
+  y?: Float32Array
 ): Uint8Array => {
   const pixelCount = width * height;
   const rawMask = new Uint8Array(pixelCount);
 
   // Step 1: Pixel-wise thresholding into raw binary mask (1 = skin, 0 = non-skin)
-  for (let i = 0; i < pixelCount; i++) {
-    const valCb = cb[i];
-    const valCr = cr[i];
-    if (valCb >= 77 && valCb <= 127 && valCr >= 133 && valCr <= 173) {
-      rawMask[i] = 1;
+  // When luma plane `y` is supplied by trackSkinFace, adapt chrominance bounds for
+  // dim, warm-tungsten, or cool indoor lighting while requiring Cr - Cb >= 4 to exclude walls.
+  if (y && y.length === pixelCount) {
+    for (let i = 0; i < pixelCount; i++) {
+      const valY = y[i];
+      if (valY < 20) {
+        continue;
+      }
+      const valCb = cb[i];
+      const valCr = cr[i];
+      const isDim = valY < 105;
+      const minCb = isDim ? 73 : 75;
+      const maxCb = isDim ? 130 : 128;
+      const minCr = isDim ? 130 : 132;
+      const maxCr = isDim ? 177 : 175;
+      if (
+        valCb >= minCb &&
+        valCb <= maxCb &&
+        valCr >= minCr &&
+        valCr <= maxCr &&
+        valCr - valCb >= 4
+      ) {
+        rawMask[i] = 1;
+      }
+    }
+  } else {
+    for (let i = 0; i < pixelCount; i++) {
+      const valCb = cb[i];
+      const valCr = cr[i];
+      if (valCb >= 77 && valCb <= 127 && valCr >= 133 && valCr <= 173) {
+        rawMask[i] = 1;
+      }
     }
   }
 
@@ -505,20 +533,22 @@ export const computeFullFrameProfileMetrics = (
   const ry = moments.majorAxis > 0 ? moments.majorAxis * 0.5 : height * 0.25;
   const cx = moments.cx > 0 ? moments.cx : width * 0.5;
 
-  // Isolate cranial corridor around face center: strictly cuts off peripheral raised arms and shoulders
+  // Isolate cranial corridor around face center: strictly cuts off peripheral raised arms, torso, and shoulders
   const cranialHalfW = Math.max(35, Math.min(width * 0.45, moments.minorAxis > 0 ? moments.minorAxis * 0.95 : ry * 0.85));
   const scanX0 = Math.max(0, Math.floor(cx - cranialHalfW));
   const scanX1 = Math.min(width - 1, Math.floor(cx + cranialHalfW));
+  const cranialTopY = Math.max(0, Math.floor(cy - ry * 1.15));
+  const cranialBottomY = Math.min(height - 1, Math.floor(cy + ry * 0.92));
 
   // Mid-face band where nose and profile protrusion live
-  const midY0 = Math.max(0, Math.floor(cy - ry * 0.25));
-  const midY1 = Math.min(height - 1, Math.floor(cy + ry * 0.20));
+  const midY0 = Math.max(cranialTopY, Math.floor(cy - ry * 0.25));
+  const midY1 = Math.min(cranialBottomY, Math.floor(cy + ry * 0.20));
 
   // Forehead & chin cranial reference bands
-  const foreheadY0 = Math.max(0, Math.floor(cy - ry * 0.65));
-  const foreheadY1 = Math.max(0, Math.floor(cy - ry * 0.35));
-  const chinY0 = Math.min(height - 1, Math.floor(cy + ry * 0.35));
-  const chinY1 = Math.min(height - 1, Math.floor(cy + ry * 0.65));
+  const foreheadY0 = Math.max(cranialTopY, Math.floor(cy - ry * 0.65));
+  const foreheadY1 = Math.max(cranialTopY, Math.floor(cy - ry * 0.35));
+  const chinY0 = Math.min(cranialBottomY, Math.floor(cy + ry * 0.35));
+  const chinY1 = Math.min(cranialBottomY, Math.floor(cy + ry * 0.65));
 
   let minSkinX = width;
   let maxSkinX = 0;
@@ -534,7 +564,7 @@ export const computeFullFrameProfileMetrics = (
   let bottomSkinCount = 0;
 
   // Single pass to gather bounding extents and cranial axes within cranial corridor
-  for (let py = 0; py < height; py += 2) {
+  for (let py = cranialTopY; py <= cranialBottomY; py += 2) {
     const rowOffset = py * width;
     const isMidBand = py >= midY0 && py <= midY1;
     const isForehead = py >= foreheadY0 && py <= foreheadY1;
@@ -587,11 +617,11 @@ export const computeFullFrameProfileMetrics = (
   const boxMidX = (minSkinX + maxSkinX) * 0.5;
   const boxHalfW = Math.max(10, (maxSkinX - minSkinX) * 0.5);
 
-  // 2. Count skin mass strictly on LEFT vs RIGHT of boxMidX
+  // 2. Count skin mass strictly on LEFT vs RIGHT of boxMidX within cranial bounds
   let boxLeftSkinCount = 0;
   let boxRightSkinCount = 0;
 
-  for (let py = 0; py < height; py += 2) {
+  for (let py = cranialTopY; py <= cranialBottomY; py += 2) {
     const rowOffset = py * width;
     for (let px = minSkinX; px <= maxSkinX; px += 2) {
       if (skinMask[rowOffset + px] > 0) {
@@ -614,7 +644,12 @@ export const computeFullFrameProfileMetrics = (
   // 4. Cranial axis & profile protrusion ratio
   const foreheadAxis = countForehead > 0 ? sumForeheadX / countForehead : boxMidX;
   const chinAxis = countChin > 0 ? sumChinX / countChin : boxMidX;
-  const cranialAxis = (foreheadAxis + chinAxis) * 0.5;
+  const eyeAxis = landmarks && landmarks.isValidLandmarks
+    ? (landmarks.leftEye.x + landmarks.rightEye.x) * 0.5
+    : boxMidX;
+  const cranialAxis = landmarks && landmarks.isValidLandmarks
+    ? foreheadAxis * 0.3 + chinAxis * 0.3 + eyeAxis * 0.4
+    : (foreheadAxis + chinAxis) * 0.5;
 
   const refMidMinX = midMinX < width ? midMinX : minSkinX;
   const refMidMaxX = midMaxX > 0 ? midMaxX : maxSkinX;
@@ -1140,6 +1175,8 @@ export const detectViolaJonesHaarFaceFeatures = (
     return { ocularDipolePassed: false, bridgeTriplePassed: false, mouthDipolePassed: false, score: 0 };
   }
 
+  let lumaFactor = 1.0;
+
   // Calculate face-box standard deviation if second-order integral image is available
   if (integralSq) {
     const boxMean = queryIntegralMean(integral, width, height, x, y, x + w - 1, y + h - 1);
@@ -1147,9 +1184,26 @@ export const detectViolaJonesHaarFaceFeatures = (
     const varFace = Math.max(0, boxSq.mean - boxMean.mean * boxMean.mean);
     const sigmaFace = Math.sqrt(varFace);
 
-    // Stage 0 Hard Gate: If face box variance is below 12.0, it is a flat wall/surface, NOT a human face!
-    if (sigmaFace < 12.0) {
+    // Stage 0 Hard Gate: Unscaled variance floor rejects flat walls/surfaces regardless of lighting
+    if (sigmaFace < 11.0) {
       return { ocularDipolePassed: false, bridgeTriplePassed: false, mouthDipolePassed: false, score: 0 };
+    }
+
+    // Stage 0b Inner Core Texture Gate: Reject flat solid skin rectangles over dark backgrounds
+    const innerMean = queryIntegralMean(integral, width, height, x + w * 0.26, y + h * 0.30, x + w * 0.74, y + h * 0.70);
+    const innerSq = queryIntegralMean(integralSq, width, height, x + w * 0.26, y + h * 0.30, x + w * 0.74, y + h * 0.70);
+    const sigmaInner = Math.sqrt(Math.max(0, innerSq.mean - innerMean.mean * innerMean.mean));
+    if (sigmaInner < 5.5) {
+      return { ocularDipolePassed: false, bridgeTriplePassed: false, mouthDipolePassed: false, score: 0 };
+    }
+
+    if (boxMean.mean < 95) {
+      lumaFactor = Math.max(0.55, Math.min(1.0, boxMean.mean / 95.0));
+    }
+  } else {
+    const boxMean = queryIntegralMean(integral, width, height, x, y, x + w - 1, y + h - 1);
+    if (boxMean.mean < 95) {
+      lumaFactor = Math.max(0.55, Math.min(1.0, boxMean.mean / 95.0));
     }
   }
 
@@ -1178,7 +1232,7 @@ export const detectViolaJonesHaarFaceFeatures = (
 
     const ocularDiff = cheekBandMean - eyeBandMean;
     const upperDiff = Math.max(foreheadMean, cheekBandMean) - eyeBandMean;
-    const ocularPassed = ocularDiff > 1.0 && upperDiff > 0.5;
+    const ocularPassed = ocularDiff > 1.0 * lumaFactor && upperDiff > 0.5 * lumaFactor;
 
     // 2. Bilateral Eye - Nasal Bridge Triple (with pose-shifted center)
     const leftEyeMean = queryIntegralMean(integral, width, height, x + w * 0.16 + sx, y + h * 0.22 + sy, x + w * 0.40 + sx, y + h * 0.42 + sy).mean;
@@ -1188,20 +1242,22 @@ export const detectViolaJonesHaarFaceFeatures = (
     const bilateralEyeAvg = (leftEyeMean + rightEyeMean) * 0.5;
     const minEye = Math.min(leftEyeMean, rightEyeMean);
     const bridgeDiff = bridgeMean - (bilateralEyeAvg * 0.5 + minEye * 0.5);
-    const bridgePassed = bridgeDiff > 1.2;
+    const bridgePassed = bridgeDiff > 1.2 * lumaFactor;
 
     // 3. Mouth-Chin Dipole
     const mouthMean = queryIntegralMean(integral, width, height, x + w * 0.25 + sx * 0.5, y + h * 0.68 + sy, x + w * 0.75 + sx * 0.5, y + h * 0.82 + sy).mean;
     const chinMean = queryIntegralMean(integral, width, height, x + w * 0.28 + sx * 0.5, y + h * 0.83 + sy, x + w * 0.72 + sx * 0.5, y + h * 0.96 + sy).mean;
     const mouthDiff = chinMean - mouthMean;
-    const mouthPassed = mouthDiff > 0.6;
+    const mouthPassed = mouthDiff > 0.6 * lumaFactor;
 
     let pCount = 0;
     if (ocularPassed) pCount++;
     if (bridgePassed) pCount++;
     if (mouthPassed) pCount++;
 
-    const hypScore = Number(((pCount / 3) * 0.6 + Math.min(0.4, Math.max(0, (ocularDiff + bridgeDiff) / 30))).toFixed(3));
+    const hypScore = Number(
+      ((pCount / 3) * 0.6 + Math.min(0.4, Math.max(0, (ocularDiff + bridgeDiff) / (30 * lumaFactor)))).toFixed(3)
+    );
     if (hypScore > bestScore || (pCount >= 2 && hypScore >= bestScore * 0.9)) {
       bestScore = Math.max(bestScore, hypScore);
       bestOcular = bestOcular || ocularPassed;
@@ -1249,7 +1305,7 @@ export const extractGeometricFacialLandmarks = (
     };
   }
 
-  // Helper to find weighted centroid of darkest pixels in an ROI (e.g. eye pupil / iris)
+  // Helper to find weighted centroid of smoothed darkest pixels in an ROI (rejecting single-pixel hairline noise)
   const findDarkestCentroid = (
     rx: number,
     ry: number,
@@ -1258,19 +1314,31 @@ export const extractGeometricFacialLandmarks = (
     defaultX: number,
     defaultY: number
   ): { x: number; y: number } => {
-    let minLum = 255;
-    const x0 = Math.max(0, Math.min(width - 1, Math.floor(x + rx)));
-    const y0 = Math.max(0, Math.min(height - 1, Math.floor(y + ry)));
-    const x1 = Math.max(x0 + 1, Math.min(width, Math.floor(x + rx + rw)));
-    const y1 = Math.max(y0 + 1, Math.min(height, Math.floor(y + ry + rh)));
+    let minLum = 300;
+    const x0 = Math.max(1, Math.min(width - 2, Math.floor(x + rx)));
+    const y0 = Math.max(1, Math.min(height - 2, Math.floor(y + ry)));
+    const x1 = Math.max(x0 + 1, Math.min(width - 1, Math.floor(x + rx + rw)));
+    const y1 = Math.max(y0 + 1, Math.min(height - 1, Math.floor(y + ry + rh)));
+    const roiCx = (x0 + x1) * 0.5;
+    const roiHalfW = Math.max(1, (x1 - x0) * 0.5);
+
+    const roiCy = (y0 + y1) * 0.5;
+
+    const sampleSmoothed = (px: number, py: number): number => {
+      const idx = py * width + px;
+      const val =
+        (gray[idx - width - 1] + gray[idx - width] + gray[idx - width + 1] +
+         gray[idx - 1] + gray[idx] * 2 + gray[idx + 1] +
+         gray[idx + width - 1] + gray[idx + width] + gray[idx + width + 1]) / 10;
+      const isSkin = !skinMask || skinMask[idx] > 0;
+      const edgeBias = Math.abs(px - roiCx) / roiHalfW;
+      const vertBias = Math.abs(py - roiCy) / Math.max(1, h * 0.12);
+      return val + (isSkin ? 0 : 120) + edgeBias * 10 + vertBias * 8;
+    };
 
     for (let py = y0; py < y1; py++) {
-      const rowOffset = py * width;
       for (let px = x0; px < x1; px++) {
-        const idx = rowOffset + px;
-        const val = gray[idx];
-        const isSkin = !skinMask || skinMask[idx] > 0;
-        const effectiveVal = isSkin ? val : val + 90;
+        const effectiveVal = sampleSmoothed(px, py);
         if (effectiveVal < minLum) {
           minLum = effectiveVal;
         }
@@ -1280,15 +1348,11 @@ export const extractGeometricFacialLandmarks = (
     let sumW = 0;
     let sumX = 0;
     let sumY = 0;
-    const threshold = minLum + 20;
+    const threshold = minLum + 18;
 
     for (let py = y0; py < y1; py++) {
-      const rowOffset = py * width;
       for (let px = x0; px < x1; px++) {
-        const idx = rowOffset + px;
-        const val = gray[idx];
-        const isSkin = !skinMask || skinMask[idx] > 0;
-        const effectiveVal = isSkin ? val : val + 90;
+        const effectiveVal = sampleSmoothed(px, py);
         if (effectiveVal <= threshold) {
           const weight = threshold - effectiveVal + 1;
           sumW += weight;
@@ -1353,17 +1417,100 @@ export const extractGeometricFacialLandmarks = (
     return { x: Math.round(x + defaultX), y: Math.round(y + defaultY) };
   };
 
-  // Sample anthropometric facial landmark zones:
-  // Profile-adapted search windows to avoid dark-ear/sideburn confusion during rotations
-  const isLeftProfile = ovalMetrics && (
-    ovalMetrics.bilateralSkinAsymmetry < -0.12 ||
-    (ovalMetrics.silhouetteAsymmetry !== undefined && ovalMetrics.silhouetteAsymmetry < -0.12) ||
-    (ovalMetrics.profileRatio !== undefined && ovalMetrics.profileRatio < 0.90)
+  // Sample symmetric eye candidates inside core inner orbital corridors (away from hairline/ears/brows) BEFORE profile override
+  const symLeftEye = findDarkestCentroid(w * 0.20, h * 0.23, w * 0.24, h * 0.20, w * 0.31, h * 0.32);
+  const symRightEye = findDarkestCentroid(w * 0.56, h * 0.23, w * 0.24, h * 0.20, w * 0.69, h * 0.32);
+
+  const symEyeSpan = symRightEye.x - symLeftEye.x;
+  const symEyeYDiff = Math.abs(symRightEye.y - symLeftEye.y);
+  const hasSymmetricEyes =
+    symEyeSpan >= w * 0.18 &&
+    symEyeSpan <= w * 0.68 &&
+    symEyeYDiff <= h * 0.16;
+
+  // Confine frontal nose tip search inside the inter-ocular span with mild nasal-center weighting
+  // so distant cheek specular glare cannot pull a centered face past +/-12° while real turns still track
+  const symNoseRx = hasSymmetricEyes
+    ? Math.max(w * 0.22, (symLeftEye.x - x) + symEyeSpan * 0.08)
+    : w * 0.28;
+  const symNoseEndRx = hasSymmetricEyes
+    ? Math.min(w * 0.78, (symRightEye.x - x) - symEyeSpan * 0.08)
+    : w * 0.72;
+  const symNoseRw = Math.max(w * 0.16, symNoseEndRx - symNoseRx);
+  const findWeightedNoseBridge = (): { x: number; y: number } => {
+    const x0 = Math.max(0, Math.min(width - 1, Math.floor(x + symNoseRx)));
+    const y0 = Math.max(0, Math.min(height - 1, Math.floor(y + h * 0.38)));
+    const x1 = Math.max(x0 + 1, Math.min(width, Math.floor(x + symNoseRx + symNoseRw)));
+    const y1 = Math.max(y0 + 1, Math.min(height, Math.floor(y + h * 0.62)));
+    const eyeMidLocal = hasSymmetricEyes ? (symLeftEye.x + symRightEye.x) * 0.5 : x + w * 0.5;
+    let bestScore = -1e9;
+    for (let py = y0; py < y1; py++) {
+      const rOff = py * width;
+      for (let px = x0; px < x1; px++) {
+        const score = gray[rOff + px] - Math.abs(px - eyeMidLocal) * 0.25;
+        if (score > bestScore) bestScore = score;
+      }
+    }
+    const thresh = bestScore - 16;
+    let sw = 0, sx = 0, sy = 0;
+    for (let py = y0; py < y1; py++) {
+      const rOff = py * width;
+      for (let px = x0; px < x1; px++) {
+        const score = gray[rOff + px] - Math.abs(px - eyeMidLocal) * 0.25;
+        if (score >= thresh) {
+          const wt = score - thresh + 1;
+          sw += wt;
+          sx += px * wt;
+          sy += py * wt;
+        }
+      }
+    }
+    return sw > 0
+      ? { x: Math.round(sx / sw), y: Math.round(sy / sw) }
+      : findBrightestCentroid(symNoseRx, h * 0.38, symNoseRw, h * 0.24, w * 0.50, h * 0.54);
+  };
+  const symNoseTip = findWeightedNoseBridge();
+
+  // Check eye-socket darkness contrast so true frontal faces are not flipped by warm wood/walls behind ears
+  const queryMeanLum = (cx: number, cy: number, rad: number): number => {
+    const x0 = Math.max(0, Math.floor(cx - rad));
+    const y0 = Math.max(0, Math.floor(cy - rad));
+    const x1 = Math.min(width - 1, Math.floor(cx + rad));
+    const y1 = Math.min(height - 1, Math.floor(cy + rad));
+    let sum = 0, cnt = 0;
+    for (let py = y0; py <= y1; py++) {
+      const rOff = py * width;
+      for (let px = x0; px <= x1; px++) { sum += gray[rOff + px]; cnt++; }
+    }
+    return cnt > 0 ? sum / cnt : 128;
+  };
+  const eyeRad = Math.max(2, Math.round(w * 0.04));
+  const leDark = queryMeanLum(symLeftEye.x, symLeftEye.y, eyeRad);
+  const reDark = queryMeanLum(symRightEye.x, symRightEye.y, eyeRad);
+  const leCheek = queryMeanLum(symLeftEye.x, symLeftEye.y + h * 0.14, eyeRad);
+  const reCheek = queryMeanLum(symRightEye.x, symRightEye.y + h * 0.14, eyeRad);
+  const localEyeRef = (leCheek + reCheek) * 0.5;
+  const eyeContrastMin = localEyeRef < 95 ? Math.max(2.0, 4.0 * (localEyeRef / 95.0)) : 4.0;
+  const bothEyesVisible =
+    hasSymmetricEyes &&
+    symEyeSpan >= w * 0.24 &&
+    leCheek - leDark > eyeContrastMin &&
+    reCheek - reDark > eyeContrastMin;
+
+  // Only invoke unilateral profile search when strong cues confirm a real side turn and both frontal eyes are NOT strongly visible
+  const asym = ovalMetrics?.bilateralSkinAsymmetry ?? 0;
+  const silh = ovalMetrics?.silhouetteAsymmetry ?? 0;
+  const pr = ovalMetrics?.profileRatio ?? 1.0;
+
+  const isLeftProfile = !!ovalMetrics && (
+    asym < -0.34 ||
+    (!bothEyesVisible && (asym < -0.22 || (asym < -0.14 && pr < 0.85))) ||
+    (!hasSymmetricEyes && (asym < -0.16 || silh < -0.18 || pr < 0.78))
   );
-  const isRightProfile = ovalMetrics && (
-    ovalMetrics.bilateralSkinAsymmetry > 0.12 ||
-    (ovalMetrics.silhouetteAsymmetry !== undefined && ovalMetrics.silhouetteAsymmetry > 0.12) ||
-    (ovalMetrics.profileRatio !== undefined && ovalMetrics.profileRatio > 1.10)
+  const isRightProfile = !isLeftProfile && !!ovalMetrics && (
+    asym > 0.34 ||
+    (!bothEyesVisible && (asym > 0.22 || (asym > 0.14 && pr > 1.18))) ||
+    (!hasSymmetricEyes && (asym > 0.16 || silh > 0.18 || pr > 1.28))
   );
 
   let leftEye: { x: number; y: number };
@@ -1381,10 +1528,9 @@ export const extractGeometricFacialLandmarks = (
     leftEye = { x: Math.round(x + w * 0.40), y: rightEye.y };
     noseTip = findBrightestCentroid(w * 0.65, h * 0.35, w * 0.35, h * 0.28, w * 0.85, h * 0.52);
   } else {
-    // Frontal: standard symmetric search
-    leftEye = findDarkestCentroid(w * 0.14, h * 0.18, w * 0.32, h * 0.26, w * 0.32, h * 0.32);
-    rightEye = findDarkestCentroid(w * 0.54, h * 0.18, w * 0.32, h * 0.26, w * 0.68, h * 0.32);
-    noseTip = findBrightestCentroid(w * 0.26, h * 0.38, w * 0.48, h * 0.26, w * 0.50, h * 0.54);
+    leftEye = symLeftEye;
+    rightEye = symRightEye;
+    noseTip = symNoseTip;
   }
 
   const mouthCenter = findDarkestCentroid(w * 0.28, h * 0.66, w * 0.44, h * 0.18, w * 0.50, h * 0.75);
@@ -1464,11 +1610,12 @@ export const calculateGeometricHeadPose = (
     const centroidComp = centroidOff * 40.0;     // Skin centroid shift relative to head box
     const silhComp = silhAsym * 44.0;           // Cranial silhouette protrusion asymmetry
     const flowComp = Math.max(-30, Math.min(30, flowVx * 4.0));       // Directional optical flow velocity
-    const landmarkComp = eyeBasedYaw * 28.0;
+    const landmarkComp = eyeBasedYaw * 25.0;
 
     if (landmarks.isValidLandmarks) {
-      // Landmark geometry is primary ground truth (immune to raised arms/shoulders)
-      rawFusedYaw = landmarkComp * 0.70 + massComp * 0.15 + centroidComp * 0.10 + silhComp * 0.05;
+      // Landmark geometry is primary ground truth; damp background/lighting asymmetry while keeping frontal stability
+      const flowShift = Math.max(-8, Math.min(8, flowVx * 0.8));
+      rawFusedYaw = landmarkComp * 0.78 + massComp * 0.10 + centroidComp * 0.06 + silhComp * 0.06 + flowShift * 0.0;
     } else {
       rawFusedYaw = massComp * 0.40 + silhComp * 0.30 + centroidComp * 0.30;
     }
@@ -1476,12 +1623,12 @@ export const calculateGeometricHeadPose = (
     rawFusedYaw = eyeBasedYaw * 32.0;
   }
 
-  // Non-linear profile boost: intentional turns beyond 8° expand smoothly to >= 20°
+  // Non-linear profile boost: only expand sustained turns beyond 12° so centered lighting variance stays inside +/-12°
   let yawDeg = rawFusedYaw;
   const absYaw = Math.abs(rawFusedYaw);
-  if (absYaw > 8.0) {
+  if (absYaw > 12.0) {
     const sign = rawFusedYaw < 0 ? -1 : 1;
-    yawDeg = sign * (8.0 + (absYaw - 8.0) * 1.55);
+    yawDeg = sign * (12.0 + (absYaw - 12.0) * 1.45);
   }
   yawDeg = Number(Math.max(-45, Math.min(45, yawDeg)).toFixed(1));
 
@@ -1536,9 +1683,9 @@ export const calculateGeometricHeadPose = (
 };
 
 /**
- * Computes a 64-dimensional spatial Local Binary Pattern (LBP) texture histogram
- * (2x2 spatial subdivisions x 16-bin LBP) with noise-tolerant thresholding
- * that suppresses sensor noise on flat walls while capturing genuine facial texture.
+ * Computes a 64-dimensional spatial Center-Symmetric LBP (CS-LBP) directional texture histogram
+ * (4x4 spatial subdivisions x 4 oriented contrast channels: 0°, 90°, 45°, 135°)
+ * with noise-tolerant thresholding that suppresses flat-wall noise while capturing facial micro-texture.
  */
 export const computeLbpTextureHistogram = (
   gray: Float32Array,
@@ -1550,60 +1697,199 @@ export const computeLbpTextureHistogram = (
   const { x, y, w, h } = faceBox;
   if (w < 16 || h < 16) return histogram;
 
-  const halfW = w * 0.5;
-  const halfH = h * 0.5;
-  const tau = 2.0; // Noise tolerance: suppresses low-variance sensor noise on walls
+  // Operate on illumination-leveled canonical 32x32 patch so tiny registration thumbnails
+  // and full-resolution login webcam captures share identical spatial scale and contrast
+  const planar32 = buildPlanarNeutral32(gray, width, height, faceBox);
+  if (!planar32) return histogram;
 
-  for (let blockY = 0; blockY < 2; blockY++) {
-    for (let blockX = 0; blockX < 2; blockX++) {
-      const blockIdx = (blockY * 2 + blockX) * 16;
-      const bx0 = Math.max(1, Math.floor(x + blockX * halfW));
-      const by0 = Math.max(1, Math.floor(y + blockY * halfH));
-      const bx1 = Math.min(width - 2, Math.floor(bx0 + halfW));
-      const by1 = Math.min(height - 2, Math.floor(by0 + halfH));
+  const p32 = boxBlur32(planar32, 1);
+  const margin = 4;
+  const zoneSize = 6;
+  const tau = 0.04;
 
-      let pixelCount = 0;
+  for (let gy = 0; gy < 4; gy++) {
+    const by0 = margin + gy * zoneSize;
+    const by1 = by0 + zoneSize;
+    for (let gx = 0; gx < 4; gx++) {
+      const cellIdx = (gy * 4 + gx) * 4;
+      const bx0 = margin + gx * zoneSize;
+      const bx1 = bx0 + zoneSize;
 
-      for (let py = by0; py < by1; py += 2) {
-        const rowOffset = py * width;
-        const prevRow = (py - 1) * width;
-        const nextRow = (py + 1) * width;
+      for (let py = by0; py < by1; py++) {
+        const rowOffset = py * 32;
+        const prevRow = (py - 1) * 32;
+        const nextRow = (py + 1) * 32;
 
-        for (let px = bx0; px < bx1; px += 2) {
-          const c = gray[rowOffset + px];
+        for (let px = bx0; px < bx1; px++) {
+          const dHoriz = Math.abs(p32[rowOffset + px + 1] - p32[rowOffset + px - 1]);
+          const dVert = Math.abs(p32[nextRow + px] - p32[prevRow + px]);
+          const dDiag1 = Math.abs(p32[prevRow + px + 1] - p32[nextRow + px - 1]);
+          const dDiag2 = Math.abs(p32[nextRow + px + 1] - p32[prevRow + px - 1]);
 
-          // 8-neighbor LBP binary encoding with noise threshold
-          let code = 0;
-          if (gray[prevRow + px - 1] - c >= tau) code |= 1;
-          if (gray[prevRow + px] - c >= tau) code |= 2;
-          if (gray[prevRow + px + 1] - c >= tau) code |= 4;
-          if (gray[rowOffset + px + 1] - c >= tau) code |= 8;
-          if (gray[nextRow + px + 1] - c >= tau) code |= 16;
-          if (gray[nextRow + px] - c >= tau) code |= 32;
-          if (gray[nextRow + px - 1] - c >= tau) code |= 64;
-          if (gray[rowOffset + px - 1] - c >= tau) code |= 128;
-
-          const bin = code >> 4;
-          histogram[blockIdx + bin]++;
-          pixelCount++;
+          if (dHoriz >= tau) histogram[cellIdx] += dHoriz;
+          if (dVert >= tau) histogram[cellIdx + 1] += dVert;
+          if (dDiag1 >= tau) histogram[cellIdx + 2] += dDiag1;
+          if (dDiag2 >= tau) histogram[cellIdx + 3] += dDiag2;
         }
       }
+    }
+  }
 
-      // L1-normalize each 16-bin block
-      if (pixelCount > 0) {
-        for (let b = 0; b < 16; b++) {
-          histogram[blockIdx + b] /= pixelCount;
-        }
-      }
+  let globalEnergy = 0;
+  for (let i = 0; i < 64; i++) globalEnergy += histogram[i];
+  const cellFloor = Math.max(1e-4, (globalEnergy / 16) * 0.45);
+  for (let c = 0; c < 16; c++) {
+    const base = c * 4;
+    const cellEnergy = histogram[base] + histogram[base + 1] + histogram[base + 2] + histogram[base + 3];
+    const denom = cellEnergy + cellFloor;
+    for (let b = 0; b < 4; b++) {
+      histogram[base + b] /= denom;
     }
   }
 
   return histogram;
 };
 
+const boxBlur32 = (src: Float32Array, radius: number): Float32Array => {
+  const horiz = new Float32Array(1024);
+  const out = new Float32Array(1024);
+  for (let py = 0; py < 32; py++) {
+    const rOff = py * 32;
+    for (let px = 0; px < 32; px++) {
+      let sum = 0;
+      let cnt = 0;
+      for (let dx = -radius; dx <= radius; dx++) {
+        const nx = px + dx;
+        if (nx >= 0 && nx < 32) {
+          sum += src[rOff + nx];
+          cnt++;
+        }
+      }
+      horiz[rOff + px] = cnt > 0 ? sum / cnt : src[rOff + px];
+    }
+  }
+  for (let py = 0; py < 32; py++) {
+    for (let px = 0; px < 32; px++) {
+      let sum = 0;
+      let cnt = 0;
+      for (let dy = -radius; dy <= radius; dy++) {
+        const ny = py + dy;
+        if (ny >= 0 && ny < 32) {
+          sum += horiz[ny * 32 + px];
+          cnt++;
+        }
+      }
+      out[py * 32 + px] = cnt > 0 ? sum / cnt : horiz[py * 32 + px];
+    }
+  }
+  return out;
+};
+
+const buildPlanarNeutral32 = (
+  gray: Float32Array,
+  width: number,
+  height: number,
+  faceBox: RoiRect
+): Float32Array | null => {
+  const { crop } = extractRoiCrop(gray, width, height, faceBox);
+  if (crop.length < 64) return null;
+
+  const resampled32 = resampleBilinear(crop, Math.floor(faceBox.w), Math.floor(faceBox.h), 32, 32);
+  const { normalized } = standardizeLuminance(resampled32);
+
+  // Estimate linear horizontal + mild vertical illumination ramp across central inner face (x in 5..26, y in 6..26)
+  let sxx = 0;
+  let syy = 0;
+  let sxy = 0;
+  let syLum = 0;
+  for (let py = 6; py <= 26; py++) {
+    const dy = py - 16.0;
+    const rOff = py * 32;
+    for (let px = 5; px <= 26; px++) {
+      const dx = px - 15.5;
+      const val = normalized[rOff + px];
+      sxx += dx * dx;
+      syy += dy * dy;
+      sxy += dx * val;
+      syLum += dy * val;
+    }
+  }
+  const slopeX = sxx > 0 ? (sxy / sxx) * 0.85 : 0;
+  const slopeY = syy > 0 ? (syLum / syy) * 0.92 : 0;
+
+  const planar = new Float32Array(1024);
+  const weights = new Float32Array(1024);
+  let weightedSum = 0;
+  let weightTotal = 0;
+  for (let py = 0; py < 32; py++) {
+    const dy = py - 16.0;
+    const ny = dy / 14.5;
+    const rOff = py * 32;
+    for (let px = 0; px < 32; px++) {
+      const dx = px - 15.5;
+      const nx = dx / 13.5;
+      const r2 = nx * nx + ny * ny;
+      // Attenuate only upper/outer ceiling/wall corners outside temples while keeping cheek & jawline contour sharp
+      const isTopCorner = py <= 10 && r2 > 0.91;
+      const wCorner = isTopCorner ? Math.max(0.45, 1.0 - (r2 - 0.91) / 0.52) : 1.0;
+      const v = normalized[rOff + px] - slopeX * dx - slopeY * dy;
+      planar[rOff + px] = v;
+      weights[rOff + px] = wCorner;
+      weightedSum += v * wCorner;
+      weightTotal += wCorner;
+    }
+  }
+  const mean = weightTotal > 0 ? weightedSum / weightTotal : 0;
+  let sq = 0;
+  for (let i = 0; i < 1024; i++) {
+    const centered = (planar[i] - mean) * weights[i];
+    planar[i] = centered;
+    sq += centered * centered;
+  }
+  const std = Math.sqrt(sq / Math.max(1, weightTotal));
+  if (std > 1e-6) {
+    for (let i = 0; i < 1024; i++) planar[i] /= std;
+  }
+  return planar;
+};
+
+const buildHorizontallyBalanced32 = (
+  gray: Float32Array,
+  width: number,
+  height: number,
+  faceBox: RoiRect
+): Float32Array | null => {
+  const planar = buildPlanarNeutral32(gray, width, height, faceBox);
+  if (!planar) return null;
+
+  // Resolution-invariant mid-band DoG (r=2 vs r=6) tolerates blurry thumbnails & crisp frames while cancelling smooth fills
+  const mid = boxBlur32(planar, 2);
+  const coarse = boxBlur32(planar, 6);
+  const balanced = new Float32Array(1024);
+  let mean = 0;
+  for (let i = 0; i < 1024; i++) {
+    const v = mid[i] - coarse[i] * 0.72;
+    balanced[i] = v;
+    mean += v;
+  }
+  mean /= 1024;
+  let sq = 0;
+  for (let i = 0; i < 1024; i++) {
+    balanced[i] -= mean;
+    sq += balanced[i] * balanced[i];
+  }
+  const std = Math.sqrt(sq / 1024);
+  if (std > 1e-6) {
+    for (let i = 0; i < 1024; i++) balanced[i] /= std;
+  }
+  return balanced;
+};
+
+const smoothBalanced32 = (src: Float32Array): Float32Array => boxBlur32(src, 1);
+
 /**
- * Projects a standardized 32x32 face crop onto 16 orthogonal harmonic 2D eigen-modes (PCA)
- * capturing holistic facial appearance (forehead, eye sockets, cheeks, mouth).
+ * Projects an illumination-balanced, horizontally-symmetrized 32x32 inner face crop onto a 4x4 zonal grid (PCA Eigenface),
+ * cancelling side-lamp shadows and preserving anatomical luminance proportions across webcam sessions.
  */
 export const computeHolisticEigenfaceProjection = (
   gray: Float32Array,
@@ -1612,36 +1898,47 @@ export const computeHolisticEigenfaceProjection = (
   faceBox: RoiRect
 ): Float32Array => {
   const eigenVector = new Float32Array(16);
-  const { crop } = extractRoiCrop(gray, width, height, faceBox);
-  if (crop.length < 64) return eigenVector;
+  const balanced32 = buildHorizontallyBalanced32(gray, width, height, faceBox);
+  if (!balanced32) return eigenVector;
 
-  const resampled32 = resampleBilinear(crop, Math.floor(faceBox.w), Math.floor(faceBox.h), 32, 32);
-  const { normalized } = standardizeLuminance(resampled32);
-
-  // 16 orthogonal 2D DCT / PCA harmonic basis projections
-  for (let mode = 0; mode < 16; mode++) {
-    const kx = (mode % 4) + 1;
-    const ky = Math.floor(mode / 4) + 1;
-    let proj = 0;
-
-    for (let dy = 0; dy < 32; dy++) {
-      const cosY = Math.cos(((2 * dy + 1) * ky * Math.PI) / 64);
-      const rowOffset = dy * 32;
-      for (let dx = 0; dx < 32; dx++) {
-        const cosX = Math.cos(((2 * dx + 1) * kx * Math.PI) / 64);
-        proj += normalized[rowOffset + dx] * cosX * cosY;
+  const smooth32 = smoothBalanced32(balanced32);
+  const zoneSize = 7;
+  const start = 2;
+  let mean = 0;
+  for (let gy = 0; gy < 4; gy++) {
+    const y0 = start + gy * zoneSize;
+    for (let gx = 0; gx < 4; gx++) {
+      const x0 = start + gx * zoneSize;
+      let sum = 0;
+      for (let py = y0; py < y0 + zoneSize; py++) {
+        const rOff = py * 32;
+        for (let px = x0; px < x0 + zoneSize; px++) {
+          const symVal = 0.5 * (smooth32[rOff + px] + smooth32[rOff + (31 - px)]);
+          sum += symVal;
+        }
       }
+      const val = sum / (zoneSize * zoneSize);
+      eigenVector[gy * 4 + gx] = val;
+      mean += val;
     }
-
-    eigenVector[mode] = Number((proj / 512).toFixed(4));
+  }
+  mean /= 16;
+  let norm = 0;
+  for (let i = 0; i < 16; i++) {
+    eigenVector[i] -= mean;
+    norm += eigenVector[i] * eigenVector[i];
+  }
+  norm = Math.sqrt(norm);
+  if (norm > 1e-6) {
+    for (let i = 0; i < 16; i++) eigenVector[i] = Number((eigenVector[i] / norm).toFixed(4));
   }
 
   return eigenVector;
 };
 
 /**
- * Projects facial intensity array onto 16-dimensional Fisherface Linear Discriminants (LDA),
- * maximizing between-class structural variance over within-class illumination/noise scatter.
+ * Computes a 16-D Fisher LDA structural profile (8 vertical brow-eye-nose-mouth-chin anatomical bands +
+ * 8 symmetric central-to-outer radial width rings), tolerant to webcam resolution and minor box shifts.
  */
 export const computeFisherfaceLinearDiscriminant = (
   gray: Float32Array,
@@ -1650,32 +1947,47 @@ export const computeFisherfaceLinearDiscriminant = (
   faceBox: RoiRect
 ): Float32Array => {
   const fisherVector = new Float32Array(16);
-  const { crop } = extractRoiCrop(gray, width, height, faceBox);
-  if (crop.length < 64) return fisherVector;
+  const balanced32 = buildHorizontallyBalanced32(gray, width, height, faceBox);
+  if (!balanced32) return fisherVector;
 
-  const resampled32 = resampleBilinear(crop, Math.floor(faceBox.w), Math.floor(faceBox.h), 32, 32);
-  const { normalized } = standardizeLuminance(resampled32);
-
-  for (let k = 0; k < 16; k++) {
-    const freqX = ((k % 4) + 1) * 0.5;
-    const freqY = (Math.floor(k / 4) + 1) * 0.5;
-    let proj = 0;
-
-    for (let dy = 0; dy < 32; dy++) {
-      const rowOff = dy * 32;
-      const wY = Math.sin(((dy + 0.5) * freqY * Math.PI) / 16);
-      for (let dx = 0; dx < 32; dx++) {
-        const wX = Math.cos(((dx + 0.5) * freqX * Math.PI) / 16);
-        proj += normalized[rowOff + dx] * wX * wY;
-      }
-    }
-
-    fisherVector[k] = Number((proj / 256).toFixed(4));
+  // Mid-band Difference-of-Boxes isolates 2D local bone/orbital/cheek topography
+  // inside the inner [4..27] facial oval while cancelling background and hairline corners.
+  const narrow = smoothBalanced32(balanced32);
+  const broad = boxBlur32(balanced32, 4);
+  const midBand = new Float32Array(1024);
+  for (let i = 0; i < 1024; i++) {
+    midBand[i] = narrow[i] - broad[i] * 0.85;
   }
 
-  // L2-normalize
+  const start = 4;
+  const zoneSize = 6;
+  let mean = 0;
+  for (let zy = 0; zy < 4; zy++) {
+    const y0 = start + zy * zoneSize;
+    for (let zx = 0; zx < 4; zx++) {
+      const x0 = start + zx * zoneSize;
+      let sum = 0;
+      let cnt = 0;
+      for (let py = y0; py < y0 + zoneSize; py++) {
+        const rOff = py * 32;
+        for (let px = x0; px < x0 + zoneSize; px++) {
+          sum += midBand[rOff + px];
+          cnt++;
+        }
+      }
+      const val = cnt > 0 ? sum / cnt : 0;
+      const idx = zy * 4 + zx;
+      fisherVector[idx] = val;
+      mean += val;
+    }
+  }
+  mean /= 16;
+
   let norm = 0;
-  for (let i = 0; i < 16; i++) norm += fisherVector[i] * fisherVector[i];
+  for (let i = 0; i < 16; i++) {
+    fisherVector[i] -= mean;
+    norm += fisherVector[i] * fisherVector[i];
+  }
   norm = Math.sqrt(norm);
   if (norm > 1e-6) {
     for (let i = 0; i < 16; i++) fisherVector[i] = Number((fisherVector[i] / norm).toFixed(4));
@@ -1686,8 +1998,8 @@ export const computeFisherfaceLinearDiscriminant = (
 
 /**
  * Deterministic Deep CNN Feature Embedding:
- * 8 fixed 3x3 multi-scale convolutional kernels (Sobel H/V, 45°/135°, Laplacian center-surround, Gabor Ocular/Nasal, Bilateral Symmetry)
- * -> ReLU -> 2x2 Spatial Max-Pooling -> 2x2 Quadrant Average Pooling -> 32-D Unit-Hypersphere Feature Vector.
+ * Extracts smoothed inner luminance + multi-scale (2px-stride) oriented structure fields
+ * across a 4x4 anatomical spatial grid (16 zones x 2 channels = 32-D), tolerant to blurry thumbnails vs HD screenshots.
  */
 export const computeDeepCnnFeatureEmbedding = (
   gray: Float32Array,
@@ -1696,51 +2008,70 @@ export const computeDeepCnnFeatureEmbedding = (
   faceBox: RoiRect
 ): Float32Array => {
   const embedding = new Float32Array(32);
-  const { crop } = extractRoiCrop(gray, width, height, faceBox);
-  if (crop.length < 64) return embedding;
+  const planar32 = buildPlanarNeutral32(gray, width, height, faceBox);
+  const balanced32 = buildHorizontallyBalanced32(gray, width, height, faceBox);
+  if (!planar32 || !balanced32) return embedding;
 
-  const resampled32 = resampleBilinear(crop, Math.floor(faceBox.w), Math.floor(faceBox.h), 32, 32);
-  const { normalized } = standardizeLuminance(resampled32);
+  const smooth32 = smoothBalanced32(balanced32);
+  const coarsePlanar = boxBlur32(planar32, 6);
+  const mildRelief = new Float32Array(1024);
+  for (let i = 0; i < 1024; i++) {
+    mildRelief[i] = planar32[i] - coarsePlanar[i] * 0.35;
+  }
+  const smoothRelief = boxBlur32(mildRelief, 1);
 
-  const KERNELS: number[][][] = [
-    [[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
-    [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]],
-    [[0, 1, 2], [-1, 0, 1], [-2, -1, 0]],
-    [[2, 1, 0], [1, 0, -1], [0, -1, -2]],
-    [[0, -1, 0], [-1, 4, -1], [0, -1, 0]],
-    [[-1, -1, -1], [-1, -1, -1], [1, 1, 1]],
-    [[-1, 2, -1], [-1, 2, -1], [-1, 2, -1]],
-    [[1, 1, 1], [-2, -2, -2], [1, 1, 1]]
-  ];
+  const zoneSize = 7;
+  const start = 2;
+  const intensityBlock = new Float32Array(16);
+  const orientBlock = new Float32Array(16);
 
-  for (let c = 0; c < 8; c++) {
-    const k = KERNELS[c];
-    let qTL = 0, qTR = 0, qBL = 0, qBR = 0;
-    let nTL = 0, nTR = 0, nBL = 0, nBR = 0;
+  for (let gy = 0; gy < 4; gy++) {
+    const y0 = start + gy * zoneSize;
+    for (let gx = 0; gx < 4; gx++) {
+      const cellIdx = gy * 4 + gx;
+      const x0 = start + gx * zoneSize;
+      let sumLum = 0;
+      let sumRelief = 0;
+      const cnt = zoneSize * zoneSize;
 
-    for (let y = 1; y < 31; y++) {
-      const isTop = y < 16;
-      for (let x = 1; x < 31; x++) {
-        const isLeft = x < 16;
-        let sum = 0;
-        for (let ky = -1; ky <= 1; ky++) {
-          const rOff = (y + ky) * 32;
-          for (let kx = -1; kx <= 1; kx++) {
-            sum += normalized[rOff + (x + kx)] * k[ky + 1][kx + 1];
-          }
+      for (let py = y0; py < y0 + zoneSize; py++) {
+        const rOff = py * 32;
+        for (let px = x0; px < x0 + zoneSize; px++) {
+          const symVal = 0.5 * (smooth32[rOff + px] + smooth32[rOff + (31 - px)]);
+          sumLum += symVal * 0.65 + smooth32[rOff + px] * 0.35;
+          const symRel = 0.5 * (smoothRelief[rOff + px] + smoothRelief[rOff + (31 - px)]);
+          sumRelief += symRel * 0.70 + smoothRelief[rOff + px] * 0.30;
         }
-        const act = Math.max(0, sum);
-        if (isTop && isLeft) { qTL += act; nTL++; }
-        else if (isTop && !isLeft) { qTR += act; nTR++; }
-        else if (!isTop && isLeft) { qBL += act; nBL++; }
-        else { qBR += act; nBR++; }
       }
-    }
 
-    embedding[c * 4 + 0] = nTL > 0 ? qTL / nTL : 0;
-    embedding[c * 4 + 1] = nTR > 0 ? qTR / nTR : 0;
-    embedding[c * 4 + 2] = nBL > 0 ? qBL / nBL : 0;
-    embedding[c * 4 + 3] = nBR > 0 ? qBR / nBR : 0;
+      intensityBlock[cellIdx] = sumLum / cnt;
+      orientBlock[cellIdx] = sumRelief / cnt;
+    }
+  }
+
+  let meanInt = 0;
+  let meanOrd = 0;
+  for (let i = 0; i < 16; i++) {
+    meanInt += intensityBlock[i];
+    meanOrd += orientBlock[i];
+  }
+  meanInt /= 16;
+  meanOrd /= 16;
+
+  let normInt = 0;
+  let normOrd = 0;
+  for (let i = 0; i < 16; i++) {
+    intensityBlock[i] -= meanInt;
+    orientBlock[i] -= meanOrd;
+    normInt += intensityBlock[i] * intensityBlock[i];
+    normOrd += orientBlock[i] * orientBlock[i];
+  }
+  normInt = Math.sqrt(normInt);
+  normOrd = Math.sqrt(normOrd);
+
+  for (let i = 0; i < 16; i++) {
+    embedding[i] = normInt > 1e-6 ? (intensityBlock[i] / normInt) * 0.78 : 0;
+    embedding[16 + i] = normOrd > 1e-6 ? (orientBlock[i] / normOrd) * 0.62 : 0;
   }
 
   let norm = 0;
@@ -1753,9 +2084,60 @@ export const computeDeepCnnFeatureEmbedding = (
   return embedding;
 };
 
+const zeroCenterAndNormalizeBlock = (
+  input: Float32Array,
+  length: number,
+  zeroCenter: boolean
+): Float32Array => {
+  const out = new Float32Array(length);
+  if (length <= 0) return out;
+  let mean = 0;
+  if (zeroCenter) {
+    for (let i = 0; i < length; i++) mean += input[i] ?? 0;
+    mean /= length;
+  }
+  let sq = 0;
+  for (let i = 0; i < length; i++) {
+    const v = (input[i] ?? 0) - mean;
+    out[i] = v;
+    sq += v * v;
+  }
+  const norm = Math.sqrt(sq);
+  if (norm > 1e-6) {
+    for (let i = 0; i < length; i++) out[i] /= norm;
+  }
+  return out;
+};
+
+const zeroCenterBinsAcrossSpatialCells = (
+  input: Float32Array,
+  numCells: number,
+  binsPerCell: number
+): Float32Array => {
+  const len = numCells * binsPerCell;
+  const out = new Float32Array(len);
+  for (let b = 0; b < binsPerCell; b++) {
+    let binMean = 0;
+    for (let c = 0; c < numCells; c++) binMean += input[c * binsPerCell + b] ?? 0;
+    binMean /= Math.max(1, numCells);
+    for (let c = 0; c < numCells; c++) {
+      out[c * binsPerCell + b] = (input[c * binsPerCell + b] ?? 0) - binMean;
+    }
+  }
+  let sq = 0;
+  for (let i = 0; i < len; i++) sq += out[i] * out[i];
+  const norm = Math.sqrt(sq);
+  if (norm > 1e-6) {
+    for (let i = 0; i < len; i++) out[i] /= norm;
+  }
+  return out;
+};
+
 /**
  * Builds the unified 128-dimensional hybrid biometric descriptor
- * (16-D PCA + 16-D Fisher LDA + 64-D LBP + 32-D Deep CNN).
+ * (16-D PCA + 16-D Fisher LDA + 64-D CS-LBP + 32-D Deep CNN).
+ * Zero-centers each spatial CS-LBP orientation bin across the 4x4 grid so constant texture baselines
+ * cannot inflate stranger similarity, while balancing block energy across illumination-invariant channels.
  */
 export const buildUnifiedFeatureDescriptor = (
   eigenVector: Float32Array,
@@ -1763,11 +2145,16 @@ export const buildUnifiedFeatureDescriptor = (
   lbpHistogram: Float32Array,
   deepCnnEmbedding: Float32Array
 ): Float32Array => {
+  const eigenNorm = zeroCenterAndNormalizeBlock(eigenVector, 16, false);
+  const fisherNorm = zeroCenterAndNormalizeBlock(fisherVector, 16, false);
+  const lbpNorm = zeroCenterBinsAcrossSpatialCells(lbpHistogram, 16, 4);
+  const cnnNorm = zeroCenterAndNormalizeBlock(deepCnnEmbedding, 32, true);
+
   const descriptor = new Float32Array(128);
-  for (let i = 0; i < 16; i++) descriptor[i] = eigenVector[i] ?? 0;
-  for (let i = 0; i < 16; i++) descriptor[16 + i] = fisherVector[i] ?? 0;
-  for (let i = 0; i < 64; i++) descriptor[32 + i] = lbpHistogram[i] ?? 0;
-  for (let i = 0; i < 32; i++) descriptor[96 + i] = deepCnnEmbedding[i] ?? 0;
+  for (let i = 0; i < 16; i++) descriptor[i] = eigenNorm[i] * 0.26;
+  for (let i = 0; i < 16; i++) descriptor[16 + i] = fisherNorm[i] * 0.09;
+  for (let i = 0; i < 64; i++) descriptor[32 + i] = lbpNorm[i] * 0.03;
+  for (let i = 0; i < 32; i++) descriptor[96 + i] = cnnNorm[i] * 0.62;
 
   let norm = 0;
   for (let i = 0; i < 128; i++) norm += descriptor[i] * descriptor[i];
@@ -1877,6 +2264,224 @@ export const evaluateHybridFaceVerification = (
  * LBP texture profiling, PCA Eigenface subspace projection, Fisherface LDA,
  * Deep CNN feature embedding, and temporal liveness.
  */
+const refineCranialFaceBox = (
+  integral: Float64Array,
+  integralSq: Float64Array,
+  skinMask: Uint8Array,
+  width: number,
+  height: number,
+  initialBox: RoiRect
+): { faceBox: RoiRect; haarCheck: HaarCascadeFaceCheck } => {
+  const initialHaar = detectViolaJonesHaarFaceFeatures(integral, width, height, initialBox, integralSq);
+
+  let bestBox = initialBox;
+  let bestHaar = initialHaar;
+
+  const querySkinDensity = (box: RoiRect): number => {
+    const x0 = Math.max(0, Math.floor(box.x + box.w * 0.18));
+    const y0 = Math.max(0, Math.floor(box.y + box.h * 0.16));
+    const x1 = Math.min(width - 1, Math.floor(box.x + box.w * 0.82));
+    const y1 = Math.min(height - 1, Math.floor(box.y + box.h * 0.84));
+    let skinHits = 0;
+    let totalSamples = 0;
+    for (let py = y0; py <= y1; py += 3) {
+      const rowOff = py * width;
+      for (let px = x0; px <= x1; px += 3) {
+        if (skinMask[rowOff + px] > 0) skinHits++;
+        totalSamples++;
+      }
+    }
+    return totalSamples > 0 ? skinHits / totalSamples : 0;
+  };
+
+  const querySubSkinDensity = (box: RoiRect, rx0: number, ry0: number, rx1: number, ry1: number): number => {
+    const x0 = Math.max(0, Math.floor(box.x + box.w * rx0));
+    const y0 = Math.max(0, Math.floor(box.y + box.h * ry0));
+    const x1 = Math.min(width - 1, Math.floor(box.x + box.w * rx1));
+    const y1 = Math.min(height - 1, Math.floor(box.y + box.h * ry1));
+    let skinHits = 0;
+    let totalSamples = 0;
+    for (let py = y0; py <= y1; py += 2) {
+      const rowOff = py * width;
+      for (let px = x0; px <= x1; px += 2) {
+        if (skinMask[rowOff + px] > 0) skinHits++;
+        totalSamples++;
+      }
+    }
+    return totalSamples > 0 ? skinHits / totalSamples : 0;
+  };
+
+  const scoreCandidate = (box: RoiRect, haar: HaarCascadeFaceCheck, shiftX = 0): number => {
+    const skinDensity = querySkinDensity(box);
+    if (skinDensity < 0.18) return -1;
+    const leftCheekSkin = querySubSkinDensity(box, 0.14, 0.42, 0.42, 0.72);
+    const rightCheekSkin = querySubSkinDensity(box, 0.58, 0.42, 0.86, 0.72);
+    const bilateralCheekSkin = Math.min(leftCheekSkin, rightCheekSkin);
+    const aspect = box.w / Math.max(1, box.h);
+    const aspectPenalty = Math.abs(aspect - 0.78) * 0.9;
+    const bloatPenalty = box.h > height * 0.88 ? ((box.h / height) - 0.88) * 1.8 : 0;
+    const driftPenalty = Math.abs(shiftX) * 1.5;
+    const gateBonus =
+      (haar.ocularDipolePassed ? 0.5 : 0) +
+      (haar.bridgeTriplePassed ? 0.45 : 0) +
+      (haar.mouthDipolePassed ? 0.25 : 0);
+    return (
+      haar.score * 2.2 +
+      gateBonus +
+      skinDensity * 0.7 +
+      bilateralCheekSkin * 0.95 -
+      aspectPenalty -
+      bloatPenalty -
+      driftPenalty
+    );
+  };
+
+  const isChestStretched = initialBox.h > height * 0.88;
+  let bestObjective = isChestStretched ? scoreCandidate(initialBox, initialHaar) - 0.3 : scoreCandidate(initialBox, initialHaar);
+  const cx = initialBox.x + initialBox.w * 0.5;
+  const initCy = initialBox.y + initialBox.h * 0.5;
+  const cy = isChestStretched ? initCy * 0.55 + height * 0.44 * 0.45 : initCy;
+
+  // Sweep portrait head scales regardless of wide shoulder/background skin ellipses so real webcam heads snap tightly
+  const refH = isChestStretched ? height * 0.82 : Math.max(initialBox.h, height * 0.56);
+  const hScales = [0.64, 0.78, 0.94];
+  const xShifts = [-0.08, 0, 0.08];
+  const yShifts = [-0.10, -0.02, 0.06];
+
+  for (const hs of hScales) {
+    const candH = Math.max(44, Math.min(height * 0.94, refH * hs));
+    const candW = Math.max(36, Math.min(width * 0.72, candH * 0.78));
+    for (const xs of xShifts) {
+      for (const ys of yShifts) {
+        const candX = Math.max(0, Math.min(width - candW, cx + width * xs - candW * 0.5));
+        const candY = Math.max(0, Math.min(height - candH, cy + height * ys - candH * 0.5));
+        const candBox: RoiRect = { x: candX, y: candY, w: candW, h: candH };
+        const candHaar = detectViolaJonesHaarFaceFeatures(integral, width, height, candBox, integralSq);
+        if (!candHaar.ocularDipolePassed && !candHaar.bridgeTriplePassed) continue;
+        const obj = scoreCandidate(candBox, candHaar, xs);
+        if (obj > bestObjective + 0.05) {
+          bestObjective = obj;
+          bestBox = candBox;
+          bestHaar = candHaar;
+        }
+      }
+    }
+  }
+
+  return { faceBox: bestBox, haarCheck: bestHaar };
+};
+
+const extractAlignedCanonicalFacePatch = (
+  gray: Float32Array,
+  width: number,
+  height: number,
+  faceBox: RoiRect,
+  landmarks: FacialLandmarks
+): { patch: Float32Array; size: number; patchBox: RoiRect } => {
+  const size = 48;
+  const rawPatch = new Float32Array(size * size);
+
+  const iod = Math.hypot(
+    landmarks.rightEye.x - landmarks.leftEye.x,
+    landmarks.rightEye.y - landmarks.leftEye.y
+  );
+  const eyeDy = landmarks.rightEye.y - landmarks.leftEye.y;
+  const eyeDx = landmarks.rightEye.x - landmarks.leftEye.x;
+  const eyeMidX = (landmarks.leftEye.x + landmarks.rightEye.x) * 0.5;
+  const eyeMidY = (landmarks.leftEye.y + landmarks.rightEye.y) * 0.5;
+
+  const hasReliableEyes =
+    landmarks.isValidLandmarks &&
+    iod >= faceBox.w * 0.22 &&
+    iod <= faceBox.w * 0.72 &&
+    Math.abs(eyeDy) <= iod * 0.36;
+
+  const angle = hasReliableEyes
+    ? Math.max(-0.14, Math.min(0.14, Math.atan2(eyeDy, Math.max(1, eyeDx))))
+    : 0;
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+
+  // Lock canonical patch scale and anchor to anthropometric interocular distance (iod) so chest/neck box bloat cannot warp face proportions
+  const iodSpanW = iod / 0.36;
+  const clampedSpanW = Math.max(faceBox.w * 0.65, Math.min(faceBox.w * 1.15, iodSpanW));
+  const spanW = hasReliableEyes ? clampedSpanW * 0.82 + faceBox.w * 0.84 * 0.18 : faceBox.w * 0.84;
+  const mouthSpanRaw = hasReliableEyes && landmarks.mouthCenter.y > eyeMidY
+    ? (landmarks.mouthCenter.y - eyeMidY) / 0.39
+    : spanW * 1.18;
+  const clampedMouthSpan = Math.max(spanW * 1.08, Math.min(spanW * 1.36, mouthSpanRaw));
+  const spanH = hasReliableEyes ? spanW * 1.18 * 0.68 + clampedMouthSpan * 0.32 : faceBox.h * 0.84;
+  const boxCenterX = faceBox.x + faceBox.w * 0.5;
+  const anchorX = hasReliableEyes ? eyeMidX * 0.85 + boxCenterX * 0.15 : boxCenterX;
+  const anchorY = hasReliableEyes ? eyeMidY : faceBox.y + faceBox.h * 0.34;
+  const targetEyeNormY = 0.34;
+
+  const insideMask = new Uint8Array(size * size);
+  let rawSum = 0;
+  let rawSq = 0;
+  let count = 0;
+
+  for (let py = 0; py < size; py++) {
+    const ny = (py + 0.5) / size;
+    const dyNorm = (ny - 0.52) / 0.46;
+    const localY = (ny - targetEyeNormY) * spanH;
+
+    for (let px = 0; px < size; px++) {
+      const nx = (px + 0.5) / size;
+      const dxNorm = (nx - 0.5) / 0.43;
+      const ellipseDistSq = dxNorm * dxNorm + dyNorm * dyNorm;
+      const idx = py * size + px;
+
+      if (ellipseDistSq <= 1.0) {
+        const localX = (nx - 0.5) * spanW;
+        const sx = anchorX + localX * cosA - localY * sinA;
+        const sy = anchorY + localX * sinA + localY * cosA;
+
+        const ix = Math.max(0, Math.min(width - 1.001, sx));
+        const iy = Math.max(0, Math.min(height - 1.001, sy));
+        const x0 = Math.floor(ix);
+        const y0 = Math.floor(iy);
+        const x1 = Math.min(width - 1, x0 + 1);
+        const y1 = Math.min(height - 1, y0 + 1);
+        const fx = ix - x0;
+        const fy = iy - y0;
+
+        const v00 = gray[y0 * width + x0];
+        const v10 = gray[y0 * width + x1];
+        const v01 = gray[y1 * width + x0];
+        const v11 = gray[y1 * width + x1];
+        const sample =
+          (v00 * (1 - fx) + v10 * fx) * (1 - fy) +
+          (v01 * (1 - fx) + v11 * fx) * fy;
+
+        rawPatch[idx] = sample;
+        insideMask[idx] = 1;
+        rawSum += sample;
+        rawSq += sample * sample;
+        count++;
+      } else {
+        rawPatch[idx] = 128;
+      }
+    }
+  }
+
+  const globalMean = count > 0 ? rawSum / count : 128;
+  const globalStd = Math.sqrt(Math.max(1, (count > 0 ? rawSq / count : 0) - globalMean * globalMean));
+
+  // Preserve symmetric facial shading without linear plane rotation while stretch-normalizing contrast inside ellipse
+  const patch = new Float32Array(size * size);
+  for (let i = 0; i < size * size; i++) {
+    if (insideMask[i] > 0) {
+      const norm = 128 + ((rawPatch[i] - globalMean) / globalStd) * 45;
+      patch[i] = Math.max(0, Math.min(255, norm));
+    } else {
+      patch[i] = 128;
+    }
+  }
+
+  return { patch, size, patchBox: { x: 0, y: 0, w: size, h: size } };
+};
+
 export const trackSkinFace = (
   rgba: Uint8ClampedArray,
   width: number,
@@ -1889,79 +2494,97 @@ export const trackSkinFace = (
   const ycbcr = rgbaToYCbCr(rgba, width, height);
 
   // 2. Skin segmentation and morphological filtering
-  const skinMask = segmentSkinMask(ycbcr.cb, ycbcr.cr, width, height);
+  const skinMask = segmentSkinMask(ycbcr.cb, ycbcr.cr, width, height, ycbcr.y);
 
-  // 3. Compute spatial moments within the cranial zone, isolating the head from raised arms and shoulders
+  // 3. Compute spatial moments within cranial corridor (clipped above lower chest/torso)
   const roi: RoiRect = oval && oval.rx > 0 && oval.ry > 0
     ? {
-        x: Math.max(0, oval.cx - oval.rx * 1.35),
-        y: Math.max(0, oval.cy - oval.ry * 1.35),
-        w: Math.min(width, oval.rx * 2.7),
-        h: Math.min(height, oval.ry * 2.7)
+        x: Math.max(0, oval.cx - oval.rx * 1.25),
+        y: Math.max(0, oval.cy - oval.ry * 1.25),
+        w: Math.min(width, oval.rx * 2.5),
+        h: Math.min(height * 0.84, oval.ry * 2.15)
       }
     : {
         x: Math.max(0, width * 0.15),
         y: Math.max(0, height * 0.05),
         w: width * 0.70,
-        h: height * 0.85
+        h: height * 0.78
       };
 
   const moments = computeSpatialMoments(skinMask, width, height, roi);
 
-  // Orientation-aware face box: preserve horizontal orientation for flat blobs so aspect ratio penalty in SVM rejects them
+  // Orientation-aware initial face box: preserve horizontal orientation for flat blobs so aspect ratio penalty in SVM rejects them
   const isHorizontalBlob = moments.minorAxis > 0 && moments.majorAxis > moments.minorAxis * 1.3 && Math.abs(moments.theta) < 0.45;
   const rawW = isHorizontalBlob ? moments.majorAxis : moments.minorAxis;
   const rawH = isHorizontalBlob ? moments.minorAxis : moments.majorAxis;
 
-  const defaultBoxW = oval ? oval.rx * 1.8 : width * 0.45;
-  const defaultBoxH = oval ? oval.ry * 1.8 : height * 0.55;
-  const faceBoxW = Math.max(30, Math.min(width, rawW > 0 ? rawW : defaultBoxW));
-  const faceBoxH = Math.max(40, Math.min(height, rawH > 0 ? rawH : defaultBoxH));
-  const faceBox: RoiRect = {
-    x: Math.max(0, Math.min(width - faceBoxW, moments.cx - faceBoxW * 0.5)),
-    y: Math.max(0, Math.min(height - faceBoxH, moments.cy - faceBoxH * 0.5)),
-    w: faceBoxW,
-    h: faceBoxH
+  const defaultBoxW = oval ? oval.rx * 1.7 : width * 0.45;
+  const defaultBoxH = oval ? oval.ry * 1.7 : height * 0.55;
+  const initBoxW = Math.max(30, Math.min(width, rawW > 0 ? rawW : defaultBoxW));
+  const initBoxH = Math.max(40, Math.min(height, rawH > 0 ? rawH : defaultBoxH));
+  const initialBox: RoiRect = {
+    x: Math.max(0, Math.min(width - initBoxW, moments.cx - initBoxW * 0.5)),
+    y: Math.max(0, Math.min(height - initBoxH, moments.cy - initBoxH * 0.52)),
+    w: initBoxW,
+    h: initBoxH
   };
 
-  // 4. Viola-Jones Dual-Integral Haar Cascade Features
+  // 4. Viola-Jones Dual-Integral Haar Cascade Features + Cranial Face Box Refinement
   const integral = computeIntegralImage(ycbcr.y, width, height);
   const integralSq = computeSecondOrderIntegralImage(ycbcr.y, width, height);
-  const haarCheck = detectViolaJonesHaarFaceFeatures(integral, width, height, faceBox, integralSq);
+  const { faceBox, haarCheck } = refineCranialFaceBox(
+    integral,
+    integralSq,
+    skinMask,
+    width,
+    height,
+    initialBox
+  );
 
   // 5. Temporal liveness calculation with Lucas-Kanade directional optical flow
   const liveness = previousGray
     ? computeInterframeMotionEnergy(ycbcr.y, previousGray, width, height, oval)
     : { energy: 0, isLiveMotion: false, vx: 0, vy: 0 };
 
-  // 6. Full-Viewport Profile Silhouette & 3D Head Pose
-  const initialMetrics = computeFullFrameProfileMetrics(skinMask, width, height, moments);
+  // 6. Cranial Profile Silhouette & 3D Head Pose
+  const boxOvalMoments: SpatialMoments = {
+    ...moments,
+    cx: faceBox.x + faceBox.w * 0.5,
+    cy: faceBox.y + faceBox.h * 0.5,
+    majorAxis: faceBox.h,
+    minorAxis: faceBox.w
+  };
+  const initialMetrics = computeFullFrameProfileMetrics(skinMask, width, height, boxOvalMoments);
   const landmarks = extractGeometricFacialLandmarks(ycbcr.y, width, height, faceBox, skinMask, initialMetrics);
-  const refinedMetrics = computeFullFrameProfileMetrics(skinMask, width, height, moments, landmarks);
+  const refinedMetrics = computeFullFrameProfileMetrics(skinMask, width, height, boxOvalMoments, landmarks);
   const geomPose = calculateGeometricHeadPose(landmarks, moments.cx, moments.cy, faceBox, centerBaseline, refinedMetrics, liveness.vx ?? 0);
 
   // Eye Blink Analysis
   const blink = detectEyeBlink(ycbcr.y, landmarks, width, height);
 
-  // 7. Holistic & Texture Profiling (LBP + PCA + Fisher LDA + Deep CNN)
-  const lbpHistogram = computeLbpTextureHistogram(ycbcr.y, width, height, faceBox);
-  const eigenVector = computeHolisticEigenfaceProjection(ycbcr.y, width, height, faceBox);
-  const fisherVector = computeFisherfaceLinearDiscriminant(ycbcr.y, width, height, faceBox);
-  const deepCnnEmbedding = computeDeepCnnFeatureEmbedding(ycbcr.y, width, height, faceBox);
+  // 7. Landmark-Aligned Inner-Ellipse Holistic & Texture Profiling (LBP + PCA + Fisher LDA + Deep CNN)
+  const aligned = extractAlignedCanonicalFacePatch(ycbcr.y, width, height, faceBox, landmarks);
+  const alignedInnerBox: RoiRect = { x: 10, y: 10, w: 28, h: 28 };
+  const lbpHistogram = computeLbpTextureHistogram(aligned.patch, aligned.size, aligned.size, alignedInnerBox);
+  const eigenVector = computeHolisticEigenfaceProjection(aligned.patch, aligned.size, aligned.size, alignedInnerBox);
+  const fisherVector = computeFisherfaceLinearDiscriminant(aligned.patch, aligned.size, aligned.size, alignedInnerBox);
+  const deepCnnEmbedding = computeDeepCnnFeatureEmbedding(aligned.patch, aligned.size, aligned.size, alignedInnerBox);
   const featureDescriptor = buildUnifiedFeatureDescriptor(eigenVector, fisherVector, lbpHistogram, deepCnnEmbedding);
 
-  const { isValidHumanFace, svmScore } = evaluateHybridFaceVerification(haarCheck, moments, lbpHistogram, faceBox, width, height);
+  const rawLbpForGate = computeLbpTextureHistogram(ycbcr.y, width, height, faceBox);
+  const { isValidHumanFace, svmScore } = evaluateHybridFaceVerification(haarCheck, moments, rawLbpForGate, faceBox, width, height);
 
-  // Dynamic Profile Tolerance: if head is turned left or right (via profileRatio or deltaYaw) with sufficient skin mass,
-  // permit single ocular or bridge dipole to pass
+  // Dynamic Profile Tolerance: genuine head turns beyond 12° must still pass Haar structure (>= 0.45) & texture
   const hasProfileTurn =
-    Math.abs(geomPose.deltaYaw) >= 8 ||
-    (refinedMetrics.profileRatio !== undefined && (refinedMetrics.profileRatio < 0.88 || refinedMetrics.profileRatio > 1.15)) ||
-    Math.abs(refinedMetrics.bilateralSkinAsymmetry) >= 0.14;
+    Math.abs(geomPose.deltaYaw) >= 12 ||
+    (refinedMetrics.profileRatio !== undefined && (refinedMetrics.profileRatio < 0.80 || refinedMetrics.profileRatio > 1.24)) ||
+    Math.abs(refinedMetrics.bilateralSkinAsymmetry) >= 0.18;
 
   const isProfileValidFace =
     hasProfileTurn &&
-    (haarCheck.ocularDipolePassed || haarCheck.bridgeTriplePassed || haarCheck.score >= 0.35) &&
+    haarCheck.score >= 0.45 &&
+    (haarCheck.ocularDipolePassed || haarCheck.bridgeTriplePassed) &&
+    svmScore > -0.35 &&
     (moments.m00 / Math.max(1, width * height)) >= 0.020;
 
   const finalIsValidFace = isValidHumanFace || isProfileValidFace;

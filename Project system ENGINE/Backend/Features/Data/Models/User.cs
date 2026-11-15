@@ -204,6 +204,17 @@ public class User
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    // --- AI Verification Tokens & Auto-Approval ---
+    [MaxLength(64)]
+    public string? IdVerificationTokenId { get; set; }
+
+    [MaxLength(64)]
+    public string? FacialVerificationTokenId { get; set; }
+
+    public bool AutoApprovedByAi { get; set; } = false;
+
+    public DateTime? AutoApprovedAtUtc { get; set; }
+
     // --- Navigation collections ---
     public ICollection<Session> Sessions { get; set; } = new List<Session>();
     public ICollection<Report> Reports { get; set; } = new List<Report>();

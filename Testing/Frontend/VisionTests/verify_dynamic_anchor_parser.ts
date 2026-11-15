@@ -3,7 +3,7 @@
 // Guarantees zero hardcoded names, and verifies parsing of real-world compound Filipino names,
 // license number formatting, address normalization, and physical demographics.
 
-import { parseDynamicIdAnchors } from '../dynamicAnchorParser';
+import { parseDynamicIdAnchors } from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/dynamicAnchorParser';
 
 const runTests = () => {
   console.log('--- TEST 1: User Uploaded Evidence Card (SALIWAN, ART LEVIN TORILLA) ---');

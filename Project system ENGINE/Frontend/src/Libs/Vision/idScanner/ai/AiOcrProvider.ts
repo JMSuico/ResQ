@@ -2,6 +2,61 @@
 // Responsibility: Type definitions, interfaces, and shared utilities for the pluggable multi-provider AI standby chain.
 // Invariant: Strict TypeScript with ZERO 'any'. 100% Universal Lambda syntax (=>).
 
+import type { OcrErrorCode } from './ocrFieldUtils';
+
+export type { OcrErrorCode } from './ocrFieldUtils';
+
+/**
+ * Supported identification field keys across Philippine Government ID extraction strategies.
+ */
+export type IdOcrFieldKey =
+  | 'FullName'
+  | 'FirstName'
+  | 'MiddleName'
+  | 'Surname'
+  | 'LastName'
+  | 'Suffix'
+  | 'IdNumber'
+  | 'LicenseNumber'
+  | 'EmployeeId'
+  | 'DateOfBirth'
+  | 'Age'
+  | 'ExpirationDate'
+  | 'Sex'
+  | 'Barangay'
+  | 'Street'
+  | 'CityOrMunicipality'
+  | 'Province'
+  | 'Address'
+  | 'Weight'
+  | 'Height'
+  | 'PhoneNumber'
+  | 'Rank'
+  | 'Nationality'
+  | 'fullname'
+  | 'firstName'
+  | 'middleName'
+  | 'lastName'
+  | 'suffix'
+  | 'dob'
+  | 'dateOfBirth'
+  | 'age'
+  | 'sex'
+  | 'idNumber'
+  | 'licenseNumber'
+  | 'employeeId'
+  | 'expirationDate'
+  | 'barangay'
+  | 'streetPurok'
+  | 'cityOrMunicipality'
+  | 'province'
+  | 'address'
+  | 'weight'
+  | 'height'
+  | 'phoneNumber'
+  | 'rankOrTitle'
+  | 'nationality';
+
 /**
  * Structured field extracted from an identification card with associated confidence telemetry.
  */
@@ -26,6 +81,10 @@ export interface IdOcrResult {
   readonly providerUsed: string;
   readonly executionTimeMs: number;
   readonly consensusScore?: number;
+  readonly success?: boolean;
+  readonly errorCode?: OcrErrorCode;
+  readonly errorMessage?: string;
+  readonly warnings?: string[];
 }
 
 /**
@@ -38,6 +97,11 @@ export interface MultiProviderConfig {
 }
 
 /**
+ * Supported AI OCR Provider identifiers in the multi-provider strategy chain.
+ */
+export type AiProviderId = 'claude' | 'gemini' | 'openai' | 'groq' | 'ollama';
+
+/**
  * Core interface implemented by all AI standby and OCR providers.
  * All method declarations adhere to Universal Lambda syntax (=>).
  */
@@ -48,10 +112,18 @@ export interface AiOcrProvider {
 }
 
 /**
- * Default multi-provider configuration favoring Gemini high-speed flash, Azure Doc Intelligence, and OpenAI GPT-4o.
+ * Strategy pattern interface for pluggable AI Vision OCR providers.
+ */
+export interface IAiOcrProvider extends AiOcrProvider {
+  readonly id: AiProviderId;
+  readonly displayName: string;
+}
+
+/**
+ * Default multi-provider configuration favoring Claude Sonnet 4 Vision first, followed by Gemini, OpenAI, Groq, and Ollama.
  */
 export const DEFAULT_MULTI_PROVIDER_CONFIG: MultiProviderConfig = {
-  chain: ['gemini', 'azure', 'openai'],
+  chain: ['claude', 'gemini', 'openai', 'groq', 'ollama'],
   consensusMode: false,
   timeoutMs: 15_000
 };

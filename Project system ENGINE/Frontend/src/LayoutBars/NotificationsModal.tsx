@@ -214,7 +214,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
             <button
               type="button"
               onClick={handleMarkAllRead}
-              className="flex items-center gap-1 text-[11px] font-mono font-medium text-emerald-400 hover:text-emerald-300 transition-colors px-2 py-1 rounded hover:bg-emerald-950/40"
+              className="flex items-center gap-1 text-[11px] font-mono font-medium text-rose-300 hover:text-rose-200 transition-colors px-2 py-1 rounded hover:bg-rose-950/40"
               title="Mark all notifications as read"
             >
               <CheckCheck className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
@@ -292,7 +292,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
                       {displayTitle}
                     </p>
                     {isRead ? (
-                      <Check className="w-3 h-3 text-emerald-400 flex-shrink-0" aria-label="Read" />
+                      <Check className="w-3 h-3 text-[#ff5c74] flex-shrink-0" aria-label="Read" />
                     ) : (
                       <span className="w-2 h-2 rounded-full bg-rose-500 flex-shrink-0 animate-pulse" aria-hidden="true" />
                     )}

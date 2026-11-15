@@ -1,9 +1,10 @@
 // [Layer: Frontend/Libs/Vision/idScanner/ai]
-// Responsibility: Provider registry and fallback/consensus orchestrator managing multi-cloud AI vision adapters.
-// Invariant: Strict TypeScript with ZERO 'any'. 100% Universal Lambda syntax (=>).
+// Responsibility: Provider registry and fallback/consensus orchestrator managing multi-cloud AI vision adapters with strict visible-only stop guards.
+// Invariant: Strict TypeScript with ZERO 'any', ZERO emojis, and 100% Universal Lambda syntax (=>).
 
 import type {
   AiOcrProvider,
+  AiProviderId,
   IdOcrResult,
   MultiProviderConfig,
   ExtractedFieldsMap,
@@ -15,28 +16,91 @@ import {
   normalizeFieldValue,
   calculateConsensusScore
 } from './AiOcrProvider';
+import {
+  type OcrErrorCode,
+  buildMissingFrontImageWarning,
+  isBannedDummyOcrValue,
+  isPlaceholderOcrValue
+} from './ocrFieldUtils';
 import { NullAiProvider } from './NullAiProvider';
 import { BackendProxyProvider } from './BackendProxyProvider';
+import { ClaudeSonnetOcrProvider } from './ClaudeSonnetOcrProvider';
+
+/**
+ * Input options accepted by executeOcrWithDiagnostics.
+ */
+export interface OcrDiagnosticExecutionInput {
+  readonly frontImageDataUrl?: string | null;
+  readonly backImageDataUrl?: string | null;
+  readonly imageDataUrl?: string | null;
+  readonly hintType?: string;
+  readonly idType?: string;
+}
+
+const isTerminalImageValidationFailure = (errorCode?: OcrErrorCode | string): boolean => {
+  if (!errorCode) {
+    return false;
+  }
+  const normalized = errorCode.trim().toUpperCase();
+  return (
+    normalized === 'MISSING_FRONT_IMAGE' ||
+    normalized === 'UNREADABLE_OR_BLANK_IMAGE'
+  );
+};
+
+const filterValidExtractedFields = (fields: ExtractedFieldsMap): ExtractedFieldsMap => {
+  const cleanFields: ExtractedFieldsMap = {};
+  for (const [key, field] of Object.entries(fields)) {
+    if (!field || typeof field.value !== 'string') {
+      continue;
+    }
+    const trimmed = field.value.trim();
+    if (
+      trimmed.length > 0 &&
+      !isPlaceholderOcrValue(trimmed) &&
+      !isBannedDummyOcrValue(trimmed)
+    ) {
+      cleanFields[key] = {
+        value: trimmed,
+        confidence: field.confidence
+      };
+    }
+  }
+  return cleanFields;
+};
 
 /**
  * Registry and coordinator managing multi-provider AI standby fallback chains and consensus extraction.
  */
 export class ProviderRegistry {
   private readonly providers: Map<string, AiOcrProvider> = new Map();
+  public readonly defaultOrder: readonly AiProviderId[] = [
+    'claude',
+    'gemini',
+    'openai',
+    'groq',
+    'ollama'
+  ];
   private config: MultiProviderConfig;
 
   public constructor(initialConfig: MultiProviderConfig = DEFAULT_MULTI_PROVIDER_CONFIG) {
-    this.config = { ...initialConfig };
+    this.config = {
+      ...initialConfig,
+      chain: initialConfig.chain.length > 0 ? [...initialConfig.chain] : [...this.defaultOrder]
+    };
     this.initializeDefaultProviders();
   }
 
   /**
-   * Initializes default provider instances for Gemini, Azure, OpenAI, and Null standby.
+   * Initializes default provider instances for Claude Sonnet, Gemini, OpenAI, Groq, Ollama, Azure, and Null standby.
    */
   private readonly initializeDefaultProviders = (): void => {
+    this.registerProvider(new ClaudeSonnetOcrProvider());
     this.registerProvider(new BackendProxyProvider({ targetProvider: 'gemini' }));
-    this.registerProvider(new BackendProxyProvider({ targetProvider: 'azure' }));
     this.registerProvider(new BackendProxyProvider({ targetProvider: 'openai' }));
+    this.registerProvider(new BackendProxyProvider({ targetProvider: 'groq' }));
+    this.registerProvider(new BackendProxyProvider({ targetProvider: 'ollama' }));
+    this.registerProvider(new BackendProxyProvider({ targetProvider: 'azure' }));
     this.registerProvider(new NullAiProvider());
   };
 
@@ -89,12 +153,40 @@ export class ProviderRegistry {
   };
 
   /**
-   * Sequentially invokes configured providers in chain order, advancing upon errors or null outputs.
+   * Executes OCR across the configured provider chain and returns a structured IdOcrResult
+   * containing diagnostic error codes and warnings when extraction cannot proceed.
    */
-  public readonly executeSequentialFallback = async (
-    imageDataUrl: string,
+  public readonly executeOcrWithDiagnostics = async (
+    input: OcrDiagnosticExecutionInput | string,
     hintType?: string
-  ): Promise<IdOcrResult | null> => {
+  ): Promise<IdOcrResult> => {
+    const resolvedFront =
+      typeof input === 'string'
+        ? input.trim()
+        : (input.frontImageDataUrl ?? input.imageDataUrl ?? '').trim();
+    const resolvedHint =
+      typeof input === 'string'
+        ? hintType
+        : input.idType ?? input.hintType ?? hintType;
+    const normalizedType = (resolvedHint || 'UNKNOWN').toUpperCase();
+
+    if (!resolvedFront) {
+      const warning = buildMissingFrontImageWarning(resolvedHint);
+      return {
+        type: normalizedType,
+        fields: {},
+        rawText: '',
+        providerUsed: 'none',
+        executionTimeMs: 0,
+        success: false,
+        errorCode: 'MISSING_FRONT_IMAGE',
+        errorMessage: warning,
+        warnings: [warning]
+      };
+    }
+
+    let lastDiagnosticResult: IdOcrResult | null = null;
+
     for (const providerName of this.config.chain) {
       const provider = this.getProvider(providerName);
       if (!provider) {
@@ -107,9 +199,108 @@ export class ProviderRegistry {
           continue;
         }
 
-        const result = await provider.extract(imageDataUrl, hintType);
-        if (result && Object.keys(result.fields).length > 0) {
-          return result;
+        const result = await provider.extract(resolvedFront, resolvedHint);
+        if (!result) {
+          continue;
+        }
+
+        if (isTerminalImageValidationFailure(result.errorCode)) {
+          return {
+            ...result,
+            fields: {},
+            success: false
+          };
+        }
+
+        const cleanFields = filterValidExtractedFields(result.fields);
+        if (result.success !== false && Object.keys(cleanFields).length > 0) {
+          return {
+            ...result,
+            fields: cleanFields,
+            success: true
+          };
+        }
+
+        lastDiagnosticResult = result;
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        lastDiagnosticResult = {
+          type: normalizedType,
+          fields: {},
+          rawText: '',
+          providerUsed: providerName,
+          executionTimeMs: 0,
+          success: false,
+          errorCode: 'PROVIDER_UNAVAILABLE',
+          errorMessage: errorMsg,
+          warnings: [errorMsg]
+        };
+      }
+    }
+
+    if (lastDiagnosticResult) {
+      return {
+        ...lastDiagnosticResult,
+        fields: {},
+        success: false
+      };
+    }
+
+    const fallbackMsg = 'No configured OCR provider could extract readable identity fields.';
+    return {
+      type: normalizedType,
+      fields: {},
+      rawText: '',
+      providerUsed: 'none',
+      executionTimeMs: 0,
+      success: false,
+      errorCode: 'PROVIDER_UNAVAILABLE',
+      errorMessage: fallbackMsg,
+      warnings: [fallbackMsg]
+    };
+  };
+
+  /**
+   * Sequentially invokes configured providers in chain order, advancing upon provider errors
+   * while halting immediately on MISSING_FRONT_IMAGE or UNREADABLE_OR_BLANK_IMAGE.
+   */
+  public readonly executeSequentialFallback = async (
+    imageDataUrl: string,
+    hintType?: string
+  ): Promise<IdOcrResult | null> => {
+    const cleanImage = (imageDataUrl ?? '').trim();
+    if (!cleanImage) {
+      return null;
+    }
+
+    for (const providerName of this.config.chain) {
+      const provider = this.getProvider(providerName);
+      if (!provider) {
+        continue;
+      }
+
+      try {
+        const isConfigured = await provider.isConfigured();
+        if (!isConfigured) {
+          continue;
+        }
+
+        const result = await provider.extract(cleanImage, hintType);
+        if (!result) {
+          continue;
+        }
+
+        if (isTerminalImageValidationFailure(result.errorCode)) {
+          return null;
+        }
+
+        const cleanFields = filterValidExtractedFields(result.fields);
+        if (result.success !== false && Object.keys(cleanFields).length > 0) {
+          return {
+            ...result,
+            fields: cleanFields,
+            success: true
+          };
         }
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
@@ -129,6 +320,11 @@ export class ProviderRegistry {
     imageDataUrl: string,
     hintType?: string
   ): Promise<IdOcrResult | null> => {
+    const cleanImage = (imageDataUrl ?? '').trim();
+    if (!cleanImage) {
+      return null;
+    }
+
     const startTime = Date.now();
     const candidateProviders: AiOcrProvider[] = [];
 
@@ -150,15 +346,24 @@ export class ProviderRegistry {
     }
 
     const extractionPromises = candidateProviders.map(
-      (p: AiOcrProvider): Promise<IdOcrResult | null> => p.extract(imageDataUrl, hintType)
+      (p: AiOcrProvider): Promise<IdOcrResult | null> => p.extract(cleanImage, hintType)
     );
 
     const settledResults = await Promise.allSettled(extractionPromises);
     const successfulResults: IdOcrResult[] = [];
 
     for (const outcome of settledResults) {
-      if (outcome.status === 'fulfilled' && outcome.value && Object.keys(outcome.value.fields).length > 0) {
-        successfulResults.push(outcome.value);
+      if (outcome.status === 'fulfilled' && outcome.value) {
+        if (isTerminalImageValidationFailure(outcome.value.errorCode)) {
+          continue;
+        }
+        const cleanFields = filterValidExtractedFields(outcome.value.fields);
+        if (outcome.value.success !== false && Object.keys(cleanFields).length > 0) {
+          successfulResults.push({
+            ...outcome.value,
+            fields: cleanFields
+          });
+        }
       }
     }
 
@@ -170,7 +375,6 @@ export class ProviderRegistry {
       return successfulResults[0];
     }
 
-    // Synthesize field consensus
     const mergedFields: ExtractedFieldsMap = {};
     const allFieldKeys = Array.from(
       new Set([
@@ -197,7 +401,6 @@ export class ProviderRegistry {
         continue;
       }
 
-      // Check if values agree under normalization
       const firstNormalized = normalizeFieldValue(candidates[0].value);
       const allAgree = candidates.every(
         (c: ExtractedField): boolean => normalizeFieldValue(c.value) === firstNormalized
@@ -207,14 +410,12 @@ export class ProviderRegistry {
         const avgConfidence =
           candidates.reduce((acc: number, c: ExtractedField): number => acc + c.confidence, 0) /
           candidates.length;
-        // Boost confidence by 0.1 for multi-provider agreement, capped at 1.0
         const consensusConfidence = Math.min(1.0, Number((avgConfidence + 0.1).toFixed(3)));
         mergedFields[key] = {
           value: candidates[0].value,
           confidence: consensusConfidence
         };
       } else {
-        // Conflicting fields: pick candidate with highest confidence score
         let bestCandidate = candidates[0];
         for (let i = 1; i < candidates.length; i++) {
           if (candidates[i].confidence > bestCandidate.confidence) {
@@ -237,7 +438,8 @@ export class ProviderRegistry {
       rawText: combinedRawText,
       providerUsed: `consensus(${contributingProviders.join('+')})`,
       executionTimeMs: Date.now() - startTime,
-      consensusScore
+      consensusScore,
+      success: true
     };
   };
 }
@@ -246,3 +448,5 @@ export class ProviderRegistry {
  * Singleton instance of the ProviderRegistry.
  */
 export const providerRegistry = new ProviderRegistry();
+
+export * from './ClaudeSonnetOcrProvider';

@@ -19,10 +19,16 @@ public class VerificationProviderResolver(
     private readonly VerificationProviderOptions _options = options?.Value ?? new VerificationProviderOptions();
 
     private static readonly IReadOnlyList<string> IdentityProviderKeys =
-        ["Manual", "AutomatedOcr", "GovernmentApi", "ThirdPartyApi"];
+        ["Manual", "ClaudeSonnet", "AutomatedOcr", "GovernmentApi", "ThirdPartyApi"];
 
     private static readonly IReadOnlyList<string> FacialProviderKeys =
-        ["Manual", "InternalBiometric", "ExternalFacialApi"];
+        ["Manual", "ClaudeVision", "InternalBiometric", "ExternalFacialApi"];
+
+    public string GetActiveIdentityProviderMode() =>
+        string.IsNullOrWhiteSpace(_options.IdentityProvider) ? "Manual" : _options.IdentityProvider.Trim();
+
+    public string GetActiveFacialProviderMode() =>
+        string.IsNullOrWhiteSpace(_options.FacialProvider) ? "Manual" : _options.FacialProvider.Trim();
 
     public IReadOnlyList<string> GetAvailableIdentityProviders() => IdentityProviderKeys;
 
@@ -33,6 +39,7 @@ public class VerificationProviderResolver(
         string key = (providerKey ?? _options.IdentityProvider ?? "Manual").Trim().ToLowerInvariant();
         IIdentityVerificationProvider coreProvider = key switch
         {
+            "claudesonnet" or "claude" or "claudesonnetidentityverificationprovider" => new ClaudeSonnetIdentityVerificationProvider(identityAiService),
             "ocr" or "automatedocr" or "ocridentityverificationprovider" => new OcrIdentityVerificationProvider(identityAiService),
             "governmentapi" or "govapi" or "governmentapiidentityverificationprovider" => new GovernmentApiIdentityVerificationProvider(),
             "thirdparty" or "thirdpartyapi" or "thirdpartyidentityverificationprovider" => new ThirdPartyIdentityVerificationProvider(),
@@ -48,6 +55,7 @@ public class VerificationProviderResolver(
         string key = (providerKey ?? _options.FacialProvider ?? "Manual").Trim().ToLowerInvariant();
         IFacialVerificationProvider coreProvider = key switch
         {
+            "claudevision" or "claude" or "claudevisionfacialverificationprovider" => new ClaudeVisionFacialVerificationProvider(),
             "internal" or "internalbiometric" or "internalfacialverificationprovider" => new InternalFacialVerificationProvider(),
             "external" or "externalfacialapi" or "externalfacialapiprovider" => new ExternalFacialApiProvider(),
             _ => new ManualFacialReviewProvider()

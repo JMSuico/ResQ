@@ -334,9 +334,9 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
       onPointerUp={handlePointerUp}
     >
       {/* Top Header Bar */}
-      <div className="w-full max-w-4xl bg-slate-950/95 border border-cyan-500/40 rounded-t-xl px-4 py-2.5 flex items-center justify-between shadow-2xl">
+      <div className="w-full max-w-4xl bg-[#14020a]/95 border border-rose-500/40 rounded-t-xl px-4 py-2.5 flex items-center justify-between shadow-2xl">
         <div className="flex items-center gap-2.5">
-          <div className="p-1.5 rounded-md bg-cyan-950/80 border border-cyan-500/50 text-cyan-400">
+          <div className="p-1.5 rounded-md bg-rose-950/80 border border-rose-500/50 text-[#ff5c74]">
             <Crop className="w-4 h-4" />
           </div>
           <div>
@@ -344,7 +344,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
               <span className="font-mono text-xs font-bold text-white tracking-wider uppercase">
                 Text Extractor (On-Device OCR)
               </span>
-              <span className="px-1.5 py-0.5 rounded bg-cyan-900/60 border border-cyan-500/40 text-[9px] font-mono text-cyan-300 font-semibold">
+              <span className="px-1.5 py-0.5 rounded bg-rose-900/60 border border-rose-500/40 text-[9px] font-mono text-rose-300 font-semibold">
                 POWERTOYS SPEC
               </span>
             </div>
@@ -358,7 +358,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
         <div className="flex items-center gap-2">
           {/* Uploaded ID Front / Back Switcher */}
           {(frontImageUrl || backImageUrl) && (
-            <div className="flex items-center bg-slate-900 rounded border border-cyan-500/40 p-0.5 font-mono text-[9.5px]">
+            <div className="flex items-center bg-rose-950/60 rounded border border-rose-500/40 p-0.5 font-mono text-[9.5px]">
               <button
                 type="button"
                 disabled={!frontImageUrl}
@@ -369,7 +369,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
                 }}
                 className={`px-2 py-1 rounded transition-colors ${
                   activeSide === 'front'
-                    ? 'bg-cyan-600 text-white font-bold'
+                    ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white font-bold shadow-sm shadow-[#e8114c]/30'
                     : 'text-slate-400 hover:text-slate-200 disabled:opacity-40'
                 }`}
               >
@@ -385,7 +385,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
                 }}
                 className={`px-2 py-1 rounded transition-colors ${
                   activeSide === 'back'
-                    ? 'bg-cyan-600 text-white font-bold'
+                    ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white font-bold shadow-sm shadow-[#e8114c]/30'
                     : 'text-slate-400 hover:text-slate-200 disabled:opacity-40'
                 }`}
               >
@@ -404,7 +404,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
               }}
               className={`px-2 py-1 rounded transition-colors ${
                 layoutMode === 'single-line'
-                  ? 'bg-cyan-600 text-white font-bold'
+                  ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white font-bold shadow-sm shadow-[#e8114c]/30'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -418,7 +418,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
               }}
               className={`px-2 py-1 rounded transition-colors ${
                 layoutMode === 'multi-line'
-                  ? 'bg-cyan-600 text-white font-bold'
+                  ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white font-bold shadow-sm shadow-[#e8114c]/30'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -432,7 +432,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
               }}
               className={`px-2 py-1 rounded transition-colors ${
                 layoutMode === 'table'
-                  ? 'bg-cyan-600 text-white font-bold'
+                  ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white font-bold shadow-sm shadow-[#e8114c]/30'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -456,10 +456,10 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
         ref={containerRef}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        className="relative w-full max-w-4xl bg-slate-950 border-x border-cyan-500/40 aspect-[16/10] overflow-hidden cursor-crosshair flex items-center justify-center"
+        className="relative w-full max-w-4xl bg-[#0e0106] border-x border-rose-500/40 aspect-[16/10] overflow-hidden cursor-crosshair flex items-center justify-center"
         style={{
           backgroundImage:
-            'radial-gradient(rgba(6, 182, 212, 0.08) 1px, transparent 1px)',
+            'radial-gradient(rgba(232, 17, 76, 0.12) 1px, transparent 1px)',
           backgroundSize: '20px 20px'
         }}
       >
@@ -471,22 +471,22 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
             className="w-full h-full object-contain pointer-events-none select-none"
           />
         ) : (
-          <div className="text-center font-mono text-xs text-slate-500">
+          <div className="text-center font-mono text-xs text-rose-900">
             [No Uploaded Government ID Image Loaded]
           </div>
         )}
 
         {/* Crosshair Center Reticle Guide */}
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-30">
-          <div className="w-12 h-12 border border-dashed border-cyan-400 rounded-full" />
-          <div className="absolute w-16 h-[1px] bg-cyan-400" />
-          <div className="absolute h-16 w-[1px] bg-cyan-400" />
+          <div className="w-12 h-12 border border-dashed border-rose-500/60 rounded-full" />
+          <div className="absolute w-16 h-[1px] bg-[#ff5c74]" />
+          <div className="absolute h-16 w-[1px] bg-[#ff5c74]" />
         </div>
 
         {/* Dynamic Selection Box with Corner Brackets & Sizing Pill */}
         {selectionBox && (
           <div
-            className="absolute border-2 border-cyan-400 bg-cyan-500/15 pointer-events-none shadow-[0_0_15px_rgba(6,182,212,0.4)] z-20"
+            className="absolute border-2 border-rose-500 bg-rose-500/15 pointer-events-none shadow-[0_0_15px_rgba(232,17,76,0.4)] z-20"
             style={{
               left: `${selectionBox.x}px`,
               top: `${selectionBox.y}px`,
@@ -504,7 +504,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
             <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 border-b-2 border-r-2 border-white" />
 
             {/* Sizing Indicator Tag */}
-            <div className="absolute -bottom-6 left-0 bg-slate-950/90 border border-cyan-400 text-cyan-300 font-mono text-[9px] px-1.5 py-0.5 rounded shadow whitespace-nowrap">
+            <div className="absolute -bottom-6 left-0 bg-[#14020a]/90 border border-rose-500 text-rose-200 font-mono text-[9px] px-1.5 py-0.5 rounded shadow whitespace-nowrap">
               {Math.round(selectionBox.width)} x {Math.round(selectionBox.height)} px
             </div>
           </div>
@@ -513,7 +513,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
         {/* Loading Spinner during OCR execution */}
         {isProcessing && (
           <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center gap-2 z-30">
-            <RefreshCw className="w-5 h-5 text-cyan-400 animate-spin" />
+            <RefreshCw className="w-5 h-5 text-[#ff5c74] animate-spin" />
             <span className="font-mono text-xs font-bold text-white tracking-wider">
               EXTRACTING TEXT (DPI UPSCALING & PROJECTION PROFILING)...
             </span>
@@ -522,19 +522,19 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
       </div>
 
       {/* Bottom Result HUD & Quick-Assign Field Buttons */}
-      <div className="w-full max-w-4xl bg-slate-950/95 border border-cyan-500/40 rounded-b-xl p-3.5 shadow-2xl flex flex-col gap-2.5">
+      <div className="w-full max-w-4xl bg-[#14020a]/95 border border-rose-500/40 rounded-b-xl p-3.5 shadow-2xl flex flex-col gap-2.5">
         {/* Extracted Text Bar */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <div className="flex-1 flex items-center bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-1.5 focus-within:border-cyan-400 transition-all">
+          <div className="flex-1 flex items-center bg-rose-950/40 border border-rose-500/30 rounded-lg px-3 py-1.5 focus-within:border-rose-400 transition-all">
             <input
               type="text"
               value={editableText}
               onChange={(e) => setEditableText(e.target.value)}
               placeholder="Extracted text will appear here. Click & drag over ID card text..."
-              className="w-full font-mono text-xs text-white bg-transparent outline-none placeholder:text-slate-500"
+              className="w-full font-mono text-xs text-white bg-transparent outline-none placeholder:text-rose-400/50"
             />
             {editableText && (
-              <span className="text-[10px] font-mono text-emerald-400 font-bold ml-2 shrink-0">
+              <span className="text-[10px] font-mono text-rose-300 font-bold ml-2 shrink-0">
                 {extractedResult?.confidence ? `${Math.round(extractedResult.confidence * 100)}% CONF` : ''}
               </span>
             )}
@@ -547,13 +547,13 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
               disabled={!editableText}
               className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 copiedToast
-                  ? 'bg-emerald-950 border-emerald-500 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                  : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-rose-950 border-rose-500 text-rose-200 shadow-[0_0_10px_rgba(232,17,76,0.3)]'
+                  : 'bg-rose-950/40 border-rose-500/40 text-rose-200 hover:bg-rose-900/60 hover:text-white'
               } ${!editableText ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {copiedToast ? (
                 <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <Check className="w-3.5 h-3.5 text-[#ff5c74]" />
                   <span>COPIED!</span>
                 </>
               ) : (
@@ -567,7 +567,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
         </div>
 
         {/* Quick-Assign Field Buttons */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-800">
+        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-rose-950/60">
           <span className="font-mono text-[10px] text-slate-400 uppercase tracking-wider mr-1">
             Quick-Assign To:
           </span>
@@ -603,7 +603,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
             type="button"
             onClick={() => handleApplyField('dateOfBirth')}
             disabled={!editableText}
-            className="px-2.5 py-1 rounded bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/50 text-cyan-200 font-mono text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
+            className="px-2.5 py-1 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-200 font-mono text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
           >
             + DOB
           </button>
@@ -621,7 +621,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
             type="button"
             onClick={() => handleApplyField('address')}
             disabled={!editableText}
-            className="px-2.5 py-1 rounded bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-200 font-mono text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
+            className="px-2.5 py-1 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-200 font-mono text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
           >
             + Address
           </button>
@@ -630,7 +630,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
             type="button"
             onClick={() => handleApplyField('sex')}
             disabled={!editableText}
-            className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-mono text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
+            className="px-2.5 py-1 rounded bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-200 font-mono text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
           >
             + Sex
           </button>
@@ -639,7 +639,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
             type="button"
             onClick={() => handleApplyField('weight')}
             disabled={!editableText}
-            className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-mono text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
+            className="px-2.5 py-1 rounded bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-200 font-mono text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
           >
             + Weight
           </button>
@@ -648,7 +648,7 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
             type="button"
             onClick={() => handleApplyField('height')}
             disabled={!editableText}
-            className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-mono text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
+            className="px-2.5 py-1 rounded bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-200 font-mono text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
           >
             + Height
           </button>
@@ -657,15 +657,15 @@ export const TextExtractorOverlay: React.FC<TextExtractorOverlayProps> = ({
             type="button"
             onClick={handleSmartAutoParse}
             disabled={!editableText}
-            className="px-2.5 py-1 rounded bg-emerald-950/90 hover:bg-emerald-900 border border-emerald-500/60 text-emerald-200 font-mono text-[10px] font-bold flex items-center gap-1 transition-all disabled:opacity-40 cursor-pointer"
+            className="px-2.5 py-1 rounded bg-gradient-to-r from-[#a5002e] via-[#d9093e] to-[#ff2b4a] hover:brightness-110 border border-rose-500/60 text-white font-mono text-[10px] font-bold flex items-center gap-1 transition-all disabled:opacity-40 cursor-pointer shadow-md shadow-[#e8114c]/30"
             title="Parse multi-line text using Spatial Label FSM (Surname, First Name, DOB, ID No, Address)"
           >
-            <Sparkles className="w-3 h-3 text-emerald-400" />
+            <Sparkles className="w-3 h-3 text-white" />
             <span>Smart FSM Parse</span>
           </button>
 
           {assignedToast && (
-            <span className="ml-auto font-mono text-[10px] text-emerald-400 font-bold flex items-center gap-1 animate-pulse">
+            <span className="ml-auto font-mono text-[10px] text-[#ff5c74] font-bold flex items-center gap-1 animate-pulse">
               <CheckCircle2 className="w-3 h-3" />
               {assignedToast}
             </span>

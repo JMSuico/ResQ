@@ -28,7 +28,10 @@ public class SessionVerificationMiddleware(RequestDelegate next)
         "/api/openapi/v1.json",
         "/scalar/v1",
         "/api/identity/ai-extract",
-        "/api/identity/ai-status"
+        "/api/identity/ai-status",
+        "/api/standby-ai/status",
+        "/api/standby-ai/auto-approve-gov-id",
+        "/api/standby-ai/auto-dispatch-responder"
     };
 
     private static bool IsAdminPortRequest(HttpRequest request)

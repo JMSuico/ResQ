@@ -23,7 +23,9 @@ public record RegistrationResponse(
     bool HasIdFrontCapture,
     bool HasIdBackCapture,
     bool HasFaceCapture,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    bool AutoApprovedByAi = false,
+    string? AutoApprovalReason = null
 );
 
 public record SessionResponse(
@@ -40,8 +42,53 @@ public record SessionResponse(
     string TargetDashboardUrl,
     string DisplayName = "",
     string IdentityVerificationStatus = "PendingReview",
-    string FacialVerificationStatus = "PendingReview"
-);
+    string FacialVerificationStatus = "PendingReview",
+    string ValidationVerdict = "SUCCESS_LOGIN",
+    string? BiometricStrategyUsed = null,
+    object? ValidationLayers = null
+)
+{
+    public string ValidationVerdict { get; set; } = ValidationVerdict;
+    public string? BiometricStrategyUsed { get; set; } = BiometricStrategyUsed;
+    public object? ValidationLayers { get; set; } = ValidationLayers;
+}
+
+public record LoginResponse(
+    Guid UserId,
+    string FullName,
+    string Email,
+    string EmployeeOrResidentId,
+    UserRole Role,
+    ResponderUnitType Unit,
+    AccountStatus Status,
+    bool FaceVerified,
+    string? DepartmentOrBarangay,
+    string? RankOrTitle,
+    string TargetDashboardUrl,
+    string DisplayName = "",
+    string IdentityVerificationStatus = "PendingReview",
+    string FacialVerificationStatus = "PendingReview",
+    string ValidationVerdict = "SUCCESS_LOGIN",
+    string? BiometricStrategyUsed = null,
+    object? ValidationLayers = null
+) : SessionResponse(
+    UserId,
+    FullName,
+    Email,
+    EmployeeOrResidentId,
+    Role,
+    Unit,
+    Status,
+    FaceVerified,
+    DepartmentOrBarangay,
+    RankOrTitle,
+    TargetDashboardUrl,
+    DisplayName,
+    IdentityVerificationStatus,
+    FacialVerificationStatus,
+    ValidationVerdict,
+    BiometricStrategyUsed,
+    ValidationLayers);
 
 public record UserResponse(
     Guid Id,

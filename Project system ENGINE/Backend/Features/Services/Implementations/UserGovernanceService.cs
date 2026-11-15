@@ -3,18 +3,21 @@
 // Zero emojis.
 
 using Backend.Features.Api.DTOs;
+using Backend.Features.Data;
 using Backend.Features.Data.Enums;
 using Backend.Features.Data.Models;
 using Backend.Features.Helpers.Infrastructure;
 using Backend.Features.Repositories.Interfaces;
 using Backend.Features.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.Services.Implementations;
 
 public class UserGovernanceService(
     IUserRepository userRepo,
     ISessionRepository sessionRepo,
-    IAuditLogRepository auditRepo) : IUserGovernanceService
+    IAuditLogRepository auditRepo,
+    AppDbContext? db = null) : IUserGovernanceService
 {
     public async Task<List<UserResponse>> GetAllUsersAsync(CancellationToken ct = default) =>
         (await userRepo.GetAllAsync(ct)).Select(MapToUserResponse).ToList();
@@ -107,7 +110,14 @@ public class UserGovernanceService(
             UpdatedAt = DateTime.UtcNow
         };
 
-        await userRepo.AddAsync(user, ct);
+        try
+        {
+            await userRepo.AddAsync(user, ct);
+        }
+        catch (DbUpdateException)
+        {
+            return (false, "An account with this email address already exists.", null);
+        }
 
         // Audit Log
         string prevHash = await auditRepo.GetLatestHashAsync(ct);
@@ -193,6 +203,10 @@ public class UserGovernanceService(
             user.IdentityVerificationStatus = InputSanitizer.Sanitize(request.IdentityVerificationStatus);
         if (!string.IsNullOrWhiteSpace(request.FacialVerificationStatus))
             user.FacialVerificationStatus = InputSanitizer.Sanitize(request.FacialVerificationStatus);
+        if (request.Status == AccountStatus.Verified)
+            user.FaceVerified = true;
+        else if (request.Status == AccountStatus.Suspended)
+            user.FaceVerified = false;
 
         user.UpdatedAt = DateTime.UtcNow;
         await userRepo.UpdateAsync(user, ct);
@@ -291,6 +305,23 @@ public class UserGovernanceService(
         await userRepo.SoftDeleteAsync(id, adminEmail, ct);
         await sessionRepo.RevokeAllForUserAsync(id, ct);
 
+        if (db != null)
+        {
+            var activeEnrollments = await db.BiometricEnrollments
+                .Where(b => b.UserId == id && (b.RevokedAtUtc == null || b.EnrollmentStatus != "REVOKED"))
+                .ToListAsync(ct);
+            if (activeEnrollments.Count > 0)
+            {
+                DateTime revokeTime = DateTime.UtcNow;
+                foreach (var enrollment in activeEnrollments)
+                {
+                    enrollment.EnrollmentStatus = "REVOKED";
+                    enrollment.RevokedAtUtc ??= revokeTime;
+                }
+                await db.SaveChangesAsync(ct);
+            }
+        }
+
         // Audit Log
         string prevHash = await auditRepo.GetLatestHashAsync(ct);
         DateTime now = DateTime.UtcNow;
@@ -320,11 +351,13 @@ public class UserGovernanceService(
         targetUser.Status = status;
         if (status == AccountStatus.Verified)
         {
+            targetUser.FaceVerified = true;
             targetUser.IdentityVerificationStatus = "Verified";
             targetUser.FacialVerificationStatus = "Verified";
         }
         else if (status == AccountStatus.Suspended)
         {
+            targetUser.FaceVerified = false;
             targetUser.IdentityVerificationStatus = "Rejected";
             targetUser.FacialVerificationStatus = "Rejected";
         }

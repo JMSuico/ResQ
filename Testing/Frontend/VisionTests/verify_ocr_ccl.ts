@@ -13,21 +13,21 @@ import {
   findConnectedComponents,
   groupBoundingBoxesIntoLines,
   groupWordsInLine,
-} from '../ccl';
+} from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/ccl';
 
-import { FONT_BANK } from '../fontBank';
+import { FONT_BANK } from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/fontBank';
 
 import {
   normalizeGlyphTo16x16,
   computeZoningFeatures,
   matchGlyph,
   recognizeLineText,
-} from '../glyphMatcher';
+} from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/glyphMatcher';
 
 import {
   normalizedCrossCorrelation,
   matchTemplateMultiScale,
-} from '../templateMatch';
+} from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/templateMatch';
 
 const assert = (condition: boolean, msg: string): void => {
   if (!condition) {

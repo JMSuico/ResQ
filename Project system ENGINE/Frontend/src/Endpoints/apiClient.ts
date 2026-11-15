@@ -41,8 +41,8 @@ export const getAuthToken = (): string | null => {
 
     // 3. Port-scoped local storage
     const port = window.location.port;
-    if (port === '5174') {
-      const adminToken = localStorage.getItem('resqtrack_token_5174');
+    if (port === '5174' || port === '1996') {
+      const adminToken = localStorage.getItem(`resqtrack_token_${port}`) || localStorage.getItem('resqtrack_token_5174');
       if (adminToken && adminToken.trim() !== '') {
         return adminToken;
       }
@@ -92,7 +92,7 @@ export const requestJson = async <T>(url: string, options: RequestInit = {}): Pr
   } catch (err: unknown) {
     const rawError = err instanceof Error ? err.message : String(err);
     throw new ApiError(
-      'Backend API is unreachable. Ensure .NET backend is running on port 5000 (run ".\\start.ps1 -Dev").',
+      'Backend API is unreachable. Ensure .NET backend is running on port 1999 (run ".\\start.ps1 start" or ".\\start.ps1 -Dev").',
       0,
       { raw: rawError }
     );
@@ -102,14 +102,22 @@ export const requestJson = async <T>(url: string, options: RequestInit = {}): Pr
   const data = contentType.includes('application/json') ? await response.json() : null;
 
   if (!response.ok) {
-    let errorMsg = (data as { message?: string; error?: string } | null)?.message
-      || (data as { message?: string; error?: string } | null)?.error;
+    const payload = data as { message?: string; error?: string; detail?: string } | null;
+    let errorMsg = payload?.message || payload?.error || payload?.detail;
     if (!errorMsg) {
       if (response.status === 502 || response.status === 503) {
-        errorMsg = 'Backend API is unreachable on port 5000. Please launch the backend with ".\\start.ps1 -Dev".';
+        errorMsg = 'Backend API is unreachable on port 1999. Please launch the backend with ".\\start.ps1 start".';
       } else {
         errorMsg = `HTTP error ${response.status}`;
       }
+    } else if (
+      import.meta.env?.DEV &&
+      payload?.error &&
+      payload?.message &&
+      payload.error !== payload.message &&
+      !payload.message.includes(payload.error)
+    ) {
+      errorMsg = `${payload.message} (${payload.error})`;
     }
     throw new ApiError(errorMsg, response.status, data);
   }

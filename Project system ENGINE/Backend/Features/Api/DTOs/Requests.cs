@@ -48,8 +48,16 @@ public record RegisterRequest(
     string? DisplayName = null,
     string? ConfirmPassword = null,
     bool? ConsentAccepted = null,
-    int? MinImageDimension = null
-);
+    int? MinImageDimension = null,
+    string? GeometricSignatureJson = null,
+    string? PoseFramesJson = null,
+    string? IdVerificationToken = null,
+    string? FacialVerificationToken = null
+)
+{
+    public string? GeometricSignatureJson { get; set; } = GeometricSignatureJson;
+    public string? PoseFramesJson { get; set; } = PoseFramesJson;
+}
 
 public record LoginRequest(
     [Required, EmailAddress] string Email,
@@ -59,10 +67,25 @@ public record LoginRequest(
 );
 
 public record BiometricLoginRequest(
-    [Required, EmailAddress] string Email,
-    [Required] float[] LiveDescriptorVector,
-    string? PortalOrigin = null
-);
+    string? Email = "",
+    float[]? LiveDescriptorVector = null,
+    string? PortalOrigin = null,
+    string? LiveGeometricSignatureJson = null,
+    string? LiveDescriptorVectorJson = null,
+    double LivenessScore = 0.98,
+    string? LiveCaptureBase64 = null,
+    string[]? LiveCaptureFramesBase64 = null
+)
+{
+    public string Email { get; set; } = Email ?? string.Empty;
+    public float[] LiveDescriptorVector { get; set; } = LiveDescriptorVector ?? [];
+    public string? PortalOrigin { get; set; } = PortalOrigin;
+    public string? LiveGeometricSignatureJson { get; set; } = LiveGeometricSignatureJson;
+    public string? LiveDescriptorVectorJson { get; set; } = LiveDescriptorVectorJson;
+    public double LivenessScore { get; set; } = LivenessScore;
+    public string? LiveCaptureBase64 { get; set; } = LiveCaptureBase64;
+    public string[]? LiveCaptureFramesBase64 { get; set; } = LiveCaptureFramesBase64;
+}
 
 public record CreateReportRequest(
     [Required] string Title,

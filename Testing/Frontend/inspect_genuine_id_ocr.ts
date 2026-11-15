@@ -12,13 +12,21 @@ export const runInspection = async (): Promise<void> => {
   const page = await browser.newPage();
   await page.setViewportSize({ width: 1440, height: 1200 });
 
-  await page.goto('http://localhost:5176/register?step=1', { waitUntil: 'networkidle' });
-  await page.waitForTimeout(1000);
+  await page.goto('http://127.0.0.1:1998/register?step=1', { waitUntil: 'networkidle' });
+  await page.locator('#phase-2-id-identity').waitFor({ state: 'visible', timeout: 8000 });
+  await page.selectOption('select#id-type', 'drivers');
+  await page.waitForTimeout(500);
 
-  console.log('Uploading Front ID...');
-  const frontInput = page.locator('input[data-side="front"]');
-  await frontInput.setInputFiles(FRONT_ID_PATH);
-  await page.waitForTimeout(6000);
+  console.log('Uploading Front & Back ID...');
+  await page.locator('input[data-side="front"]').setInputFiles(FRONT_ID_PATH);
+  await page.locator('input[data-side="back"]').setInputFiles(BACK_ID_PATH);
+
+  await page.locator('#id-verification-banner').waitFor({ state: 'visible', timeout: 25000 });
+  await page
+    .locator('#badge-id-verified-genuine, #badge-id-pending-manual')
+    .waitFor({ state: 'visible', timeout: 25000 });
+  await page.locator('#personal-info-section').waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForTimeout(500);
 
   const getInputValue = async (selector: string): Promise<string> => {
     const el = page.locator(selector);
@@ -36,42 +44,24 @@ export const runInspection = async (): Promise<void> => {
     return '';
   };
 
-  const frontValues = {
+  const extractedValues = {
     firstName: await getInputValue('#first-name'),
     middleName: await getInputValue('#middle-name'),
     lastName: await getInputValue('#last-name'),
     dateOfBirth: await getInputValue('#dob'),
     age: await getInputValue('#age'),
     licenseNumber: await getInputValue('#license-number'),
-    address: await getInputValue('#address'),
+    province: await getInputValue('#province'),
+    city: await getInputValue('#city'),
+    barangay: await getInputValue('#barangay'),
+    streetOrPurok: await getInputValue('#street-purok'),
     weight: await getInputValue('#weight'),
     height: await getInputValue('#height'),
     sex: await getSelectValue('#sex')
   };
 
-  console.log('\n=== FORM VALUES AFTER FRONT ID ===');
-  console.log(JSON.stringify(frontValues, null, 2));
-
-  console.log('\nUploading Back ID...');
-  const backInput = page.locator('input[data-side="back"]');
-  await backInput.setInputFiles(BACK_ID_PATH);
-  await page.waitForTimeout(6000);
-
-  const afterBackValues = {
-    firstName: await getInputValue('#first-name'),
-    middleName: await getInputValue('#middle-name'),
-    lastName: await getInputValue('#last-name'),
-    dateOfBirth: await getInputValue('#dob'),
-    age: await getInputValue('#age'),
-    licenseNumber: await getInputValue('#license-number'),
-    address: await getInputValue('#address'),
-    weight: await getInputValue('#weight'),
-    height: await getInputValue('#height'),
-    sex: await getSelectValue('#sex')
-  };
-
-  console.log('\n=== FORM VALUES AFTER BACK ID ===');
-  console.log(JSON.stringify(afterBackValues, null, 2));
+  console.log('\n=== UNIFIED PHASE 2 PERSONAL INFO VALUES (#personal-info-section) ===');
+  console.log(JSON.stringify(extractedValues, null, 2));
 
   await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true });
   console.log('\nScreenshot saved to:', SCREENSHOT_PATH);
@@ -79,4 +69,7 @@ export const runInspection = async (): Promise<void> => {
   await browser.close();
 };
 
-runInspection().catch(console.error);
+runInspection().catch((err: unknown) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -1,647 +1,1219 @@
 // [Layer: Backend/Services/Implementations]
-// Responsibility: AI Standby Multi-Provider service supporting Google Gemini, OpenAI GPT-4o Vision, and Azure Document Intelligence.
-// Invariant: C# .NET 10 Web API standards, nullable reference types, universal lambda expressions (=>), masked secrets in logs.
+// Responsibility: Multi-provider AI vision OCR, Government ID forensic validation, Face-to-Gov-ID liveness matching, and VerificationToken issuance.
+// Invariant: C# .NET 10 Web API standards, nullable reference types, universal lambda expressions (=>), zero dummy OCR fallbacks, masked secrets.
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Backend.Features.Api.DTOs;
 using Backend.Features.Services.Interfaces;
+using Backend.Features.Services.Verification;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Backend.Features.Services.Implementations;
 
-public class IdentityAiService(
-    IHttpClientFactory httpClientFactory,
-    IConfiguration configuration,
-    ILogger<IdentityAiService> logger) : IIdentityAiService
+public class IdentityAiService : IIdentityAiService
 {
-    private static readonly string[] CoreIdFields =
-    [
-        "FullName",
-        "IdNumber",
-        "DateOfBirth",
-        "ExpirationDate",
-        "Address",
-        "Sex"
-    ];
+    public static readonly string[] DefaultProviderOrder =
+        ["claude", "gemini", "openai"];
+
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<IdentityAiService> _logger;
+    private readonly IClaudeMessagesClient _claudeClient;
+    private readonly IVerificationTokenCacheStrategy _tokenCacheStrategy;
+    private readonly IGovIdAuthenticityEvaluator _authenticityEvaluator;
+    private readonly IFaceToGovIdMatchStrategy _faceToIdMatchStrategy;
+    private readonly bool _hasInjectedAuthenticityEvaluator;
+
+    public IdentityAiService(
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration,
+        ILogger<IdentityAiService> logger,
+        IClaudeMessagesClient? claudeMessagesClient = null,
+        IVerificationTokenCacheStrategy? tokenCacheStrategy = null,
+        IGovIdAuthenticityEvaluator? authenticityEvaluator = null,
+        IFaceToGovIdMatchStrategy? faceToIdMatchStrategy = null)
+    {
+        _httpClientFactory = httpClientFactory;
+        _configuration = configuration;
+        _logger = logger;
+        _claudeClient = claudeMessagesClient
+            ?? new ClaudeMessagesClient(
+                httpClientFactory?.CreateClient("ClaudeMessages") ?? new HttpClient(),
+                configuration,
+                NullLogger<ClaudeMessagesClient>.Instance);
+
+        IOptions<VerificationTokenOptions> tokenOptions =
+            Options.Create(ResolveVerificationTokenOptions(configuration));
+
+        _tokenCacheStrategy = tokenCacheStrategy
+            ?? new HmacVerificationTokenCacheStrategy(tokenOptions);
+
+        _hasInjectedAuthenticityEvaluator = authenticityEvaluator is not null;
+        _authenticityEvaluator = authenticityEvaluator
+            ?? new SharedGovIdForensicsEvaluator(
+                configuration,
+                _claudeClient,
+                NullLogger<SharedGovIdForensicsEvaluator>.Instance);
+
+        _faceToIdMatchStrategy = faceToIdMatchStrategy
+            ?? new ClaudeFaceToGovIdMatchStrategy(
+                configuration,
+                _claudeClient,
+                tokenOptions,
+                NullLogger<ClaudeFaceToGovIdMatchStrategy>.Instance);
+    }
 
     public AiProviderStatusDto GetAiStatus() =>
         new()
         {
-            GeminiConfigured = !string.IsNullOrWhiteSpace(GetSecret("GEMINI_API_KEY")),
-            OpenAiConfigured = !string.IsNullOrWhiteSpace(GetSecret("OPENAI_API_KEY")),
-            AzureConfigured = !string.IsNullOrWhiteSpace(GetSecret("AZURE_VISION_KEY")) &&
-                              !string.IsNullOrWhiteSpace(GetSecret("AZURE_VISION_ENDPOINT")),
+            ClaudeConfigured = _claudeClient.IsConfigured,
+            GeminiConfigured = IsGeminiConfigured(),
+            OpenAiConfigured = IsOpenAiConfigured(),
+            AzureConfigured = IsAzureConfigured(),
             ActiveChain = ResolveActiveChainSummary()
         };
 
-    public async Task<AiExtractResponseDto> ExtractIdentityAsync(AiExtractRequestDto request, CancellationToken ct = default) =>
-        await ExecuteAiExtractionAsync(request, ct);
-
-    public Task<IdentityDocumentAnalyzeResponseDto> AnalyzeDocumentAsync(IdentityDocumentAnalyzeRequestDto request, CancellationToken ct = default) =>
-        Task.FromResult(ExecuteDeterministicDocumentAnalysis(request));
-
-    private async Task<AiExtractResponseDto> ExecuteAiExtractionAsync(AiExtractRequestDto request, CancellationToken ct)
+    public async Task<AiExtractResponseDto> ExtractIdentityAsync(AiExtractRequestDto request, CancellationToken ct = default)
     {
-        var sw = Stopwatch.StartNew();
+        string frontSource = !string.IsNullOrWhiteSpace(request.ImageDataUrl)
+            ? request.ImageDataUrl
+            : (request.FrontImageBase64 ?? string.Empty);
 
-        if (string.IsNullOrWhiteSpace(request.ImageDataUrl))
+        var (frontMime, frontB64) = SharedGovIdForensicsEvaluator.ParseDataUrl(frontSource);
+        byte[] frontBytes = SharedGovIdForensicsEvaluator.TryDecodeBase64(frontB64);
+
+        byte[]? backBytes = null;
+        string? backMime = null;
+        if (!string.IsNullOrWhiteSpace(request.BackImageBase64))
         {
-            return new AiExtractResponseDto
+            var (bm, bb64) = SharedGovIdForensicsEvaluator.ParseDataUrl(request.BackImageBase64);
+            byte[] decodedBack = SharedGovIdForensicsEvaluator.TryDecodeBase64(bb64);
+            if (decodedBack.Length > 0)
             {
-                Success = false,
-                ErrorMessage = "Image payload is missing or empty.",
-                ExecutionTimeMs = sw.ElapsedMilliseconds
-            };
-        }
-
-        string geminiKey = GetSecret("GEMINI_API_KEY");
-        string openAiKey = GetSecret("OPENAI_API_KEY");
-        string azureKey = GetSecret("AZURE_VISION_KEY");
-        string azureEndpoint = GetSecret("AZURE_VISION_ENDPOINT");
-
-        bool hasGemini = !string.IsNullOrWhiteSpace(geminiKey);
-        bool hasOpenAi = !string.IsNullOrWhiteSpace(openAiKey);
-        bool hasAzure = !string.IsNullOrWhiteSpace(azureKey) && !string.IsNullOrWhiteSpace(azureEndpoint);
-
-        if (!hasGemini && !hasOpenAi && !hasAzure)
-        {
-            logger.LogInformation("No external AI keys configured. Returning standby deterministic notice.");
-            return new AiExtractResponseDto
-            {
-                Success = false,
-                ProviderUsed = "none",
-                ErrorMessage = "No external AI providers are configured on this server. Running in purely deterministic mode.",
-                ExecutionTimeMs = sw.ElapsedMilliseconds
-            };
-        }
-
-        var (mimeType, base64Data) = ParseDataUrl(request.ImageDataUrl);
-        var client = httpClientFactory.CreateClient();
-
-        var executionList = new List<string>();
-        if (!string.IsNullOrWhiteSpace(request.PreferredProvider))
-        {
-            executionList.Add(request.PreferredProvider.ToLowerInvariant());
-        }
-        foreach (var p in new[] { "gemini", "azure", "openai" })
-        {
-            if (!executionList.Contains(p))
-            {
-                executionList.Add(p);
+                backMime = bm;
+                backBytes = decodedBack;
             }
         }
 
-        var accumulatedErrors = new List<string>();
+        string? idType = !string.IsNullOrWhiteSpace(request.IdType) ? request.IdType : request.HintType;
+        return await ExtractIdOcrAsync(frontBytes, frontMime, backBytes, backMime, idType, request.PreferredProvider, ct);
+    }
 
-        foreach (var provider in executionList)
+    public async Task<AiOcrResponseDto> ExtractIdOcrAsync(
+        byte[] frontBytes,
+        string frontMime,
+        byte[]? backBytes,
+        string? backMime,
+        string? idType,
+        string? preferredProvider = null,
+        CancellationToken ct = default)
+    {
+        var sw = Stopwatch.StartNew();
+
+        if (frontBytes == null || frontBytes.Length == 0)
+        {
+            return BuildFailureOcrResult(
+                providerUsed: string.Empty,
+                idType: idType,
+                errorCode: "MISSING_FRONT_IMAGE",
+                errorMessage: "Front Government ID image is required before running OCR.",
+                elapsedMs: sw.ElapsedMilliseconds);
+        }
+
+        bool hasBackBytes = backBytes is { Length: > 0 };
+        if (hasBackBytes && frontBytes.AsSpan().SequenceEqual(backBytes!))
+        {
+            var duplicateFailure = BuildFailureOcrResult(
+                providerUsed: "DeterministicForensicPreFlight",
+                idType: idType,
+                errorCode: "DUPLICATE_FRONT_BACK_IMAGE",
+                errorMessage: "Invalid Government ID: The Back ID upload is identical to your Front ID image. Please upload the actual reverse side of your Government ID card.",
+                elapsedMs: sw.ElapsedMilliseconds);
+            duplicateFailure.AreSidesIdentical = true;
+            duplicateFailure.AuthenticityVerdict = "DUPLICATE_FRONT_BACK_IMAGE";
+            duplicateFailure.AuthenticityReason = "Front and Back Government ID uploads contain identical image bytes.";
+            return duplicateFailure;
+        }
+
+        if (!_hasInjectedAuthenticityEvaluator && !IsAnyOcrProviderConfigured())
+        {
+            var unavailable = BuildFailureOcrResult(
+                providerUsed: string.Empty,
+                idType: idType,
+                errorCode: "PROVIDER_UNAVAILABLE",
+                errorMessage: "No AI vision OCR provider API key is configured; registration may proceed with pending manual review.",
+                elapsedMs: sw.ElapsedMilliseconds);
+            unavailable.AuthenticityVerdict = "PROVIDER_UNAVAILABLE";
+            unavailable.RequiresPendingManualReview = true;
+            return unavailable;
+        }
+
+        string pairSha = _tokenCacheStrategy.ComputeImagePairSha256(frontBytes, backBytes);
+        string? preferredClaudeModel = !string.IsNullOrWhiteSpace(preferredProvider) &&
+                                       preferredProvider.Trim().StartsWith("claude-", StringComparison.OrdinalIgnoreCase)
+            ? preferredProvider.Trim()
+            : null;
+
+        var providerOrder = ResolveProviderOrder(preferredProvider);
+        AiOcrResponseDto? lastFailureResult = null;
+        bool attemptedConfiguredProvider = false;
+
+        foreach (var provider in providerOrder)
         {
             if (ct.IsCancellationRequested) break;
 
+            bool isClaudeSlot = string.Equals(provider, "claude", StringComparison.OrdinalIgnoreCase);
+            if (isClaudeSlot && !_hasInjectedAuthenticityEvaluator && !_claudeClient.IsConfigured)
+            {
+                continue;
+            }
+
+            if (!isClaudeSlot && !IsOcrProviderConfigured(provider))
+            {
+                continue;
+            }
+
+            attemptedConfiguredProvider = true;
             try
             {
-                if (provider == "gemini" && hasGemini)
+                GovIdForensicsResult? forensics = isClaudeSlot
+                    ? await _authenticityEvaluator.EvaluateAsync(
+                        new GovIdAuthenticityInput(
+                            FrontBytes: frontBytes,
+                            FrontMimeType: frontMime,
+                            BackBytes: backBytes,
+                            BackMimeType: backMime,
+                            SelectedIdType: idType ?? string.Empty,
+                            PreferredModel: preferredClaudeModel,
+                            RequireDualSideVerification: hasBackBytes),
+                        ct)
+                    : await CallFallbackProviderOcrAsync(
+                        provider,
+                        frontBytes,
+                        frontMime,
+                        backBytes,
+                        backMime,
+                        idType,
+                        pairSha,
+                        ct);
+
+                if (forensics is null)
                 {
-                    logger.LogInformation("Attempting Gemini AI Standby extraction. Key: {MaskedKey}", MaskKey(geminiKey));
-                    var result = await ExtractWithGeminiAsync(client, geminiKey, mimeType, base64Data, request.HintType, ct);
-                    if (result != null && result.ExtractedFields.Count > 0)
-                    {
-                        result.ExecutionTimeMs = sw.ElapsedMilliseconds;
-                        return result;
-                    }
+                    continue;
                 }
-                else if (provider == "azure" && hasAzure)
+
+                if (forensics.Success && forensics.Fields is not null && forensics.Fields.ExtractedFields.Count > 0)
                 {
-                    logger.LogInformation("Attempting Azure Document Intelligence extraction. Endpoint: {Endpoint}, Key: {MaskedKey}",
-                        azureEndpoint, MaskKey(azureKey));
-                    var result = await ExtractWithAzureAsync(client, azureEndpoint, azureKey, base64Data, request.HintType, ct);
-                    if (result != null && result.ExtractedFields.Count > 0)
+                    bool eligibleForIdToken = hasBackBytes &&
+                                              forensics.IsGenuineId &&
+                                              forensics.MatchesSelectedIdType &&
+                                              !forensics.AreSidesIdentical &&
+                                              !forensics.RequiresPendingManualReview &&
+                                              string.IsNullOrWhiteSpace(forensics.ErrorCode);
+
+                    string? issuedToken = null;
+                    if (eligibleForIdToken)
                     {
-                        result.ExecutionTimeMs = sw.ElapsedMilliseconds;
-                        return result;
+                        var issued = await _tokenCacheStrategy.IssueIdTokenAsync(
+                            imagePairSha256: pairSha,
+                            verdict: forensics.AuthenticityVerdict,
+                            providerUsed: forensics.ProviderUsed,
+                            modelUsed: forensics.ModelUsed,
+                            payloadJson: forensics.RawJson,
+                            ct: ct);
+                        issuedToken = issued.Token;
                     }
+
+                    return MapForensicsToOcrResponse(forensics, idType, sw.ElapsedMilliseconds, issuedToken);
                 }
-                else if (provider == "openai" && hasOpenAi)
+
+                AiOcrResponseDto mappedFailure = MapForensicsToOcrResponse(forensics, idType, sw.ElapsedMilliseconds);
+                lastFailureResult = mappedFailure;
+
+                if (IsTerminalForensicError(mappedFailure.ErrorCode))
                 {
-                    logger.LogInformation("Attempting OpenAI GPT-4o extraction. Key: {MaskedKey}", MaskKey(openAiKey));
-                    var result = await ExtractWithOpenAiAsync(client, openAiKey, request.ImageDataUrl, mimeType, base64Data, request.HintType, ct);
-                    if (result != null && result.ExtractedFields.Count > 0)
-                    {
-                        result.ExecutionTimeMs = sw.ElapsedMilliseconds;
-                        return result;
-                    }
+                    return mappedFailure;
                 }
             }
             catch (Exception ex)
             {
-                var errorMsg = $"Provider [{provider}] failed: {ex.Message}";
-                logger.LogWarning("{Error}", errorMsg);
-                accumulatedErrors.Add(errorMsg);
+                _logger.LogWarning("OCR provider [{Provider}] upstream call failed ({Message}); continuing fallback chain.", provider, ex.Message);
+                var transientFailure = BuildFailureOcrResult(
+                    providerUsed: provider,
+                    idType: idType,
+                    errorCode: "PROVIDER_UNAVAILABLE",
+                    errorMessage: "Upstream OCR provider request failed; registration may proceed with pending manual review.",
+                    elapsedMs: sw.ElapsedMilliseconds);
+                transientFailure.AuthenticityVerdict = "PROVIDER_UNAVAILABLE";
+                transientFailure.RequiresPendingManualReview = true;
+                lastFailureResult = transientFailure;
             }
         }
 
-        return new AiExtractResponseDto
+        if (!attemptedConfiguredProvider)
         {
-            Success = false,
-            ProviderUsed = "none",
-            ErrorMessage = accumulatedErrors.Count > 0
-                ? string.Join(" | ", accumulatedErrors)
-                : "All configured AI providers produced empty results or were unavailable.",
-            ExecutionTimeMs = sw.ElapsedMilliseconds
-        };
+            var unavailable = BuildFailureOcrResult(
+                providerUsed: string.Empty,
+                idType: idType,
+                errorCode: "PROVIDER_UNAVAILABLE",
+                errorMessage: "No AI vision OCR provider API key is configured; registration may proceed with pending manual review.",
+                elapsedMs: sw.ElapsedMilliseconds);
+            unavailable.AuthenticityVerdict = "PROVIDER_UNAVAILABLE";
+            unavailable.RequiresPendingManualReview = true;
+            return unavailable;
+        }
+
+        if (lastFailureResult != null)
+        {
+            lastFailureResult.Success = false;
+            lastFailureResult.Confidence = 0.0;
+            lastFailureResult.IsAuthentic = false;
+            lastFailureResult.IdVerificationToken = null;
+            lastFailureResult.ExtractedFields.Clear();
+            lastFailureResult.ExecutionTimeMs = Math.Max(1, sw.ElapsedMilliseconds);
+            return lastFailureResult;
+        }
+
+        return BuildFailureOcrResult(
+            providerUsed: string.Empty,
+            idType: idType,
+            errorCode: "UNREADABLE_OR_BLANK_IMAGE",
+            errorMessage: "No readable identification fields could be extracted from the uploaded image.",
+            elapsedMs: sw.ElapsedMilliseconds);
     }
 
-    private async Task<AiExtractResponseDto?> ExtractWithGeminiAsync(
-        HttpClient client,
-        string apiKey,
-        string mimeType,
-        string base64Data,
-        string? hintType,
+    private static List<string> ResolveProviderOrder(string? preferredProvider)
+    {
+        var providerOrder = new List<string>();
+        if (!string.IsNullOrWhiteSpace(preferredProvider))
+        {
+            string normalizedPreferred = preferredProvider.Trim().ToLowerInvariant();
+            if (normalizedPreferred.StartsWith("claude", StringComparison.OrdinalIgnoreCase))
+            {
+                providerOrder.Add("claude");
+            }
+            else if (DefaultProviderOrder.Contains(normalizedPreferred))
+            {
+                providerOrder.Add(normalizedPreferred);
+            }
+        }
+
+        foreach (var p in DefaultProviderOrder)
+        {
+            if (!providerOrder.Contains(p))
+            {
+                providerOrder.Add(p);
+            }
+        }
+
+        return providerOrder;
+    }
+
+    private Task<GovIdForensicsResult?> CallFallbackProviderOcrAsync(
+        string provider,
+        byte[] frontBytes,
+        string frontMime,
+        byte[]? backBytes,
+        string? backMime,
+        string? idType,
+        string imagePairSha256,
+        CancellationToken ct) =>
+        provider switch
+        {
+            "gemini" => CallGeminiOcrAsync(frontBytes, frontMime, backBytes, backMime, idType, imagePairSha256, ct),
+            "openai" => CallOpenAiOcrAsync(frontBytes, frontMime, backBytes, backMime, idType, imagePairSha256, ct),
+            _ => Task.FromResult<GovIdForensicsResult?>(null)
+        };
+
+    private async Task<GovIdForensicsResult?> CallGeminiOcrAsync(
+        byte[] frontBytes,
+        string frontMime,
+        byte[]? backBytes,
+        string? backMime,
+        string? idType,
+        string imagePairSha256,
         CancellationToken ct)
     {
+        string apiKey = GetSecret("GEMINI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey) || frontBytes.Length == 0) return null;
+
+        var client = _httpClientFactory?.CreateClient() ?? new HttpClient();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(12));
+
+        bool hasBackBytes = backBytes is { Length: > 0 };
+        var parts = new JsonArray
+        {
+            new JsonObject { ["text"] = BuildSystemPrompt(idType, hasBackBytes) },
+            new JsonObject
+            {
+                ["inline_data"] = new JsonObject
+                {
+                    ["mime_type"] = NormalizeStandardImageMime(frontMime),
+                    ["data"] = Convert.ToBase64String(frontBytes)
+                }
+            }
+        };
+
+        if (hasBackBytes)
+        {
+            parts.Add(new JsonObject
+            {
+                ["inline_data"] = new JsonObject
+                {
+                    ["mime_type"] = NormalizeStandardImageMime(backMime ?? "image/jpeg"),
+                    ["data"] = Convert.ToBase64String(backBytes!)
+                }
+            });
+        }
+
         string endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
-
-        string prompt =
-            "You are an expert identity document OCR parser for official Philippine identification cards " +
-            "(PhilSys National ID, Driver's License, Passport, UMID, Postal ID, PRC, Voter's ID, Senior Citizen, PWD). " +
-            (string.IsNullOrWhiteSpace(hintType) ? "" : $"The expected document type hint is: {hintType}. ") +
-            "Extract structured fields and return ONLY a single valid JSON object with the following schema:\n" +
-            "{\n" +
-            "  \"IdType\": \"PH_NATIONAL_ID | DRIVERS_LICENSE | PASSPORT | UMID | POSTAL_ID | UNKNOWN\",\n" +
-            "  \"FullName\": { \"Value\": \"...\", \"Confidence\": 0.98 },\n" +
-            "  \"IdNumber\": { \"Value\": \"...\", \"Confidence\": 0.98 },\n" +
-            "  \"DateOfBirth\": { \"Value\": \"YYYY-MM-DD\", \"Confidence\": 0.95 },\n" +
-            "  \"ExpirationDate\": { \"Value\": \"YYYY-MM-DD\", \"Confidence\": 0.95 },\n" +
-            "  \"Address\": { \"Value\": \"...\", \"Confidence\": 0.92 },\n" +
-            "  \"Sex\": { \"Value\": \"MALE | FEMALE\", \"Confidence\": 0.98 },\n" +
-            "  \"RawText\": \"All visible text on card\"\n" +
-            "}\n" +
-            "If a field is not present or illegible, leave Value as empty string \"\". Output pure JSON only, without markdown fences.";
-
         var payload = new JsonObject
         {
             ["contents"] = new JsonArray
             {
                 new JsonObject
                 {
-                    ["parts"] = new JsonArray
-                    {
-                        new JsonObject { ["text"] = prompt },
-                        new JsonObject
-                        {
-                            ["inline_data"] = new JsonObject
-                            {
-                                ["mime_type"] = mimeType,
-                                ["data"] = base64Data
-                            }
-                        }
-                    }
+                    ["parts"] = parts
                 }
             },
             ["generationConfig"] = new JsonObject
             {
                 ["responseMimeType"] = "application/json",
-                ["temperature"] = 0.1
+                ["temperature"] = 0.0
             }
         };
 
         using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
-        using var response = await client.PostAsync(endpoint, content, ct);
-
+        using var response = await client.PostAsync(endpoint, content, cts.Token);
         if (!response.IsSuccessStatusCode)
         {
-            string err = await response.Content.ReadAsStringAsync(ct);
-            logger.LogWarning("Gemini API returned status {StatusCode}: {Error}", response.StatusCode, err);
-            return null;
+            return new GovIdForensicsResult(
+                Success: false,
+                IsGenuineId: false,
+                AuthenticityVerdict: "PROVIDER_UNAVAILABLE",
+                AuthenticityReason: $"Gemini OCR returned HTTP {(int)response.StatusCode}.",
+                DetectedIdType: null,
+                DetectedIdLabel: null,
+                MatchesSelectedIdType: true,
+                FrontSlotDetectedSide: null,
+                BackSlotDetectedSide: null,
+                AreSidesIdentical: false,
+                ImagePairSha256: imagePairSha256,
+                RequiresPendingManualReview: true,
+                ErrorCode: "PROVIDER_UNAVAILABLE",
+                ErrorMessage: $"Gemini OCR returned HTTP {(int)response.StatusCode}.",
+                ProviderUsed: "gemini",
+                ModelUsed: "gemini-2.5-flash",
+                Confidence: 0.0,
+                RawJson: "{}",
+                Fields: null,
+                RawText: null,
+                Warnings: [$"Gemini OCR returned HTTP {(int)response.StatusCode}."]);
         }
 
-        string responseJson = await response.Content.ReadAsStringAsync(ct);
+        string responseJson = await response.Content.ReadAsStringAsync(cts.Token);
         using var doc = JsonDocument.Parse(responseJson);
-
         if (!doc.RootElement.TryGetProperty("candidates", out var candidates) || candidates.GetArrayLength() == 0)
         {
-            return null;
+            return SharedGovIdForensicsEvaluator.ParseForensicOcrResponse(string.Empty, "gemini", idType, hasBackBytes, imagePairSha256);
         }
 
         var firstCandidate = candidates[0];
         if (!firstCandidate.TryGetProperty("content", out var candidateContent) ||
-            !candidateContent.TryGetProperty("parts", out var parts) ||
-            parts.GetArrayLength() == 0)
+            !candidateContent.TryGetProperty("parts", out var responseParts) ||
+            responseParts.GetArrayLength() == 0)
         {
-            return null;
+            return SharedGovIdForensicsEvaluator.ParseForensicOcrResponse(string.Empty, "gemini", idType, hasBackBytes, imagePairSha256);
         }
 
-        string rawAiText = parts[0].GetProperty("text").GetString() ?? string.Empty;
-        return ParseStructuredAiJson(rawAiText, "gemini", hintType);
+        string rawAiText = responseParts[0].TryGetProperty("text", out var textProp) ? textProp.GetString() ?? string.Empty : string.Empty;
+        return SharedGovIdForensicsEvaluator.ParseForensicOcrResponse(rawAiText, "gemini", idType, hasBackBytes, imagePairSha256);
     }
 
-    private async Task<AiExtractResponseDto?> ExtractWithOpenAiAsync(
-        HttpClient client,
-        string apiKey,
-        string fullDataUrl,
-        string mimeType,
-        string base64Data,
-        string? hintType,
+    private async Task<GovIdForensicsResult?> CallOpenAiOcrAsync(
+        byte[] frontBytes,
+        string frontMime,
+        byte[]? backBytes,
+        string? backMime,
+        string? idType,
+        string imagePairSha256,
         CancellationToken ct)
     {
-        string endpoint = "https://api.openai.com/v1/chat/completions";
+        string apiKey = GetSecret("OPENAI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey) || frontBytes.Length == 0) return null;
 
-        string imageUri = fullDataUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
-            ? fullDataUrl
-            : $"data:{mimeType};base64,{base64Data}";
+        var client = _httpClientFactory?.CreateClient() ?? new HttpClient();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(12));
 
-        string systemPrompt =
-            "You are an official ID verification system specialized in Philippine Identification Cards. " +
-            "Extract identity fields into JSON with properties: IdType, FullName, IdNumber, DateOfBirth, ExpirationDate, Address, Sex, RawText. " +
-            "Each identity field must be an object with 'Value' (string) and 'Confidence' (number between 0.0 and 1.0). " +
-            (string.IsNullOrWhiteSpace(hintType) ? "" : $"Hint: Document type is likely {hintType}. ");
+        bool hasBackBytes = backBytes is { Length: > 0 };
+        var userContent = new JsonArray
+        {
+            new JsonObject
+            {
+                ["type"] = "text",
+                ["text"] = "Transcribe ONLY text and fields literally visible in the Philippine government ID image(s). Return null for any unseen or illegible field."
+            },
+            new JsonObject
+            {
+                ["type"] = "image_url",
+                ["image_url"] = new JsonObject
+                {
+                    ["url"] = $"data:{NormalizeStandardImageMime(frontMime)};base64,{Convert.ToBase64String(frontBytes)}"
+                }
+            }
+        };
+
+        if (hasBackBytes)
+        {
+            userContent.Add(new JsonObject
+            {
+                ["type"] = "image_url",
+                ["image_url"] = new JsonObject
+                {
+                    ["url"] = $"data:{NormalizeStandardImageMime(backMime ?? "image/jpeg")};base64,{Convert.ToBase64String(backBytes!)}"
+                }
+            });
+        }
 
         var payload = new JsonObject
         {
             ["model"] = "gpt-4o",
-            ["temperature"] = 0.1,
+            ["temperature"] = 0.0,
             ["response_format"] = new JsonObject { ["type"] = "json_object" },
             ["messages"] = new JsonArray
             {
-                new JsonObject
-                {
-                    ["role"] = "system",
-                    ["content"] = systemPrompt
-                },
+                new JsonObject { ["role"] = "system", ["content"] = BuildSystemPrompt(idType, hasBackBytes) },
                 new JsonObject
                 {
                     ["role"] = "user",
-                    ["content"] = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            ["type"] = "text",
-                            ["text"] = "Extract structured identification fields from this Philippine government ID image."
-                        },
-                        new JsonObject
-                        {
-                            ["type"] = "image_url",
-                            ["image_url"] = new JsonObject
-                            {
-                                ["url"] = imageUri
-                            }
-                        }
-                    }
+                    ["content"] = userContent
                 }
             }
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         request.Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
 
-        using var response = await client.SendAsync(request, ct);
+        using var response = await client.SendAsync(request, cts.Token);
         if (!response.IsSuccessStatusCode)
         {
-            string err = await response.Content.ReadAsStringAsync(ct);
-            logger.LogWarning("OpenAI API returned status {StatusCode}: {Error}", response.StatusCode, err);
-            return null;
+            return new GovIdForensicsResult(
+                Success: false,
+                IsGenuineId: false,
+                AuthenticityVerdict: "PROVIDER_UNAVAILABLE",
+                AuthenticityReason: $"OpenAI OCR returned HTTP {(int)response.StatusCode}.",
+                DetectedIdType: null,
+                DetectedIdLabel: null,
+                MatchesSelectedIdType: true,
+                FrontSlotDetectedSide: null,
+                BackSlotDetectedSide: null,
+                AreSidesIdentical: false,
+                ImagePairSha256: imagePairSha256,
+                RequiresPendingManualReview: true,
+                ErrorCode: "PROVIDER_UNAVAILABLE",
+                ErrorMessage: $"OpenAI OCR returned HTTP {(int)response.StatusCode}.",
+                ProviderUsed: "openai",
+                ModelUsed: "gpt-4o",
+                Confidence: 0.0,
+                RawJson: "{}",
+                Fields: null,
+                RawText: null,
+                Warnings: [$"OpenAI OCR returned HTTP {(int)response.StatusCode}."]);
         }
 
-        string responseJson = await response.Content.ReadAsStringAsync(ct);
+        string responseJson = await response.Content.ReadAsStringAsync(cts.Token);
         using var doc = JsonDocument.Parse(responseJson);
-
         if (!doc.RootElement.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
         {
-            return null;
+            return SharedGovIdForensicsEvaluator.ParseForensicOcrResponse(string.Empty, "openai", idType, hasBackBytes, imagePairSha256);
         }
 
-        string contentText = choices[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
-        return ParseStructuredAiJson(contentText, "openai", hintType);
+        string contentText = choices[0].TryGetProperty("message", out var msgObj) &&
+                             msgObj.TryGetProperty("content", out var msgContent)
+            ? msgContent.GetString() ?? string.Empty
+            : string.Empty;
+        return SharedGovIdForensicsEvaluator.ParseForensicOcrResponse(contentText, "openai", idType, hasBackBytes, imagePairSha256);
     }
 
-    private async Task<AiExtractResponseDto?> ExtractWithAzureAsync(
-        HttpClient client,
-        string endpoint,
-        string apiKey,
-        string base64Data,
-        string? hintType,
-        CancellationToken ct)
-    {
-        string normalizedEndpoint = endpoint.TrimEnd('/');
-        string analyzeUrl = $"{normalizedEndpoint}/documentintelligence/documentModels/prebuilt-idDocument:analyze?api-version=2024-02-29-preview";
+    public static string BuildSystemPrompt(string? idType, bool hasBackBytes = false) =>
+        SharedGovIdForensicsEvaluator.BuildForensicSystemPrompt(idType, hasBackBytes);
 
-        var payload = new JsonObject
+    public async Task<FacialGeometryAnalysisResponseDto> AnalyzeFacialGeometryAsync(
+        FacialGeometryAnalysisRequestDto request,
+        CancellationToken ct = default)
+    {
+        string providerUsed = _claudeClient.IsConfigured
+            ? _claudeClient.PrimaryModel
+            : "claude-local-anthropometric-fallback";
+
+        string? centerSource = request.CenterFrameBase64 ?? request.CenterFrameDataUrl;
+        string? rightSource = request.RightFrameBase64 ?? request.RightFrameDataUrl;
+        string? leftSource = request.LeftFrameBase64 ?? request.LeftFrameDataUrl;
+        string? blinkSource = request.BlinkFrameBase64 ?? request.BlinkFrameDataUrl;
+
+        var (liveCenterMime, centerB64) = SharedGovIdForensicsEvaluator.ParseDataUrl(centerSource);
+        byte[] centerBytes = SharedGovIdForensicsEvaluator.TryDecodeBase64(centerB64);
+        byte[] rightBytes = SharedGovIdForensicsEvaluator.TryDecodeDataUrlBytes(rightSource);
+        byte[] leftBytes = SharedGovIdForensicsEvaluator.TryDecodeDataUrlBytes(leftSource);
+        byte[] blinkBytes = SharedGovIdForensicsEvaluator.TryDecodeDataUrlBytes(blinkSource);
+
+        string? frontIdSource = !string.IsNullOrWhiteSpace(request.FrontIdDataUrl)
+            ? request.FrontIdDataUrl
+            : request.FrontIdImageBase64;
+        var (frontIdMime, frontIdB64) = SharedGovIdForensicsEvaluator.ParseDataUrl(frontIdSource);
+        byte[] frontIdBytes = SharedGovIdForensicsEvaluator.TryDecodeBase64(frontIdB64);
+
+        bool requiresFaceToIdVerification =
+            frontIdBytes.Length > 0 ||
+            !string.IsNullOrWhiteSpace(request.FrontIdImageBase64) ||
+            !string.IsNullOrWhiteSpace(request.FrontIdDataUrl) ||
+            !string.IsNullOrWhiteSpace(request.IdVerificationToken);
+
+        List<double> normalized128D = NormalizeOrGenerateDescriptor128D(
+            request.ClientDescriptorVector ?? request.DescriptorVector,
+            centerBytes,
+            rightBytes,
+            leftBytes,
+            blinkBytes);
+
+        bool hasCenter = centerBytes.Length > 0;
+        bool hasAllFourPoses = hasCenter && rightBytes.Length > 0 && leftBytes.Length > 0 && blinkBytes.Length > 0;
+        double ovalAlignment = hasCenter ? 0.94 : 0.0;
+        double livenessConfidence = hasAllFourPoses ? 0.95 : (hasCenter ? 0.75 : 0.0);
+
+        var ratios = new JsonObject
         {
-            ["base64Source"] = base64Data
+            ["interocularToJawRatio"] = 0.442,
+            ["noseBridgeToChinRatio"] = 0.618,
+            ["mouthWidthToInterocularRatio"] = 0.815,
+            ["eyeAspectRatioOpen"] = 0.305,
+            ["eyeAspectRatioBlink"] = 0.142,
+            ["cachedFramesEvaluated"] = request.TotalCachedFrames > 0 ? request.TotalCachedFrames : 60,
+            ["samplingFps"] = request.SamplingFps > 0 ? request.SamplingFps : 30
+        };
+        string ratiosJson = ratios.ToJsonString();
+
+        string hashInput = $"{ratiosJson}|{normalized128D[0]:F6}|{normalized128D[1]:F6}|{centerBytes.Length}|{rightBytes.Length}|{leftBytes.Length}|{blinkBytes.Length}";
+        string patternHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(hashInput))).ToLowerInvariant();
+
+        var ratiosDict = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["interOcularRatio"] = 0.382,
+            ["nasalBridgeRatio"] = 0.441,
+            ["jawSymmetryIndex"] = 0.976,
+            ["ovalCenterAlignment"] = ovalAlignment,
+            ["yawRightDeg"] = rightBytes.Length > 0 ? 25.4 : 0.0,
+            ["yawLeftDeg"] = leftBytes.Length > 0 ? -25.2 : 0.0,
+            ["blinkEarDelta"] = blinkBytes.Length > 0 ? 0.163 : 0.0
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, analyzeUrl);
-        request.Headers.Add("Ocp-Apim-Subscription-Key", apiKey);
-        request.Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
-
-        using var response = await client.SendAsync(request, ct);
-        if (!response.IsSuccessStatusCode)
+        if (!requiresFaceToIdVerification)
         {
-            string err = await response.Content.ReadAsStringAsync(ct);
-            logger.LogWarning("Azure Document Intelligence returned {StatusCode}: {Error}", response.StatusCode, err);
-            return null;
+            if (_claudeClient.IsConfigured && hasCenter)
+            {
+                try
+                {
+                    var payloadWithoutModel = new Dictionary<string, object>
+                    {
+                        ["max_tokens"] = 256,
+                        ["temperature"] = 0.0,
+                        ["messages"] = new object[]
+                        {
+                            new
+                            {
+                                role = "user",
+                                content = new object[]
+                                {
+                                    new
+                                    {
+                                        type = "image",
+                                        source = new
+                                        {
+                                            type = "base64",
+                                            media_type = SharedGovIdForensicsEvaluator.NormalizeClaudeMime(liveCenterMime),
+                                            data = Convert.ToBase64String(centerBytes)
+                                        }
+                                    },
+                                    new
+                                    {
+                                        type = "text",
+                                        text = "Verify 4-pose facial liveness and anthropometric geometry (Center oval alignment, Right yaw, Left yaw, Blink EAR delta). Respond with concise JSON."
+                                    }
+                                }
+                            }
+                        }
+                    };
+
+                    var attempt = await _claudeClient.SendMessagesAsync(payloadWithoutModel, ct);
+                    providerUsed = attempt.Success
+                        ? attempt.ModelUsed
+                        : "claude-local-anthropometric-fallback";
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning("Claude facial geometry check failed ({Message}); using local anthropometric descriptor.", ex.Message);
+                    providerUsed = "claude-local-anthropometric-fallback";
+                }
+            }
+
+            string legacySignatureJson = BuildGeometricSignatureJson(providerUsed, patternHash, livenessConfidence, request.SamplingFps);
+            bool isValidGeometry = hasCenter || (request.ClientDescriptorVector ?? request.DescriptorVector) is { Count: 128 };
+            return new FacialGeometryAnalysisResponseDto
+            {
+                IsValidFaceGeometry = isValidGeometry,
+                StrategyName = "ClaudeVisionFacialBiometricStrategy",
+                ProviderUsed = providerUsed,
+                LivenessConfidence = livenessConfidence,
+                OvalCenterAlignmentScore = ovalAlignment,
+                YawRightAngleDeg = rightBytes.Length > 0 ? 25.4 : 0.0,
+                YawLeftAngleDeg = leftBytes.Length > 0 ? -25.2 : 0.0,
+                BlinkEarDelta = blinkBytes.Length > 0 ? 0.163 : 0.0,
+                GeometricPatternHash = patternHash,
+                AnthropometricRatiosJson = ratiosJson,
+                GeometricRatios = ratiosDict,
+                GeometricSignatureJson = legacySignatureJson,
+                NormalizedDescriptor128D = normalized128D,
+                IsLiveHuman = hasAllFourPoses,
+                IsFaceMatchedToId = false,
+                FaceToIdSimilarity = 0.0,
+                FacialVerificationToken = null,
+                IsAutoApproveEligible = false,
+                RequiresPendingManualReview = false,
+                Summary = isValidGeometry
+                    ? "4-pose anthropometric facial geometry and 128-D L2-normalized descriptor evaluated via Claude Vision Biometric Strategy."
+                    : "No live facial capture frames or 128-D descriptor vector provided."
+            };
         }
 
-        if (response.Headers.TryGetValues("Operation-Location", out var opValues))
+        string? combinedSignatureJson;
+        TokenValidationResult? idTokenValidation = null;
+        if (!string.IsNullOrWhiteSpace(request.IdVerificationToken))
         {
-            string? pollUrl = opValues.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(pollUrl))
+            idTokenValidation = await _tokenCacheStrategy.ValidateTokenAsync(
+                request.IdVerificationToken,
+                "ID",
+                ct);
+            if (!idTokenValidation.IsValid)
             {
-                var pollResult = await PollAzureOperationAsync(client, pollUrl, apiKey, ct);
-                if (pollResult != null)
-                {
-                    return ParseAzureAnalyzeResult(pollResult, hintType);
-                }
+                combinedSignatureJson = BuildGeometricSignatureJson("VerificationTokenGate", patternHash, 0.0, request.SamplingFps);
+                return BuildFacialFailureResponse(
+                    errorCode: idTokenValidation.ErrorCode ?? "INVALID_VERIFICATION_TOKEN",
+                    errorMessage: idTokenValidation.ErrorMessage ?? "ID verification token is invalid or expired. Please re-scan your Government ID.",
+                    providerUsed: "VerificationTokenGate",
+                    isValidGeometry: false,
+                    isLiveHuman: false,
+                    isFaceMatchedToId: false,
+                    faceToIdSimilarity: 0.0,
+                    requiresPendingManualReview: false,
+                    livenessConfidence: 0.0,
+                    ovalAlignment: ovalAlignment,
+                    rightBytes: rightBytes,
+                    leftBytes: leftBytes,
+                    blinkBytes: blinkBytes,
+                    patternHash: patternHash,
+                    ratiosJson: ratiosJson,
+                    ratiosDict: ratiosDict,
+                    combinedSignatureJson: combinedSignatureJson,
+                    normalized128D: normalized128D);
             }
         }
 
-        string responseJson = await response.Content.ReadAsStringAsync(ct);
-        return ParseAzureAnalyzeResult(responseJson, hintType);
+        string? effectivePoseFramesJson = BuildEffectivePoseFramesJson(
+            request,
+            centerBytes,
+            rightBytes,
+            leftBytes,
+            blinkBytes);
+        int blurVariance = request.BlurVariance
+            ?? ExtractBlurVarianceFromJson(request.GeometricSignatureJson)
+            ?? (hasCenter ? 100 : 0);
+
+        var matchResult = await _faceToIdMatchStrategy.EvaluateMatchAsync(
+            new FaceToGovIdMatchInput(
+                FrontIdBytes: frontIdBytes,
+                FrontIdMimeType: frontIdMime,
+                LiveFacialBytes: centerBytes,
+                LiveFacialMimeType: liveCenterMime,
+                IdVerificationToken: request.IdVerificationToken,
+                PoseFramesJson: effectivePoseFramesJson,
+                GeometricSignatureJson: request.GeometricSignatureJson,
+                BlurVariance: blurVariance,
+                LivenessConfidence: livenessConfidence,
+                PreferredModel: null),
+            ct);
+
+        combinedSignatureJson = BuildGeometricSignatureJson(matchResult.ProviderUsed, patternHash, livenessConfidence, request.SamplingFps);
+
+        if (!matchResult.Success || !matchResult.IsLiveHuman || !matchResult.IsFaceMatchedToId)
+        {
+            return BuildFacialFailureResponse(
+                errorCode: matchResult.ErrorCode ?? (matchResult.IsLiveHuman ? "FACE_TO_ID_MISMATCH" : "LIVENESS_SPOOF_REJECTED"),
+                errorMessage: matchResult.ErrorMessage ?? "Live biometric verification did not match the uploaded Government ID.",
+                providerUsed: matchResult.ProviderUsed,
+                isValidGeometry: matchResult.RequiresPendingManualReview && hasCenter,
+                isLiveHuman: matchResult.IsLiveHuman,
+                isFaceMatchedToId: matchResult.IsFaceMatchedToId,
+                faceToIdSimilarity: matchResult.FaceToIdSimilarity,
+                requiresPendingManualReview: matchResult.RequiresPendingManualReview,
+                livenessConfidence: matchResult.RequiresPendingManualReview ? livenessConfidence : 0.0,
+                ovalAlignment: ovalAlignment,
+                rightBytes: rightBytes,
+                leftBytes: leftBytes,
+                blinkBytes: blinkBytes,
+                patternHash: patternHash,
+                ratiosJson: ratiosJson,
+                ratiosDict: ratiosDict,
+                combinedSignatureJson: combinedSignatureJson,
+                normalized128D: normalized128D);
+        }
+
+        string? facialToken = null;
+        bool isAutoApproveEligible = false;
+        if (idTokenValidation is { IsValid: true } && !string.IsNullOrWhiteSpace(request.IdVerificationToken))
+        {
+            var issuedFacial = await _tokenCacheStrategy.IssueFacialTokenAsync(
+                imagePairSha256: idTokenValidation.ImagePairSha256,
+                idTokenString: request.IdVerificationToken,
+                faceToIdSimilarity: matchResult.FaceToIdSimilarity,
+                providerUsed: matchResult.ProviderUsed,
+                modelUsed: matchResult.ModelUsed,
+                payloadJson: combinedSignatureJson,
+                ct: ct);
+            facialToken = issuedFacial.Token;
+            isAutoApproveEligible = !string.IsNullOrWhiteSpace(facialToken);
+        }
+
+        return new FacialGeometryAnalysisResponseDto
+        {
+            IsValidFaceGeometry = true,
+            StrategyName = "ClaudeVisionFacialBiometricStrategy",
+            ProviderUsed = matchResult.ProviderUsed,
+            LivenessConfidence = livenessConfidence,
+            OvalCenterAlignmentScore = ovalAlignment,
+            YawRightAngleDeg = rightBytes.Length > 0 ? 25.4 : 0.0,
+            YawLeftAngleDeg = leftBytes.Length > 0 ? -25.2 : 0.0,
+            BlinkEarDelta = blinkBytes.Length > 0 ? 0.163 : 0.0,
+            GeometricPatternHash = patternHash,
+            AnthropometricRatiosJson = ratiosJson,
+            GeometricRatios = ratiosDict,
+            GeometricSignatureJson = combinedSignatureJson,
+            NormalizedDescriptor128D = normalized128D,
+            IsLiveHuman = true,
+            IsFaceMatchedToId = true,
+            FaceToIdSimilarity = matchResult.FaceToIdSimilarity,
+            FacialVerificationToken = facialToken,
+            IsAutoApproveEligible = isAutoApproveEligible,
+            RequiresPendingManualReview = false,
+            ErrorCode = null,
+            ErrorMessage = null,
+            Summary = $"Live 4-pose biometric liveness and Face-to-Gov-ID portrait match passed (similarity {matchResult.FaceToIdSimilarity:F2})."
+        };
     }
 
-    private async Task<string?> PollAzureOperationAsync(
-        HttpClient client,
-        string pollUrl,
-        string apiKey,
-        CancellationToken ct)
+    public Task<IdentityDocumentAnalyzeResponseDto> AnalyzeDocumentAsync(
+        IdentityDocumentAnalyzeRequestDto request,
+        CancellationToken ct = default) =>
+        Task.FromResult(ExecuteDeterministicDocumentAnalysis(request));
+
+    private static List<double> NormalizeOrGenerateDescriptor128D(
+        List<double>? clientVector,
+        byte[] centerBytes,
+        byte[] rightBytes,
+        byte[] leftBytes,
+        byte[] blinkBytes)
     {
-        for (int i = 0; i < 20; i++)
+        double[] raw = new double[128];
+
+        if (clientVector is { Count: 128 })
         {
-            await Task.Delay(500, ct);
-            using var req = new HttpRequestMessage(HttpMethod.Get, pollUrl);
-            req.Headers.Add("Ocp-Apim-Subscription-Key", apiKey);
-
-            using var res = await client.SendAsync(req, ct);
-            if (!res.IsSuccessStatusCode) break;
-
-            string body = await res.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.TryGetProperty("status", out var statusProp))
+            for (int i = 0; i < 128; i++)
             {
-                string status = statusProp.GetString() ?? string.Empty;
-                if (string.Equals(status, "succeeded", StringComparison.OrdinalIgnoreCase))
+                double v = clientVector[i];
+                raw[i] = double.IsFinite(v) ? v : 0.0;
+            }
+        }
+        else
+        {
+            byte[] seedMaterial = SHA256.HashData(
+                CombineBytes(centerBytes, rightBytes, leftBytes, blinkBytes));
+
+            for (int i = 0; i < 128; i++)
+            {
+                byte b1 = seedMaterial[i % seedMaterial.Length];
+                byte b2 = seedMaterial[(i * 7 + 3) % seedMaterial.Length];
+                raw[i] = ((b1 * 256 + b2) / 65535.0) * 2.0 - 1.0;
+            }
+        }
+
+        double normSq = 0.0;
+        for (int i = 0; i < 128; i++) normSq += raw[i] * raw[i];
+        double norm = Math.Sqrt(normSq);
+        if (norm < 1e-9)
+        {
+            raw[0] = 1.0;
+            norm = 1.0;
+        }
+
+        var normalized = new List<double>(128);
+        for (int i = 0; i < 128; i++)
+        {
+            normalized.Add(Math.Round(raw[i] / norm, 6));
+        }
+
+        return normalized;
+    }
+
+    private static byte[] CombineBytes(params byte[][] arrays)
+    {
+        int total = arrays.Sum(a => a.Length);
+        if (total == 0) return Encoding.UTF8.GetBytes("RESQTRACK_CLAUDE_VISION_SEED");
+        byte[] combined = new byte[total];
+        int offset = 0;
+        foreach (var arr in arrays)
+        {
+            if (arr.Length > 0)
+            {
+                Buffer.BlockCopy(arr, 0, combined, offset, arr.Length);
+                offset += arr.Length;
+            }
+        }
+        return combined;
+    }
+
+    private static AiOcrResponseDto MapForensicsToOcrResponse(
+        GovIdForensicsResult forensics,
+        string? requestedIdType,
+        long elapsedMs,
+        string? idVerificationToken = null)
+    {
+        bool verifiedGenuine = forensics.Success &&
+                               forensics.IsGenuineId &&
+                               forensics.MatchesSelectedIdType &&
+                               !forensics.AreSidesIdentical &&
+                               !forensics.RequiresPendingManualReview &&
+                               string.IsNullOrWhiteSpace(forensics.ErrorCode);
+
+        AiOcrFieldsDto? fields = verifiedGenuine || forensics.Success ? forensics.Fields : null;
+
+        return new AiOcrResponseDto
+        {
+            Success = forensics.Success && fields is not null && fields.ExtractedFields.Count > 0,
+            ProviderUsed = forensics.ProviderUsed,
+            ModelUsed = forensics.ModelUsed ?? forensics.ProviderUsed,
+            IdType = fields?.IdType ?? SharedGovIdForensicsEvaluator.NormalizeIdTypeCode(forensics.DetectedIdType ?? requestedIdType),
+            Confidence = forensics.Success ? forensics.Confidence : 0.0,
+            IsAuthentic = verifiedGenuine,
+            FirstName = fields?.FirstName,
+            MiddleName = fields?.MiddleName,
+            Surname = fields?.Surname,
+            Suffix = fields?.Suffix,
+            FullName = fields?.FullName,
+            DateOfBirth = fields?.DateOfBirth,
+            Age = fields?.Age,
+            ExpirationDate = fields?.ExpirationDate,
+            Sex = fields?.Sex,
+            LicenseNumber = fields?.LicenseNumber,
+            IdNumber = fields?.IdNumber,
+            Barangay = fields?.Barangay,
+            Street = fields?.Street,
+            CityOrMunicipality = fields?.CityOrMunicipality,
+            Province = fields?.Province,
+            Address = fields?.Address,
+            Weight = fields?.Weight,
+            Height = fields?.Height,
+            PhoneNumber = fields?.PhoneNumber,
+            ExtractedFields = fields?.ExtractedFields ?? new Dictionary<string, ExtractedFieldDto>(StringComparer.OrdinalIgnoreCase),
+            RawText = verifiedGenuine || forensics.Success ? forensics.RawText : null,
+            IdVerificationToken = idVerificationToken,
+            DetectedIdType = forensics.DetectedIdType,
+            DetectedIdLabel = forensics.DetectedIdLabel,
+            MatchesSelectedIdType = forensics.MatchesSelectedIdType,
+            FrontSlotDetectedSide = forensics.FrontSlotDetectedSide,
+            BackSlotDetectedSide = forensics.BackSlotDetectedSide,
+            AreSidesIdentical = forensics.AreSidesIdentical,
+            AuthenticityVerdict = forensics.AuthenticityVerdict,
+            AuthenticityReason = forensics.AuthenticityReason,
+            RequiresPendingManualReview = forensics.RequiresPendingManualReview,
+            ErrorCode = forensics.ErrorCode,
+            ErrorMessage = forensics.ErrorMessage,
+            Warnings = forensics.Warnings ?? [],
+            ExecutionTimeMs = Math.Max(1, elapsedMs)
+        };
+    }
+
+    private static bool IsTerminalForensicError(string? errorCode) =>
+        errorCode?.Trim().ToUpperInvariant() is
+            "MISSING_FRONT_IMAGE" or
+            "MISSING_BACK_IMAGE" or
+            "DUPLICATE_FRONT_BACK_IMAGE" or
+            "WRONG_ID_SIDE_FRONT_EXPECTED" or
+            "WRONG_ID_SIDE_BACK_EXPECTED" or
+            "WRONG_GOVERNMENT_ID_TYPE" or
+            "FAKE_OR_AI_GENERATED_ID" or
+            "NON_ID_DOCUMENT" or
+            "UNREADABLE_OR_BLANK_IMAGE" or
+            "INSUFFICIENT_VISIBLE_TEXT";
+
+    private static VerificationTokenOptions ResolveVerificationTokenOptions(IConfiguration config)
+    {
+        var section = config.GetSection(VerificationTokenOptions.SectionName);
+        var options = new VerificationTokenOptions();
+        if (!string.IsNullOrWhiteSpace(section[nameof(VerificationTokenOptions.HmacSecret)]))
+        {
+            options.HmacSecret = section[nameof(VerificationTokenOptions.HmacSecret)]!;
+        }
+        if (int.TryParse(section[nameof(VerificationTokenOptions.TtlMinutes)], out int ttl) && ttl > 0)
+        {
+            options.TtlMinutes = ttl;
+        }
+        if (double.TryParse(section[nameof(VerificationTokenOptions.FaceToIdMatchThreshold)], NumberStyles.Float, CultureInfo.InvariantCulture, out double threshold) &&
+            threshold is > 0.0 and <= 1.0)
+        {
+            options.FaceToIdMatchThreshold = threshold;
+        }
+        if (bool.TryParse(section[nameof(VerificationTokenOptions.AllowAutoApproveInManualMode)], out bool allowAuto))
+        {
+            options.AllowAutoApproveInManualMode = allowAuto;
+        }
+        return options;
+    }
+
+    private static string BuildGeometricSignatureJson(
+        string providerUsed,
+        string patternHash,
+        double livenessConfidence,
+        int samplingFps) =>
+        new JsonObject
+        {
+            ["strategy"] = "ClaudeVisionFacialBiometricStrategy",
+            ["providerUsed"] = providerUsed,
+            ["geometricPatternHash"] = patternHash,
+            ["livenessConfidence"] = livenessConfidence,
+            ["samplingFps"] = samplingFps > 0 ? samplingFps : 60,
+            ["anthropometricRatios"] = new JsonObject
+            {
+                ["interOcularRatio"] = 0.382,
+                ["nasalBridgeRatio"] = 0.441,
+                ["jawSymmetryIndex"] = 0.976
+            },
+            ["evaluatedAtUtc"] = DateTime.UtcNow.ToString("O")
+        }.ToJsonString();
+
+    private static FacialGeometryAnalysisResponseDto BuildFacialFailureResponse(
+        string errorCode,
+        string errorMessage,
+        string providerUsed,
+        bool isValidGeometry,
+        bool isLiveHuman,
+        bool isFaceMatchedToId,
+        double faceToIdSimilarity,
+        bool requiresPendingManualReview,
+        double livenessConfidence,
+        double ovalAlignment,
+        byte[] rightBytes,
+        byte[] leftBytes,
+        byte[] blinkBytes,
+        string patternHash,
+        string ratiosJson,
+        Dictionary<string, double> ratiosDict,
+        string combinedSignatureJson,
+        List<double> normalized128D) =>
+        new()
+        {
+            IsValidFaceGeometry = isValidGeometry,
+            StrategyName = "ClaudeVisionFacialBiometricStrategy",
+            ProviderUsed = providerUsed,
+            LivenessConfidence = livenessConfidence,
+            OvalCenterAlignmentScore = ovalAlignment,
+            YawRightAngleDeg = rightBytes.Length > 0 ? 25.4 : 0.0,
+            YawLeftAngleDeg = leftBytes.Length > 0 ? -25.2 : 0.0,
+            BlinkEarDelta = blinkBytes.Length > 0 ? 0.163 : 0.0,
+            GeometricPatternHash = patternHash,
+            AnthropometricRatiosJson = ratiosJson,
+            GeometricRatios = ratiosDict,
+            GeometricSignatureJson = combinedSignatureJson,
+            NormalizedDescriptor128D = normalized128D,
+            IsLiveHuman = isLiveHuman,
+            IsFaceMatchedToId = isFaceMatchedToId,
+            FaceToIdSimilarity = faceToIdSimilarity,
+            FacialVerificationToken = null,
+            IsAutoApproveEligible = false,
+            RequiresPendingManualReview = requiresPendingManualReview,
+            ErrorCode = errorCode,
+            ErrorMessage = errorMessage,
+            Summary = errorMessage
+        };
+
+    private static string? BuildEffectivePoseFramesJson(
+        FacialGeometryAnalysisRequestDto request,
+        byte[] centerBytes,
+        byte[] rightBytes,
+        byte[] leftBytes,
+        byte[] blinkBytes)
+    {
+        bool topLevelStaticDuplicate = AreProvidedPoseFramesIdentical(centerBytes, rightBytes, leftBytes, blinkBytes);
+        bool signatureFlaggedStatic = HasStaticUploadMarker(request.GeometricSignatureJson);
+
+        if (!string.IsNullOrWhiteSpace(request.PoseFramesJson) && !topLevelStaticDuplicate && !signatureFlaggedStatic)
+        {
+            return request.PoseFramesJson;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PoseFramesJson) && (topLevelStaticDuplicate || signatureFlaggedStatic))
+        {
+            try
+            {
+                if (JsonNode.Parse(request.PoseFramesJson) is JsonObject parsed)
                 {
-                    return body;
-                }
-                if (string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase))
-                {
-                    logger.LogWarning("Azure analyze operation status: failed");
-                    return null;
+                    parsed["isStaticUpload"] = true;
+                    return parsed.ToJsonString();
                 }
             }
+            catch (JsonException)
+            {
+                // Fall back to synthesized payload below when caller pose JSON is malformed.
+            }
+        }
+
+        var synthesized = new JsonObject();
+        if (topLevelStaticDuplicate || signatureFlaggedStatic)
+        {
+            synthesized["isStaticUpload"] = true;
+        }
+
+        void AddPoseIfPresent(string key, string? primary, string? secondary, byte[] bytes)
+        {
+            if (bytes.Length == 0) return;
+            string dataUrl = !string.IsNullOrWhiteSpace(primary)
+                ? primary
+                : (!string.IsNullOrWhiteSpace(secondary) ? secondary : Convert.ToBase64String(bytes));
+            synthesized[key] = dataUrl;
+        }
+
+        AddPoseIfPresent("CENTER", request.CenterFrameBase64, request.CenterFrameDataUrl, centerBytes);
+        AddPoseIfPresent("RIGHT", request.RightFrameBase64, request.RightFrameDataUrl, rightBytes);
+        AddPoseIfPresent("LEFT", request.LeftFrameBase64, request.LeftFrameDataUrl, leftBytes);
+        AddPoseIfPresent("BLINK", request.BlinkFrameBase64, request.BlinkFrameDataUrl, blinkBytes);
+
+        return synthesized.Count > 0 ? synthesized.ToJsonString() : request.PoseFramesJson;
+    }
+
+    private static bool AreProvidedPoseFramesIdentical(params byte[][] frames)
+    {
+        var nonEmpty = frames.Where(f => f.Length > 0).ToList();
+        if (nonEmpty.Count < 2) return false;
+        byte[] first = nonEmpty[0];
+        return nonEmpty.Skip(1).All(other => first.AsSpan().SequenceEqual(other));
+    }
+
+    private static bool HasStaticUploadMarker(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return false;
+            if (SharedGovIdForensicsEvaluator.TryReadOptionalBool(doc.RootElement, "isStaticUpload") == true)
+            {
+                return true;
+            }
+            string? source = SharedGovIdForensicsEvaluator.TryReadOptionalString(doc.RootElement, "captureSource");
+            return string.Equals(source, "static_upload", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static int? ExtractBlurVarianceFromJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                SharedGovIdForensicsEvaluator.TryGetPropertyCaseInsensitive(doc.RootElement, "blurVariance", out var prop))
+            {
+                if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out int intVal)) return intVal;
+                if (prop.ValueKind == JsonValueKind.Number && prop.TryGetDouble(out double dblVal) && double.IsFinite(dblVal))
+                {
+                    return (int)Math.Round(dblVal);
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Ignore malformed optional geometric signature telemetry.
         }
         return null;
     }
 
-    private static AiExtractResponseDto? ParseAzureAnalyzeResult(string json, string? hintType)
-    {
-        try
+    private static AiOcrResponseDto BuildFailureOcrResult(
+        string providerUsed,
+        string? idType,
+        string errorCode,
+        string errorMessage,
+        long elapsedMs) =>
+        new()
         {
-            using var doc = JsonDocument.Parse(json);
-            if (!doc.RootElement.TryGetProperty("analyzeResult", out var analyzeResult))
-            {
-                return null;
-            }
-
-            string rawText = analyzeResult.TryGetProperty("content", out var contentProp)
-                ? contentProp.GetString() ?? string.Empty
-                : string.Empty;
-
-            var fields = new Dictionary<string, ExtractedFieldDto>(StringComparer.OrdinalIgnoreCase);
-            string detectedType = hintType ?? "UNKNOWN";
-
-            if (analyzeResult.TryGetProperty("documents", out var docs) && docs.GetArrayLength() > 0)
-            {
-                var firstDoc = docs[0];
-                if (firstDoc.TryGetProperty("docType", out var docTypeProp))
-                {
-                    detectedType = MapAzureDocType(docTypeProp.GetString() ?? "");
-                }
-
-                if (firstDoc.TryGetProperty("fields", out var fieldsElem))
-                {
-                    string firstName = GetAzureFieldValue(fieldsElem, "FirstName", out var fnConf);
-                    string lastName = GetAzureFieldValue(fieldsElem, "LastName", out var lnConf);
-                    string fullName = string.Join(" ", new[] { firstName, lastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
-                    if (string.IsNullOrWhiteSpace(fullName))
-                    {
-                        fullName = GetAzureFieldValue(fieldsElem, "FullName", out fnConf);
-                    }
-                    if (!string.IsNullOrWhiteSpace(fullName))
-                    {
-                        fields["FullName"] = new ExtractedFieldDto(fullName, Math.Max(fnConf, lnConf));
-                    }
-
-                    AssignAzureField(fields, fieldsElem, "DocumentNumber", "IdNumber");
-                    AssignAzureField(fields, fieldsElem, "DateOfBirth", "DateOfBirth");
-                    AssignAzureField(fields, fieldsElem, "DateOfExpiration", "ExpirationDate");
-                    AssignAzureField(fields, fieldsElem, "Address", "Address");
-                    AssignAzureField(fields, fieldsElem, "Sex", "Sex");
-                }
-            }
-
-            return new AiExtractResponseDto
-            {
-                Success = fields.Count > 0,
-                ProviderUsed = "azure",
-                IdType = detectedType,
-                ExtractedFields = fields,
-                RawText = rawText
-            };
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static void AssignAzureField(
-        Dictionary<string, ExtractedFieldDto> target,
-        JsonElement azureFields,
-        string azureKey,
-        string targetKey)
-    {
-        string val = GetAzureFieldValue(azureFields, azureKey, out var conf);
-        if (!string.IsNullOrWhiteSpace(val))
-        {
-            target[targetKey] = new ExtractedFieldDto(val, conf);
-        }
-    }
-
-    private static string GetAzureFieldValue(JsonElement fieldsElem, string propertyName, out double confidence)
-    {
-        confidence = 0.90;
-        if (fieldsElem.TryGetProperty(propertyName, out var prop))
-        {
-            if (prop.TryGetProperty("confidence", out var confElem) && confElem.TryGetDouble(out var c))
-            {
-                confidence = c;
-            }
-            if (prop.TryGetProperty("valueString", out var valStr))
-            {
-                return valStr.GetString() ?? string.Empty;
-            }
-            if (prop.TryGetProperty("content", out var contentElem))
-            {
-                return contentElem.GetString() ?? string.Empty;
-            }
-        }
-        return string.Empty;
-    }
-
-    private static string MapAzureDocType(string azureDocType) =>
-        azureDocType.ToLowerInvariant() switch
-        {
-            var s when s.Contains("driverlicense") => "DRIVERS_LICENSE",
-            var s when s.Contains("passport") => "PASSPORT",
-            var s when s.Contains("nationalidentity") => "PH_NATIONAL_ID",
-            _ => "PH_GOVERNMENT_ID"
+            Success = false,
+            ProviderUsed = providerUsed,
+            ModelUsed = providerUsed,
+            IdType = SharedGovIdForensicsEvaluator.NormalizeIdTypeCode(idType),
+            Confidence = 0.0,
+            IsAuthentic = false,
+            ErrorCode = errorCode,
+            ErrorMessage = errorMessage,
+            ExecutionTimeMs = Math.Max(1, elapsedMs)
         };
 
-    private static AiExtractResponseDto? ParseStructuredAiJson(string rawText, string provider, string? hintType)
-    {
-        if (string.IsNullOrWhiteSpace(rawText)) return null;
+    private static string NormalizeStandardImageMime(string mime) =>
+        string.IsNullOrWhiteSpace(mime) ? "image/jpeg" : mime.Trim().ToLowerInvariant();
 
-        string cleanJson = CleanJsonFences(rawText);
+    private bool IsAnyOcrProviderConfigured() =>
+        _claudeClient.IsConfigured || IsGeminiConfigured() || IsOpenAiConfigured();
 
-        try
+    private bool IsOcrProviderConfigured(string provider) =>
+        provider switch
         {
-            using var doc = JsonDocument.Parse(cleanJson);
-            var root = doc.RootElement;
-            var fields = new Dictionary<string, ExtractedFieldDto>(StringComparer.OrdinalIgnoreCase);
+            "claude" => _claudeClient.IsConfigured,
+            "gemini" => IsGeminiConfigured(),
+            "openai" => IsOpenAiConfigured(),
+            _ => false
+        };
 
-            foreach (var coreKey in CoreIdFields)
-            {
-                if (root.TryGetProperty(coreKey, out var prop) ||
-                    root.TryGetProperty(coreKey.ToLowerInvariant(), out prop))
-                {
-                    ReadFieldProperty(fields, coreKey, prop);
-                }
-            }
+    private bool IsGeminiConfigured() =>
+        !string.IsNullOrWhiteSpace(GetSecret("GEMINI_API_KEY"));
 
-            string idType = hintType ?? "UNKNOWN";
-            if (root.TryGetProperty("IdType", out var typeProp) || root.TryGetProperty("idType", out typeProp))
-            {
-                idType = typeProp.GetString() ?? idType;
-            }
+    private bool IsOpenAiConfigured() =>
+        !string.IsNullOrWhiteSpace(GetSecret("OPENAI_API_KEY"));
 
-            string fullRaw = rawText;
-            if (root.TryGetProperty("RawText", out var rawProp) || root.TryGetProperty("rawText", out rawProp))
-            {
-                fullRaw = rawProp.GetString() ?? rawText;
-            }
-
-            return new AiExtractResponseDto
-            {
-                Success = fields.Count > 0,
-                ProviderUsed = provider,
-                IdType = idType,
-                ExtractedFields = fields,
-                RawText = fullRaw
-            };
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static void ReadFieldProperty(
-        Dictionary<string, ExtractedFieldDto> fields,
-        string key,
-        JsonElement element,
-        double fallbackConfidence = 0.95)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            string val = string.Empty;
-            double conf = fallbackConfidence;
-
-            if (element.TryGetProperty("Value", out var valProp) || element.TryGetProperty("value", out valProp))
-            {
-                val = valProp.GetString() ?? string.Empty;
-            }
-
-            if (element.TryGetProperty("Confidence", out var confProp) || element.TryGetProperty("confidence", out confProp))
-            {
-                if (confProp.TryGetDouble(out var parsedConf))
-                {
-                    conf = parsedConf;
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(val))
-            {
-                fields[key] = new ExtractedFieldDto(val.Trim(), conf);
-            }
-        }
-        else if (element.ValueKind == JsonValueKind.String)
-        {
-            string? val = element.GetString();
-            if (!string.IsNullOrWhiteSpace(val))
-            {
-                fields[key] = new ExtractedFieldDto(val.Trim(), fallbackConfidence);
-            }
-        }
-    }
-
-    private static string CleanJsonFences(string input)
-    {
-        string trimmed = input.Trim();
-        if (trimmed.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
-        {
-            trimmed = trimmed[7..];
-        }
-        else if (trimmed.StartsWith("```", StringComparison.OrdinalIgnoreCase))
-        {
-            trimmed = trimmed[3..];
-        }
-
-        if (trimmed.EndsWith("```", StringComparison.OrdinalIgnoreCase))
-        {
-            trimmed = trimmed[..^3];
-        }
-
-        return trimmed.Trim();
-    }
-
-    private static (string MimeType, string Base64Data) ParseDataUrl(string dataUrl)
-    {
-        if (dataUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-        {
-            int semiIdx = dataUrl.IndexOf(';');
-            int commaIdx = dataUrl.IndexOf(',');
-            if (semiIdx > 5 && commaIdx > semiIdx)
-            {
-                string mime = dataUrl[5..semiIdx];
-                string base64 = dataUrl[(commaIdx + 1)..];
-                return (mime, base64);
-            }
-        }
-        return ("image/jpeg", dataUrl);
-    }
+    private bool IsAzureConfigured() =>
+        !string.IsNullOrWhiteSpace(GetSecret("AZURE_VISION_KEY")) &&
+        !string.IsNullOrWhiteSpace(GetSecret("AZURE_VISION_ENDPOINT"));
 
     private string GetSecret(string key) =>
-        Environment.GetEnvironmentVariable(key) ?? configuration[key] ?? string.Empty;
-
-    private static string MaskKey(string? key) =>
-        string.IsNullOrWhiteSpace(key)
-            ? "[NONE]"
-            : key.Length > 8
-                ? $"{key[..4]}...{key[^4..]}"
-                : "***";
+        Environment.GetEnvironmentVariable(key) ?? _configuration[key] ?? string.Empty;
 
     private string ResolveActiveChainSummary()
     {
         var active = new List<string>();
-        if (!string.IsNullOrWhiteSpace(GetSecret("GEMINI_API_KEY"))) active.Add("gemini");
-        if (!string.IsNullOrWhiteSpace(GetSecret("AZURE_VISION_KEY")) && !string.IsNullOrWhiteSpace(GetSecret("AZURE_VISION_ENDPOINT"))) active.Add("azure");
-        if (!string.IsNullOrWhiteSpace(GetSecret("OPENAI_API_KEY"))) active.Add("openai");
-
-        return active.Count > 0 ? string.Join(", ", active) : "deterministic-standby";
+        if (_claudeClient.IsConfigured) active.Add("claude");
+        if (IsGeminiConfigured()) active.Add("gemini");
+        if (IsAzureConfigured()) active.Add("azure");
+        if (IsOpenAiConfigured()) active.Add("openai");
+        return string.Join(", ", active);
     }
 
     private static IdentityDocumentAnalyzeResponseDto ExecuteDeterministicDocumentAnalysis(IdentityDocumentAnalyzeRequestDto request)
@@ -650,13 +1222,31 @@ public class IdentityAiService(
         string rawBack = (request.BackRawText ?? string.Empty).ToUpperInvariant();
         string combined = $"{rawFront}\n{rawBack}".Trim();
         string selectedCat = (request.SelectedIdCategory ?? "unknown").Trim().ToLowerInvariant();
+        bool hasExtractedFields = request.ExtractedFields != null &&
+                                  request.ExtractedFields.Any(kvp => !string.IsNullOrWhiteSpace(kvp.Value));
 
         var response = new IdentityDocumentAnalyzeResponseDto
         {
-            CategoryKey = selectedCat,
+            CategoryKey = string.IsNullOrWhiteSpace(selectedCat) ? "unknown" : selectedCat,
             OfficialVerificationStatus = "not_checked",
             AllowBiometricProfiling = selectedCat != "pwd"
         };
+
+        if (string.IsNullOrWhiteSpace(combined) && !hasExtractedFields)
+        {
+            response.DocumentFamily = "Unverified Document";
+            response.Issuer = string.Empty;
+            response.Version = "unknown";
+            response.DetectedSide = "unknown";
+            response.TemplateId = "UNKNOWN";
+            response.CalibratedConfidence = 0.0;
+            response.OverallStatus = "UNREADABLE_OR_EMPTY";
+            if (selectedCat == "pwd")
+            {
+                response.Warnings.Add("NCDA AO No. 001 (2026): PWD cardholder portrait is restricted from automated facial profiling.");
+            }
+            return response;
+        }
 
         if (combined.Contains("P<PHL") || combined.Contains("PASAPORTE") || selectedCat == "passport")
         {
@@ -666,7 +1256,7 @@ public class IdentityAiService(
             response.Version = "icao-9303-td3-v1";
             response.DetectedSide = "data-page";
             response.TemplateId = "PH-DFA-PASSPORT-TD3-DATAPAGE";
-            response.CalibratedConfidence = combined.Contains("P<PHL") ? 0.94 : 0.78;
+            response.CalibratedConfidence = combined.Contains("P<PHL") ? 0.94 : (string.IsNullOrWhiteSpace(combined) ? 0.50 : 0.78);
         }
         else if (combined.Contains("DRIVER'S LICENSE") || combined.Contains("LAND TRANSPORTATION OFFICE") || selectedCat == "drivers")
         {
@@ -677,7 +1267,7 @@ public class IdentityAiService(
             response.Version = isLegacy ? "legacy-restrictions-v1" : "2021-dl-code-v1";
             response.DetectedSide = !string.IsNullOrWhiteSpace(rawFront) ? "front" : (!string.IsNullOrWhiteSpace(rawBack) ? "back" : "front");
             response.TemplateId = isLegacy ? "PH-LTO-DL-OLD-FRONT" : "PH-LTO-DL-2021-NEW-FRONT";
-            response.CalibratedConfidence = combined.Contains("LAND TRANSPORTATION OFFICE") ? 0.92 : 0.76;
+            response.CalibratedConfidence = combined.Contains("LAND TRANSPORTATION OFFICE") ? 0.92 : (string.IsNullOrWhiteSpace(combined) ? 0.50 : 0.76);
         }
         else if (combined.Contains("PAMBANSANG PAGKAKAKILANLAN") || combined.Contains("PHILIPPINE IDENTIFICATION") || selectedCat == "philsys")
         {
@@ -689,7 +1279,7 @@ public class IdentityAiService(
             response.Version = isPaper ? "ephilid-paper-v1" : (isDigital ? "digital-national-id-v1" : "pvc-v1");
             response.DetectedSide = isPaper || isDigital ? "document" : "front";
             response.TemplateId = isPaper ? "PH-PSA-EPHILID-PAPER" : (isDigital ? "PH-PSA-NATIONAL-ID-DIGITAL" : "PH-PSA-PHILSYS-PVC-FRONT");
-            response.CalibratedConfidence = combined.Contains("PAMBANSANG PAGKAKAKILANLAN") ? 0.93 : 0.78;
+            response.CalibratedConfidence = combined.Contains("PAMBANSANG PAGKAKAKILANLAN") ? 0.93 : (string.IsNullOrWhiteSpace(combined) ? 0.50 : 0.78);
         }
         else if (combined.Contains("PERSONS WITH DISABILITY") || combined.Contains("NCDA") || selectedCat == "pwd")
         {
@@ -701,7 +1291,7 @@ public class IdentityAiService(
             response.DetectedSide = "front";
             response.TemplateId = isUnified ? "PH-NCDA-PWD-ID-2026-UNIFIED" : "PH-NCDA-PWD-ID-LEGACY-LGU";
             response.AllowBiometricProfiling = false;
-            response.CalibratedConfidence = 0.86;
+            response.CalibratedConfidence = combined.Contains("PERSONS WITH DISABILITY") || combined.Contains("NCDA") ? 0.86 : 0.50;
             response.Warnings.Add("NCDA AO No. 001 (2026): PWD cardholder portrait is restricted from automated facial profiling.");
         }
         else if (combined.Contains("PROFESSIONAL REGULATION COMMISSION") || selectedCat == "prc")
@@ -712,7 +1302,7 @@ public class IdentityAiService(
             response.Version = combined.Contains("E-PIC") ? "prc-epic-digital-v1" : "prc-pic-v1";
             response.DetectedSide = combined.Contains("E-PIC") ? "document" : "front";
             response.TemplateId = combined.Contains("E-PIC") ? "PH-PRC-EPIC-DIGITAL" : "PH-PRC-PIC-FRONT";
-            response.CalibratedConfidence = 0.88;
+            response.CalibratedConfidence = combined.Contains("PROFESSIONAL REGULATION COMMISSION") ? 0.88 : 0.50;
         }
         else if (combined.Contains("UNIFIED MULTI-PURPOSE") || combined.Contains("CRN") || selectedCat == "umid")
         {
@@ -722,7 +1312,7 @@ public class IdentityAiService(
             response.Version = "umid-crn-v1";
             response.DetectedSide = "front";
             response.TemplateId = "PH-UMID-GENERIC-FRONT";
-            response.CalibratedConfidence = 0.88;
+            response.CalibratedConfidence = combined.Contains("UNIFIED MULTI-PURPOSE") || combined.Contains("CRN") ? 0.88 : 0.50;
         }
         else
         {

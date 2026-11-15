@@ -14,7 +14,7 @@ import {
   checkCannyEdgePruningGate,
   compareLiveFaceWithIdPortrait,
   trackSkinFace
-} from '../face/skinFaceTracker';
+} from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/face/skinFaceTracker';
 
 const assert = (condition: boolean, msg: string): void => {
   if (!condition) {

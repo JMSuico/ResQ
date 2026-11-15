@@ -23,6 +23,8 @@ export interface UserSession {
   departmentOrBarangay?: string;
   rankOrTitle?: string;
   targetDashboardUrl: string;
+  autoApprovedByAi?: boolean;
+  autoApprovalReason?: string;
 }
 
 export interface RegisterPayload {
@@ -67,6 +69,11 @@ export interface RegisterPayload {
   documentCheckStatus?: string;
   officialVerificationStatus?: string;
   fieldProvenanceJson?: string;
+  geometricSignatureJson?: string;
+  poseFramesJson?: string;
+  aiBiometricStrategyName?: string;
+  idVerificationToken?: string;
+  facialVerificationToken?: string;
 }
 
 export interface IdentityDocumentAnalysisRequest {
@@ -111,6 +118,8 @@ export interface RegisterResponse {
   hasIdFrontCapture?: boolean;
   hasIdBackCapture?: boolean;
   hasFaceCapture?: boolean;
+  autoApprovedByAi?: boolean;
+  autoApprovalReason?: string;
   createdAt?: string;
 }
 
@@ -122,22 +131,59 @@ export interface LoginPayload {
 }
 
 export interface BiometricLoginPayload {
-  email: string;
+  email?: string;
   liveDescriptorVector: number[];
+  liveDescriptorVectorJson?: string;
+  liveGeometricSignatureJson?: string;
+  liveCaptureBase64?: string;
+  liveCaptureFramesBase64?: string[];
+  livenessScore?: number;
   portalOrigin?: string;
+}
+
+export interface BiometricValidationLayerTelemetry {
+  layerNumber?: number;
+  layer?: number;
+  layerCode?: string;
+  name?: string;
+  layerName?: string;
+  status?: string;
+  passed?: boolean;
+  score?: number;
+  detail?: string;
+  cosineSimilarity?: number | null;
+  verdict?: string | null;
 }
 
 export interface LoginResponse {
   token: string;
   session: UserSession;
   redirectUrl: string;
+  validationVerdict?: string;
+  biometricStrategyUsed?: string;
+  validationLayers?: BiometricValidationLayerTelemetry[];
 }
 
-export const registerUser = (payload: RegisterPayload): Promise<RegisterResponse> =>
-  requestJson<RegisterResponse>('/api/register', {
+const normalizeOptionalToken = (token?: string | null): string | undefined => {
+  if (typeof token !== 'string') return undefined;
+  const trimmed = token.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+export const registerUser = (payload: RegisterPayload): Promise<RegisterResponse> => {
+  const idVerificationToken = normalizeOptionalToken(payload.idVerificationToken);
+  const facialVerificationToken = normalizeOptionalToken(payload.facialVerificationToken);
+  const requestBody: RegisterPayload = {
+    ...payload,
+    idVerificationToken,
+    facialVerificationToken
+  };
+
+  return requestJson<RegisterResponse>('/api/register', {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: JSON.stringify(requestBody)
   });
+};
 
 export const analyzeIdentityDocument = (
   payload: IdentityDocumentAnalysisRequest

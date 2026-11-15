@@ -52,7 +52,7 @@ export const LandingPage: React.FC = () => {
 
             {/* Live Gateway Indicator */}
             <div className="hidden lg:flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-slate-900 border border-rose-500/30 text-[10px] font-mono text-rose-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#ff5c74] animate-ping" />
               <span>SYS.ONLINE // GATEWAY :5173</span>
             </div>
           </div>
@@ -224,17 +224,17 @@ export const LandingPage: React.FC = () => {
           {/* Tactical Verification Subtext */}
           <div className="mt-5 flex flex-wrap items-center justify-center gap-4 font-mono text-[11px] text-slate-400">
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#ff5c74]" />
               CIVILIAN 1-TAP SOS CAMERA
             </span>
             <span className="text-slate-600">•</span>
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
               FIELD RESPONDER HUD
             </span>
             <span className="text-slate-600">•</span>
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-300" />
               ZERO FAKE STATS / 100% DB-BACKED
             </span>
           </div>
@@ -253,14 +253,14 @@ export const LandingPage: React.FC = () => {
                   <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">
                     AI VISION FILTER
                   </span>
-                  <span className="text-lg font-black font-mono text-emerald-400">LAPLACIAN</span>
+                  <span className="text-lg font-black font-mono text-[#ff5c74]">LAPLACIAN</span>
                   <span className="text-[10px] text-slate-400 block mt-0.5">Blur & Spoof Reject</span>
                 </div>
                 <div className="border-r border-slate-800/80 pr-2">
                   <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">
                     GPS TRACKING
                   </span>
-                  <span className="text-lg font-black font-mono text-sky-400">HARDWARE</span>
+                  <span className="text-lg font-black font-mono text-rose-400">HARDWARE</span>
                   <span className="text-[10px] text-slate-400 block mt-0.5">±5m Precision Mesh</span>
                 </div>
                 <div className="border-r border-slate-800/80 pr-2">
@@ -275,7 +275,7 @@ export const LandingPage: React.FC = () => {
                     SYSTEM STATUS
                   </span>
                   <span className="text-lg font-black font-mono text-white flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="w-2 h-2 rounded-full bg-[#ff5c74] animate-pulse" />
                     OPERATIONAL
                   </span>
                   <span className="text-[10px] text-slate-400 block mt-0.5">24/7 Municipality</span>
@@ -497,7 +497,7 @@ export const LandingPage: React.FC = () => {
       {/* 4. INTEGRATED MULTI-AGENCY RESPONSE FORCE GRID */}
       <section id="agencies" className="w-full py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto border-t border-slate-800">
         <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] font-mono text-emerald-400 mb-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] font-mono text-[#ff5c74] mb-3">
             <span>CROSS-AGENCY MUNICIPAL COLLABORATION</span>
           </div>
           <h2 className="text-3xl font-black text-white tracking-wide">
@@ -526,8 +526,8 @@ export const LandingPage: React.FC = () => {
                   >
                     {meta.short}
                   </span>
-                  <span className="flex items-center gap-1.5 font-mono text-[10px] text-emerald-400">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="flex items-center gap-1.5 font-mono text-[10px] text-[#ff5c74]">
+                    <span className="w-2 h-2 rounded-full bg-[#ff5c74] animate-pulse" />
                     ONLINE
                   </span>
                 </div>
@@ -655,8 +655,8 @@ export const LandingPage: React.FC = () => {
               DIRECTORY
             </Link>
             <span className="text-slate-600">|</span>
-            <span className="text-emerald-400 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[#ff5c74] flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#ff5c74] animate-pulse" />
               HOTLINE: 911 / (065) 212-1111
             </span>
           </div>

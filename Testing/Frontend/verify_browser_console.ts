@@ -1,17 +1,15 @@
 // [Layer: Libs/Testing]
 // Responsibility: Native Chrome DevTools Protocol (CDP) Browser Console Automator.
-// Launches a real Chrome browser instance, connects via WebSocket CDP, navigates to http://127.0.0.1:5173/register,
-// captures live browser console logs, triggers biometric sequences, verifies frame pause/resume events,
-// and saves an authenticated browser screenshot.
+// Launches a real Chrome browser instance, connects via WebSocket CDP, navigates to
+// http://127.0.0.1:1998/register?step=2 (#phase-3-facial-record), captures live browser
+// console logs, exercises Phase 3 4-pose simulation & confirmation controls,
+// and saves a verification browser screenshot.
 
 import http from 'node:http';
 import { spawn, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-
-interface CdpVersionResponse {
-  webSocketDebuggerUrl: string;
-}
+import { fileURLToPath } from 'node:url';
 
 interface CdpMessage {
   id: number;
@@ -39,7 +37,7 @@ export const runBrowserConsoleTest = async (): Promise<void> => {
       '--disable-web-security',
       '--use-fake-ui-for-media-stream',
       '--use-fake-device-for-media-stream',
-      'http://127.0.0.1:5173/register?step=2'
+      'http://127.0.0.1:1998/register?step=2'
     ],
     { stdio: 'ignore' }
   );
@@ -73,7 +71,7 @@ export const runBrowserConsoleTest = async (): Promise<void> => {
       }).on('error', reject);
     });
 
-    const pageTarget = targets.find((t) => t.webSocketDebuggerUrl && (t.url.includes('5173') || t.url.includes('register'))) || targets[0];
+    const pageTarget = targets.find((t) => t.webSocketDebuggerUrl && (t.url.includes('1998') || t.url.includes('register'))) || targets[0];
     if (!pageTarget || !pageTarget.webSocketDebuggerUrl) {
       throw new Error(`No valid page target found in /json/list: ${JSON.stringify(targets)}`);
     }
@@ -86,6 +84,7 @@ export const runBrowserConsoleTest = async (): Promise<void> => {
     let msgId = 1;
     const pendingCallbacks = new Map<number, (res: CdpMessage) => void>();
     const consoleLogs: Array<{ type: string; text: string }> = [];
+    const runtimeExceptions: string[] = [];
 
     const sendCdp = (method: string, params: Record<string, unknown> = {}): Promise<CdpMessage> => {
       const id = msgId++;
@@ -120,6 +119,13 @@ export const runBrowserConsoleTest = async (): Promise<void> => {
         consoleLogs.push({ type: p.type, text });
         console.log(`  [BROWSER CONSOLE ${p.type.toUpperCase()}] ${text}`);
       }
+
+      if (msg.method === 'Runtime.exceptionThrown') {
+        const p = msg.params as { exceptionDetails?: { text?: string } };
+        const errText = p.exceptionDetails?.text || 'Uncaught exception';
+        runtimeExceptions.push(errText);
+        console.error(`  [BROWSER EXCEPTION] ${errText}`);
+      }
     };
 
     // Enable CDP Domains
@@ -127,110 +133,114 @@ export const runBrowserConsoleTest = async (): Promise<void> => {
     await sendCdp('Page.enable');
     await sendCdp('DOM.enable');
 
-    console.log('[4/5] Waiting for page load and biometric engine initialization...');
-    await new Promise((r) => setTimeout(r, 3500));
+    console.log('[4/5] Waiting for page load and Phase 3 biometric initialization...');
+    await new Promise((r) => setTimeout(r, 3000));
 
-    // Evaluate JavaScript in browser console: inspect window and trigger simulation
+    // Evaluate JavaScript in browser console: inspect Phase 3 (#phase-3-facial-record) DOM
     const evalResult = await sendCdp('Runtime.evaluate', {
       expression: `
         (() => {
           const title = document.title;
-          const hasBiometricCache = !!window.biometricFrameCache;
-          const cachedFrames = window.biometricFrameCache ? window.biometricFrameCache.getTotalCount() : -1;
-          const isPaused = window.biometricFrameCache ? window.biometricFrameCache.getIsPaused() : false;
-          return { title, hasBiometricCache, cachedFrames, isPaused };
+          const hasPhase3 = !!document.querySelector('#phase-3-facial-record');
+          const hasSimBtn = !!document.querySelector('#btn-simulate-4pose-capture');
+          const hasCameraBtn = !!document.querySelector('#btn-request-camera');
+          const ellipseCount = document.querySelectorAll('#phase-3-facial-record svg ellipse, svg ellipse').length;
+          return { title, hasPhase3, hasSimBtn, hasCameraBtn, ellipseCount };
         })()
       `,
       returnByValue: true
     });
 
-    console.log('  [CDP Evaluate Result]:', JSON.stringify((evalResult.result as { result?: { value: unknown } })?.result?.value));
+    const initialState = (evalResult.result as {
+      result?: {
+        value: {
+          title: string;
+          hasPhase3: boolean;
+          hasSimBtn: boolean;
+          hasCameraBtn: boolean;
+          ellipseCount: number;
+        };
+      };
+    })?.result?.value;
+    console.log('  [CDP Evaluate Result]:', JSON.stringify(initialState));
 
-    // Navigate or simulate Step 2 (Biometrics)
-    console.log('[5/5] Executing Biometric Step Sequence in browser console...');
+    // Execute Phase 3 4-pose capture & confirmation sequence in browser console
+    console.log('[5/5] Executing Phase 3 Biometric Simulation Sequence in browser console...');
     await sendCdp('Runtime.evaluate', {
       expression: `
         (() => {
-          console.info("[TEST-RUNNER] Starting Biometric Step & Frame Pause Verification in Browser...");
-          if (window.biometricFrameCache) {
-            console.info("[TEST-RUNNER] Initial biometric cache status: paused=" + window.biometricFrameCache.getIsPaused());
-            
-            // Test 1: Frame counting active during command
-            window.biometricFrameCache.resume();
-            window.biometricFrameCache.addFrame('CENTER', 'data:image/png;base64,cdp_test_center', 100, 0, 0);
-            console.info("[TEST-RUNNER] Command 1 Active: Frames count=" + window.biometricFrameCache.getTotalCount());
-
-            // Test 2: Frame counting pauses when command completes
-            window.biometricFrameCache.pause('COMMAND_1_COMPLETE_TRANSITION');
-            console.info("[BiometricEngine] COMMAND 1 (CENTER) COMPLETED. Frame caching PAUSED during transition to Command 2.");
-            console.info("[TEST-RUNNER] Command 1 Complete: Cache isPaused=" + window.biometricFrameCache.getIsPaused());
-            
-            // Attempt to add frame while paused
-            const rejected = !window.biometricFrameCache.addFrame('CENTER', 'data:image/png;base64,cdp_rejected', 100, 0, 0);
-            console.info("[TEST-RUNNER] Frame rejected during pause=" + rejected + ", count=" + window.biometricFrameCache.getTotalCount());
-
-            // Test 3: Command 2 resumes frame counting
-            window.biometricFrameCache.resume();
-            console.info("[BiometricEngine] COMMAND 2 (LEFT) STARTED. Resuming frame caching for Left Profile.");
-            window.biometricFrameCache.addFrame('LEFT', 'data:image/png;base64,cdp_test_left', 110, -22, 0);
-            console.info("[TEST-RUNNER] Command 2 Active: Frames count=" + window.biometricFrameCache.getTotalCount());
-
-            // Test 4: Face-presence gating: auto-pause when no face in camera
-            window.biometricFrameCache.pause('NO_FACE_IN_CAMERA');
-            console.warn("[BiometricEngine] NO FACE OR FACE TRACES IN CAMERA during POSE_LEFT. Frame caching PAUSED.");
-            console.info("[TEST-RUNNER] Face left camera: isPaused=" + window.biometricFrameCache.getIsPaused() + ", reason=" + window.biometricFrameCache.getPauseReason());
-            
-            // Frame rejected when no face in camera
-            window.biometricFrameCache.addFrame('LEFT', 'data:image/png;base64,cdp_noface', 100, -22, 0);
-            console.info("[TEST-RUNNER] Frame count frozen when no face=" + window.biometricFrameCache.getTotalCount());
-
-            // Face returns to camera
-            window.biometricFrameCache.resume();
-            console.info("[BiometricEngine] Human face traces detected in camera during POSE_LEFT. Frame caching RESUMED.");
-            window.biometricFrameCache.addFrame('LEFT', 'data:image/png;base64,cdp_face_returned', 120, -22, 0);
-            console.info("[TEST-RUNNER] Frames count after face return=" + window.biometricFrameCache.getTotalCount());
-
-            // Test 5: Command 2 completes, Command 3 starts, Command 4 blinks
-            window.biometricFrameCache.pause('COMMAND_2_COMPLETE_TRANSITION');
-            console.info("[BiometricEngine] COMMAND 2 (LEFT) COMPLETED. Frame caching PAUSED during transition to Command 3.");
-
-            window.biometricFrameCache.resume();
-            console.info("[BiometricEngine] COMMAND 3 (RIGHT) STARTED. Resuming frame caching for Right Profile.");
-            window.biometricFrameCache.addFrame('RIGHT', 'data:image/png;base64,cdp_test_right', 115, 22, 0);
-
-            window.biometricFrameCache.pause('COMMAND_3_COMPLETE_TRANSITION');
-            console.info("[BiometricEngine] COMMAND 3 (RIGHT) COMPLETED. Frame caching PAUSED during transition to Command 4.");
-
-            window.biometricFrameCache.resume();
-            console.info("[BiometricEngine] COMMAND 4 (BLINK) STARTED. Resuming frame caching for Eye Blink Liveness.");
-            window.biometricFrameCache.addFrame('BLINK', 'data:image/png;base64,cdp_test_blink', 130, 0, 0);
-
-            window.biometricFrameCache.pause('ALL_COMMANDS_COMPLETE');
-            console.info("[BiometricEngine] COMMAND 4 (BLINK) COMPLETED. All biometric poses secured. Frame caching permanently PAUSED.");
-            console.info("[TEST-RUNNER] Final Verified frames count=" + window.biometricFrameCache.getTotalCount());
+          console.info("[TEST-RUNNER] Starting Phase 3 (?step=2) Biometric Console Verification...");
+          const simBtn = document.querySelector('#btn-simulate-4pose-capture');
+          if (simBtn) {
+            simBtn.click();
+            console.info("[TEST-RUNNER] Clicked #btn-simulate-4pose-capture for 4-pose qualification.");
+          } else {
+            console.warn("[TEST-RUNNER] #btn-simulate-4pose-capture button not found in DOM.");
           }
-          return { success: true, logsCount: 10 };
+          return { simulated: !!simBtn };
         })()
       `,
       returnByValue: true
     });
 
+    await new Promise((r) => setTimeout(r, 800));
+
+    const confirmResult = await sendCdp('Runtime.evaluate', {
+      expression: `
+        (() => {
+          const bodyText = document.body.innerText;
+          const qualified4of4 = bodyText.includes('4 of 4 Poses Qualified');
+          const consentChk = document.querySelector('#chk-facial-consent, #facial-consent-checkbox');
+          if (consentChk && !consentChk.checked) {
+            consentChk.click();
+          }
+          const confirmBtn = document.querySelector('#btn-confirm-facial-capture');
+          if (confirmBtn && !confirmBtn.disabled) {
+            confirmBtn.click();
+          }
+          console.info("[TEST-RUNNER] Phase 3 4-pose check complete: qualified4of4=" + qualified4of4);
+          return { qualified4of4, consentChecked: !!(consentChk && consentChk.checked) };
+        })()
+      `,
+      returnByValue: true
+    });
+
+    console.log('  [Phase 3 Simulation Confirm]:', JSON.stringify((confirmResult.result as { result?: { value: unknown } })?.result?.value));
     await new Promise((r) => setTimeout(r, 1000));
+
+    const finalPhase3Check = await sendCdp('Runtime.evaluate', {
+      expression: `
+        (() => {
+          const confirmedBadge = !!document.querySelector('#badge-facial-confirmed');
+          const nextBtn = document.querySelector('#btn-phase3-next');
+          const nextEnabled = nextBtn ? !nextBtn.disabled : false;
+          console.info("[TEST-RUNNER] Phase 3 confirmation state: badge=" + confirmedBadge + ", nextEnabled=" + nextEnabled);
+          return { confirmedBadge, nextEnabled };
+        })()
+      `,
+      returnByValue: true
+    });
+
+    const finalState = (finalPhase3Check.result as {
+      result?: { value: { confirmedBadge: boolean; nextEnabled: boolean } };
+    })?.result?.value;
+    console.log('  [Phase 3 Final DOM]:', JSON.stringify(finalState));
 
     // Capture screenshot of browser page via CDP
     const screenshotRes = await sendCdp('Page.captureScreenshot', { format: 'png' });
     const b64Data = (screenshotRes.result as { data?: string })?.data;
     if (b64Data) {
-      const outPath = path.resolve(process.cwd(), 'src/Libs/Testing/cdp_browser_verification.png');
+      const currentDir = path.dirname(fileURLToPath(import.meta.url));
+      const outPath = path.resolve(currentDir, 'cdp_browser_verification.png');
       fs.writeFileSync(outPath, Buffer.from(b64Data, 'base64'));
       console.log(`  [OK] Saved browser screenshot to: ${outPath}`);
     }
 
-    // Verify console logs
+    // Verify console logs & DOM assertions
     console.log('\n--- BROWSER CONSOLE VERIFICATION ASSERTIONS ---');
     const logTexts = consoleLogs.map((l) => l.text);
-    
-    const assertLog = (pattern: string, desc: string) => {
+
+    const assertLog = (pattern: string, desc: string): void => {
       const match = logTexts.some((t) => t.includes(pattern));
       if (match) {
         console.log(`[PASS] ${desc}`);
@@ -240,15 +250,20 @@ export const runBrowserConsoleTest = async (): Promise<void> => {
       }
     };
 
-    assertLog('COMMAND 1 (CENTER) COMPLETED. Frame caching PAUSED', 'Command 1 transition pause logged');
-    assertLog('COMMAND 2 (LEFT) STARTED. Resuming frame caching', 'Command 2 resume logged');
-    assertLog('NO FACE OR FACE TRACES IN CAMERA during POSE_LEFT. Frame caching PAUSED', 'No-face auto-pause logged');
-    assertLog('Human face traces detected in camera during POSE_LEFT. Frame caching RESUMED', 'Face return auto-resume logged');
-    assertLog('COMMAND 2 (LEFT) COMPLETED. Frame caching PAUSED', 'Command 2 transition pause logged');
-    assertLog('COMMAND 3 (RIGHT) STARTED. Resuming frame caching', 'Command 3 resume logged');
-    assertLog('COMMAND 3 (RIGHT) COMPLETED. Frame caching PAUSED', 'Command 3 transition pause logged');
-    assertLog('COMMAND 4 (BLINK) STARTED. Resuming frame caching', 'Command 4 resume logged');
-    assertLog('COMMAND 4 (BLINK) COMPLETED. All biometric poses secured. Frame caching permanently PAUSED', 'Command 4 permanent pause logged');
+    if (!initialState?.hasPhase3) {
+      throw new Error('#phase-3-facial-record was not rendered on http://127.0.0.1:1998/register?step=2');
+    }
+    if (runtimeExceptions.length > 0) {
+      throw new Error(`Uncaught browser runtime exceptions detected: ${runtimeExceptions.join('; ')}`);
+    }
+    const consoleErrors = consoleLogs.filter((l) => l.type === 'error');
+    if (consoleErrors.length > 0) {
+      throw new Error(`Console error logs detected: ${consoleErrors.map((e) => e.text).join('; ')}`);
+    }
+
+    assertLog('Starting Phase 3 (?step=2) Biometric Console Verification', 'Phase 3 test runner telemetry logged');
+    assertLog('Phase 3 4-pose check complete: qualified4of4=true', '4-of-4 simulated pose qualification verified');
+    assertLog('Phase 3 confirmation state: badge=true, nextEnabled=true', 'Facial confirmation badge & Phase 3 next button verified');
 
     console.log('\n========================================================================');
     console.log('ALL BROWSER CONSOLE ASSERTIONS VERIFIED SUCCESSFULLY (100% PASS)');
@@ -260,7 +275,7 @@ export const runBrowserConsoleTest = async (): Promise<void> => {
   }
 };
 
-runBrowserConsoleTest().catch((err) => {
+runBrowserConsoleTest().catch((err: unknown) => {
   console.error('[ERROR] Browser Console Verification Failed:', err);
   process.exit(1);
 });

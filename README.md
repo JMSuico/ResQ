@@ -1,4 +1,4 @@
-# INCIDENT AI SYSTEM DETECTION — ResQTrack Deterministic Emergency Triage, Verification & Dispatch Engine
+# INCIDENT AI SYSTEM DETECTION -- ResQTrack Deterministic Emergency Triage, Verification & Dispatch Engine
 
 > **Master Workspace Entry Document & Directory Indicator**  
 > **System Identity:** `INCIDENT AI SYSTEM DETECTION` (`ResQTrack Engine`)  
@@ -39,7 +39,7 @@ C:\Users\provu\Desktop\INCIDENT AI SYSTEM DETECTION\
 |   `-- cli.ps1 / cli.bat                           # Administrative user governance console (list, add, delete, reset)
 |
 |-- Md data/                                        # MASTER GOVERNANCE, PLANS, PLUGINS & MEMORY CACHE HUB
-|   |-- SKILL.md                                    # Binding Full-Stack Architecture Skill (Sections 0–17, 900+ lines)
+|   |-- SKILL.md                                    # Binding Full-Stack Architecture Skill (Sections 0-18)
 |   |-- AGENTS.md                                   # Binding AI Agent Behavior Contract (700+ lines)
 |   |-- CLAUDE.md                                   # ICM Routing Table & Karpathy 4-Principle Directives for Claude Code
 |   |-- GEMINI.md                                   # ICM Routing Table & Operational Directives for Gemini / Antigravity
@@ -66,7 +66,7 @@ C:\Users\provu\Desktop\INCIDENT AI SYSTEM DETECTION\
 |
 |-- Obsidian Memory Engine/                         # OBSIDIAN VAULT (P.A.R.A. + ZETTELKASTEN + DIAGRAM VAULT)
 |   |-- index.md / Home.md / README.md              # Master Vault Index, Dashboard & Diagram Pointer Guide
-|   |-- log.md                                      # Chronological Operational Log (Milestones 01–09+)
+|   |-- log.md                                      # Chronological Operational Log (Milestones 01-09+)
 |   |-- Diagram/                                    # AUTHORITATIVE /diagram-design MARKDOWN DIAGRAM VAULT
 |   |   |-- README.md                               # Diagram & Flowchain Vault Index
 |   |   |-- FORMULAS_RHU_TELEMETRY.md               # Mathematical & TypeScript telemetry formulas + 5-min timer
@@ -85,7 +85,7 @@ C:\Users\provu\Desktop\INCIDENT AI SYSTEM DETECTION\
     |   |-- main.tsx                                # ReactDOM.createRoot entry point
     |   `-- src/
     |       |-- Assets/                             # GLOBAL CALLING IMPORT: Raw static files (images/, videos/, icons/, threejs/)
-    |       |-- LANDING_PAGE/                       # Public vertical slice (Home, Login, 3-Step Register Wizard, Public Overview)
+    |       |-- LANDING_PAGE/                       # Public vertical slice (Home, Login, Unified 5-Phase Register Wizard, Public Overview)
     |       |-- UserRoles/                          # Role-isolated vertical slices (SEPARATE from LANDING_PAGE)
     |       |   `-- Features/Pages/
     |       |       |-- AdminsPanel/                # Super Admin (LDRRMO) Executive Command & Governance Console
@@ -171,10 +171,15 @@ All `/diagram-design` structure flowcharts, flowchains, sequence flows, state ma
 
 ```
 +---------------------------------------------------------------------------------------------------+
-| 1. REGISTER FLOW (3-Step Biometric & ID Capture Wizard)                                           |
-|    Step 1: Account Credentials + Role Selection (LDRRMO / RHU / FIRE / PNP / Civilian)            |
-|    Step 2: Live Camera / Upload Valid ID Card -> Base64 PNG Data URL (data:image/png;base64,...)  |
-|    Step 3: Live Camera Biometric Face Capture -> Base64 PNG Data URL -> Status = "pending"        |
+| 1. REGISTER FLOW (Unified 5-Phase Biometric, Choose-ID-Type Gate & Auto-Approval Wizard)          |
+|    Phase 01: Role Selection (#phase-1-role: Responder [RHU/FIRE/PNP] or Civilian)                 |
+|    Phase 02: Gov ID & Personal Info (#phase-2-id-identity)                                        |
+|              - select#id-type defaults to "" ("Choose ID Type"); upload dropzones hidden behind   |
+|                #id-upload-locked-notice until an explicit ID type is selected                     |
+|              - Front & Back ID upload -> POST /api/identity/ocr/extract (400 MISSING_ID_TYPE if   |
+|                blank); #personal-info-section unlocks on idVerification.canUnlockPersonalInfo      |
+|    Phase 03: Live Biometric Face Capture & Liveness -> FacialVerificationToken                    |
+|    Phase 04: Account Credentials -> Phase 05: Review & Submit (HMAC Token Auto-Approval/Pending)  |
 +---------------------------------------------------------------------------------------------------+
                                                  |
                                                  v
@@ -204,7 +209,7 @@ All `/diagram-design` structure flowcharts, flowchains, sequence flows, state ma
 +---------------------------------------------------------------------------------------------------+
 | 5. MONITOR & TRIAGE ENGINE FLOW (Satellite Map + Incidents Board + Duty Roster + Alerts)          |
 |    Deterministic Triage Priority Score + Haversine Nearest-Unit Distance Calculation              |
-|    -> Interactive Satellite Map (Urbiztondo 15.8228° N, 120.3292° E) + Live Incident Queue        |
+|    -> Interactive Satellite Map (Urbiztondo 15.8228 deg N, 120.3292 deg E) + Live Incident Queue    |
 |    + Responder DutyUnit Status (Available / Dispatched / EnRoute / OnScene) + AlertReadState.     |
 +---------------------------------------------------------------------------------------------------+
                                                  |
@@ -231,7 +236,7 @@ All `/diagram-design` structure flowcharts, flowchains, sequence flows, state ma
 | **3** | [`Report`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/SKILL.md) | `Guid Id` | Citizen/Responder incident report: `ReporterId` FK, `Title`, `Category`, `Severity`, `TargetAgency` (`LDRRMO`/`RHU`/`FIRE`/`PNP`), `Latitude`, `Longitude`, `Barangay`, `PhotoDataUrl` (PNG), `TriageScore`, `Status` |
 | **4** | [`IncidentFixture`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/SKILL.md) | `Guid Id` | Map pin & tactical telemetry fixture linked to `ReportId` FK: satellite coordinates, radius zone, assigned `DutyUnitId` FK, ETA minutes, Haversine distance km |
 | **5** | [`DutyUnit`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/SKILL.md) | `Guid Id` | Emergency response unit (`UnitCode`, `Agency` [`LDRRMO`/`RHU`/`FIRE`/`PNP`], `CommanderName`, `ContactNumber`, `BaseLatitude`, `BaseLongitude`, `CurrentStatus`) |
-| **6** | [`Settings`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/SKILL.md) | `Guid Id` | System-wide deterministic parameters (`Key`, `Value`, `Category`, `UpdatedByUserId`, `UpdatedAt`) — e.g., geofence bounds, auto-refresh intervals, triage weights |
+| **6** | [`Settings`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/SKILL.md) | `Guid Id` | System-wide deterministic parameters (`Key`, `Value`, `Category`, `UpdatedByUserId`, `UpdatedAt`) -- e.g., geofence bounds, auto-refresh intervals, triage weights |
 | **7** | [`AlertReadState`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/SKILL.md) | `Guid Id` | Per-user notification & emergency broadcast read tracking (`UserId` FK, `ReportId` FK, `IsRead`, `ReadAt`) |
 | **8** | [`AuditLog`](file:///C:/Users/provu/Desktop/INCIDENT%20AI%20SYSTEM%20DETECTION/Md%20data/SKILL.md) | `Guid Id` | Immutable tamper-evident ledger (`ActorUserId`, `Action`, `TargetEntity`, `EntityId`, `PayloadJson`, `PreviousHash`, `CurrentHash` via SHA-256 chaining, `CreatedAt`) |
 
@@ -313,10 +318,10 @@ Traditionally, building facial recognition required collecting thousands of face
          |                                                                               |
          v                                                                               v
 [1. TRADITIONAL ANTHROPOMETRIC GEOMETRIC PATTERN ENGINE]        [2. LATENT PRE-TRAINED STANDBY: MEDIAPIPE]
- • Zero AI / Zero Machine Learning Training Required             • Pre-trained client-side WebAssembly / JS
- • Pure Client-Side Trigonometric & Coordinate Math              • 468-point 3D Landmark Mesh on Standby
- • Instant Canvas HUD with 0ms Network Latency                   • Zero GPU servers or model training
- • Computes Yaw Arc, Centerlines, Eyelid Calipers                • Pre-calibrated for web & mobile browsers
+ - Zero AI / Zero Machine Learning Training Required             - Pre-trained client-side WebAssembly / JS
+ - Pure Client-Side Trigonometric & Coordinate Math              - 468-point 3D Landmark Mesh on Standby
+ - Instant Canvas HUD with 0ms Network Latency                   - Zero GPU servers or model training
+ - Computes Yaw Arc, Centerlines, Eyelid Calipers                - Pre-calibrated for web & mobile browsers
 ```
 
 1. **The Primary Engine: Traditional Anthropometric Geometric Patterns (No AI, No Machine Learning):**
@@ -357,9 +362,9 @@ Traditionally, building facial recognition required collecting thousands of face
 
 | Tier | Technology | Standard & Port |
 |---|---|---|
-| **Frontend (Dual-Port)** | TypeScript 5.x + React 19 + Vite + Tailwind CSS | • **Port 5173:** Responders & Civilians Hub (`npm run dev:responder`)<br>• **Port 5174:** LDRRMO Admin Command Portal (`npm run dev:admin`) |
+| **Frontend (Dual-Port)** | TypeScript 5.x + React 19 + Vite + Tailwind CSS | - **Port 5173:** Responders & Civilians Hub (`npm run dev:responder`)<br>- **Port 5174:** LDRRMO Admin Command Portal (`npm run dev:admin`) |
 | **Backend** | C# 13 + .NET 10 ASP.NET Core Web API (Kestrel bound to `http://0.0.0.0:5000`) | `http://localhost:5000` / `http://127.0.0.1:5000` (`dotnet run` / `.\start.ps1 -Dev`) |
-| **ORM & Database** | Entity Framework Core 10 (Code-First Migrations)<br>• **Primary:** Microsoft SQL Server (SSMS 19) via `Microsoft.EntityFrameworkCore.SqlServer`<br>• **Secondary Supported:** PostgreSQL (`Npgsql`) / MariaDB MySQL (`Pomelo` on XAMPP)<br>• **Zero SQLite Mandate:** Embedded file-based SQLite is strictly prohibited and removed | Relational Schema with Strict FK Constraints (8 Core Entities + Real-Life Philippine Emergency Hierarchy) |
+| **ORM & Database** | Entity Framework Core 10 (Code-First Migrations)<br>- **Primary:** Microsoft SQL Server (SSMS 19) via `Microsoft.EntityFrameworkCore.SqlServer`<br>- **Secondary Supported:** PostgreSQL (`Npgsql`) / MariaDB MySQL (`Pomelo` on XAMPP)<br>- **Zero SQLite Mandate:** Embedded file-based SQLite is strictly prohibited and removed | Relational Schema with Strict FK Constraints (8 Core Entities + Real-Life Philippine Emergency Hierarchy) |
 | **Authentication** | Scrypt + `CryptographicOperations.FixedTimeEquals` (`timingSafeEqual`) + Cookie/Bearer Session | Backend-Enforced + Per-Request `status === "verified"` + Dynamic Unified RBAC (Zero Role Tabs) |
 | **API Documentation** | Scalar V1 (`/scalar/v1`) + OpenAPI (`/openapi/v1.json`) | Development Environment Only |
 
@@ -423,26 +428,26 @@ ResQTrack includes a **single, unattended 1-click installer** that detects, down
          |                                       |                                       |
          v                                       v                                       v
 [1. .NET 10 SDK Check]                 [2. Node.js LTS & npm]                [3. RDBMS Engine Check]
- • Verifies 'dotnet --list-sdks'       • Verifies 'node --version'           • Checks SSMS 19 / SQL Server
- • Winget or official installer        • Silent MSI or Winget install        • LocalDB / PostgreSQL (v14-17)
- • Configures ProgramFiles\dotnet      • Updates process Environment PATH    • Installs if missing via winget
+ - Verifies 'dotnet --list-sdks'       - Verifies 'node --version'           - Checks SSMS 19 / SQL Server
+ - Winget or official installer        - Silent MSI or Winget install        - LocalDB / PostgreSQL (v14-17)
+ - Configures ProgramFiles\dotnet      - Updates process Environment PATH    - Installs if missing via winget
          |                                       |                                       |
          +---------------------------------------+---------------------------------------+
                                                  |
                                                  v
                      [4. C# ASP.NET Core Backend Restore & Build]
-                      • 'dotnet restore --nologo -v q'
-                      • 'dotnet build -c Debug --nologo -v q' (Zero errors verified)
+                      - 'dotnet restore --nologo -v q'
+                      - 'dotnet build -c Debug --nologo -v q' (Zero errors verified)
                                                  |
                                                  v
                      [5. Frontend Dependency Installation & Bundling]
-                      • 'npm install --legacy-peer-deps' (Prevents React 19 peer conflicts)
-                      • 'npm run build' (Verifies production bundle in dist/)
+                      - 'npm install --legacy-peer-deps' (Prevents React 19 peer conflicts)
+                      - 'npm run build' (Verifies production bundle in dist/)
                                                  |
                                                  v
                      [6. Database Configuration & Table Schema Initialization]
-                      • Sets DatabaseProvider in appsettings.json
-                      • Idempotently creates tables and seeds default test credentials
+                      - Sets DatabaseProvider in appsettings.json
+                      - Idempotently creates tables and seeds default test credentials
 ```
 
 #### How to Run on a New PC or Laptop:

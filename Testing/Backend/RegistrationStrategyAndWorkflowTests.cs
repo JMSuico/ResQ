@@ -289,6 +289,62 @@ public class RegistrationStrategyAndWorkflowTests
         Assert.Equal("InternalBiometric", faceProvider.ProviderMode);
     }
 
+    [Fact]
+    public void VerificationProviderResolver_ResolvesClaudeStrategies_WhilePreservingManualDefault()
+    {
+        var defaultResolver = new VerificationProviderResolver(
+            Options.Create(new VerificationProviderOptions()),
+            null,
+            NullLogger<VerificationProviderResolver>.Instance);
+
+        Assert.Equal("Manual", defaultResolver.GetActiveIdentityProviderMode());
+        Assert.Equal("Manual", defaultResolver.GetActiveFacialProviderMode());
+        Assert.Equal("Manual", defaultResolver.ResolveIdentityProvider().ProviderMode);
+        Assert.Equal("Manual", defaultResolver.ResolveFacialProvider().ProviderMode);
+
+        var claudeOptions = Options.Create(new VerificationProviderOptions
+        {
+            IdentityProvider = "ClaudeSonnet",
+            FacialProvider = "ClaudeVision"
+        });
+
+        var claudeResolver = new VerificationProviderResolver(
+            claudeOptions,
+            null,
+            NullLogger<VerificationProviderResolver>.Instance);
+
+        var claudeIdProvider = claudeResolver.ResolveIdentityProvider();
+        var claudeFaceProvider = claudeResolver.ResolveFacialProvider();
+
+        Assert.Equal("ClaudeSonnet", claudeIdProvider.ProviderName);
+        Assert.Equal("ClaudeSonnet", claudeIdProvider.ProviderMode);
+        Assert.Equal("ClaudeVision", claudeFaceProvider.ProviderName);
+        Assert.Equal("ClaudeVision", claudeFaceProvider.ProviderMode);
+
+        var explicitIdProvider = defaultResolver.ResolveIdentityProvider("ClaudeSonnet");
+        var explicitFaceProvider = defaultResolver.ResolveFacialProvider("ClaudeVision");
+
+        Assert.Equal("ClaudeSonnet", explicitIdProvider.ProviderMode);
+        Assert.Equal("ClaudeVision", explicitFaceProvider.ProviderMode);
+    }
+
+    [Fact]
+    public void VerificationProviderResolver_GetAvailableProviders_ContainsClaudeSonnetAndClaudeVision()
+    {
+        var resolver = new VerificationProviderResolver(
+            Options.Create(new VerificationProviderOptions()),
+            null,
+            NullLogger<VerificationProviderResolver>.Instance);
+
+        var availableIdentityProviders = resolver.GetAvailableIdentityProviders();
+        var availableFacialProviders = resolver.GetAvailableFacialProviders();
+
+        Assert.Contains("Manual", availableIdentityProviders);
+        Assert.Contains("ClaudeSonnet", availableIdentityProviders);
+        Assert.Contains("Manual", availableFacialProviders);
+        Assert.Contains("ClaudeVision", availableFacialProviders);
+    }
+
     // -------------------------------------------------------------------------
     // 5. AuthService 6-Phase Manual Registration & Workflow Tests
     // -------------------------------------------------------------------------

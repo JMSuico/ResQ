@@ -50,16 +50,19 @@ public class OcrIdentityVerificationProvider(IIdentityAiService? identityAiServi
             ct);
 
         sw.Stop();
+        bool isEmptyOrUnreadable = string.Equals(analysis.OverallStatus, "UNREADABLE_OR_EMPTY", StringComparison.Ordinal);
         return baseResult with
         {
             ProviderName = ProviderName,
             ProviderMode = ProviderMode,
             VerificationStatus = "PendingReview",
-            DocumentCheckStatus = $"{analysis.OverallStatus}|OFFICIAL:{analysis.OfficialVerificationStatus}",
+            DocumentCheckStatus = isEmptyOrUnreadable
+                ? "OCR_STANDBY_PENDING_ADMIN_REVIEW"
+                : $"{analysis.OverallStatus}|OFFICIAL:{analysis.OfficialVerificationStatus}",
             IsAuthenticityVerified = false,
-            ConfidenceScore = analysis.CalibratedConfidence,
+            ConfidenceScore = isEmptyOrUnreadable ? 0.0 : analysis.CalibratedConfidence,
             NormalizedFieldsJson = JsonSerializer.Serialize(analysis.NormalizedFields),
-            ExecutionTimeMs = sw.ElapsedMilliseconds
+            ExecutionTimeMs = Math.Max(1, sw.ElapsedMilliseconds)
         };
     }
 }

@@ -80,8 +80,8 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
   return (
     <div className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-hidden select-none">
       {/* Top Pose Title Badge */}
-      <div className="absolute top-2.5 left-3 z-20 flex items-center gap-1.5 bg-blue-950/85 border border-sky-400/80 px-3 py-1 rounded-md shadow-lg shadow-sky-950/50 backdrop-blur-sm">
-        <span className="font-mono text-[11px] font-bold text-sky-200 tracking-wider uppercase">
+      <div className="absolute top-2.5 left-3 z-20 flex items-center gap-1.5 bg-rose-950/85 border border-rose-500/80 px-3 py-1 rounded-md shadow-lg shadow-rose-950/50 backdrop-blur-sm">
+        <span className="font-mono text-[11px] font-bold text-rose-200 tracking-wider uppercase">
           {getPoseHeaderTitle()}
         </span>
       </div>
@@ -93,7 +93,7 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
         preserveAspectRatio="xMidYMid meet"
       >
         <defs>
-          {/* Arrowhead marker for blue center lines */}
+          {/* Arrowhead marker for center lines */}
           <marker
             id="geo-arrow-blue"
             viewBox="0 0 10 10"
@@ -103,10 +103,10 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
             markerHeight="5"
             orient="auto-start-reverse"
           >
-            <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#38bdf8" />
+            <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#ff5c74" />
           </marker>
 
-          {/* Green arrow marker for profile angle indicators */}
+          {/* Arrow marker for profile angle indicators */}
           <marker
             id="geo-arrow-green"
             viewBox="0 0 10 10"
@@ -116,7 +116,7 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
             markerHeight="5"
             orient="auto-start-reverse"
           >
-            <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#22c55e" />
+            <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#ff2b4a" />
           </marker>
         </defs>
 
@@ -136,48 +136,48 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
         <path
           d={`M ${bb.x - 4} ${bb.y + 12} L ${bb.x - 4} ${bb.y - 4} L ${bb.x + 12} ${bb.y - 4}`}
           fill="none"
-          stroke="#38bdf8"
+          stroke="#ff5c74"
           strokeWidth="1.5"
         />
         <path
           d={`M ${bb.x + bb.width + 4} ${bb.y + 12} L ${bb.x + bb.width + 4} ${bb.y - 4} L ${bb.x + bb.width - 12} ${bb.y - 4}`}
           fill="none"
-          stroke="#38bdf8"
+          stroke="#ff5c74"
           strokeWidth="1.5"
         />
         <path
           d={`M ${bb.x - 4} ${bb.y + bb.height - 12} L ${bb.x - 4} ${bb.y + bb.height + 4} L ${bb.x + 12} ${bb.y + bb.height + 4}`}
           fill="none"
-          stroke="#38bdf8"
+          stroke="#ff5c74"
           strokeWidth="1.5"
         />
         <path
           d={`M ${bb.x + bb.width + 4} ${bb.y + bb.height - 12} L ${bb.x + bb.width + 4} ${bb.y + bb.height + 4} L ${bb.x + bb.width - 12} ${bb.y + bb.height + 4}`}
           fill="none"
-          stroke="#38bdf8"
+          stroke="#ff5c74"
           strokeWidth="1.5"
         />
 
-        {/* 2. Blue Dashed Center Lines (Vertical Midline with Arrow Markers) */}
+        {/* 2. Red Dashed Center Lines (Vertical Midline with Arrow Markers) */}
         <line
           x1={cl.vertical.x}
           y1={cl.vertical.y1}
           x2={cl.vertical.x}
           y2={cl.vertical.y2}
-          stroke="#38bdf8"
+          stroke="#ff5c74"
           strokeWidth="1.8"
           strokeDasharray="6,4"
           markerStart="url(#geo-arrow-blue)"
           markerEnd="url(#geo-arrow-blue)"
         />
 
-        {/* 3. Blue Dashed Eye Line (Horizontal Line with Arrow Markers) */}
+        {/* 3. Red Dashed Eye Line (Horizontal Line with Arrow Markers) */}
         <line
           x1={cl.horizontal.x1}
           y1={cl.horizontal.y}
           x2={cl.horizontal.x2}
           y2={cl.horizontal.y}
-          stroke="#38bdf8"
+          stroke="#ff5c74"
           strokeWidth="1.8"
           strokeDasharray="6,4"
           markerStart="url(#geo-arrow-blue)"
@@ -194,11 +194,11 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
                 width="84"
                 height="15"
                 rx="3"
-                fill="rgba(15, 23, 42, 0.9)"
-                stroke="#0284c7"
+                fill="rgba(20, 2, 10, 0.9)"
+                stroke="#e11d48"
                 strokeWidth="1"
               />
-              <text x={cl.vertical.x} y={cl.vertical.y1 - 7} fill="#7dd3fc" textAnchor="middle">
+              <text x={cl.vertical.x} y={cl.vertical.y1 - 7} fill="#ffb4ab" textAnchor="middle">
                 Center Line (Vertical)
               </text>
             </g>
@@ -210,34 +210,34 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
                 width="80"
                 height="15"
                 rx="3"
-                fill="rgba(15, 23, 42, 0.9)"
-                stroke="#0284c7"
+                fill="rgba(20, 2, 10, 0.9)"
+                stroke="#e11d48"
                 strokeWidth="1"
               />
-              <text x={cl.horizontal.x1 - 45} y={cl.horizontal.y + 4} fill="#7dd3fc" textAnchor="middle">
+              <text x={cl.horizontal.x1 - 45} y={cl.horizontal.y + 4} fill="#ffb4ab" textAnchor="middle">
                 Eye Line (Horizontal)
               </text>
             </g>
           </>
         )}
 
-        {/* 4. Inverted Green Facial Triangle (Eye-Eye-Chin) for Frontal View */}
+        {/* 4. Inverted Red Facial Triangle (Eye-Eye-Chin) for Frontal View */}
         {poseType === 'FRONT' && (
           <polygon
             points={trianglePoints}
-            fill="rgba(34, 197, 94, 0.08)"
-            stroke="#22c55e"
+            fill="rgba(232, 17, 76, 0.08)"
+            stroke="#ff2b4a"
             strokeWidth="1.8"
             className="transition-all duration-150"
           />
         )}
 
-        {/* 5. Green Jawline Contour (Boundary) */}
+        {/* 5. Red Jawline Contour (Boundary) */}
         {jawPathD && (
           <path
             d={jawPathD}
             fill="none"
-            stroke="#84cc16"
+            stroke="#ff5c74"
             strokeWidth="2.2"
             strokeLinecap="round"
             className="transition-all duration-150"
@@ -249,18 +249,18 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
           <>
             {/* Left Eye concentric reticle */}
             <g>
-              <circle cx={kp.leftEye.x} cy={kp.leftEye.y} r="8" fill="none" stroke="#22c55e" strokeWidth="1.8" />
-              <circle cx={kp.leftEye.x} cy={kp.leftEye.y} r="3" fill="#22c55e" />
-              <line x1={kp.leftEye.x - 10} y1={kp.leftEye.y} x2={kp.leftEye.x + 10} y2={kp.leftEye.y} stroke="#22c55e" strokeWidth="1" />
-              <line x1={kp.leftEye.x} y1={kp.leftEye.y - 10} x2={kp.leftEye.x} y2={kp.leftEye.y + 10} stroke="#22c55e" strokeWidth="1" />
+              <circle cx={kp.leftEye.x} cy={kp.leftEye.y} r="8" fill="none" stroke="#ff2b4a" strokeWidth="1.8" />
+              <circle cx={kp.leftEye.x} cy={kp.leftEye.y} r="3" fill="#ff2b4a" />
+              <line x1={kp.leftEye.x - 10} y1={kp.leftEye.y} x2={kp.leftEye.x + 10} y2={kp.leftEye.y} stroke="#ff2b4a" strokeWidth="1" />
+              <line x1={kp.leftEye.x} y1={kp.leftEye.y - 10} x2={kp.leftEye.x} y2={kp.leftEye.y + 10} stroke="#ff2b4a" strokeWidth="1" />
             </g>
 
             {/* Right Eye concentric reticle */}
             <g>
-              <circle cx={kp.rightEye.x} cy={kp.rightEye.y} r="8" fill="none" stroke="#22c55e" strokeWidth="1.8" />
-              <circle cx={kp.rightEye.x} cy={kp.rightEye.y} r="3" fill="#22c55e" />
-              <line x1={kp.rightEye.x - 10} y1={kp.rightEye.y} x2={kp.rightEye.x + 10} y2={kp.rightEye.y} stroke="#22c55e" strokeWidth="1" />
-              <line x1={kp.rightEye.x} y1={kp.rightEye.y - 10} x2={kp.rightEye.x} y2={kp.rightEye.y + 10} stroke="#22c55e" strokeWidth="1" />
+              <circle cx={kp.rightEye.x} cy={kp.rightEye.y} r="8" fill="none" stroke="#ff2b4a" strokeWidth="1.8" />
+              <circle cx={kp.rightEye.x} cy={kp.rightEye.y} r="3" fill="#ff2b4a" />
+              <line x1={kp.rightEye.x - 10} y1={kp.rightEye.y} x2={kp.rightEye.x + 10} y2={kp.rightEye.y} stroke="#ff2b4a" strokeWidth="1" />
+              <line x1={kp.rightEye.x} y1={kp.rightEye.y - 10} x2={kp.rightEye.x} y2={kp.rightEye.y + 10} stroke="#ff2b4a" strokeWidth="1" />
             </g>
 
             {/* Nose Center Red Point */}
@@ -268,9 +268,9 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
               <circle cx={kp.noseCenter.x} cy={kp.noseCenter.y} r="4.5" fill="#ef4444" stroke="#ffffff" strokeWidth="1.2" />
             </g>
 
-            {/* Chin Green Point */}
+            {/* Chin Red Point */}
             <g>
-              <circle cx={kp.chinPoint.x} cy={kp.chinPoint.y} r="6" fill="#22c55e" stroke="#ffffff" strokeWidth="1.5" />
+              <circle cx={kp.chinPoint.x} cy={kp.chinPoint.y} r="6" fill="#ff2b4a" stroke="#ffffff" strokeWidth="1.5" />
             </g>
           </>
         )}
@@ -278,10 +278,10 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
         {/* Visible Eye & Nose Point for Profile Views */}
         {(poseType === 'LEFT' || poseType === 'RIGHT') && kp.visibleEye && (
           <g>
-            <circle cx={kp.visibleEye.x} cy={kp.visibleEye.y} r="8" fill="none" stroke="#22c55e" strokeWidth="1.8" />
-            <circle cx={kp.visibleEye.x} cy={kp.visibleEye.y} r="3" fill="#22c55e" />
-            <line x1={kp.visibleEye.x - 10} y1={kp.visibleEye.y} x2={kp.visibleEye.x + 10} y2={kp.visibleEye.y} stroke="#22c55e" strokeWidth="1" />
-            <line x1={kp.visibleEye.x} y1={kp.visibleEye.y - 10} x2={kp.visibleEye.x} y2={kp.visibleEye.y + 10} stroke="#22c55e" strokeWidth="1" />
+            <circle cx={kp.visibleEye.x} cy={kp.visibleEye.y} r="8" fill="none" stroke="#ff2b4a" strokeWidth="1.8" />
+            <circle cx={kp.visibleEye.x} cy={kp.visibleEye.y} r="3" fill="#ff2b4a" />
+            <line x1={kp.visibleEye.x - 10} y1={kp.visibleEye.y} x2={kp.visibleEye.x + 10} y2={kp.visibleEye.y} stroke="#ff2b4a" strokeWidth="1" />
+            <line x1={kp.visibleEye.x} y1={kp.visibleEye.y - 10} x2={kp.visibleEye.x} y2={kp.visibleEye.y + 10} stroke="#ff2b4a" strokeWidth="1" />
 
             {kp.nosePoint && (
               <circle cx={kp.nosePoint.x} cy={kp.nosePoint.y} r="4.5" fill="#ef4444" stroke="#ffffff" strokeWidth="1.2" />
@@ -289,7 +289,7 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
           </g>
         )}
 
-        {/* 7. Profile Angle Indicator: ~90° Green Sector Arc & Arrows */}
+        {/* 7. Profile Angle Indicator: ~90° Red Sector Arc & Arrows */}
         {(poseType === 'LEFT' || poseType === 'RIGHT') && profileAngle && (
           <g className="transition-all duration-200">
             {profileAngle.direction === 'LEFT' ? (
@@ -297,8 +297,8 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
               <>
                 <path
                   d={`M ${profileAngle.origin.x} ${profileAngle.origin.y} L ${profileAngle.origin.x - profileAngle.radius} ${profileAngle.origin.y} A ${profileAngle.radius} ${profileAngle.radius} 0 0 1 ${profileAngle.origin.x} ${profileAngle.origin.y - profileAngle.radius} Z`}
-                  fill="rgba(34, 197, 94, 0.25)"
-                  stroke="#22c55e"
+                  fill="rgba(232, 17, 76, 0.25)"
+                  stroke="#ff2b4a"
                   strokeWidth="2"
                 />
                 {/* Double horizontal arrows representing rotation */}
@@ -307,7 +307,7 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
                   y1={profileAngle.origin.y + 6}
                   x2={profileAngle.origin.x + 8}
                   y2={profileAngle.origin.y + 6}
-                  stroke="#22c55e"
+                  stroke="#ff2b4a"
                   strokeWidth="2"
                   markerStart="url(#geo-arrow-green)"
                   markerEnd="url(#geo-arrow-green)"
@@ -316,7 +316,7 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
                 <text
                   x={profileAngle.origin.x - profileAngle.radius * 0.55}
                   y={profileAngle.origin.y - 8}
-                  fill="#86efac"
+                  fill="#ffb4ab"
                   fontSize="13"
                   fontWeight="bold"
                   fontFamily="monospace"
@@ -330,8 +330,8 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
               <>
                 <path
                   d={`M ${profileAngle.origin.x} ${profileAngle.origin.y} L ${profileAngle.origin.x + profileAngle.radius} ${profileAngle.origin.y} A ${profileAngle.radius} ${profileAngle.radius} 0 0 0 ${profileAngle.origin.x} ${profileAngle.origin.y - profileAngle.radius} Z`}
-                  fill="rgba(34, 197, 94, 0.25)"
-                  stroke="#22c55e"
+                  fill="rgba(232, 17, 76, 0.25)"
+                  stroke="#ff2b4a"
                   strokeWidth="2"
                 />
                 <line
@@ -339,7 +339,7 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
                   y1={profileAngle.origin.y + 6}
                   x2={profileAngle.origin.x + profileAngle.radius + 8}
                   y2={profileAngle.origin.y + 6}
-                  stroke="#22c55e"
+                  stroke="#ff2b4a"
                   strokeWidth="2"
                   markerStart="url(#geo-arrow-green)"
                   markerEnd="url(#geo-arrow-green)"
@@ -347,7 +347,7 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
                 <text
                   x={profileAngle.origin.x + profileAngle.radius * 0.55}
                   y={profileAngle.origin.y - 8}
-                  fill="#86efac"
+                  fill="#ffb4ab"
                   fontSize="13"
                   fontWeight="bold"
                   fontFamily="monospace"
@@ -442,45 +442,45 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
       {/* ======================================================== */}
 
       {/* Floating Top-Right: Validation Checks Card */}
-      <div className="absolute top-2.5 right-3 z-20 w-44 bg-slate-950/90 border border-sky-500/50 rounded-lg p-2 shadow-xl backdrop-blur-md font-mono text-[9px]">
-        <div className="border-b border-sky-500/30 pb-1 mb-1.5 flex items-center justify-between">
-          <span className="font-bold text-sky-300 tracking-wider uppercase">Validation Checks</span>
-          <span className="text-[7.5px] px-1 py-0.2 rounded bg-sky-950 text-sky-400 border border-sky-800">
-            {vc.allPassed ? 'ALL GREEN' : 'INSPECT'}
+      <div className="absolute top-2.5 right-3 z-20 w-44 bg-[#14020a]/90 border border-rose-500/50 rounded-lg p-2 shadow-xl backdrop-blur-md font-mono text-[9px]">
+        <div className="border-b border-rose-500/30 pb-1 mb-1.5 flex items-center justify-between">
+          <span className="font-bold text-rose-300 tracking-wider uppercase">Validation Checks</span>
+          <span className="text-[7.5px] px-1 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800">
+            {vc.allPassed ? 'ALL QUALIFIED' : 'INSPECT'}
           </span>
         </div>
         <div className="space-y-1">
-          <div className="flex items-center gap-1.5 text-slate-200">
-            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${vc.check1.passed ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-500'}`}>
+          <div className="flex items-center gap-1.5 text-rose-100">
+            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${vc.check1.passed ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-sm' : 'bg-rose-950 text-rose-700'}`}>
               <Check className="w-2.5 h-2.5 stroke-[3]" />
             </span>
             <span className="truncate">{vc.check1.label}</span>
           </div>
 
-          <div className="flex items-center gap-1.5 text-slate-200">
-            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${vc.check2.passed ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-500'}`}>
+          <div className="flex items-center gap-1.5 text-rose-100">
+            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${vc.check2.passed ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-sm' : 'bg-rose-950 text-rose-700'}`}>
               <Check className="w-2.5 h-2.5 stroke-[3]" />
             </span>
             <span className="truncate">{vc.check2.label}</span>
           </div>
 
-          <div className="flex items-center gap-1.5 text-slate-200">
-            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${vc.check3.passed ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-500'}`}>
+          <div className="flex items-center gap-1.5 text-rose-100">
+            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${vc.check3.passed ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-sm' : 'bg-rose-950 text-rose-700'}`}>
               <Check className="w-2.5 h-2.5 stroke-[3]" />
             </span>
             <span className="truncate">{vc.check3.label}</span>
           </div>
 
-          <div className="flex items-center gap-1.5 text-slate-200">
-            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${vc.check4.passed ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-500'}`}>
+          <div className="flex items-center gap-1.5 text-rose-100">
+            <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${vc.check4.passed ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-sm' : 'bg-rose-950 text-rose-700'}`}>
               <Check className="w-2.5 h-2.5 stroke-[3]" />
             </span>
             <span className="truncate">{vc.check4.label}</span>
           </div>
 
           {vc.check5 && (
-            <div className="flex items-center gap-1.5 text-slate-200">
-              <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${vc.check5.passed ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-500'}`}>
+            <div className="flex items-center gap-1.5 text-rose-100">
+              <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${vc.check5.passed ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow-sm' : 'bg-rose-950 text-rose-700'}`}>
                 <Check className="w-2.5 h-2.5 stroke-[3]" />
               </span>
               <span className="truncate">{vc.check5.label}</span>
@@ -490,16 +490,16 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
       </div>
 
       {/* Floating Bottom-Right: Key Geometric Data Card OR Angle Information Dial */}
-      <div className="absolute bottom-11 right-3 z-20 w-44 bg-slate-950/90 border border-sky-500/50 rounded-lg p-2 shadow-xl backdrop-blur-md font-mono text-[9px]">
+      <div className="absolute bottom-11 right-3 z-20 w-44 bg-[#14020a]/90 border border-rose-500/50 rounded-lg p-2 shadow-xl backdrop-blur-md font-mono text-[9px]">
         {poseType === 'LEFT' || poseType === 'RIGHT' ? (
           // Angle Information Card with Semi-Circular Radial Yaw Gauge Dial
           <div>
-            <div className="border-b border-sky-500/30 pb-1 mb-1.5">
-              <span className="font-bold text-sky-300 tracking-wider uppercase">Angle Information</span>
+            <div className="border-b border-rose-500/30 pb-1 mb-1.5">
+              <span className="font-bold text-rose-300 tracking-wider uppercase">Angle Information</span>
             </div>
             <div className="flex justify-between items-center text-slate-300 mb-1">
               <span>Yaw (Left/Right):</span>
-              <span className="text-emerald-400 font-bold">
+              <span className="text-[#ff5c74] font-bold">
                 {poseType === 'LEFT' ? '≈ 90° (Left)' : '≈ 90° (Right)'}
               </span>
             </div>
@@ -523,7 +523,7 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
                       : 'M 50 10 A 40 40 0 0 1 90 50'
                   }
                   fill="none"
-                  stroke="#22c55e"
+                  stroke="#ff2b4a"
                   strokeWidth="8"
                   strokeLinecap="round"
                 />
@@ -544,7 +544,7 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
                   y1="50"
                   x2={50 + 32 * Math.sin((needleRotation * Math.PI) / 180)}
                   y2={50 - 32 * Math.cos((needleRotation * Math.PI) / 180)}
-                  stroke="#22c55e"
+                  stroke="#ff2b4a"
                   strokeWidth="1.5"
                   strokeLinecap="round"
                 />
@@ -559,39 +559,39 @@ export const GeometricFacePatternHUD: React.FC<GeometricFacePatternHUDProps> = (
         ) : (
           // Key Geometric Data Card (Front / Blink)
           <div>
-            <div className="border-b border-sky-500/30 pb-1 mb-1.5 flex justify-between items-center">
-              <span className="font-bold text-sky-300 tracking-wider uppercase">Key Geometric Data</span>
+            <div className="border-b border-rose-500/30 pb-1 mb-1.5 flex justify-between items-center">
+              <span className="font-bold text-rose-300 tracking-wider uppercase">Key Geometric Data</span>
             </div>
             <div className="space-y-0.5 text-slate-300">
               <div className="flex justify-between">
                 <span>Yaw :</span>
-                <span className="text-emerald-400 font-bold">{Math.round(gd.yaw)}°</span>
+                <span className="text-[#ff5c74] font-bold">{Math.round(gd.yaw)}°</span>
               </div>
               <div className="flex justify-between">
                 <span>Pitch :</span>
-                <span className="text-emerald-400 font-bold">{Math.round(gd.pitch)}°</span>
+                <span className="text-[#ff5c74] font-bold">{Math.round(gd.pitch)}°</span>
               </div>
               <div className="flex justify-between">
                 <span>Roll :</span>
-                <span className="text-emerald-400 font-bold">{Math.round(gd.roll)}°</span>
+                <span className="text-[#ff5c74] font-bold">{Math.round(gd.roll)}°</span>
               </div>
               <div className="flex justify-between">
                 <span>Eye Distance :</span>
-                <span className="text-emerald-400 font-bold">{gd.eyeDistance}</span>
+                <span className="text-[#ff5c74] font-bold">{gd.eyeDistance}</span>
               </div>
               <div className="flex justify-between">
                 <span>Face Ratio :</span>
-                <span className="text-emerald-400 font-bold">{gd.faceRatio}</span>
+                <span className="text-[#ff5c74] font-bold">{gd.faceRatio}</span>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Prominent Bottom Green Detection Status Banner */}
+      {/* Prominent Bottom Detection Status Banner */}
       <div className="absolute bottom-2.5 inset-x-12 z-20 flex items-center justify-center">
-        <div className="font-mono text-[10.5px] font-bold px-4 py-1.5 rounded-full bg-emerald-950/95 border-2 border-emerald-400 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.7)] backdrop-blur-md flex items-center gap-2 animate-in fade-in zoom-in-95">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+        <div className="font-mono text-[10.5px] font-bold px-4 py-1.5 rounded-full bg-rose-950/95 border-2 border-rose-500 text-rose-200 shadow-[0_0_20px_rgba(232,17,76,0.7)] backdrop-blur-md flex items-center gap-2 animate-in fade-in zoom-in-95">
+          <CheckCircle2 className="w-4 h-4 text-[#ff5c74] shrink-0" />
           <span>{getStatusBannerText()}</span>
         </div>
       </div>

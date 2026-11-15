@@ -70,8 +70,8 @@ if (typeof g.document === 'undefined') {
   };
 }
 
-import { IdScanEngine, mergeFrontAndBackFields } from '../idScanEngine';
-import { FONT_BANK } from '../fontBank';
+import { IdScanEngine, mergeFrontAndBackFields } from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/idScanEngine';
+import { FONT_BANK } from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/fontBank';
 
 let passed = 0;
 let failed = 0;
@@ -183,9 +183,14 @@ const createPreCroppedUploadedIdImageData = (side: 'front' | 'back'): ImageData 
     drawBitmapString(rgba, width, height, 'DATE OF BIRTH', 260, 350, 1);
     drawBitmapString(rgba, width, height, '2004/09/15', 260, 376, 2);
   } else {
-    // Back side: barcode strip + reverse fields (address, weight, height)
-    for (let x = 60; x < width - 60; x += 8) {
-      for (let y = 95; y < 185; y++) {
+    // Back side: statutory LTO DL back-side anchors in idSpecs ROIs + bottom PDF417 barcode strip
+    drawBitmapString(rgba, width, height, 'EMERGENCY CONTACT', 80, 100, 1);
+    drawBitmapString(rgba, width, height, 'DL CODES CONDITIONS', 80, 130, 1);
+    drawBitmapString(rgba, width, height, 'ORGAN DONOR NO', 80, 160, 1);
+    drawBitmapString(rgba, width, height, 'VEHICLE CATEGORY', 80, 215, 1);
+    drawBitmapString(rgba, width, height, 'RESTRICTIONS 1 2', 80, 250, 1);
+    for (let x = 80; x < width - 80; x += 8) {
+      for (let y = 310; y < 420; y++) {
         for (let bx = 0; bx < 4; bx++) {
           const idx = (y * width + (x + bx)) * 4;
           rgba[idx] = 18;
@@ -194,12 +199,6 @@ const createPreCroppedUploadedIdImageData = (side: 'front' | 'back'): ImageData 
         }
       }
     }
-    drawBitmapString(rgba, width, height, 'ADDRESS', 60, 220, 1);
-    drawBitmapString(rgba, width, height, 'POBLACION MANUKAN ZAMBOANGA', 60, 250, 2);
-    drawBitmapString(rgba, width, height, 'WEIGHT', 60, 310, 1);
-    drawBitmapString(rgba, width, height, '52 KG', 60, 338, 2);
-    drawBitmapString(rgba, width, height, 'HEIGHT', 420, 310, 1);
-    drawBitmapString(rgba, width, height, '1.71 M', 420, 338, 2);
   }
 
   return new ImageData(rgba, width, height);

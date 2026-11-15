@@ -1,8 +1,17 @@
 // [Layer: Frontend/Libs/Vision/idScanner/ai]
-// Responsibility: Dispatches OCR extraction requests to the ASP.NET Core Web API proxy at /api/identity/ai-extract.
-// Invariant: Strict TypeScript with ZERO 'any'. 100% Universal Lambda syntax (=>).
+// Responsibility: Dispatches OCR extraction requests to the ASP.NET Core Web API proxy at /api/identity/ai-extract with strict visible-only sanitization.
+// Invariant: Strict TypeScript with ZERO 'any', ZERO emojis, and 100% Universal Lambda syntax (=>).
 
 import type { AiOcrProvider, IdOcrResult, ExtractedFieldsMap } from './AiOcrProvider';
+import {
+  type OcrErrorCode,
+  buildMissingFrontImageWarning,
+  composeVisibleAddress,
+  computeAgeFromIsoDob,
+  containsBannedDummyToken,
+  normalizeVisibleSex,
+  sanitizeVisibleOcrFields
+} from './ocrFieldUtils';
 
 /**
  * Request payload sent to ASP.NET Core /api/identity/ai-extract.
@@ -28,16 +37,42 @@ export interface BackendAiExtractResponse {
   readonly success: boolean;
   readonly providerUsed?: string;
   readonly idType?: string;
-  readonly extractedFields?: Record<string, BackendExtractedFieldDto>;
+  readonly confidence?: number;
+  readonly extractedFields?: Record<string, BackendExtractedFieldDto | string | null | undefined>;
+  readonly firstName?: string | null;
+  readonly middleName?: string | null;
+  readonly surname?: string | null;
+  readonly lastName?: string | null;
+  readonly suffix?: string | null;
+  readonly fullName?: string | null;
+  readonly dateOfBirth?: string | null;
+  readonly dob?: string | null;
+  readonly age?: string | null;
+  readonly sex?: string | null;
+  readonly licenseNumber?: string | null;
+  readonly idNumber?: string | null;
+  readonly expirationDate?: string | null;
+  readonly barangay?: string | null;
+  readonly street?: string | null;
+  readonly streetPurok?: string | null;
+  readonly cityOrMunicipality?: string | null;
+  readonly province?: string | null;
+  readonly address?: string | null;
+  readonly weight?: string | null;
+  readonly height?: string | null;
+  readonly phoneNumber?: string | null;
   readonly rawText?: string;
+  readonly errorCode?: string;
   readonly errorMessage?: string;
-  readonly executionTimeMs: number;
+  readonly warnings?: readonly string[];
+  readonly executionTimeMs?: number;
 }
 
 /**
  * Health & configuration status returned by /api/identity/ai-status.
  */
 export interface BackendAiStatusResponse {
+  readonly claudeConfigured?: boolean;
   readonly geminiConfigured: boolean;
   readonly openAiConfigured: boolean;
   readonly azureConfigured: boolean;
@@ -55,6 +90,47 @@ export interface BackendProxyProviderOptions {
   readonly timeoutMs?: number;
 }
 
+const VALID_ERROR_CODES: ReadonlySet<string> = new Set<OcrErrorCode>([
+  'MISSING_FRONT_IMAGE',
+  'UNREADABLE_OR_BLANK_IMAGE',
+  'PROVIDER_UNAVAILABLE',
+  'MODEL_NOT_FOUND',
+  'RATE_LIMITED',
+  'TIMEOUT',
+  'NETWORK_ERROR',
+  'INVALID_RESPONSE',
+  'EXTRACTION_FAILED'
+]);
+
+const resolveOcrErrorCode = (
+  rawCode: unknown,
+  httpStatus: number,
+  fallback: OcrErrorCode = 'PROVIDER_UNAVAILABLE'
+): OcrErrorCode => {
+  if (typeof rawCode === 'string') {
+    const upper = rawCode.trim().toUpperCase();
+    if (VALID_ERROR_CODES.has(upper)) {
+      return upper as OcrErrorCode;
+    }
+  }
+  if (httpStatus === 429) {
+    return 'RATE_LIMITED';
+  }
+  if (httpStatus === 404) {
+    return 'MODEL_NOT_FOUND';
+  }
+  if (httpStatus === 408 || httpStatus === 504) {
+    return 'TIMEOUT';
+  }
+  if (httpStatus >= 500) {
+    return 'PROVIDER_UNAVAILABLE';
+  }
+  if (httpStatus >= 400) {
+    return 'UNREADABLE_OR_BLANK_IMAGE';
+  }
+  return fallback;
+};
+
 const resolveBackendEndpoint = (path: string): string => {
   let base = '';
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) {
@@ -69,6 +145,42 @@ const resolveBackendEndpoint = (path: string): string => {
   return `${base}${path.startsWith('/') ? path : `/${path}`}`;
 };
 
+const pickSanitizedField = (
+  sanitizedMap: Record<string, string>,
+  candidates: readonly string[]
+): string => {
+  const lowerLookup = new Map<string, string>();
+  for (const [k, v] of Object.entries(sanitizedMap)) {
+    lowerLookup.set(k.toLowerCase(), v);
+  }
+  for (const key of candidates) {
+    const found = lowerLookup.get(key.toLowerCase());
+    if (found && found.trim().length > 0) {
+      return found.trim();
+    }
+  }
+  return '';
+};
+
+const buildErrorResult = (
+  providerUsed: string,
+  hintType: string | undefined,
+  errorCode: OcrErrorCode,
+  errorMessage: string,
+  executionTimeMs: number,
+  warnings?: readonly string[]
+): IdOcrResult => ({
+  type: (hintType || 'UNKNOWN').toUpperCase(),
+  fields: {},
+  rawText: '',
+  providerUsed,
+  executionTimeMs: Math.max(0, executionTimeMs),
+  success: false,
+  errorCode,
+  errorMessage,
+  warnings: warnings && warnings.length > 0 ? [...warnings] : [errorMessage]
+});
+
 /**
  * Communicates with the ResQTrack ASP.NET Core backend to invoke cloud vision providers securely.
  */
@@ -79,7 +191,8 @@ export class BackendProxyProvider implements AiOcrProvider {
   private readonly timeoutMs: number;
   private cachedIsConfigured: boolean | null = null;
   private lastConfigCheckTime: number = 0;
-  private static readonly CACHE_TTL_MS: number = 45_000;
+  private lastProbeFetchRef: typeof fetch | null = null;
+  private static readonly CACHE_TTL_MS: number = 30_000;
 
   public constructor(options?: BackendProxyProviderOptions) {
     this.name = options?.targetProvider ?? 'backend-proxy';
@@ -93,7 +206,12 @@ export class BackendProxyProvider implements AiOcrProvider {
    */
   public readonly isConfigured = async (): Promise<boolean> => {
     const now = Date.now();
-    if (this.cachedIsConfigured !== null && now - this.lastConfigCheckTime < BackendProxyProvider.CACHE_TTL_MS) {
+    const currentFetch = globalThis.fetch;
+    if (
+      this.cachedIsConfigured !== null &&
+      this.lastProbeFetchRef === currentFetch &&
+      now - this.lastConfigCheckTime < BackendProxyProvider.CACHE_TTL_MS
+    ) {
       return this.cachedIsConfigured;
     }
 
@@ -103,7 +221,7 @@ export class BackendProxyProvider implements AiOcrProvider {
 
       const response = await fetch(this.statusEndpoint, {
         method: 'GET',
-        headers: { 'Accept': 'application/json' },
+        headers: { Accept: 'application/json' },
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -111,46 +229,61 @@ export class BackendProxyProvider implements AiOcrProvider {
       if (!response.ok) {
         this.cachedIsConfigured = false;
         this.lastConfigCheckTime = now;
+        this.lastProbeFetchRef = currentFetch;
         return false;
       }
 
       const status = (await response.json()) as BackendAiStatusResponse;
       let configured = false;
 
-      if (this.name === 'gemini') {
-        configured = status.geminiConfigured;
+      if (this.name === 'claude') {
+        configured = Boolean(status.claudeConfigured);
+      } else if (this.name === 'gemini') {
+        configured = Boolean(status.geminiConfigured);
       } else if (this.name === 'azure') {
-        configured = status.azureConfigured;
+        configured = Boolean(status.azureConfigured);
       } else if (this.name === 'openai') {
-        configured = status.openAiConfigured;
+        configured = Boolean(status.openAiConfigured);
+      } else if (this.name === 'groq' || this.name === 'ollama') {
+        configured = Boolean(
+          status.activeChain && status.activeChain.toLowerCase().includes(this.name)
+        );
       } else {
-        configured = status.hasAnyProvider;
+        configured = Boolean(status.hasAnyProvider);
       }
 
       this.cachedIsConfigured = configured;
       this.lastConfigCheckTime = now;
+      this.lastProbeFetchRef = currentFetch;
       return configured;
     } catch {
       this.cachedIsConfigured = false;
       this.lastConfigCheckTime = now;
+      this.lastProbeFetchRef = currentFetch;
       return false;
     }
   };
 
   /**
-   * Executes AI-assisted OCR extraction via the backend endpoint.
+   * Executes AI-assisted OCR extraction via the backend endpoint using strict visible-only transcription rules.
    */
   public readonly extract = async (
     imageDataUrl: string,
     hintType?: string
   ): Promise<IdOcrResult | null> => {
+    const cleanImage = (imageDataUrl ?? '').trim();
+    if (!cleanImage) {
+      const warning = buildMissingFrontImageWarning(hintType);
+      return buildErrorResult(this.name, hintType, 'MISSING_FRONT_IMAGE', warning, 0, [warning]);
+    }
+
     const startTime = Date.now();
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout((): void => controller.abort(), this.timeoutMs);
 
       const requestBody: BackendAiExtractRequest = {
-        imageDataUrl,
+        imageDataUrl: cleanImage,
         hintType,
         preferredProvider: this.name === 'backend-proxy' ? undefined : this.name
       };
@@ -159,50 +292,252 @@ export class BackendProxyProvider implements AiOcrProvider {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          Accept: 'application/json'
         },
         body: JSON.stringify(requestBody),
         signal: controller.signal
       });
       clearTimeout(timeoutId);
 
+      const elapsedMs = Math.max(1, Date.now() - startTime);
+
       if (!response.ok) {
-        const errorText = await response.text().catch((): string => 'Unable to read error text');
-        console.warn(`[BackendProxyProvider:${this.name}] HTTP ${response.status} Error: ${errorText}`);
-        return null;
+        const errorText = await response.text().catch((): string => '');
+        let parsedError: Partial<BackendAiExtractResponse> | null = null;
+        if (errorText) {
+          try {
+            parsedError = JSON.parse(errorText) as Partial<BackendAiExtractResponse>;
+          } catch {
+            parsedError = null;
+          }
+        }
+
+        const errorCode = resolveOcrErrorCode(parsedError?.errorCode, response.status);
+        const errorMessage =
+          parsedError?.errorMessage?.trim() ||
+          `Backend OCR request failed with HTTP ${response.status}.`;
+        console.warn(`[BackendProxyProvider:${this.name}] HTTP ${response.status}: ${errorMessage}`);
+
+        return buildErrorResult(
+          parsedError?.providerUsed ?? this.name,
+          parsedError?.idType ?? hintType,
+          errorCode,
+          errorMessage,
+          parsedError?.executionTimeMs && parsedError.executionTimeMs > 0
+            ? parsedError.executionTimeMs
+            : elapsedMs,
+          parsedError?.warnings
+        );
       }
 
       const data = (await response.json()) as BackendAiExtractResponse;
       if (!data.success) {
-        console.info(
-          `[BackendProxyProvider:${this.name}] Standby mode notice: ${data.errorMessage ?? 'No extraction produced'}`
+        const errorCode = resolveOcrErrorCode(
+          data.errorCode,
+          200,
+          'UNREADABLE_OR_BLANK_IMAGE'
         );
-        return null;
+        const errorMessage =
+          data.errorMessage?.trim() || 'No readable identification fields were extracted.';
+        return buildErrorResult(
+          data.providerUsed ?? this.name,
+          data.idType ?? hintType,
+          errorCode,
+          errorMessage,
+          data.executionTimeMs && data.executionTimeMs > 0 ? data.executionTimeMs : elapsedMs,
+          data.warnings
+        );
       }
 
-      const fields: ExtractedFieldsMap = {};
+      const rawCandidates: Record<string, unknown> = {};
+      const confidenceByKey = new Map<string, number>();
+      const fallbackConfidence =
+        typeof data.confidence === 'number' && data.confidence > 0 && data.confidence <= 1
+          ? Number(data.confidence.toFixed(3))
+          : 0.85;
+
+      const topLevelEntries: readonly [string, string | null | undefined][] = [
+        ['firstName', data.firstName],
+        ['middleName', data.middleName],
+        ['lastName', data.lastName ?? data.surname],
+        ['suffix', data.suffix],
+        ['fullName', data.fullName],
+        ['dob', data.dob ?? data.dateOfBirth],
+        ['age', data.age],
+        ['sex', data.sex],
+        ['idNumber', data.idNumber ?? data.licenseNumber],
+        ['licenseNumber', data.licenseNumber],
+        ['expirationDate', data.expirationDate],
+        ['barangay', data.barangay],
+        ['streetPurok', data.streetPurok ?? data.street],
+        ['cityOrMunicipality', data.cityOrMunicipality],
+        ['province', data.province],
+        ['address', data.address],
+        ['weight', data.weight],
+        ['height', data.height],
+        ['phoneNumber', data.phoneNumber]
+      ];
+
+      for (const [key, value] of topLevelEntries) {
+        if (value !== undefined) {
+          rawCandidates[key] = value;
+        }
+      }
+
       if (data.extractedFields) {
-        for (const [key, field] of Object.entries(data.extractedFields)) {
-          if (field && typeof field.value === 'string' && field.value.trim().length > 0) {
-            fields[key] = {
-              value: field.value.trim(),
-              confidence: typeof field.confidence === 'number' ? Number(field.confidence.toFixed(3)) : 1.0
-            };
+        for (const [key, entry] of Object.entries(data.extractedFields)) {
+          if (entry === null || entry === undefined) {
+            rawCandidates[key] = entry;
+          } else if (typeof entry === 'string') {
+            rawCandidates[key] = entry;
+          } else if (typeof entry === 'object' && 'value' in entry) {
+            rawCandidates[key] = entry.value;
+            if (typeof entry.confidence === 'number' && entry.confidence > 0 && entry.confidence <= 1) {
+              confidenceByKey.set(key.toLowerCase(), Number(entry.confidence.toFixed(3)));
+            }
           }
         }
       }
 
+      const sanitized = sanitizeVisibleOcrFields(rawCandidates, data.rawText);
+      const sanitizedRecord = sanitized.fields as Record<string, string>;
+
+      const getConfidence = (...keys: readonly string[]): number => {
+        for (const k of keys) {
+          const c = confidenceByKey.get(k.toLowerCase());
+          if (c !== undefined) {
+            return c;
+          }
+        }
+        return fallbackConfidence;
+      };
+
+      const firstName = pickSanitizedField(sanitizedRecord, ['firstName', 'givenName']);
+      const middleName = pickSanitizedField(sanitizedRecord, ['middleName', 'middleInitial']);
+      const lastName = pickSanitizedField(sanitizedRecord, ['lastName', 'surname', 'familyName']);
+      const suffix = pickSanitizedField(sanitizedRecord, ['suffix', 'nameSuffix']);
+      const explicitFullName = pickSanitizedField(sanitizedRecord, ['fullName']);
+      const composedFullName =
+        explicitFullName ||
+        [firstName, middleName, lastName, suffix]
+          .filter((part: string): boolean => part.length > 0)
+          .join(' ');
+
+      const dob = pickSanitizedField(sanitizedRecord, ['dob', 'dateOfBirth', 'birthDate']);
+      const rawAge = pickSanitizedField(sanitizedRecord, ['age']);
+      const age = rawAge || computeAgeFromIsoDob(dob);
+      const sex = normalizeVisibleSex(pickSanitizedField(sanitizedRecord, ['sex', 'gender']));
+      const idNumber = pickSanitizedField(sanitizedRecord, [
+        'licenseNumber',
+        'idNumber',
+        'documentNumber',
+        'serialNumber'
+      ]);
+      const licenseNumber = pickSanitizedField(sanitizedRecord, ['licenseNumber']) || idNumber;
+      const expirationDate = pickSanitizedField(sanitizedRecord, ['expirationDate', 'expiryDate']);
+      const barangay = pickSanitizedField(sanitizedRecord, ['barangay', 'brgy']);
+      const streetPurok = pickSanitizedField(sanitizedRecord, ['streetPurok', 'street', 'streetOrPurok']);
+      const cityOrMunicipality = pickSanitizedField(sanitizedRecord, [
+        'cityOrMunicipality',
+        'city',
+        'municipality'
+      ]);
+      const province = pickSanitizedField(sanitizedRecord, ['province']);
+      const explicitAddress = pickSanitizedField(sanitizedRecord, ['address']);
+      const composedAddress = composeVisibleAddress({
+        explicitAddress,
+        streetPurok,
+        barangay,
+        cityOrMunicipality,
+        province
+      });
+      const weight = pickSanitizedField(sanitizedRecord, ['weight', 'weightKg']);
+      const height = pickSanitizedField(sanitizedRecord, ['height', 'heightCm', 'heightM']);
+      const phoneNumber = pickSanitizedField(sanitizedRecord, [
+        'phoneNumber',
+        'mobileNumber',
+        'contactNumber'
+      ]);
+
+      const fields: ExtractedFieldsMap = {};
+      const assignField = (key: string, value: string, conf: number): void => {
+        if (value.trim().length > 0) {
+          fields[key] = { value: value.trim(), confidence: conf };
+        }
+      };
+
+      assignField('FullName', composedFullName, getConfidence('fullName'));
+      assignField('FirstName', firstName, getConfidence('firstName', 'givenName'));
+      assignField('MiddleName', middleName, getConfidence('middleName'));
+      assignField('LastName', lastName, getConfidence('lastName', 'surname'));
+      assignField('Surname', lastName, getConfidence('surname', 'lastName'));
+      assignField('Suffix', suffix, getConfidence('suffix'));
+      assignField('DateOfBirth', dob, getConfidence('dateOfBirth', 'dob'));
+      assignField('Age', age, getConfidence('age', 'dateOfBirth', 'dob'));
+      assignField('Sex', sex, getConfidence('sex', 'gender'));
+      assignField('IdNumber', idNumber, getConfidence('idNumber', 'licenseNumber'));
+      assignField('LicenseNumber', licenseNumber, getConfidence('licenseNumber', 'idNumber'));
+      assignField('ExpirationDate', expirationDate, getConfidence('expirationDate'));
+      assignField('Barangay', barangay, getConfidence('barangay'));
+      assignField('Street', streetPurok, getConfidence('street', 'streetPurok'));
+      assignField('CityOrMunicipality', cityOrMunicipality, getConfidence('cityOrMunicipality', 'city'));
+      assignField('Province', province, getConfidence('province'));
+      assignField('Address', composedAddress, getConfidence('address', 'barangay', 'street'));
+      assignField('Weight', weight, getConfidence('weight'));
+      assignField('Height', height, getConfidence('height'));
+      assignField('PhoneNumber', phoneNumber, getConfidence('phoneNumber'));
+
+      const hasReadableIdentityField = Boolean(
+        firstName ||
+          lastName ||
+          composedFullName ||
+          idNumber ||
+          dob ||
+          composedAddress ||
+          barangay ||
+          streetPurok ||
+          cityOrMunicipality ||
+          province
+      );
+
+      if (
+        Object.keys(fields).length === 0 ||
+        (!hasReadableIdentityField && sanitized.strippedPlaceholders.length > 0)
+      ) {
+        return buildErrorResult(
+          data.providerUsed ?? this.name,
+          data.idType ?? hintType,
+          'UNREADABLE_OR_BLANK_IMAGE',
+          'No readable visible identity fields could be extracted from the ID image.',
+          data.executionTimeMs && data.executionTimeMs > 0 ? data.executionTimeMs : elapsedMs,
+          data.warnings
+        );
+      }
+
+      const safeRawText =
+        data.rawText && !containsBannedDummyToken(data.rawText) ? data.rawText.trim() : '';
+
       return {
-        type: data.idType || hintType || 'UNKNOWN',
+        type: (data.idType || hintType || 'UNKNOWN').toUpperCase(),
         fields,
-        rawText: data.rawText ?? '',
+        rawText: safeRawText,
         providerUsed: data.providerUsed ?? this.name,
-        executionTimeMs: data.executionTimeMs > 0 ? data.executionTimeMs : (Date.now() - startTime)
+        executionTimeMs:
+          data.executionTimeMs && data.executionTimeMs > 0 ? data.executionTimeMs : elapsedMs,
+        success: true,
+        warnings: data.warnings ? [...data.warnings] : undefined
       };
     } catch (err: unknown) {
+      const isAbort = err instanceof Error && err.name === 'AbortError';
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`[BackendProxyProvider:${this.name}] Extraction failure: ${message}`);
-      return null;
+      return buildErrorResult(
+        this.name,
+        hintType,
+        isAbort ? 'TIMEOUT' : 'PROVIDER_UNAVAILABLE',
+        message,
+        Math.max(1, Date.now() - startTime)
+      );
     }
   };
 }

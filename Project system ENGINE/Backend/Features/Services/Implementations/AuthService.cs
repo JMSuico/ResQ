@@ -7,8 +7,10 @@ using Backend.Features.Data.Enums;
 using Backend.Features.Data.Models;
 using Backend.Features.Helpers.Infrastructure;
 using Backend.Features.Repositories.Interfaces;
+using Backend.Features.Services.Biometrics;
 using Backend.Features.Services.Interfaces;
 using Backend.Features.Services.Verification;
+using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.Services.Implementations;
 
@@ -18,13 +20,22 @@ public class AuthService(
     IAuditLogRepository auditRepo,
     Backend.Features.Data.AppDbContext? db = null,
     IIdentityVerificationProvider? identityProvider = null,
-    IFacialVerificationProvider? facialProvider = null) : IAuthService
+    IFacialVerificationProvider? facialProvider = null,
+    IBiometricLoginValidationStrategy? biometricLoginStrategy = null,
+    IAccountAutoApprovalStrategy? autoApprovalStrategy = null,
+    IVerificationTokenCacheStrategy? tokenCacheStrategy = null) : IAuthService
 {
     private readonly IIdentityVerificationProvider _identityProvider =
         identityProvider ?? VerificationProviderResolver.CreateDefaultIdentityProvider();
 
     private readonly IFacialVerificationProvider _facialProvider =
         facialProvider ?? VerificationProviderResolver.CreateDefaultFacialProvider();
+
+    private readonly IVerificationTokenCacheStrategy _tokenCacheStrategy =
+        tokenCacheStrategy ?? new HmacVerificationTokenCacheStrategy(db: db);
+
+    private IAccountAutoApprovalStrategy AutoApprovalStrategy =>
+        autoApprovalStrategy ?? new TokenVerifiedAutoApprovalStrategy(_tokenCacheStrategy);
 
     public async Task<(bool Success, string? Error, User? User)> RegisterAsync(
         RegisterRequest request,
@@ -143,7 +154,9 @@ public class AuthService(
                 OptionalDescriptorVector: request.BiometricDescriptorVector,
                 CapturesRootPath: capturesRootPath,
                 MinWidth: minDim,
-                MinHeight: minDim),
+                MinHeight: minDim,
+                GeometricSignatureJson: request.GeometricSignatureJson,
+                PoseFramesJson: request.PoseFramesJson),
             ct);
 
         if (!facialSubmissionResult.Success)
@@ -158,14 +171,73 @@ public class AuthService(
                 null);
         }
 
+        // Phase 4.5: AI Verification Token & Role-Scoped Auto-Approval Evaluation
+        Guid userId = Guid.NewGuid();
+        byte[] frontIdBytes = TryDecodeDataUrlBytes(request.IdCaptureDataUrl);
+        byte[] backIdBytes = TryDecodeDataUrlBytes(request.IdBackCaptureDataUrl);
+
+        var decision = await AutoApprovalStrategy.EvaluateRegistrationAsync(
+            request.Role,
+            request.Unit,
+            request.IdVerificationToken,
+            request.FacialVerificationToken,
+            frontIdBytes,
+            backIdBytes,
+            userId,
+            ct);
+
+        if (string.Equals(decision.ErrorCode, "ROLE_FORBIDDEN", StringComparison.Ordinal))
+            return (false, decision.Reason, 403, "ROLE_FORBIDDEN", null, null);
+
+        if (decision.HasSubmittedTokens && !decision.IsValidTokenSubmission)
+        {
+            return (
+                false,
+                decision.Reason,
+                400,
+                decision.ErrorCode ?? "INVALID_VERIFICATION_TOKEN",
+                null,
+                null);
+        }
+
         // Hash password using PBKDF2-SHA512 (ScryptPasswordHelper)
         var (hash, salt) = ScryptPasswordHelper.HashPassword(request.Password);
 
-        // Zero Client-Trusted Verification Rule (ADR-04):
-        // All registrations default strictly to AccountStatus.Pending, FaceVerified = false,
-        // and distinct PendingReview statuses for Identity and Facial verification.
-        const AccountStatus initialStatus = AccountStatus.Pending;
-        const bool faceVerified = false;
+        // Zero Client-Trusted Verification Rule (ADR-04) with Verified AI Token Exception:
+        // Registrations without valid AI verification tokens default strictly to AccountStatus.Pending, FaceVerified = false,
+        // and distinct PendingReview statuses. Only eligible Civilian / Responder (FIRE, RHU, PNP) registrations carrying
+        // cryptographically valid, matched, unconsumed ID + Facial verification tokens earn AccountStatus.Verified.
+        AccountStatus initialStatus = decision.ShouldAutoApprove ? AccountStatus.Verified : AccountStatus.Pending;
+        bool faceVerified = decision.ShouldAutoApprove;
+        DateTime? autoApprovedAtUtc = decision.ShouldAutoApprove ? DateTime.UtcNow : null;
+
+        string identityVerificationStatus = decision.ShouldAutoApprove
+            ? decision.IdentityVerificationStatus
+            : idSubmissionResult.VerificationStatus;
+
+        string facialVerificationStatus = decision.ShouldAutoApprove
+            ? decision.FacialVerificationStatus
+            : facialSubmissionResult.VerificationStatus;
+
+        string documentCheckStatus = decision.ShouldAutoApprove
+            ? "VERIFIED_AUTO_AI"
+            : idSubmissionResult.DocumentCheckStatus;
+
+        string faceMatchStatus = decision.ShouldAutoApprove
+            ? "MATCHED_TO_GOV_ID_AUTO_AI"
+            : facialSubmissionResult.FaceMatchStatus;
+
+        string livenessStatus = decision.ShouldAutoApprove
+            ? "LIVE_HUMAN_4POSE_VERIFIED"
+            : facialSubmissionResult.LivenessStatus;
+
+        string overallVerificationStatus = decision.ShouldAutoApprove
+            ? decision.OverallVerificationStatus
+            : "PENDING_REVIEW";
+
+        decimal? persistedFaceToIdMatchScore = decision.FaceToIdMatchScore.HasValue
+            ? (decimal)Math.Round(Math.Clamp(decision.FaceToIdMatchScore.Value, 0.0, 1.0), 4)
+            : null;
 
         DateTime? dob = request.DateOfBirth ?? (request.Age.HasValue ? DateTime.UtcNow.AddYears(-request.Age.Value) : null);
 
@@ -187,6 +259,7 @@ public class AuthService(
 
         var user = new User
         {
+            Id = userId,
             Email = normalizedEmail,
             DisplayName = displayName,
             FullName = InputSanitizer.Sanitize(fullName),
@@ -215,18 +288,29 @@ public class AuthService(
             RankOrTitle = InputSanitizer.Sanitize(request.RankOrTitle ?? string.Empty),
             Status = initialStatus,
             FaceVerified = faceVerified,
-            IdentityVerificationStatus = idSubmissionResult.VerificationStatus,
-            FacialVerificationStatus = facialSubmissionResult.VerificationStatus,
+            IdentityVerificationStatus = identityVerificationStatus,
+            FacialVerificationStatus = facialVerificationStatus,
             IdentityVerificationProvider = idSubmissionResult.ProviderName,
             FacialVerificationProvider = facialSubmissionResult.ProviderName,
             IdCapturePath = idSubmissionResult.FrontEncryptedFilePath,
             IdBackCapturePath = idSubmissionResult.BackEncryptedFilePath,
             FaceCapturePath = facialSubmissionResult.FaceEncryptedFilePath,
+            IdVerificationTokenId = decision.ShouldAutoApprove ? decision.IdVerificationTokenId : null,
+            FacialVerificationTokenId = decision.ShouldAutoApprove ? decision.FacialVerificationTokenId : null,
+            AutoApprovedByAi = decision.ShouldAutoApprove,
+            AutoApprovedAtUtc = autoApprovedAtUtc,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
 
-        await userRepo.AddAsync(user, ct);
+        try
+        {
+            await userRepo.AddAsync(user, ct);
+        }
+        catch (DbUpdateException)
+        {
+            return (false, "An account with this email address already exists.", 409, "EMAIL_CONFLICT", null, null);
+        }
 
         if (db != null)
         {
@@ -238,7 +322,9 @@ public class AuthService(
             {
                 UserId = user.Id,
                 NoticeVersion = noticeVersion,
-                PurposeCategory = "EMERGENCY_DISPATCH_AND_MANUAL_IDENTITY_REVIEW",
+                PurposeCategory = decision.ShouldAutoApprove
+                    ? "EMERGENCY_DISPATCH_AND_AI_AUTO_IDENTITY_APPROVAL"
+                    : "EMERGENCY_DISPATCH_AND_MANUAL_IDENTITY_REVIEW",
                 UserAction = "EXPLICIT_OPT_IN",
                 LegalBasis = "RA_10173_SEC12_CONSENT_AND_VITAL_INTERESTS",
                 ConsentedAtUtc = DateTime.UtcNow
@@ -251,14 +337,20 @@ public class AuthService(
                 Buffer.BlockCopy(vec, 0, templateBytes, 0, templateBytes.Length);
             }
 
-            if (templateBytes is { Length: > 0 })
+            if (templateBytes is { Length: > 0 }
+                || !string.IsNullOrWhiteSpace(request.GeometricSignatureJson)
+                || !string.IsNullOrWhiteSpace(request.PoseFramesJson))
             {
                 db.BiometricEnrollments.Add(new BiometricEnrollment
                 {
                     UserId = user.Id,
-                    EncryptedTemplateData = templateBytes,
+                    EncryptedTemplateData = templateBytes ?? [],
+                    GeometricSignatureJson = string.IsNullOrWhiteSpace(request.GeometricSignatureJson) ? null : request.GeometricSignatureJson,
+                    PoseFramesJson = string.IsNullOrWhiteSpace(request.PoseFramesJson) ? null : request.PoseFramesJson,
                     TemplateFormat = "128D_FLOAT32_NORMALIZED",
-                    ModelIdentifier = facialSubmissionResult.EnrolledModelIdentifier ?? "ResQTrack_Hybrid_CSLBP_Gabor_Haar",
+                    ModelName = !string.IsNullOrWhiteSpace(request.GeometricSignatureJson)
+                        ? "ClaudeVision-128D-MultiPose-v2"
+                        : "ResQTrack-128D-MultiPose-v1",
                     ModelVersion = "v1.0.0",
                     EnrollmentQualityScore = 0.95,
                     EnrollmentStatus = "ACTIVE",
@@ -277,12 +369,16 @@ public class AuthService(
                 ExtractionEngineVersion = "1.0.0-strategy",
                 ConfidenceScore = idSubmissionResult.ConfidenceScore,
                 NormalizedFieldsJson = idSubmissionResult.NormalizedFieldsJson,
-                DocumentCheckStatus = idSubmissionResult.DocumentCheckStatus,
-                FaceMatchStatus = facialSubmissionResult.FaceMatchStatus,
-                LivenessStatus = facialSubmissionResult.LivenessStatus,
-                OverallVerificationStatus = "PENDING_REVIEW",
+                DocumentCheckStatus = documentCheckStatus,
+                FaceMatchStatus = faceMatchStatus,
+                LivenessStatus = livenessStatus,
+                OverallVerificationStatus = overallVerificationStatus,
                 FrontIdEncryptedPath = idSubmissionResult.FrontEncryptedFilePath,
                 BackIdEncryptedPath = idSubmissionResult.BackEncryptedFilePath,
+                VerificationTokenId = decision.ShouldAutoApprove ? decision.IdVerificationTokenId : null,
+                AuthenticityVerdict = decision.ShouldAutoApprove ? "GENUINE_PHYSICAL_ID" : null,
+                FaceToIdMatchScore = persistedFaceToIdMatchScore,
+                AutoApproved = decision.ShouldAutoApprove,
                 CreatedAtUtc = DateTime.UtcNow
             });
 
@@ -292,8 +388,10 @@ public class AuthService(
         // Append SHA-256 hash-chained audit log
         string prevHash = await auditRepo.GetLatestHashAsync(ct);
         DateTime now = DateTime.UtcNow;
-        string action = "USER_REGISTERED";
-        string payload = $"User: {user.Email}, DisplayName: {user.DisplayName}, Role: {user.Role}, Status: {user.Status}, IdStatus: {user.IdentityVerificationStatus}, FacialStatus: {user.FacialVerificationStatus}";
+        string action = decision.ShouldAutoApprove ? "ACCOUNT_AUTO_APPROVED_AI" : "USER_REGISTERED";
+        string payload = decision.ShouldAutoApprove
+            ? $"User: {user.Email}, DisplayName: {user.DisplayName}, Role: {user.Role}, Unit: {user.Unit}, Status: {user.Status}, IdTokenId: {user.IdVerificationTokenId}, FacialTokenId: {user.FacialVerificationTokenId}, MatchScore: {decision.FaceToIdMatchScore?.ToString("F4") ?? "N/A"}"
+            : $"User: {user.Email}, DisplayName: {user.DisplayName}, Role: {user.Role}, Status: {user.Status}, IdStatus: {user.IdentityVerificationStatus}, FacialStatus: {user.FacialVerificationStatus}";
         string newHash = AuditHelper.ComputeChainedHash(prevHash, now, user.Id, action, payload);
 
         await auditRepo.AddAsync(new AuditLog
@@ -307,8 +405,12 @@ public class AuthService(
             Timestamp = now
         }, ct);
 
+        string registrationMessage = decision.ShouldAutoApprove
+            ? "Registration successful and automatically verified by AI forensics and biometric match. Your account is active for immediate sign-in."
+            : "Registration successful. Your account, government ID documents, and facial record are pending administrative review.";
+
         var registrationResponse = new RegistrationResponse(
-            Message: "Registration successful. Your account, government ID documents, and facial record are pending administrative review.",
+            Message: registrationMessage,
             UserId: user.Id,
             Email: user.Email,
             DisplayName: user.EffectiveDisplayName,
@@ -324,7 +426,9 @@ public class AuthService(
             HasIdFrontCapture: !string.IsNullOrWhiteSpace(user.IdCapturePath),
             HasIdBackCapture: !string.IsNullOrWhiteSpace(user.IdBackCapturePath),
             HasFaceCapture: !string.IsNullOrWhiteSpace(user.FaceCapturePath),
-            CreatedAt: user.CreatedAt);
+            CreatedAt: user.CreatedAt,
+            AutoApprovedByAi: user.AutoApprovedByAi,
+            AutoApprovalReason: decision.Reason);
 
         return (true, null, 201, null, user, registrationResponse);
     }
@@ -458,107 +562,123 @@ public class AuthService(
         return (true, null, rawToken, response);
     }
 
+    private static double ComputeCosineSimilarity(float[] liveVector, byte[] encryptedTemplateData)
+    {
+        if (liveVector.Length == 0 || encryptedTemplateData.Length < sizeof(float))
+            return 0.0;
+
+        float[] storedVector = new float[encryptedTemplateData.Length / sizeof(float)];
+        Buffer.BlockCopy(encryptedTemplateData, 0, storedVector, 0, storedVector.Length * sizeof(float));
+
+        double dot = 0.0, normA = 0.0, normB = 0.0;
+        int len = Math.Min(liveVector.Length, storedVector.Length);
+        for (int i = 0; i < len; i++)
+        {
+            dot += liveVector[i] * storedVector[i];
+            normA += liveVector[i] * liveVector[i];
+            normB += storedVector[i] * storedVector[i];
+        }
+
+        return (normA > 0 && normB > 0) ? (dot / (Math.Sqrt(normA) * Math.Sqrt(normB))) : 0.0;
+    }
+
     public async Task<(bool Success, string? Error, string? RawToken, SessionResponse? Session)> BiometricLoginAsync(BiometricLoginRequest request, string ipAddress, string userAgent, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Email))
-            return (false, "Email is required.", null, null);
+        bool hasDescriptorVector =
+            (request.LiveDescriptorVector is { Length: > 0 }) ||
+            !string.IsNullOrWhiteSpace(request.LiveDescriptorVectorJson);
+        bool hasLiveCapture =
+            !string.IsNullOrWhiteSpace(request.LiveCaptureBase64) ||
+            (request.LiveCaptureFramesBase64 is { Length: > 0 } &&
+             request.LiveCaptureFramesBase64.Any(f => !string.IsNullOrWhiteSpace(f)));
 
-        string normalizedEmail = request.Email.Trim().ToLowerInvariant();
-        if (!normalizedEmail.Contains('@'))
-            return (false, "Invalid credentials. Email address is the sole login identifier.", null, null);
-
-        if (await IsAccountLockedOutAsync(normalizedEmail, ct))
-            return (false, "Account temporarily locked due to repeated failed sign-in attempts. Please wait 15 minutes.", null, null);
-
-        var user = await userRepo.GetByEmailAsync(normalizedEmail, ct);
-        if (user == null)
-        {
-            await RecordLoginAttemptAsync(normalizedEmail, "BIOMETRIC_1TO1", ipAddress, userAgent, false, "USER_NOT_FOUND", ct);
-            return (false, "Invalid credentials.", null, null);
-        }
-
-        if (user.Status == AccountStatus.Suspended)
-            return (false, "Your account has been suspended by LDRRMO Administration.", null, null);
-
-        if (string.Equals(request.PortalOrigin, "Admin", StringComparison.OrdinalIgnoreCase))
-        {
-            if (user.Role != UserRole.LDRRMO_Admin)
-            {
-                return (false, "Access Denied: The Admin Command Portal on port 1996 is restricted exclusively to LDRRMO Administrators. Please sign in via the Emergency Responders & Civilians portal on port 1997 / 1998.", null, null);
-            }
-        }
-        else
-        {
-            if (user.Role == UserRole.LDRRMO_Admin)
-            {
-                return (false, "Access Denied: LDRRMO Administrator personnel must sign in via the dedicated Command Portal on port 1996 (http://localhost:1996/admin/login).", null, null);
-            }
-        }
-
-        if (request.LiveDescriptorVector == null || request.LiveDescriptorVector.Length == 0)
+        if (!hasDescriptorVector && !hasLiveCapture)
             return (false, "No biometric descriptor vector provided for verification.", null, null);
 
-        if (db != null)
+        double biometricSimilarityThreshold = 0.82;
+        User? user = null;
+        double matchedCosineSimilarity = 1.0;
+        IReadOnlyList<BiometricLoginLayerResultDto>? strategyLayers = null;
+        string strategyUsedName = "MultiLayerClaudeBiometricLoginStrategy";
+
+        bool hasEmail = !string.IsNullOrWhiteSpace(request.Email);
+        if (hasEmail)
         {
-            var enrollment = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
-                db.BiometricEnrollments,
-                b => b.UserId == user.Id && b.RevokedAtUtc == null,
+            string normalizedEmail = request.Email.Trim().ToLowerInvariant();
+            if (!normalizedEmail.Contains('@'))
+                return (false, "Invalid credentials. Email address is the sole login identifier.", null, null);
+
+            if (await IsAccountLockedOutAsync(normalizedEmail, ct))
+                return (false, "Account temporarily locked due to repeated failed sign-in attempts. Please wait 15 minutes.", null, null);
+
+            user = await userRepo.GetByEmailAsync(normalizedEmail, ct);
+            if (user == null)
+            {
+                await RecordLoginAttemptAsync(normalizedEmail, "BIOMETRIC_1TO1", ipAddress, userAgent, false, "USER_NOT_FOUND", ct);
+                return (false, "Invalid credentials.", null, null);
+            }
+        }
+
+        var activeStrategy = biometricLoginStrategy ?? (db != null ? new MultiLayerBiometricLoginStrategy(db) : null);
+        if (activeStrategy != null && db != null)
+        {
+            var evalResult = await activeStrategy.ExecuteLayersAsync(
+                new BiometricMultiLayerContext
+                {
+                    Email = hasEmail ? request.Email.Trim().ToLowerInvariant() : null,
+                    LiveCaptureBase64 = request.LiveCaptureBase64,
+                    LiveCaptureFramesBase64 = request.LiveCaptureFramesBase64,
+                    LiveDescriptorVector = request.LiveDescriptorVector,
+                    LiveDescriptorVectorJson = request.LiveDescriptorVectorJson,
+                    LiveGeometricSignatureJson = request.LiveGeometricSignatureJson,
+                    LivenessScore = request.LivenessScore > 0 ? request.LivenessScore : 0.98,
+                    PortalOrigin = request.PortalOrigin
+                },
                 ct);
 
-            if (enrollment == null || enrollment.EncryptedTemplateData.Length == 0)
+            strategyUsedName = evalResult.StrategyName;
+            strategyLayers = evalResult.Layers;
+            matchedCosineSimilarity = evalResult.CosineSimilarity;
+            if (evalResult.SimilarityThreshold > 0)
             {
-                return (false, "No active biometric enrollment found for this account. Please sign in with password.", null, null);
+                biometricSimilarityThreshold = evalResult.SimilarityThreshold;
             }
 
-            float[] storedVector = new float[enrollment.EncryptedTemplateData.Length / 4];
-            Buffer.BlockCopy(enrollment.EncryptedTemplateData, 0, storedVector, 0, enrollment.EncryptedTemplateData.Length);
-
-            double dot = 0.0, normA = 0.0, normB = 0.0;
-            int len = Math.Min(request.LiveDescriptorVector.Length, storedVector.Length);
-            for (int i = 0; i < len; i++)
+            if (!evalResult.IsValidated || !evalResult.MatchedUserId.HasValue)
             {
-                dot += request.LiveDescriptorVector[i] * storedVector[i];
-                normA += request.LiveDescriptorVector[i] * request.LiveDescriptorVector[i];
-                normB += storedVector[i] * storedVector[i];
-            }
-            double similarity = (normA > 0 && normB > 0) ? (dot / (Math.Sqrt(normA) * Math.Sqrt(normB))) : 0.0;
+                string attemptIdentifier = hasEmail ? request.Email.Trim().ToLowerInvariant() : "ANONYMOUS_1TON_SCAN";
+                string attemptType = hasEmail ? "BIOMETRIC_1TO1" : "BIOMETRIC_1TON";
+                string reasonTag = evalResult.FailureReason.Contains("mismatch", StringComparison.OrdinalIgnoreCase)
+                    ? $"BIOMETRIC_MISMATCH (Similarity: {evalResult.CosineSimilarity:F2})"
+                    : evalResult.FailureReason;
 
-            const double BiometricMatchThreshold = 0.70;
-            if (similarity < BiometricMatchThreshold)
-            {
-                db.LoginAttempts.Add(new LoginAttempt
-                {
-                    AccountIdentifier = user.Email,
-                    AttemptType = "BIOMETRIC_1TO1",
-                    IpAddress = ipAddress,
-                    UserAgent = userAgent,
-                    AttemptedAtUtc = DateTime.UtcNow,
-                    Success = false,
-                    FailureReason = $"BIOMETRIC_MISMATCH (Similarity: {similarity:F2})"
-                });
-                await db.SaveChangesAsync(ct);
-
-                return (false, $"Biometric verification mismatch (similarity score: {similarity:F2}). Access denied.", null, null);
+                await RecordLoginAttemptAsync(attemptIdentifier, attemptType, ipAddress, userAgent, false, reasonTag, ct);
+                return (false, evalResult.FailureReason, null, null);
             }
+
+            user ??= await userRepo.GetByIdAsync(evalResult.MatchedUserId.Value, ct);
+            if (user == null)
+                return (false, "Invalid credentials.", null, null);
 
             if (user.Status == AccountStatus.Pending)
             {
-                user.Status = AccountStatus.Verified;
+                await RecordLoginAttemptAsync(user.Email, hasEmail ? "BIOMETRIC_1TO1" : "BIOMETRIC_1TON", ipAddress, userAgent, false, "ACCOUNT_PENDING_REVIEW", ct);
+                return (false, "Your account is pending administrative verification by LDRRMO Administration.", null, null);
+            }
+
+            if (!user.FaceVerified)
+            {
                 user.FaceVerified = true;
                 user.UpdatedAt = DateTime.UtcNow;
                 await userRepo.UpdateAsync(user, ct);
             }
 
-            db.LoginAttempts.Add(new LoginAttempt
-            {
-                AccountIdentifier = user.Email,
-                AttemptType = "BIOMETRIC_1TO1",
-                IpAddress = ipAddress,
-                UserAgent = userAgent,
-                AttemptedAtUtc = DateTime.UtcNow,
-                Success = true
-            });
-            await db.SaveChangesAsync(ct);
+            await RecordLoginAttemptAsync(user.Email, hasEmail ? "BIOMETRIC_1TO1" : "BIOMETRIC_1TON", ipAddress, userAgent, true, null, ct);
+        }
+        else
+        {
+            if (user == null)
+                return (false, "Biometric database infrastructure unavailable.", null, null);
         }
 
         string rawToken = SessionCookieHelper.GenerateSessionToken();
@@ -587,7 +707,25 @@ public class AuthService(
             _ => "/civilian/dashboard"
         };
 
-        var response = new SessionResponse(
+        object[] validationLayers = strategyLayers != null
+            ? strategyLayers.Select(l => (object)new
+            {
+                layer = l.LayerNumber,
+                layerNumber = l.LayerNumber,
+                name = l.LayerCode,
+                layerCode = l.LayerCode,
+                layerName = l.LayerName,
+                status = l.Passed ? "PASSED" : "FAILED",
+                passed = l.Passed,
+                score = l.Score,
+                detail = l.Detail,
+                cosineSimilarity = l.LayerNumber == 4 ? matchedCosineSimilarity : (double?)null,
+                threshold = l.LayerNumber == 4 ? biometricSimilarityThreshold : (double?)null,
+                verdict = l.LayerNumber == 5 ? "SUCCESS_LOGIN" : null
+            }).ToArray()
+            : [];
+
+        var response = new LoginResponse(
             user.Id,
             user.FullName,
             user.Email,
@@ -601,7 +739,10 @@ public class AuthService(
             targetUrl,
             user.EffectiveDisplayName,
             user.IdentityVerificationStatus,
-            user.FacialVerificationStatus
+            user.FacialVerificationStatus,
+            "SUCCESS_LOGIN",
+            strategyUsedName,
+            validationLayers
         );
 
         return (true, null, rawToken, response);
@@ -643,5 +784,29 @@ public class AuthService(
         string hash = SessionCookieHelper.HashSessionToken(rawToken);
         var session = await sessionRepo.GetByTokenHashAsync(hash, ct);
         if (session != null) await sessionRepo.RevokeAsync(session.Id, ct);
+    }
+
+    private static byte[] TryDecodeDataUrlBytes(string? dataUrlOrBase64)
+    {
+        if (string.IsNullOrWhiteSpace(dataUrlOrBase64))
+            return [];
+
+        string base64 = dataUrlOrBase64;
+        if (dataUrlOrBase64.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            int semiIdx = dataUrlOrBase64.IndexOf(';');
+            int commaIdx = dataUrlOrBase64.IndexOf(',');
+            if (semiIdx > 5 && commaIdx > semiIdx)
+                base64 = dataUrlOrBase64[(commaIdx + 1)..];
+        }
+
+        try
+        {
+            return Convert.FromBase64String(base64.Trim());
+        }
+        catch
+        {
+            return [];
+        }
     }
 }

@@ -50,19 +50,20 @@ export const runBrowserTest = async (): Promise<void> => {
   });
 
   try {
-    logInfo('Navigating to http://localhost:5173/register?step=1 ...');
-    await page.goto('http://localhost:5173/register?step=1', { waitUntil: 'networkidle' });
-    await page.waitForTimeout(1500);
+    logInfo('Navigating to http://127.0.0.1:1998/register?step=1 ...');
+    await page.goto('http://127.0.0.1:1998/register?step=1', { waitUntil: 'networkidle' });
+    await page.locator('#phase-2-id-identity').waitFor({ state: 'visible', timeout: 8000 });
+    await page.selectOption('select#id-type', 'drivers');
+    await page.waitForTimeout(500);
 
-    // 1. VERIFY INITIAL LOCKED FORM STATE
-    logInfo('Verifying initial locked state of Personal Details review form...');
-    const lockedBanner = await page
-      .locator('text=Personal Details Locked Until Front Government ID Uploaded')
-      .isVisible();
-    if (lockedBanner) {
-      logPass('Initial state strictly verified: Personal Details form is LOCKED prior to Front ID upload.');
+    // 1. VERIFY INITIAL LOCKED GATE ON PHASE 2 (#personal-info-section)
+    logInfo('Verifying #personal-info-section is gated before Front/Back Government ID upload...');
+    const personalVisibleBefore = await page.locator('#personal-info-section').isVisible().catch(() => false);
+    const nextBtnDisabledBefore = !(await page.locator('#btn-phase2-next').isEnabled().catch(() => true));
+    if (!personalVisibleBefore && nextBtnDisabledBefore) {
+      logPass('Initial state strictly verified: #personal-info-section is hidden and #btn-phase2-next is locked prior to ID uploads.');
     } else {
-      logFail('Locked banner missing or form prematurely unlocked!');
+      logFail(`Phase 2 gate check unexpected (personalVisible=${personalVisibleBefore}, nextDisabled=${nextBtnDisabledBefore})`);
     }
 
     // 2. FEED FRONT DRIVER'S LICENSE
@@ -70,11 +71,12 @@ export const runBrowserTest = async (): Promise<void> => {
     const frontInput = page.locator('input[data-side="front"]');
     await frontInput.setInputFiles(FRONT_ID_PATH);
 
-    await page.waitForTimeout(3500);
+    await page.waitForTimeout(1000);
 
-    const frontSecured = await page.locator('text=FRONT ID SECURED').first().isVisible();
-    if (frontSecured) {
-      logPass('Front ID Uploaded, Scanned & Secured: "FRONT ID SECURED"');
+    const frontPreviewVisible = await page.locator('#front-id-preview').isVisible().catch(() => false);
+    const frontTextVisible = await page.locator('text=FRONT ID SECURED').first().isVisible().catch(() => false);
+    if (frontPreviewVisible || frontTextVisible) {
+      logPass('Front ID Uploaded, Scanned & Preview Rendered (#front-id-preview).');
     }
 
     // 3. FEED BACK DRIVER'S LICENSE
@@ -82,39 +84,45 @@ export const runBrowserTest = async (): Promise<void> => {
     const backInput = page.locator('input[data-side="back"]');
     await backInput.setInputFiles(BACK_ID_PATH);
 
-    await page.waitForTimeout(2500);
+    await page.locator('#id-verification-banner').waitFor({ state: 'visible', timeout: 25000 });
+    await page
+      .locator('#badge-id-verified-genuine, #badge-id-pending-manual')
+      .waitFor({ state: 'visible', timeout: 25000 });
+    await page.locator('#personal-info-section').waitFor({ state: 'visible', timeout: 10000 });
+    logPass('Dual-side ID verification completed and #personal-info-section unlocked inside #phase-2-id-identity.');
 
-    const backSecured = await page.locator('text=BACK ID SECURED').first().isVisible();
-    if (backSecured) {
-      logPass('Back ID Uploaded, Scanned & Secured: "BACK ID SECURED"');
+    const backPreviewVisible = await page.locator('#back-id-preview').isVisible().catch(() => false);
+    const backTextVisible = await page.locator('text=BACK ID SECURED').first().isVisible().catch(() => false);
+    if (backPreviewVisible || backTextVisible) {
+      logPass('Back ID Uploaded, Scanned & Preview Rendered (#back-id-preview).');
     }
 
-    // 4. VERIFY AUTOFILL OF PERSONAL DETAILS
-    logInfo('\n--- VERIFYING AUTO-FILLED PERSONAL DETAILS REVIEW FORM ---');
-    const fieldValues = (await page.evaluate(`
-      (() => {
-        function getVal(name) {
-          const el = document.querySelector('input[name="' + name + '"]');
-          return el ? el.value : '';
-        }
-        function getSelect(name) {
-          const el = document.querySelector('select[name="' + name + '"]');
-          return el ? el.value : '';
-        }
-        return {
-          firstName: getVal('firstName'),
-          middleName: getVal('middleName'),
-          lastName: getVal('lastName'),
-          sex: getSelect('sex'),
-          dateOfBirth: getVal('dateOfBirth'),
-          age: getVal('age'),
-          address: getVal('address'),
-          licenseNumber: getVal('licenseNumber'),
-          weight: getVal('weight'),
-          height: getVal('height')
-        };
-      })()
-    `)) as Record<string, string>;
+    // 4. VERIFY AUTOFILL OF PERSONAL DETAILS IN #personal-info-section
+    logInfo('\n--- VERIFYING AUTO-FILLED PERSONAL DETAILS INSIDE #personal-info-section ---');
+    const phase2License = await page.locator('#license-number').inputValue().catch(() => '');
+    const fieldValues = await page.evaluate((licFromPhase2: string): Record<string, string> => {
+      return {
+        firstName: document.querySelector<HTMLInputElement>('input[name="firstName"], #first-name')?.value ?? '',
+        middleName: document.querySelector<HTMLInputElement>('input[name="middleName"], #middle-name')?.value ?? '',
+        lastName: document.querySelector<HTMLInputElement>('input[name="lastName"], #last-name')?.value ?? '',
+        sex: document.querySelector<HTMLSelectElement>('select[name="sex"], #sex')?.value ?? '',
+        dateOfBirth: document.querySelector<HTMLInputElement>('input[name="dateOfBirth"], #dob')?.value ?? '',
+        age: document.querySelector<HTMLInputElement>('input[name="age"], #age')?.value ?? '',
+        address: [
+          document.querySelector<HTMLInputElement>('#street-purok, input[name="streetOrPurok"]')?.value ?? '',
+          document.querySelector<HTMLInputElement>('#barangay, input[name="barangay"]')?.value ?? '',
+          document.querySelector<HTMLInputElement>('#city, input[name="cityOrMunicipality"]')?.value ?? '',
+          document.querySelector<HTMLInputElement>('#province, input[name="province"]')?.value ?? ''
+        ]
+          .filter(Boolean)
+          .join(', '),
+        licenseNumber:
+          licFromPhase2 ||
+          (document.querySelector<HTMLInputElement>('#license-number, input[name="licenseNumber"]')?.value ?? ''),
+        weight: document.querySelector<HTMLInputElement>('input[name="weight"], #weight')?.value ?? '',
+        height: document.querySelector<HTMLInputElement>('input[name="height"], #height')?.value ?? ''
+      };
+    }, phase2License);
 
     console.log(JSON.stringify(fieldValues, null, 2));
 

@@ -119,7 +119,7 @@ export const Login: React.FC = () => {
             type="button"
             onClick={() => setSelectedTab('civilian')}
             className={`flex-1 py-1.5 rounded-md font-semibold transition-all ${
-              selectedTab === 'civilian' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              selectedTab === 'civilian' ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             UG Civilian
@@ -185,7 +185,7 @@ export const Login: React.FC = () => {
             <button type="button" onClick={() => applyPreset('pnp')} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-blue-300 font-mono">
               PNP Patrol
             </button>
-            <button type="button" onClick={() => applyPreset('civilian')} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-emerald-300 font-mono">
+            <button type="button" onClick={() => applyPreset('civilian')} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-rose-300 font-mono">
               UG Civilian
             </button>
           </div>

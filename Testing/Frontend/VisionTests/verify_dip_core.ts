@@ -15,14 +15,14 @@ import {
   queryIntegralArea,
   bilinearSample,
   resizeBilinear,
-} from '../imageOps';
+} from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/imageOps';
 
 import {
   autoCanny,
   houghLines,
   clusterLines,
   findLineIntersections,
-} from '../cannyHough';
+} from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/cannyHough';
 
 import {
   traceContours,
@@ -30,14 +30,14 @@ import {
   polygonArea,
   isQuadConvex,
   findCardQuad,
-} from '../contour';
+} from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/contour';
 
 import {
   orderCorners,
   solveHomography,
   invertHomography,
   warpPerspective,
-} from '../homography';
+} from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/homography';
 
 const assert = (condition: boolean, msg: string): void => {
   if (!condition) {

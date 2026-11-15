@@ -10,7 +10,7 @@ import {
   morphologyClose,
   deskewProjectionProfile,
   rgbaToGrayscale
-} from '../binarize';
+} from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/binarize';
 
 import {
   assessLaplacianClarity,
@@ -18,7 +18,7 @@ import {
   checkExposureBalance,
   detectMoirePattern,
   evaluateQualityGate
-} from '../qualityGates';
+} from '../../../Project system ENGINE/Frontend/src/Libs/Vision/idScanner/qualityGates';
 
 const assert = (condition: boolean, msg: string) => {
   if (!condition) {

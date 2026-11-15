@@ -23,10 +23,34 @@ public class AuthController(
     [HttpPost("auth/register")]
     public async Task<IActionResult> RegisterAsync([FromBody] RegisterRequest request, CancellationToken ct) =>
         await authService.RegisterWithDetailsAsync(request, CapturesDirectory, ct) is var result && result.Success && result.Response != null
-            ? StatusCode(StatusCodes.Status201Created, result.Response)
+            ? StatusCode(StatusCodes.Status201Created, BuildRegistrationCreatedPayload(result.Response))
             : StatusCode(
                 result.StatusCode is >= 400 and <= 599 ? result.StatusCode : StatusCodes.Status400BadRequest,
                 new { message = result.Error ?? "Registration validation failed.", code = result.ErrorCode ?? "VALIDATION_ERROR" });
+
+    private static object BuildRegistrationCreatedPayload(RegistrationResponse response) => new
+    {
+        message = response.Message,
+        userId = response.UserId,
+        email = response.Email,
+        displayName = response.DisplayName,
+        fullName = response.FullName,
+        role = response.Role,
+        unit = response.Unit,
+        status = response.Status,
+        faceVerified = response.FaceVerified,
+        identityVerificationStatus = response.IdentityVerificationStatus,
+        facialVerificationStatus = response.FacialVerificationStatus,
+        verificationStatus = response.AutoApprovedByAi ? "APPROVED_AUTO_AI" : "PENDING_REVIEW",
+        identityVerificationProvider = response.IdentityVerificationProvider,
+        facialVerificationProvider = response.FacialVerificationProvider,
+        hasIdFrontCapture = response.HasIdFrontCapture,
+        hasIdBackCapture = response.HasIdBackCapture,
+        hasFaceCapture = response.HasFaceCapture,
+        createdAt = response.CreatedAt,
+        autoApprovedByAi = response.AutoApprovedByAi,
+        autoApprovalReason = response.AutoApprovalReason
+    };
 
     [HttpGet("auth/verification-providers")]
     public IActionResult GetVerificationProviders()
@@ -85,7 +109,15 @@ public class AuthController(
         }
 
         SessionCookieHelper.AppendSessionCookie(Response, rawToken, DateTime.UtcNow.AddDays(7));
-        return Ok(new { token = rawToken, session, redirectUrl = session.TargetDashboardUrl });
+        return Ok(new
+        {
+            token = rawToken,
+            session,
+            redirectUrl = session.TargetDashboardUrl,
+            validationVerdict = session is LoginResponse lr ? lr.ValidationVerdict : "SUCCESS_LOGIN",
+            biometricStrategyUsed = session is LoginResponse lr2 ? lr2.BiometricStrategyUsed : "MultiLayerClaudeBiometricLoginStrategy",
+            validationLayers = session is LoginResponse lr3 ? lr3.ValidationLayers : null
+        });
     }
 
     [HttpGet("session")]

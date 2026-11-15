@@ -6,7 +6,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 // https://vite.dev/config/
 const backendTarget = process.env.BACKEND_URL || 'http://127.0.0.1:1999';
 
+// Isolate cacheDir per active port (1996 Admin, 1997 Responder, 1998 Civilian) to prevent Windows EPERM file-locking collisions
+const portArgIndex = process.argv.indexOf('--port');
+const activePort = portArgIndex !== -1 && process.argv[portArgIndex + 1] ? process.argv[portArgIndex + 1] : (process.env.PORT || '1997');
+const cacheDir = `node_modules/.vite_port_${activePort}`;
+
 export default defineConfig({
+  cacheDir,
   plugins: [react()],
   resolve: {
     alias: {

@@ -75,7 +75,9 @@ public record FacialRecordSubmissionContext(
     int MaxWidth = 8192,
     int MaxHeight = 8192,
     int MaxUploadSizeBytes = 5 * 1024 * 1024,
-    bool RequireFacialCapture = false
+    bool RequireFacialCapture = false,
+    string? GeometricSignatureJson = null,
+    string? PoseFramesJson = null
 );
 
 public record FacialVerificationSubmissionResult(
