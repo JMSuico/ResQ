@@ -154,21 +154,13 @@ export const AdminLoginPage: FC = () => {
         aria-hidden="true"
       />
 
-      {/* Military Telemetry Coordinate Markers */}
-      <div className="absolute top-4 left-6 hidden md:block font-mono text-[9px] text-rose-300/40 tracking-widest pointer-events-none">
-        C2-ISOLATE // SEC-GRID: KAT-01 // 8.5074°N, 123.3414°E
-      </div>
-      <div className="absolute top-4 right-6 hidden md:block font-mono text-[9px] text-rose-300/40 tracking-widest pointer-events-none">
-        HSM-ENCRYPT: AES-256-GCM // PORT: 1996
-      </div>
-
       <div className="relative w-full max-w-[520px] my-auto z-10">
         {/* Clean Professional Admin Login Header */}
         <header className="text-center mb-6">
           <div className="inline-flex items-center gap-2 mb-3 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/40 shadow-sm backdrop-blur-md">
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_#f43f5e]" />
             <span className="font-mono text-[11px] font-bold tracking-wider text-rose-300 uppercase">
-              Official Command Portal
+              Command Portal
             </span>
           </div>
 
@@ -210,7 +202,7 @@ export const AdminLoginPage: FC = () => {
             <div className={`field ${emailError ? 'is-invalid' : ''}`} style={{ marginTop: '4px' }}>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="admin-email">
-                  Admin Command Email
+                  Admin Email *
                 </label>
               </div>
               <div
@@ -254,7 +246,7 @@ export const AdminLoginPage: FC = () => {
             <div className={`field field--password ${passwordError ? 'is-invalid' : ''}`} style={{ marginTop: '12px' }}>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="admin-password">
-                  Security Passphrase
+                  Password *
                 </label>
               </div>
               <div
@@ -319,7 +311,7 @@ export const AdminLoginPage: FC = () => {
                 }}
                 label={
                   <span className="text-[11.5px] text-slate-300 font-medium select-none">
-                    Acknowledge LDRRMO Security Protocol
+                    Acknowledge Security Protocol
                   </span>
                 }
               />
@@ -332,12 +324,11 @@ export const AdminLoginPage: FC = () => {
 
             {/* Port 1997 Redirect Link if Responder/Civilian */}
             <div className="font-mono text-[11px] text-center my-3 text-slate-400 border border-slate-700/40 bg-slate-900/40 py-1.5 px-2 rounded">
-              Emergency Responder or Citizen Resident?{' '}
               <a
                 href="http://127.0.0.1:1997/login"
                 className="text-rose-400 hover:text-rose-300 underline font-bold tracking-wide"
               >
-                Go to Port 1997 Gateway &rarr;
+                Port 1997 Gateway -&gt;
               </a>
             </div>
 
@@ -376,7 +367,7 @@ export const AdminLoginPage: FC = () => {
                 }
                 className="!h-[48px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-black !tracking-widest !uppercase !shadow-lg !shadow-[#e8114c]/40 active:!scale-[0.99] transition-all rounded-lg group cursor-pointer border border-[#ff5c74]/50"
               >
-                {isLoading ? 'Verifying clearance…' : isSuccess ? 'Clearance Granted' : 'ACCESS COMMAND CONSOLE'}
+                {isLoading ? 'Signing in...' : isSuccess ? 'Access Granted' : 'Sign In'}
               </Button>
 
               <button
@@ -386,7 +377,7 @@ export const AdminLoginPage: FC = () => {
                 className="w-full !h-[42px] rounded-lg border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-[0_0_12px_rgba(232,17,76,0.15)] hover:border-rose-400"
               >
                 <Camera className="w-4 h-4 text-[#ff5c74]" />
-                <span>Command Clearance via 1:1 Biometrics</span>
+                <span>1:1 Biometric Login</span>
               </button>
             </div>
           </form>

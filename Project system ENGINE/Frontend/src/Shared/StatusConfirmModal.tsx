@@ -106,8 +106,8 @@ export const StatusConfirmModal: FC<StatusConfirmModalProps> = ({
     <DefaultFloatingModalCard
       isOpen={isOpen}
       onClose={handleExit}
-      title="DO YOU WANT TO CHANGE STATUS?"
-      subtitle={`Unit Telemetry Confirmation • ${unitCode} (${responderName})`}
+      title="Confirm Status Change"
+      subtitle={`${unitCode} · ${responderName}`}
       size="lg"
       footer={
         <div className="flex items-center justify-between w-full gap-2">
@@ -148,26 +148,20 @@ export const StatusConfirmModal: FC<StatusConfirmModalProps> = ({
     >
       <div className="space-y-4">
         {/* High-Visibility Caution Banner */}
-        <div className="p-3.5 rounded-xl bg-amber-950/80 border-2 border-amber-500/80 flex items-start gap-3 shadow-lg shadow-amber-950/50">
-          <AlertTriangle className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5 animate-pulse" />
-          <div className="space-y-1">
-            <p className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
-              CAUTION: THIS STATUS CHANGE WILL IMMEDIATELY BROADCAST AND BE VISIBLE IN THE LDRRMO ADMIN COMMAND.
-            </p>
-            <p className="text-[11px] text-amber-200/80">
-              All status transitions are logged in the immutable tactical dispatch ledger with real-time GPS coordinates and timestamp.
-            </p>
-          </div>
+        <div className="p-3.5 rounded-xl bg-amber-950/80 border-2 border-amber-500/80 flex items-center gap-3 shadow-lg shadow-amber-950/50">
+          <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 animate-pulse" />
+          <p className="text-xs font-semibold text-amber-200">
+            Notice: This change broadcasts immediately to dispatch.
+          </p>
         </div>
 
         {/* Status Transition Comparison */}
         <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 space-y-3">
-          <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-slate-400">
-            <span className="flex items-center gap-1.5">
+          <div className="flex items-center justify-end text-[11px] font-mono uppercase tracking-wider text-slate-400">
+            <span className="text-sky-400 font-semibold flex items-center gap-1.5">
               <Radio className="w-3.5 h-3.5 text-sky-400" />
-              <span>DO YOU WANT TO CHANGE STATUS?</span>
+              <span>{unitCode}</span>
             </span>
-            <span className="text-sky-400 font-semibold">{unitCode}</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-7 items-center gap-2.5">
@@ -200,7 +194,7 @@ export const StatusConfirmModal: FC<StatusConfirmModalProps> = ({
           <div className="pt-2 border-t border-slate-800/80">
             <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
               <ShieldAlert className="w-3 h-3 text-slate-400" />
-              <span>4-Stage Tactical Responder Pipeline</span>
+              <span>Status Pipeline</span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
               {TACTICAL_STATUS_STEPS.map((step) => {

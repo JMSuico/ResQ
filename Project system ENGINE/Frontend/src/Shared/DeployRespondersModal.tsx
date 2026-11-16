@@ -11,22 +11,14 @@ import {
   Send,
   Zap,
   Sparkles,
-  Clock,
   MapPin,
   Shield,
   Flame,
   HeartPulse,
   Activity,
   CheckCircle2,
-  AlertTriangle,
-  TrendingUp,
-  UserCheck,
-  Compass,
   Sliders,
-  Search,
-  RotateCcw,
-  Check,
-  AlertCircle
+  Check
 } from 'lucide-react';
 import { DefaultFloatingModalCard } from './DefaultFloatingModalCard';
 import { Button } from './Button';
@@ -205,7 +197,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
         agencyMatchScore,
         compositeScore,
         recommendationTag: 'STANDARD_AVAILABLE' as const,
-        tagLabel: 'Standard Unit'
+        tagLabel: 'Available'
       };
     });
 
@@ -217,19 +209,17 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
 
     return preEvaluated.map((u) => {
       let tag: EvaluatedResponderUnit['recommendationTag'] = 'STANDARD_AVAILABLE';
-      let label = 'Available Unit';
+      let label = 'Available';
 
       if (u.compositeScore === maxScore) {
         tag = 'OPTIMAL_BALANCED';
-        label = u.isUnassignedEver
-          ? 'AI Optimal (Closest + Fresh Unit)'
-          : 'AI Optimal (Fair-Balanced Rotation)';
+        label = 'Optimal';
       } else if (u.distanceKm === minDistance && u.dispatchCount >= 2) {
         tag = 'CLOSEST_BUT_FATIGUED';
-        label = `Closest Unit (High Fatigue: ${u.dispatchCount} Dispatches)`;
+        label = 'High Load';
       } else if (u.isUnassignedEver) {
         tag = 'FRESH_UNCHOSEN';
-        label = 'Fresh Unit (0 Dispatches - Ready for Selection)';
+        label = 'Fresh';
       }
 
       return {
@@ -333,7 +323,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
         status: 'TO BE DEPLOYED',
         requestedAt: nowIso,
         updatedAt: nowIso,
-        notes: `LDRRMO Admin strategic deploy order via Map C2. Unit selected with Workload Score ${unitToDeploy.workloadScore}%, Distance ${unitToDeploy.distanceKm}km, Composite Match ${unitToDeploy.compositeScore}%.`
+        notes: `Dispatched via Map C2. Match: ${unitToDeploy.compositeScore}%, Dist: ${unitToDeploy.distanceKm}km.`
       };
 
       const updatedHistory = [newRecord, ...readHistoricalDispatches()];
@@ -343,8 +333,8 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
 
       // 3. Emit real-time notification
       pushResponderNotification({
-        title: `Strategic Deploy Order (${unitToDeploy.unitCode})`,
-        message: `LDRRMO Admin deployed ${unitToDeploy.unitName} to ${incTitle}. Immediate response authorized.`,
+        title: `Deploy Order (${unitToDeploy.unitCode})`,
+        message: `${unitToDeploy.unitName} deployed to ${incTitle}.`,
         category: 'ADMIN_REQUEST_DEPLOY',
         incidentId: incident.id
       });
@@ -364,7 +354,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
       }
 
       setSuccessBanner(
-        `Tactical Unit "${unitToDeploy.unitCode}" successfully deployed to "${incTitle}". Composite Match Score: ${unitToDeploy.compositeScore}%. Tracking telemetry active.`
+        `${unitToDeploy.unitCode} deployed to ${incTitle} (${unitToDeploy.compositeScore}% match).`
       );
 
       onDeploySuccess?.(unitToDeploy, incident);
@@ -394,7 +384,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="Tactical Responder Deployment & Workload Optimization Deck"
-      subtitle={`Select or auto-deploy tactical rescue unit to incident: ${incTitle}`}
+      subtitle={`Deploy unit to ${incTitle}`}
       maxWidth="4xl"
       className="p-1"
     >
@@ -445,7 +435,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
         </div>
 
         {/* 2. Dispatch Strategy Analytics Strip */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
           {/* Card A: Fleet Workload Balance Index */}
           <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-sky-950 border border-sky-800/60 flex items-center justify-center text-sky-400 shrink-0">
@@ -454,7 +444,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
             <div className="flex flex-col text-xs font-mono">
               <span className="text-[10px] text-slate-400 uppercase font-bold">Fleet Workload State</span>
               <span className="font-extrabold text-white text-xs mt-0.5">
-                <span className="text-emerald-400 font-bold">{unassignedCount} Fresh (0 Dispatches)</span>
+                <span className="text-emerald-400 font-bold">{unassignedCount} Fresh</span>
                 {highWorkloadCount > 0 && <span className="text-amber-400 ml-1.5">({highWorkloadCount} High Load)</span>}
               </span>
             </div>
@@ -471,30 +461,17 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
                 {optimalUnit ? (
                   <>
                     <strong className="text-emerald-300 font-bold">{optimalUnit.unitCode}</strong>
-                    <span className="text-slate-400 ml-1.5">({optimalUnit.compositeScore}% Match)</span>
+                    <span className="text-slate-400 ml-1.5">({optimalUnit.compositeScore}%)</span>
                   </>
                 ) : (
-                  'Evaluating fleet...'
+                  'Evaluating...'
                 )}
-              </span>
-            </div>
-          </div>
-
-          {/* Card C: Anti-Fatigue Strategy Mode */}
-          <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-purple-950 border border-purple-800/60 flex items-center justify-center text-purple-400 shrink-0">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-            <div className="flex flex-col text-xs font-mono">
-              <span className="text-[10px] text-slate-400 uppercase font-bold">Rotation Strategy</span>
-              <span className="font-extrabold text-purple-300 text-xs mt-0.5">
-                Fair-Sharing & Anti-Fatigue
               </span>
             </div>
           </div>
         </div>
 
-        {/* 3. Strategy Controls Bar: Sort Mode + Agency Filter + Search */}
+        {/* 3. Strategy Controls Bar: Sort Mode + Agency Filter */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3 rounded-xl bg-slate-950/90 border border-slate-800 text-xs">
           {/* Strategy Sort Tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
@@ -511,7 +488,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
                   : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
               }`}
             >
-              Smart Balanced (AI Recommended)
+              Smart Balanced
             </button>
             <button
               type="button"
@@ -522,7 +499,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
                   : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
               }`}
             >
-              Fresh Units First (0 Dispatches)
+              Fresh First
             </button>
             <button
               type="button"
@@ -533,7 +510,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
                   : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
               }`}
             >
-              Closest Distance
+              Closest
             </button>
           </div>
 
@@ -652,7 +629,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
                         {u.isUnassignedEver ? '0 Dispatches' : `${u.dispatchCount} Dispatches`}
                       </span>
                       <span className="text-[10px] text-slate-400">
-                        {u.isUnassignedEver ? 'Fresh Unit' : u.dispatchCount >= 2 ? 'High Load' : 'Normal Load'}
+                        {u.isUnassignedEver ? 'Fresh' : u.dispatchCount >= 2 ? 'High Load' : 'Normal'}
                       </span>
                     </div>
 
@@ -688,16 +665,15 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
             {optimalUnit && (
               <span className="flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Auto-Deploy Recommendation:</span>
-                <strong className="text-white">{optimalUnit.unitCode}</strong>
-                <span className="text-emerald-400 font-bold">({optimalUnit.compositeScore}% Score)</span>
+                <span>Recommended: <strong className="text-white">{optimalUnit.unitCode}</strong></span>
+                <span className="text-emerald-400 font-bold">({optimalUnit.compositeScore}%)</span>
               </span>
             )}
           </div>
 
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={onClose} disabled={isSubmitting}>
-              CANCEL
+              Cancel
             </Button>
 
             {/* Automatic Deploy Optimal Button */}
@@ -723,7 +699,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
               className="bg-slate-900 hover:bg-slate-800 text-sky-300 border border-sky-800 font-mono font-bold flex items-center gap-1.5"
             >
               <Send className="w-3.5 h-3.5 text-sky-400" />
-              <span>{isSubmitting ? 'DEPLOYING...' : 'CONFIRM MANUAL DEPLOY'}</span>
+              <span>{isSubmitting ? 'Deploying...' : 'Deploy Selected'}</span>
             </Button>
           </div>
         </div>

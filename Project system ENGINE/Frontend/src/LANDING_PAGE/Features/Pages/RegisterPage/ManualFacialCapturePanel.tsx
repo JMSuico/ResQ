@@ -26,7 +26,6 @@ import {
   Sparkles,
   Lock,
   ChevronRight,
-  Sliders,
   CheckSquare,
   Cpu
 } from 'lucide-react';
@@ -302,11 +301,13 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
   const samplingTimerRef = useRef<number | null>(null);
 
   const [cameraState, setCameraState] = useState<'idle' | 'requesting' | 'streaming' | 'denied' | 'error'>('idle');
+  const [isFaceDetected, setIsFaceDetected] = useState<boolean>(false);
   const [currentPose, setCurrentPose] = useState<BiometricPose>('CENTER');
   const [measuredFps, setMeasuredFps] = useState<number>(30);
   const [fpsBracket, setFpsBracket] = useState<string>('30-60 FPS');
   const lastFrameTimestampRef = useRef<number>(performance.now());
   const lastUiUpdateRef = useRef<number>(0);
+  const lastDetectedFaceRef = useRef<boolean>(false);
   const smoothedVarRef = useRef<number>(548.6);
   const smoothedFpsRef = useRef<number>(60);
   const poseStartTimeRef = useRef<number>(performance.now());
@@ -436,6 +437,8 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    lastDetectedFaceRef.current = false;
+    setIsFaceDetected(false);
     // Synchronize latest frames and counts when stopping stream
     setPoseCounts(biometricFrameCache.getPoseCounts());
     setBestFrames(biometricFrameCache.getBestFrames());
@@ -484,6 +487,12 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     );
     if (skinRes?.ycbcr?.y) {
       prevGrayRef.current = skinRes.ycbcr.y;
+    }
+
+    const detectedFaceNow = Boolean(skinRes?.isValidFace);
+    if (lastDetectedFaceRef.current !== detectedFaceNow) {
+      lastDetectedFaceRef.current = detectedFaceNow;
+      setIsFaceDetected(detectedFaceNow);
     }
 
     const { variance } = computeLaplacianVariance(ctx, width, height);
@@ -580,6 +589,8 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     setIsSyntheticRecord(false);
     setIsStaticFileUpload(false);
     resetFaceMatchVerification();
+    lastDetectedFaceRef.current = false;
+    setIsFaceDetected(false);
     setCameraState('requesting');
     setCurrentPose(initialPose);
     poseAdvanceLockRef.current = false;
@@ -590,6 +601,8 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        lastDetectedFaceRef.current = false;
+        setIsFaceDetected(false);
         setCameraState('error');
         setLocalError('Browser camera API is unavailable in this environment. You may generate a synthetic multi-pose record or upload an image below.');
         return;
@@ -620,6 +633,8 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       if (cameraRequestTokenRef.current !== requestToken) {
         return;
       }
+      lastDetectedFaceRef.current = false;
+      setIsFaceDetected(false);
       setCameraState('denied');
       setLocalError('Camera permission was denied or no physical camera was found. You may use the synthetic test record generator or manual file upload.');
     }
@@ -734,6 +749,8 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     setIsSyntheticRecord(false);
     setIsStaticFileUpload(false);
     resetFaceMatchVerification();
+    lastDetectedFaceRef.current = false;
+    setIsFaceDetected(false);
     poseAdvanceLockRef.current = false;
     prevGrayRef.current = undefined;
     biometricFrameCache.clear();
@@ -1460,85 +1477,31 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
         }}
       />
 
-      {/* RA 10173 Privacy & Governance Notice Banner */}
-      <div className="p-3.5 rounded-xl bg-[#14020a]/90 border border-rose-500/30 font-mono text-[10.5px] text-rose-200 flex items-start gap-3">
-        <Shield className="w-4 h-4 text-[#ff5c74] shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <div className="font-bold uppercase tracking-wider text-rose-100 flex items-center gap-2">
-            <span>4-Pose Facial Record Engine // RA 10173 Privacy Notice</span>
-            <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/40 text-rose-300 text-[9px]">
-              {faceMatchState === 'matched' && issuedFacialToken && !isStaticFileUpload
-                ? 'FACE-TO-ID MATCHED'
-                : faceMatchState === 'rejected'
-                ? 'RETRY REQUIRED'
-                : hasVerifiedIdContext && !isStaticFileUpload && faceMatchState !== 'pending_manual'
-                ? 'LIVE 1:1 AI GATE'
-                : 'PENDING MANUAL REVIEW'}
-            </span>
-          </div>
-          <p className="font-sans text-[11px] text-rose-200/90 leading-relaxed">
-            Your 4-pose facial video frames are cached in memory, checked for anti-spoofing liveness clarity, and compiled into an encrypted record (AES-256-GCM). Live 4-pose captures paired with a verified Government ID qualify for token-gated 1:1 AI auto-approval; static image uploads or offline sessions route to LDRRMO Pending Manual Review.
-          </p>
-        </div>
-      </div>
-
-      {/* Telemetry HUD Banner: Cached Frames Counter */}
-      <div className="p-2.5 rounded-lg bg-[#14020a] border border-rose-500/30 font-mono text-[11px] flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-rose-300/80">
-          <Sliders className="w-3.5 h-3.5 text-[#ff5c74]" />
-          <span className="font-bold text-rose-100 uppercase tracking-wider">Frame Cache Telemetry:</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {cameraState === 'streaming' && (
-            <span className="px-2 py-0.5 rounded border border-rose-500/50 bg-rose-950/80 text-rose-300 text-[10px] font-bold">
-              STREAM: {measuredFps} FPS ({fpsBracket})
-            </span>
-          )}
-          <span
-            className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
-              poseCounts.CENTER > 0
-                ? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
-                : 'bg-[#14020a] border-rose-950/60 text-rose-900'
-            }`}
-          >
-            CENTER: {poseCounts.CENTER} frames
-          </span>
-          <span
-            className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
-              poseCounts.RIGHT > 0
-                ? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
-                : 'bg-[#14020a] border-rose-950/60 text-rose-900'
-            }`}
-          >
-            RIGHT: {poseCounts.RIGHT} frames
-          </span>
-          <span
-            className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
-              poseCounts.LEFT > 0
-                ? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
-                : 'bg-[#14020a] border-rose-950/60 text-rose-900'
-            }`}
-          >
-            LEFT: {poseCounts.LEFT} frames
-          </span>
-          <span
-            className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
-              poseCounts.BLINK > 0
-                ? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
-                : 'bg-[#14020a] border-rose-950/60 text-rose-900'
-            }`}
-          >
-            BLINK: {poseCounts.BLINK} frames
+      {/* Compact 4-Pose Requirement Header */}
+      <div className="px-3.5 py-2.5 rounded-xl bg-[#14020a]/90 border border-rose-500/30 font-mono text-[10.5px] text-rose-200 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Shield className="w-4 h-4 text-[#ff5c74] shrink-0" />
+          <span className="font-bold uppercase tracking-wider text-rose-100">
+            4-Pose Facial Scan (30-60 FPS) &middot; RA 10173
           </span>
         </div>
+        <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/40 text-rose-300 text-[9px] font-bold uppercase tracking-wider">
+          {faceMatchState === 'matched' && issuedFacialToken && !isStaticFileUpload
+            ? 'FACE-TO-ID MATCHED'
+            : faceMatchState === 'rejected'
+            ? 'RETRY REQUIRED'
+            : hasVerifiedIdContext && !isStaticFileUpload && faceMatchState !== 'pending_manual'
+            ? 'LIVE 1:1 AI GATE'
+            : 'PENDING MANUAL REVIEW'}
+        </span>
       </div>
 
       {/* Biometric Model Training & Calibration Indicator */}
       <div className="w-full rounded-xl border border-rose-500/40 bg-rose-950/30 p-3 font-mono text-xs flex flex-col gap-1.5" id="biometric-training-banner">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="font-bold text-rose-400 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
             <Cpu className="w-3.5 h-3.5 text-[#ff5c74]" />
-            <span>Biometric Profile Training // 1:1 &amp; 1:N Login Calibration</span>
+            <span>Biometric Calibration &middot; 30 to 60 frames per second (FPS)</span>
           </span>
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/50 text-rose-300 font-bold text-[10px] tracking-wider">
@@ -1576,19 +1539,16 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
             }}
           />
         </div>
-        <p className="font-sans text-[10.5px] text-rose-200/90 leading-snug">
-          This 4-pose video trains your encrypted 128-D facial template at 30 to 60 frames per second (FPS). Once an LDRRMO officer verifies and approves your registration, you can authenticate using 1:1 or 1:N Biometric Face Login.
-        </p>
 
         {/* Claude AI Geometric Pattern & 4-Pose Frame Cache Status Card */}
         <div
           id="biometric-training-status-card"
-          className="mt-1.5 p-2.5 rounded-lg bg-[#14020a]/95 border border-rose-500/40 font-mono text-[10px] space-y-1.5"
+          className="mt-1 p-2.5 rounded-lg bg-[#14020a]/95 border border-rose-500/40 font-mono text-[10px] space-y-1.5"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-bold text-rose-200 uppercase tracking-wider flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-[#ff5c74]" />
-              <span>Claude AI Geometric Pattern &amp; 4-Pose Frame Cache Status</span>
+              <span>128-D Geometric &amp; 4-Pose Cache</span>
             </span>
             <span
               id="badge-biometric-trained"
@@ -1605,12 +1565,12 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[9.5px] text-rose-200/90">
-            <div className="px-2 py-1 rounded bg-rose-950/30 border border-rose-500/20">
-              <span className="text-rose-400 font-semibold">128-D Vector &amp; AI Strategy:</span>{' '}
-              <span>{claudeGeometryTelemetryStatus} (Oval Lock 98% &bull; Yaw +26.5&deg;/-26.4&deg; &bull; EAR &Delta; 0.21)</span>
+            <div className="px-2 py-1 rounded bg-rose-950/30 border border-rose-500/20 truncate">
+              <span className="text-rose-400 font-semibold">Strategy:</span>{' '}
+              <span>{claudeGeometryTelemetryStatus}</span>
             </div>
             <div className="px-2 py-1 rounded bg-rose-950/30 border border-rose-500/20">
-              <span className="text-rose-400 font-semibold">4-Pose 30–60 FPS Cache (SQL Ready):</span>{' '}
+              <span className="text-rose-400 font-semibold">4-Pose Cache:</span>{' '}
               <span>
                 CENTER: {poseCounts.CENTER}f &bull; RIGHT: {poseCounts.RIGHT}f &bull; LEFT: {poseCounts.LEFT}f &bull; BLINK: {poseCounts.BLINK}f
               </span>
@@ -1826,15 +1786,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                     rx="140"
                     ry="175"
                     fill="none"
-                    stroke={
-                      currentPose === 'CENTER'
-                        ? '#ff5c74'
-                        : currentPose === 'BLINK'
-                        ? '#f43f5e'
-                        : '#e8114c'
-                    }
+                    stroke={isFaceDetected ? '#10b981' : '#f43f5e'}
                     strokeWidth="2.5"
-                    strokeDasharray={currentPose === 'CENTER' ? 'none' : '8 6'}
+                    strokeDasharray={isFaceDetected ? 'none' : '8 6'}
                     className="transition-all duration-300"
                   />
 
@@ -1940,18 +1894,50 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
 
               {/* Standby Viewport Placeholder */}
               {cameraState !== 'streaming' && (
-                <div className="p-6 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-full bg-rose-950/60 border border-rose-500/40 flex items-center justify-center mx-auto text-[#ff5c74]">
-                    <Video className="w-6 h-6" />
+                <div className="p-6 text-center space-y-2">
+                  <div className="w-11 h-11 rounded-full bg-rose-950/60 border border-rose-500/40 flex items-center justify-center mx-auto text-[#ff5c74]">
+                    <Video className="w-5 h-5" />
                   </div>
                   <p className="font-mono text-xs font-bold text-white uppercase tracking-wider">
-                    Interactive Multi-Pose Facial Video Engine
+                    4-Pose Facial Video Engine
                   </p>
-                  <p className="font-sans text-[11px] text-rose-200/90 max-w-xs mx-auto leading-relaxed">
-                    Click "Start 4-Pose Video Recording" to initiate the guided camera stream, or generate a synthetic test record for automated CI validation.
+                  <p className="font-mono text-[11px] text-rose-200/90 max-w-xs mx-auto">
+                    Align face inside oval guide &middot; 4 poses
                   </p>
                 </div>
               )}
+
+              {/* Live Human Face Detection Status Badge */}
+              <div
+                id="facial-capture-face-status"
+                role="status"
+                aria-live="polite"
+                data-face-detected={isFaceDetected ? 'true' : 'false'}
+                className={`absolute bottom-8 left-2.5 z-10 px-2.5 py-1 rounded-md border font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-sm pointer-events-none ${
+                  cameraState !== 'streaming'
+                    ? 'bg-slate-950/90 border-slate-500/50 text-slate-300'
+                    : isFaceDetected
+                    ? 'bg-emerald-950/90 border-emerald-500/60 text-emerald-200'
+                    : 'bg-rose-950/90 border-rose-500/60 text-rose-200'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    cameraState !== 'streaming'
+                      ? 'bg-slate-400'
+                      : isFaceDetected
+                      ? 'bg-emerald-400'
+                      : 'bg-rose-500 animate-pulse'
+                  }`}
+                />
+                <span>
+                  {cameraState !== 'streaming'
+                    ? 'CAMERA STANDBY'
+                    : isFaceDetected
+                    ? 'HUMAN FACE DETECTED'
+                    : 'NO FACE DETECTED'}
+                </span>
+              </div>
             </>
           )}
         </div>
@@ -1967,7 +1953,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                 className="h-[42px] px-4 rounded-lg bg-gradient-to-r from-[#a5002e] via-[#d9093e] to-[#ff2b4a] hover:brightness-110 active:scale-[0.98] text-white font-mono text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center gap-2 shadow-lg shadow-[#e8114c]/25 touch-manipulation transition-transform"
               >
                 <Camera className="w-4 h-4 shrink-0" />
-                <span>Start 4-Pose Video Recording</span>
+                <span>Start 4-Pose Video</span>
               </button>
 
               <button
@@ -1978,7 +1964,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                 className="h-[42px] px-3.5 rounded-lg border border-rose-500/40 bg-rose-950/50 hover:bg-rose-900/60 active:scale-[0.98] text-rose-200 font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 touch-manipulation transition-transform"
               >
                 <Sparkles className="w-3.5 h-3.5 text-[#ff5c74] shrink-0" />
-                <span>{isSynthesizing ? 'Generating...' : 'Synthetic Test Mode'}</span>
+                <span>{isSynthesizing ? 'Generating...' : 'Synthetic Test'}</span>
               </button>
 
               <button
@@ -1988,7 +1974,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                 className="h-[42px] px-3 rounded-lg border border-rose-500/30 bg-rose-950/30 hover:bg-rose-900/50 active:scale-[0.98] text-rose-200 font-mono text-xs cursor-pointer flex items-center gap-1.5 touch-manipulation transition-transform"
               >
                 <Upload className="w-3.5 h-3.5 text-[#ff5c74] shrink-0" />
-                <span>Upload Photo Fallback</span>
+                <span>Upload Photo</span>
               </button>
             </>
           )}
@@ -2201,9 +2187,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       </div>
 
       {/* RA 10173 Biometric & Privacy Consent Checkbox */}
-      <div className="p-3.5 rounded-xl bg-[#14020a]/80 border border-rose-500/30 space-y-2">
-        <div className="flex items-center justify-between font-mono text-[10px] text-rose-300 border-b border-rose-500/20 pb-1.5">
-          <span className="font-bold uppercase tracking-wider">RA 10173 Biometric &amp; Multi-Pose Frame Storage Consent</span>
+      <div className="px-3.5 py-2.5 rounded-xl bg-[#14020a]/80 border border-rose-500/30 space-y-1.5">
+        <div className="flex items-center justify-between font-mono text-[10px] text-rose-300">
+          <span className="font-bold uppercase tracking-wider">RA 10173 Biometric Consent</span>
           <label className="inline-flex items-center gap-1.5 cursor-pointer text-rose-200" htmlFor="chk-facial-consent">
             <input
               type="checkbox"
@@ -2212,19 +2198,19 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
               onChange={(e) => onConsentChange(e.target.checked)}
               className="w-3.5 h-3.5 rounded accent-[#ff5c74] cursor-pointer"
             />
-            <span>Accept Consent</span>
+            <span>Accept</span>
           </label>
         </div>
-        <label className="flex items-start gap-2.5 cursor-pointer" htmlFor="facial-consent-checkbox">
+        <label className="flex items-center gap-2 cursor-pointer" htmlFor="facial-consent-checkbox">
           <input
             type="checkbox"
             id="facial-consent-checkbox"
             checked={consentAccepted}
             onChange={(e) => onConsentChange(e.target.checked)}
-            className="mt-0.5 w-4 h-4 rounded accent-[#ff5c74] shrink-0 cursor-pointer"
+            className="w-4 h-4 rounded accent-[#ff5c74] shrink-0 cursor-pointer"
           />
-          <span className="font-mono text-[11px] text-rose-100 leading-relaxed">
-            <strong>[RA 10173 BIOMETRIC &amp; PRIVACY CONSENT]</strong> I consent to the collection and biometric processing of my 4-pose video recording at 30–60 FPS in compliance with RA 10173 (Philippine Data Privacy Act) for identity verification. I understand that my record is encrypted and remains in <strong>Pending Manual Review</strong> status for administrator verification.
+          <span className="font-mono text-[10.5px] text-rose-100 leading-snug">
+            [RA 10173] Consent to 4-pose video recording at 30-60 FPS in compliance with RA 10173 (encrypted).
           </span>
         </label>
       </div>
@@ -2234,20 +2220,20 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
         <div className="font-mono text-[11px] text-rose-300">
           {!isAllPosesComplete ? (
             <span className="text-[#ff5c74]">
-              * Please complete all 4 poses (60 frames/pose video buffer) to enable record confirmation.
+              * Complete all 4 poses (60 frames/pose) to confirm.
             </span>
           ) : !consentAccepted ? (
             <span className="text-[#ff5c74]">
-              * Please check the RA 10173 consent box to confirm your record.
+              * Check RA 10173 consent to confirm.
             </span>
           ) : isConfirmed ? (
             <span className="text-rose-300 font-bold flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-[#ff5c74]" />
-              <span>4-pose video recording at 30–60 FPS confirmed and staged for submission in compliance with RA 10173.</span>
+              <span>4-pose video recording at 30–60 FPS confirmed and staged for submission.</span>
             </span>
           ) : (
             <span className="text-rose-300">
-              4-pose video recording at 30–60 FPS captured and consent confirmed in compliance with RA 10173. Ready to submit!
+              4 poses captured &amp; RA 10173 consent accepted. Ready to confirm.
             </span>
           )}
         </div>

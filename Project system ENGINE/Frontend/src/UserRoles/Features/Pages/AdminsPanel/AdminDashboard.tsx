@@ -137,6 +137,9 @@ const filterReportsByTimeHorizon = (items: ReportItem[], horizon: string): Repor
     if (horizon === '24h') {
       return nowMs - d.getTime() <= 24 * 60 * 60 * 1000;
     }
+    if (horizon === '7d') {
+      return nowMs - d.getTime() <= 7 * 24 * 60 * 60 * 1000;
+    }
     if (horizon.startsWith('week_')) {
       const dayMap: Record<string, number> = {
         week_sun: 0,
@@ -187,6 +190,134 @@ const filterReportsByTimeHorizon = (items: ReportItem[], horizon: string): Repor
   });
 };
 
+const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+const WEEKDAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+const buildTrendSeriesForHorizon = (
+  reports: ReportItem[],
+  horizon: string
+): { points: { label: string; value: number }[]; subtitle: string } => {
+  const filtered = filterReportsByTimeHorizon(reports, horizon);
+  const now = new Date();
+
+  if (horizon === '7d') {
+    const daySlots: { key: string; label: string; count: number }[] = [];
+    for (let offset = 6; offset >= 0; offset -= 1) {
+      const slotDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset);
+      const key = `${slotDate.getFullYear()}-${slotDate.getMonth()}-${slotDate.getDate()}`;
+      daySlots.push({ key, label: WEEKDAY_NAMES_SHORT[slotDate.getDay()], count: 0 });
+    }
+    filtered.forEach((r) => {
+      if (!r.createdAt) return;
+      const d = new Date(r.createdAt);
+      if (isNaN(d.getTime())) return;
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const match = daySlots.find((s) => s.key === key);
+      if (match) match.count += 1;
+    });
+    return {
+      points: daySlots.map((s) => ({ label: s.label, value: s.count })),
+      subtitle: 'Last 7 days'
+    };
+  }
+
+  if (horizon === 'month_30') {
+    const windowDays = 30;
+    const bucketCount = 6;
+    const spanDays = 5;
+    const startMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (windowDays - 1)).getTime();
+    const labels: string[] = [];
+    const counts = new Array<number>(bucketCount).fill(0);
+
+    for (let i = 0; i < bucketCount; i += 1) {
+      const bucketDate = new Date(startMs + i * spanDays * 24 * 60 * 60 * 1000);
+      labels.push(`${MONTH_NAMES_SHORT[bucketDate.getMonth()]} ${bucketDate.getDate()}`);
+    }
+
+    filtered.forEach((r) => {
+      if (!r.createdAt) return;
+      const d = new Date(r.createdAt);
+      if (isNaN(d.getTime())) return;
+      const diffDays = Math.floor((d.getTime() - startMs) / (24 * 60 * 60 * 1000));
+      if (diffDays >= 0 && diffDays < windowDays) {
+        const idx = Math.min(bucketCount - 1, Math.floor(diffDays / spanDays));
+        counts[idx] += 1;
+      }
+    });
+
+    return {
+      points: labels.map((label, idx) => ({ label, value: counts[idx] })),
+      subtitle: 'Last 30 days'
+    };
+  }
+
+  if (horizon.startsWith('month_')) {
+    const weekBuckets: Record<string, number> = { Wk1: 0, Wk2: 0, Wk3: 0, Wk4: 0, Wk5: 0 };
+    filtered.forEach((r) => {
+      if (!r.createdAt) return;
+      const d = new Date(r.createdAt);
+      if (isNaN(d.getTime())) return;
+      const day = d.getDate();
+      if (day <= 7) weekBuckets.Wk1 += 1;
+      else if (day <= 14) weekBuckets.Wk2 += 1;
+      else if (day <= 21) weekBuckets.Wk3 += 1;
+      else if (day <= 28) weekBuckets.Wk4 += 1;
+      else weekBuckets.Wk5 += 1;
+    });
+    const monthToken = horizon.replace('month_', '').toUpperCase();
+    return {
+      points: Object.entries(weekBuckets).map(([label, value]) => ({ label, value })),
+      subtitle: `${monthToken} weekly breakdown`
+    };
+  }
+
+  if (horizon.startsWith('year_')) {
+    const counts = new Array<number>(12).fill(0);
+    filtered.forEach((r) => {
+      if (!r.createdAt) return;
+      const d = new Date(r.createdAt);
+      if (isNaN(d.getTime())) return;
+      counts[d.getMonth()] += 1;
+    });
+    const yearLabel = horizon.replace('year_', '');
+    return {
+      points: MONTH_NAMES_SHORT.map((label, idx) => ({ label, value: counts[idx] })),
+      subtitle: `${yearLabel} monthly volume`
+    };
+  }
+
+  // 24h or specific weekday (week_mon..week_sun): 6 x 4-hour intervals
+  const hourBuckets: Record<string, number> = {
+    '00:00': 0,
+    '04:00': 0,
+    '08:00': 0,
+    '12:00': 0,
+    '16:00': 0,
+    '20:00': 0
+  };
+  filtered.forEach((r) => {
+    if (!r.createdAt) return;
+    const d = new Date(r.createdAt);
+    if (isNaN(d.getTime())) return;
+    const hour = d.getHours();
+    if (hour < 4) hourBuckets['00:00'] += 1;
+    else if (hour < 8) hourBuckets['04:00'] += 1;
+    else if (hour < 12) hourBuckets['08:00'] += 1;
+    else if (hour < 16) hourBuckets['12:00'] += 1;
+    else if (hour < 20) hourBuckets['16:00'] += 1;
+    else hourBuckets['20:00'] += 1;
+  });
+
+  const subtitle = horizon.startsWith('week_')
+    ? `${horizon.replace('week_', '').toUpperCase()} hourly`
+    : '24-hour volume';
+
+  return {
+    points: Object.entries(hourBuckets).map(([label, value]) => ({ label, value })),
+    subtitle
+  };
+};
+
 export const AdminDashboard: FC = () => {
   const navigate = useNavigate();
   const [reports, setReports] = useState<ReportItem[]>([]);
@@ -201,7 +332,8 @@ export const AdminDashboard: FC = () => {
   const [agencyTimeHorizon, setAgencyTimeHorizon] = useState<string>('24h');
 
   const timeHorizonOptions = [
-    { value: '24h', label: '24 Hours (Real-Time)' },
+    { value: '24h', label: '24 Hours (Live)' },
+    { value: '7d', label: 'Last 7 Days' },
     { value: 'week_mon', label: 'Week: Monday' },
     { value: 'week_tue', label: 'Week: Tuesday' },
     { value: 'week_wed', label: 'Week: Wednesday' },
@@ -299,35 +431,11 @@ export const AdminDashboard: FC = () => {
       }))
   ], [fixtures, reports, roster]);
 
-  // Real Database-Derived Chart Telemetry bound to time horizon dropdown filters
-  const chartCurveData = useMemo(() => {
-    const filtered = filterReportsByTimeHorizon(reports, curveTimeHorizon);
-
-    const buckets: Record<string, number> = {
-      '00:00': 0,
-      '04:00': 0,
-      '08:00': 0,
-      '12:00': 0,
-      '16:00': 0,
-      '20:00': 0
-    };
-
-    filtered.forEach((r) => {
-      const ts = r.createdAt;
-      if (!ts) return;
-      const d = new Date(ts);
-      if (isNaN(d.getTime())) return;
-      const hour = d.getHours();
-      if (hour < 4) buckets['00:00']++;
-      else if (hour < 8) buckets['04:00']++;
-      else if (hour < 12) buckets['08:00']++;
-      else if (hour < 16) buckets['12:00']++;
-      else if (hour < 20) buckets['16:00']++;
-      else buckets['20:00']++;
-    });
-
-    return Object.entries(buckets).map(([label, value]) => ({ label, value }));
-  }, [reports, curveTimeHorizon]);
+  // Real Database-Derived Chart Telemetry bound to time horizon dropdown filters (dynamic X & Y axes)
+  const { points: chartCurveData, subtitle: curveHorizonSubtitle } = useMemo(
+    () => buildTrendSeriesForHorizon(reports, curveTimeHorizon),
+    [reports, curveTimeHorizon]
+  );
 
   const severityData = useMemo(() => {
     const filtered = filterReportsByTimeHorizon(reports, severityTimeHorizon);
@@ -420,10 +528,10 @@ export const AdminDashboard: FC = () => {
         {/* Metric 1: Total Emergency Reports */}
         <div className="tactical-card p-4 flex items-center justify-between border-l-4 border-l-rose-500">
           <div>
-            <p className="text-xs font-mono uppercase text-slate-400 font-bold">Total Emergency Reports</p>
+            <p className="text-xs font-mono uppercase text-slate-400 font-bold">Total Reports</p>
             <h3 className="text-2xl font-extrabold text-white mt-1">{totalReportsCount}</h3>
             <span className="text-[10px] text-emerald-400 font-mono">
-              {unallocatedQueueCount} Unallocated Beacons In Queue
+              {unallocatedQueueCount} in queue
             </span>
           </div>
           <div className="w-10 h-10 rounded-lg bg-rose-600/20 text-rose-400 flex items-center justify-center">
@@ -434,12 +542,12 @@ export const AdminDashboard: FC = () => {
         {/* Metric 2: Active Duty Units */}
         <div className="tactical-card p-4 flex items-center justify-between border-l-4 border-l-sky-500">
           <div>
-            <p className="text-xs font-mono uppercase text-slate-400 font-bold">Active Duty Units</p>
+            <p className="text-xs font-mono uppercase text-slate-400 font-bold">Active Units</p>
             <h3 className="text-2xl font-extrabold text-white mt-1">
               {onDutyCount} / {roster.length}
             </h3>
             <span className="text-[10px] text-sky-400 font-mono">
-              {dispatchedCount} Dispatched On Scene
+              {dispatchedCount} dispatched
             </span>
           </div>
           <div className="w-10 h-10 rounded-lg bg-sky-600/20 text-sky-400 flex items-center justify-center">
@@ -450,9 +558,9 @@ export const AdminDashboard: FC = () => {
         {/* Metric 3: Critical Triage Queue */}
         <div className="tactical-card p-4 flex items-center justify-between border-l-4 border-l-amber-500">
           <div>
-            <p className="text-xs font-mono uppercase text-slate-400 font-bold">Critical Triage Queue</p>
+            <p className="text-xs font-mono uppercase text-slate-400 font-bold">Critical Queue</p>
             <h3 className="text-2xl font-extrabold text-rose-400 mt-1">{criticalCount}</h3>
-            <span className="text-[10px] text-rose-400 font-mono">Immediate Action Required</span>
+            <span className="text-[10px] text-rose-400 font-mono">Critical queue</span>
           </div>
           <div className="w-10 h-10 rounded-lg bg-rose-950 text-rose-400 border border-rose-800 flex items-center justify-center">
             <Zap className="w-5 h-5 text-amber-400" />
@@ -465,7 +573,7 @@ export const AdminDashboard: FC = () => {
             <p className="text-xs font-mono uppercase text-slate-400 font-bold">Resolution Rate</p>
             <h3 className="text-2xl font-extrabold text-emerald-400 mt-1">{dynamicResolutionRate}</h3>
             <span className="text-[10px] text-slate-400 font-mono">
-              Avg ETA ~{dynamicAvgEtaMinutes}m · SHA-256 Chained
+              Avg ETA ~{dynamicAvgEtaMinutes}m
             </span>
           </div>
           <div className="w-10 h-10 rounded-lg bg-emerald-600/20 text-emerald-400 flex items-center justify-center">
@@ -481,10 +589,10 @@ export const AdminDashboard: FC = () => {
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div>
               <h3 className="text-base font-bold text-white tracking-wide">
-                24-Hour Incident Triage Response Curve
+                Incident Trend
               </h3>
               <p className="text-xs text-slate-400 font-mono">
-                Real-time emergency curve telemetry & dispatch velocity
+                {curveHorizonSubtitle}
               </p>
             </div>
             <Dropdown
@@ -505,7 +613,7 @@ export const AdminDashboard: FC = () => {
             <div className="flex items-center gap-2">
               <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
               <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
-                Live Tactical Minimap
+                Live Map
               </h3>
             </div>
             {/* Enlarge Button with transitional navigation to Strategic Map */}
@@ -535,9 +643,9 @@ export const AdminDashboard: FC = () => {
           <div className="mt-2.5 flex items-center justify-between text-[10px] font-mono text-slate-400">
             <span className="flex items-center gap-1">
               <Crosshair className="w-3 h-3 text-sky-400" />
-              COORDINATES: KATIPUNAN / DIPOLOG C2
+              Katipunan / Dipolog
             </span>
-            <span className="text-emerald-400 font-bold">{markers.length} PINS ACTIVE</span>
+            <span className="text-emerald-400 font-bold">{markers.length} active</span>
           </div>
         </div>
       </div>
@@ -548,8 +656,7 @@ export const AdminDashboard: FC = () => {
         <div className="tactical-card p-4 flex flex-col justify-between">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div>
-              <h3 className="text-sm font-bold text-white">Incident Severity Triage Distribution</h3>
-              <p className="text-[11px] text-slate-400 font-mono">Triage categorization density</p>
+              <h3 className="text-sm font-bold text-white">Severity Distribution</h3>
             </div>
             <Dropdown
               value={severityTimeHorizon}
@@ -565,8 +672,7 @@ export const AdminDashboard: FC = () => {
         <div className="tactical-card p-4 flex flex-col justify-between">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div>
-              <h3 className="text-sm font-bold text-white">Agency Dispatched Workload</h3>
-              <p className="text-[11px] text-slate-400 font-mono">Multi-agency tactical allocation</p>
+              <h3 className="text-sm font-bold text-white">Agency Workload</h3>
             </div>
             <Dropdown
               value={agencyTimeHorizon}
@@ -584,11 +690,8 @@ export const AdminDashboard: FC = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-base font-bold text-white tracking-wide">
-              Top 10 Active Triage Incidents
+              Top 10 Incidents
             </h3>
-            <p className="text-xs text-slate-400 font-mono mt-0.5">
-              Prioritized by severity score, timestamp recency, and dynamic Haversine distance
-            </p>
           </div>
           {/* View All Button triggers DefaultFloatingModalCard */}
           <Button
@@ -688,8 +791,8 @@ export const AdminDashboard: FC = () => {
         <DefaultFloatingModalCard
           isOpen={isViewAllModalOpen}
           onClose={() => setIsViewAllModalOpen(false)}
-          title={`All Emergency Incidents (${reports.length} Records)`}
-          subtitle="Complete historical & live incident ingestion registry with dynamic Haversine distance telemetry"
+          title={`All Incidents (${reports.length})`}
+          subtitle="All reported incidents"
           className="max-w-4xl max-h-[85vh] flex flex-col"
         >
           <div className="flex-1 overflow-y-auto space-y-2 pr-1">

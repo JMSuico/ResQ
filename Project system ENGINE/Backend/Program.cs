@@ -7,6 +7,7 @@ using Scalar.AspNetCore;
 using Backend.Features.Api.Middleware;
 using Backend.Features.Data;
 using Backend.Features.DBInfrastructure;
+using Backend.Features.Helpers.Infrastructure;
 using Backend.Features.Management.Commands;
 using Backend.Features.Repositories.Implementations;
 using Backend.Features.Repositories.Interfaces;
@@ -16,13 +17,21 @@ using Backend.Features.Services.Verification;
 using ResQTrack.Backend.Features.Services.Biometrics;
 using ResQTrack.Backend.Features.Services.Standby;
 
+RuntimePortabilityHelper.LoadOptionalDotEnv(
+    Directory.GetCurrentDirectory(),
+    AppContext.BaseDirectory);
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration
     .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
     .AddEnvironmentVariables();
 
-// Explicitly bind Kestrel to 0.0.0.0:1999 to listen on all interfaces (127.0.0.1 and localhost under IPv4/IPv6)
-builder.WebHost.UseUrls("http://0.0.0.0:1999");
+// Honor explicit --urls / ASPNETCORE_URLS / PORT when set, otherwise bind Kestrel to 0.0.0.0:1999 for localhost + LAN/Docker access
+string? fallbackBindUrl = RuntimePortabilityHelper.ResolveExplicitOrFallbackServerUrl(args, builder.Configuration);
+if (!string.IsNullOrWhiteSpace(fallbackBindUrl))
+{
+    builder.WebHost.UseUrls(fallbackBindUrl);
+}
 
 // Add Controllers and JSON Options
 builder.Services.AddControllers()
@@ -85,19 +94,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         case "sqlserver":
         case "mssql":
         default:
-            var sqlConnection = builder.Configuration.GetConnectionString("DefaultConnection");
-            if (string.IsNullOrWhiteSpace(sqlConnection))
-            {
-                sqlConnection = builder.Configuration.GetConnectionString("SqlServer_SqlAuth");
-            }
-            if (string.IsNullOrWhiteSpace(sqlConnection))
-            {
-                sqlConnection = builder.Configuration.GetConnectionString("SqlServer_LocalDB");
-            }
-            if (string.IsNullOrWhiteSpace(sqlConnection))
-            {
-                sqlConnection = "Server=localhost;Database=ResQTrackDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true;";
-            }
+            var sqlConnection = RuntimePortabilityHelper.ResolveSqlServerConnectionString(builder.Configuration);
             options.UseSqlServer(sqlConnection, sql => sql.MigrationsAssembly("Backend"));
             break;
     }
@@ -180,25 +177,10 @@ else
     builder.Services.AddDistributedMemoryCache();
 }
 
-// CORS configuration for React 19 Frontend (Multi-Port Separation Architecture)
+// CORS configuration for React 19 Frontend (Multi-Port Separation + Portable LAN / Docker Origin Support)
+var isOriginAllowed = RuntimePortabilityHelper.BuildOriginPredicate(builder.Configuration);
 builder.Services.AddCors(options => options.AddPolicy("AllowViteFrontend", policy =>
-    policy.WithOrigins(
-        "http://localhost:1996",
-        "http://127.0.0.1:1996",
-        "http://localhost:1997",
-        "http://127.0.0.1:1997",
-        "http://localhost:1998",
-        "http://127.0.0.1:1998",
-        "http://localhost:1999",
-        "http://127.0.0.1:1999",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "http://localhost:5175",
-        "http://127.0.0.1:5175",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000")
+    policy.SetIsOriginAllowed(isOriginAllowed)
           .AllowAnyHeader()
           .AllowAnyMethod()
           .AllowCredentials()));

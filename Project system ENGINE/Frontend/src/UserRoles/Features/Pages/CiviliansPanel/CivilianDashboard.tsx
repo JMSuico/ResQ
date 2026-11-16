@@ -94,7 +94,7 @@ const getLocalSubmittedReportIds = (): string[] => {
 
 export const CivilianDashboard: React.FC = () => {
   const { session } = useSession();
-  const { coords, isHardwareGeolocated, signalQuality, refreshGps } = useGpsLocation();
+  const { coords, isHardwareGeolocated, refreshGps } = useGpsLocation();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [fixtures, setFixtures] = useState<IncidentFixture[]>([]);
   const [reports, setReports] = useState<ReportItem[]>([]);
@@ -348,7 +348,7 @@ export const CivilianDashboard: React.FC = () => {
               <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
             </span>
             <span className="text-xs font-mono font-bold uppercase text-amber-400 tracking-wider">
-              OFFICIAL PUBLIC ADVISORY:
+              Advisory:
             </span>
             <span className="text-xs text-slate-200 font-medium truncate max-w-md md:max-w-xl">
               {alerts[0].title}
@@ -390,33 +390,24 @@ export const CivilianDashboard: React.FC = () => {
         />
 
         <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-8">
-          {/* Left Column: Urgency Briefing & Live Telemetry */}
+          {/* Left Column: Emergency Heading & Live GPS */}
           <div className="flex flex-col items-start text-left max-w-xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-600/20 text-rose-400 text-xs font-mono font-bold border border-rose-600/40 mb-3 shadow-sm">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
-              <span>24/7 RAPID INCIDENT TRIAGE</span>
-            </div>
-
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-tight">
-              Witnessed or Involved in a Road Collision?
+              Report Emergency
             </h1>
-
-            <p className="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed">
-              Activate the 1-Tap SOS Camera below. Your exact hardware GPS coordinates and live camera snapshot will be broadcast simultaneously to LDRRMO Municipal Command, RHU Medics, BFP Firefighters, and PNP Police.
-            </p>
 
             {/* Live GPS Telemetry Readout Pill */}
             <div className="mt-4 flex flex-wrap items-center gap-3 p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs font-mono">
               <div className="flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full ${isHardwareGeolocated ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                <span className="text-slate-400">Telemetry:</span>
+                <span className="text-slate-400">GPS:</span>
                 <span className="text-emerald-400 font-bold">
-                  {coords.latitude.toFixed(5)}° N, {coords.longitude.toFixed(5)}° E
+                  {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)}
                 </span>
               </div>
               <span className="text-slate-600">|</span>
               <span className="text-slate-400">
-                Acc: <strong className="text-slate-200">±{Math.round(coords.accuracy)}m</strong> ({signalQuality.toUpperCase()})
+                <strong className="text-slate-200">±{Math.round(coords.accuracy)}m</strong>
               </span>
               <button
                 type="button"
@@ -425,27 +416,6 @@ export const CivilianDashboard: React.FC = () => {
               >
                 Re-sync
               </button>
-            </div>
-
-            {/* Quad Agency Simultaneous Dispatch Indicators */}
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px] font-mono">
-              <span className="text-slate-400 font-semibold uppercase tracking-wider mr-1">Direct to:</span>
-              <span className="px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-600/40 font-bold flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3 text-rose-400" />
-                LDRRMO
-              </span>
-              <span className="px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 border border-sky-600/40 font-bold flex items-center gap-1">
-                <HeartPulse className="w-3 h-3 text-sky-400" />
-                RHU MEDIC
-              </span>
-              <span className="px-2 py-0.5 rounded bg-orange-950/80 text-orange-300 border border-orange-600/40 font-bold flex items-center gap-1">
-                <Flame className="w-3 h-3 text-orange-400" />
-                BFP FIRE
-              </span>
-              <span className="px-2 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-600/40 font-bold flex items-center gap-1">
-                <Shield className="w-3 h-3 text-blue-400" />
-                PNP POLICE
-              </span>
             </div>
           </div>
 
@@ -469,16 +439,16 @@ export const CivilianDashboard: React.FC = () => {
                   }
                   setIsCameraOpen(true);
                 }}
-                className="relative z-10 w-full sm:w-80 min-h-[72px] px-8 py-5 rounded-2xl bg-gradient-to-r from-rose-600 via-rose-700 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-black text-lg tracking-wide uppercase shadow-[0_0_40px_rgba(225,29,72,0.6)] hover:shadow-[0_0_55px_rgba(225,29,72,0.8)] active:scale-[0.98] transition-all flex items-center justify-center gap-4 border border-rose-400/50"
+                className="relative z-10 w-full sm:w-80 min-h-[72px] px-8 py-5 rounded-2xl bg-gradient-to-r from-rose-600 via-rose-700 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-black text-lg tracking-wide shadow-[0_0_40px_rgba(225,29,72,0.6)] hover:shadow-[0_0_55px_rgba(225,29,72,0.8)] active:scale-[0.98] transition-all flex items-center justify-center gap-4 border border-rose-400/50"
                 aria-label="One-Tap Emergency Accident SOS Trigger"
               >
                 <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 border border-white/20">
                   <Camera className="w-7 h-7 text-white animate-pulse" />
                 </div>
                 <div className="flex flex-col text-left">
-                  <span className="font-extrabold text-base tracking-wider leading-none">ONE-TAP SOS</span>
+                  <span className="font-extrabold text-base tracking-wide leading-none">One-Tap SOS</span>
                   <span className="text-[11px] font-mono font-medium text-rose-100 tracking-normal opacity-90 mt-1">
-                    Instant Camera & Geotag
+                    Live camera & GPS
                   </span>
                 </div>
               </button>
@@ -487,13 +457,10 @@ export const CivilianDashboard: React.FC = () => {
             {/* Stepped Detailed Report Secondary Option */}
             <Link
               to="/civilian/report"
-              className="w-full sm:w-80 py-2.5 px-4 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 hover:border-slate-500 text-xs font-semibold tracking-wide transition-all text-center flex items-center justify-center gap-2 shadow-sm min-h-[42px]"
+              className="w-full sm:w-80 py-2.5 px-4 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-sky-400 border border-slate-700/80 hover:border-slate-500 text-xs font-bold tracking-wide transition-all text-center flex items-center justify-center gap-2 shadow-sm min-h-[42px]"
             >
-              <span>Need written details?</span>
-              <span className="text-sky-400 font-bold hover:underline flex items-center gap-1">
-                <span>Stepped Form</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </span>
+              <span>Detailed Form</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </Link>
 
             {/* Offline SMS SOS Fallback Link */}
@@ -503,7 +470,7 @@ export const CivilianDashboard: React.FC = () => {
               className="w-full sm:w-80 py-2 px-3 rounded-lg bg-slate-950/90 hover:bg-slate-900 text-amber-400 hover:text-amber-300 border border-amber-600/40 text-[11px] font-mono font-bold flex items-center justify-center gap-2 transition-all shadow-sm"
             >
               <Radio className="w-3.5 h-3.5 text-amber-400" />
-              <span>No Internet? Send SMS SOS Fallback</span>
+              <span>Offline SMS SOS</span>
             </button>
           </div>
         </div>
@@ -560,16 +527,13 @@ export const CivilianDashboard: React.FC = () => {
 
       {/* 4. NEAREST EMERGENCY STATIONS & PROXIMITY MATRIX */}
       <div className="tactical-card p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col gap-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
             <span className="text-xs font-mono font-bold uppercase text-white tracking-wider">
-              Nearest Municipal Response Stations (Live Telemetry)
+              Nearest Stations
             </span>
           </div>
-          <span className="text-[10px] font-mono text-slate-400">
-            Speed reference: 35 km/h urban emergency transit
-          </span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -608,7 +572,7 @@ export const CivilianDashboard: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
             <h2 className="text-sm font-bold uppercase tracking-wider text-white">
-              24/7 Emergency Hotlines (Instant Click-to-Call)
+              Emergency Hotlines
             </h2>
           </div>
           
@@ -647,7 +611,7 @@ export const CivilianDashboard: React.FC = () => {
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold border ${styles.badge}`}>
-                        {meta.short} STATION
+                        {meta.short}
                       </span>
                       <div className="p-1 rounded-lg bg-slate-950 border border-slate-800">
                         {getAgencyIcon(meta.short)}
@@ -702,17 +666,15 @@ export const CivilianDashboard: React.FC = () => {
             </div>
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                Municipal Evacuation Safe Zones & Hazard Markers
+                Evacuation Safe Zones
               </h3>
-              <p className="text-[11px] text-slate-400">
-                Spatial visualization of designated safe zones, medical stations, and community hazards
-              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
-            <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/60 px-2.5 py-1 rounded-md border border-emerald-600/30">
-              ● {fixtures.length} Active Safe Points
+            <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/60 px-2.5 py-1 rounded-md border border-emerald-600/30 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>{fixtures.length} Safe Zones</span>
             </span>
             <Button
               variant="outline"
@@ -742,16 +704,16 @@ export const CivilianDashboard: React.FC = () => {
       <DefaultFloatingModalCard
         isOpen={isMapModalOpen}
         onClose={() => setIsMapModalOpen(false)}
-        title="Municipal Satellite Tactical Command Map"
+        title="Live Map"
         size="lg"
       >
         <div className="flex flex-col gap-4 h-[75vh]">
           <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono">
             <span className="text-emerald-400 font-bold">
-              GPS SENSOR: {coords.latitude.toFixed(6)}° N, {coords.longitude.toFixed(6)}° E (±{Math.round(coords.accuracy)}m)
+              GPS: {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)} (±{Math.round(coords.accuracy)}m)
             </span>
             <span className="text-slate-400">
-              {fixtures.length} Designated Evacuation Shelters & Relief Hubs
+              {fixtures.length} Safe Zones
             </span>
           </div>
 
@@ -770,22 +732,17 @@ export const CivilianDashboard: React.FC = () => {
       <DefaultFloatingModalCard
         isOpen={isSmsConfirmOpen}
         onClose={() => setIsSmsConfirmOpen(false)}
-        title="Offline SMS Emergency Dispatch"
+        title="Offline SMS SOS"
         size="sm"
       >
         <div className="flex flex-col gap-4">
-          <div className="p-3.5 rounded-xl bg-amber-950/80 border border-amber-600/50 text-xs text-amber-200">
-            <p className="font-bold mb-1 flex items-center gap-1.5">
-              <Radio className="w-3.5 h-3.5 text-amber-400" />
-              <span>Offline Cellular Protocol</span>
-            </p>
-            <p className="text-[11px] text-slate-300 leading-relaxed">
-              If mobile data or Wi-Fi is unavailable in remote barangays, your phone will open your default SMS messaging app with pre-filled coordinates addressed directly to the municipal command dispatcher hotline.
-            </p>
-          </div>
+          <p className="text-xs text-slate-300 flex items-center gap-2">
+            <Radio className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span>Opens your SMS app with pre-filled GPS coordinates.</span>
+          </p>
 
           <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 break-words">
-            <span className="text-slate-500 block mb-1">SMS PAYLOAD PREVIEW:</span>
+            <span className="text-slate-500 block mb-1">SMS Message:</span>
             EMERGENCY SOS: Accident at GPS ({coords.latitude.toFixed(6)}, {coords.longitude.toFixed(6)}), Accuracy ±{Math.round(coords.accuracy)}m.
           </div>
 
@@ -794,7 +751,7 @@ export const CivilianDashboard: React.FC = () => {
               href={`sms:${SMS_HOTLINE_NUMBER}?body=${smsBody}`}
               className="flex-1 min-h-[44px] py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider text-center flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-950/60"
             >
-              <span>Launch Phone SMS App</span>
+              <span>Open SMS App</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
             <Button
@@ -813,8 +770,8 @@ export const CivilianDashboard: React.FC = () => {
         isOpen={isCameraOpen}
         onClose={() => setIsCameraOpen(false)}
         onCapture={handleQuickReport}
-        title="1-Tap Emergency Accident Reporter"
-        instructionText="Take photo of the emergency scene. Exact hardware GPS telemetry will be permanently embedded."
+        title="One-Tap SOS Camera"
+        instructionText="Take photo of the scene."
       />
     </div>
   );

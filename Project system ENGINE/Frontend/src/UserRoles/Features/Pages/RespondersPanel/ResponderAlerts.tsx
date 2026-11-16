@@ -30,7 +30,7 @@ export const ResponderAlerts: React.FC = () => {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
-  const [filterMode, setFilterMode] = useState<'ALL' | 'UNREAD' | 'CRITICAL' | 'ACKNOWLEDGED'>('ALL');
+  const [filterMode, setFilterMode] = useState<'ALL' | 'UNREAD' | 'CRITICAL'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [acknowledgeToast, setAcknowledgeToast] = useState<string | null>(null);
   const [sirenMuted, setSirenMuted] = useState<boolean>(false);
@@ -67,10 +67,10 @@ export const ResponderAlerts: React.FC = () => {
       setAlerts((prev) =>
         prev.map((a) => (a.reportId === reportId ? { ...a, isRead: true } : a))
       );
-      showToast(`ALERT [${reportId.slice(0, 8)}] ACKNOWLEDGED & LOGGED`);
+      showToast(`Alert ${reportId.slice(0, 8)} acknowledged`);
     } catch (err) {
       console.error('Failed to mark alert as read:', err);
-      showToast('ERROR ACKNOWLEDGING ALERT');
+      showToast('Failed to acknowledge alert');
     }
   };
 
@@ -106,7 +106,6 @@ export const ResponderAlerts: React.FC = () => {
     return alerts.filter((a) => {
       if (filterMode === 'UNREAD' && a.isRead) return false;
       if (filterMode === 'CRITICAL' && a.severity !== 'Critical' && a.severity !== 'High') return false;
-      if (filterMode === 'ACKNOWLEDGED' && !a.isRead) return false;
 
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
@@ -130,36 +129,27 @@ export const ResponderAlerts: React.FC = () => {
         </div>
       )}
 
-      {/* 1. HIGH-CONTRAST EMERGENCY BROADCAST BANNER & TELEMETRY */}
+      {/* 1. ALERTS HEADER & TELEMETRY */}
       <div className="tactical-card p-5 bg-slate-900/90 border-2 border-slate-700/80 rounded-xl shadow-2xl">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
-              <span className="text-xs font-mono font-bold text-rose-400">EMERGENCY BROADCAST CHANNEL</span>
-              <span className="text-slate-600">|</span>
-              <span className="text-xs font-mono text-slate-300">FIELD FREQ: 142.850 MHZ</span>
-            </div>
             <h1 className="text-xl md:text-2xl font-black text-white tracking-wide">
-              Tactical Responder Emergency Alerts
+              Alerts
             </h1>
-            <p className="text-xs text-slate-400 font-mono mt-0.5">
-              Real-time incident dispatches, hazard warnings, and high-priority cross-agency alarms
-            </p>
           </div>
 
           {/* Rapid Telemetry Counters */}
           <div className="flex items-center gap-2 font-mono text-xs">
             <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center">
-              <span className="text-[10px] text-slate-400 font-bold">TOTAL</span>
+              <span className="text-[10px] text-slate-400 font-bold">Total</span>
               <span className="text-base font-black text-white">{totalAlerts}</span>
             </div>
             <div className="px-3 py-1.5 rounded-lg bg-rose-950/60 border border-rose-800 flex flex-col items-center">
-              <span className="text-[10px] text-rose-400 font-bold">UNREAD CRITICAL</span>
+              <span className="text-[10px] text-rose-400 font-bold">Critical</span>
               <span className="text-base font-black text-rose-400 animate-pulse">{unreadCriticalCount}</span>
             </div>
             <div className="px-3 py-1.5 rounded-lg bg-sky-950/60 border border-sky-800 flex flex-col items-center">
-              <span className="text-[10px] text-sky-400 font-bold">UNREAD QUEUE</span>
+              <span className="text-[10px] text-sky-400 font-bold">Unread</span>
               <span className="text-base font-black text-sky-300">{unreadCount}</span>
             </div>
           </div>
@@ -170,46 +160,35 @@ export const ResponderAlerts: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setFilterMode('ALL')}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg border font-bold transition-all cursor-pointer ${
                 filterMode === 'ALL'
                   ? 'bg-sky-500 text-slate-950 border-sky-400 font-bold shadow-[0_0_10px_rgba(14,165,233,0.4)]'
                   : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
               }`}
             >
-              ALL ALERTS ({totalAlerts})
+              All ({totalAlerts})
             </button>
             <button
               onClick={() => setFilterMode('UNREAD')}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all inline-flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg border font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                 filterMode === 'UNREAD'
                   ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold shadow-[0_0_10px_rgba(245,158,11,0.4)]'
                   : 'bg-slate-950 text-amber-400 border-amber-900/60 hover:border-amber-800'
               }`}
             >
               <Zap className="w-3.5 h-3.5" />
-              <span>UNREAD ({unreadCount})</span>
+              <span>Unread ({unreadCount})</span>
             </button>
             <button
               onClick={() => setFilterMode('CRITICAL')}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all inline-flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg border font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                 filterMode === 'CRITICAL'
                   ? 'bg-rose-600 text-white border-rose-400 font-bold shadow-[0_0_10px_rgba(239,68,68,0.4)]'
                   : 'bg-slate-950 text-rose-400 border-rose-900/60 hover:border-rose-800'
               }`}
             >
               <AlertTriangle className="w-3.5 h-3.5" />
-              <span>CRITICAL ONLY ({criticalCount})</span>
-            </button>
-            <button
-              onClick={() => setFilterMode('ACKNOWLEDGED')}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all inline-flex items-center gap-1.5 ${
-                filterMode === 'ACKNOWLEDGED'
-                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold shadow-[0_0_10px_rgba(16,185,129,0.4)]'
-                  : 'bg-slate-950 text-emerald-400 border-emerald-900/60 hover:border-emerald-800'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>ACKNOWLEDGED</span>
+              <span>Critical ({criticalCount})</span>
             </button>
           </div>
 
@@ -218,16 +197,16 @@ export const ResponderAlerts: React.FC = () => {
               type="button"
               onClick={() => {
                 setSirenMuted((prev) => !prev);
-                showToast(sirenMuted ? 'AUDIO SIREN ACTIVATED FOR CRITICAL ALARMS' : 'AUDIO SIREN MUTED');
+                showToast(sirenMuted ? 'Siren active' : 'Siren muted');
               }}
-              className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold transition-all inline-flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                 sirenMuted
                   ? 'bg-slate-950 text-slate-400 border-slate-800'
                   : 'bg-rose-950 text-rose-300 border-rose-600/80 shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse'
               }`}
             >
               {sirenMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-              <span>{sirenMuted ? 'SIREN MUTED' : 'SIREN ACTIVE'}</span>
+              <span>{sirenMuted ? 'Siren Muted' : 'Siren Active'}</span>
             </button>
 
             <SearchBar
@@ -246,14 +225,14 @@ export const ResponderAlerts: React.FC = () => {
       <div className="flex flex-col gap-3">
         {loading ? (
           <div className="tactical-card p-12 text-center text-sky-400 font-mono text-sm animate-pulse">
-            LOADING EMERGENCY BROADCAST ALARMS...
+            Loading alerts...
           </div>
         ) : filteredAlerts.length === 0 ? (
           <div className="tactical-card p-12 text-center bg-slate-900/60 border border-slate-800 rounded-xl">
             <Radio className="w-8 h-8 mx-auto mb-2 text-slate-500" />
-            <h3 className="text-base font-bold text-white font-mono">ALL ALERT FEEDS ACKNOWLEDGED</h3>
+            <h3 className="text-base font-bold text-white font-mono">No alerts</h3>
             <p className="text-xs text-slate-400 font-mono mt-1">
-              No active alert signals found for filter [{filterMode}]. Monitoring municipal broadcast frequencies.
+              No active alerts match this filter.
             </p>
           </div>
         ) : (
@@ -267,20 +246,20 @@ export const ResponderAlerts: React.FC = () => {
             const severityChip = isCritical ? (
               <span className="px-2.5 py-0.5 rounded bg-rose-950 text-rose-300 border-2 border-rose-500 text-[10px] font-black uppercase font-mono tracking-wider animate-pulse flex items-center gap-1 shadow-[0_0_8px_rgba(244,63,94,0.4)]">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
-                <span>CRITICAL</span>
+                <span>Critical</span>
               </span>
             ) : isSevere ? (
-              <span className="px-2.5 py-0.5 rounded bg-orange-950 text-orange-300 border border-orange-500 text-[10px] font-extrabold uppercase font-mono tracking-wider flex items-center gap-1">
-                <span>⚠️</span>
-                <span>SEVERE</span>
+              <span className="px-2.5 py-0.5 rounded bg-orange-950 text-orange-300 border border-orange-500 text-[10px] font-extrabold font-mono tracking-wider flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                <span>Severe</span>
               </span>
             ) : isModerate ? (
-              <span className="px-2.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500 text-[10px] font-bold uppercase font-mono tracking-wider">
-                MODERATE
+              <span className="px-2.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500 text-[10px] font-bold font-mono tracking-wider">
+                Moderate
               </span>
             ) : (
-              <span className="px-2.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500 text-[10px] font-bold uppercase font-mono tracking-wider">
-                ROUTINE
+              <span className="px-2.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500 text-[10px] font-bold font-mono tracking-wider">
+                Routine
               </span>
             );
 

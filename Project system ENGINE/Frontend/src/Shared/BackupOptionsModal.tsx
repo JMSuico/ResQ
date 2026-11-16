@@ -138,14 +138,11 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
     <DefaultFloatingModalCard
       isOpen={isOpen}
       onClose={handleClose}
-      title="CALL BACKUP — TACTICAL REINFORCEMENT PROTOCOL"
-      subtitle={`Unit: ${unitCode} • Linked Incident: ${incidentId} (${incidentLocation})`}
+      title="Request Backup"
+      subtitle={`${unitCode} · ${incidentId}`}
       size="2xl"
       footer={
-        <div className="flex items-center justify-between w-full">
-          <span className="text-[11px] font-mono text-slate-400">
-            Select any of the 3 authorized backup transmission channels above
-          </span>
+        <div className="flex items-center justify-end w-full">
           <Button
             type="button"
             variant="outline"
@@ -153,7 +150,7 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
             onClick={handleClose}
             icon={<X className="w-4 h-4" />}
           >
-            Close Window
+            Close
           </Button>
         </div>
       }
@@ -189,13 +186,13 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
         {/* Optional Situational Note */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 mb-1">
-            Tactical Situation Brief / Reinforcement Reason (Optional)
+            Note (Optional)
           </label>
           <input
             type="text"
             value={tacticalNote}
             onChange={(e) => setTacticalNote(e.target.value)}
-            placeholder="e.g. Multiple casualties on highway, requesting 2nd ambulance and PNP perimeter control..."
+            placeholder="Reason for backup..."
             className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-sky-500"
           />
         </div>
@@ -210,18 +207,13 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
           }`}
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-3">
+            <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-sky-500/20 border border-sky-500/50 flex items-center justify-center text-sky-400 flex-shrink-0">
                 <Building2 className="w-5 h-5" />
               </div>
-              <div>
-                <h4 className="text-xs sm:text-sm font-extrabold text-sky-200 tracking-wide">
-                  1. RECOMMEND REQUEST BACKUP VIA ADMIN SO ADMIN CAN DISPATCH REQUEST
-                </h4>
-                <p className="text-xs text-slate-400 mt-1">
-                  Routes a formal reinforcement recommendation to LDRRMO Command Center for coordinated multi-agency dispatch.
-                </p>
-              </div>
+              <h4 className="text-xs sm:text-sm font-extrabold text-sky-200 tracking-wide">
+                1. Request via Admin Dispatch
+              </h4>
             </div>
             <Button
               type="button"
@@ -232,7 +224,7 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
                 setSelectedMode('ADMIN_RECOMMEND');
                 triggerBackupOption(
                   'ADMIN_RECOMMEND',
-                  '1. RECOMMEND REQUEST BACKUP VIA ADMIN SO ADMIN CAN DISPATCH REQUEST',
+                  '1. Request via Admin Dispatch',
                   'LDRRMO Command Dispatch Desk'
                 );
               }}
@@ -253,18 +245,13 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
           }`}
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-3">
+            <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-rose-500/20 border border-rose-500/50 flex items-center justify-center text-rose-400 flex-shrink-0">
                 <Siren className="w-5 h-5 animate-pulse" />
               </div>
-              <div>
-                <h4 className="text-xs sm:text-sm font-extrabold text-rose-200 tracking-wide">
-                  2. SEND DISTRESS SIGNAL FOR ALL NEARBY RESPONDERS (MEDIC OR NON-MEDIC)
-                </h4>
-                <p className="text-xs text-slate-400 mt-1">
-                  Broadcasts an omnidirectional SOS beacon to all RHU Medics, BFP Fire, and PNP Police units within a 10km radius.
-                </p>
-              </div>
+              <h4 className="text-xs sm:text-sm font-extrabold text-rose-200 tracking-wide">
+                2. Distress SOS to Nearby Responders
+              </h4>
             </div>
             <Button
               type="button"
@@ -275,7 +262,7 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
                 setSelectedMode('DISTRESS_NEARBY');
                 triggerBackupOption(
                   'DISTRESS_NEARBY',
-                  '2. SEND DISTRESS SIGNAL FOR ALL NEARBY RESPONDERS (MEDIC OR NON-MEDIC)',
+                  '2. Distress SOS to Nearby Responders',
                   'ALL NEARBY UNITS (RHU / PNP / BFP / LDRRMO)'
                 );
               }}
@@ -296,24 +283,19 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
           }`}
         >
           <div className="space-y-3">
-            <div className="flex items-start gap-3">
+            <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 flex-shrink-0">
                 <PhoneCall className="w-5 h-5" />
               </div>
-              <div>
-                <h4 className="text-xs sm:text-sm font-extrabold text-amber-200 tracking-wide">
-                  3. SEND VIA CALL NUMBER OR EMAIL
-                </h4>
-                <p className="text-xs text-slate-400 mt-1">
-                  Direct emergency hotline dial or automated tactical dispatch email to hospital ER, PNP station, or command desk.
-                </p>
-              </div>
+              <h4 className="text-xs sm:text-sm font-extrabold text-amber-200 tracking-wide">
+                3. Direct Hotline / Email
+              </h4>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
               <div className="space-y-1.5">
                 <label className="block text-[11px] font-mono text-slate-400">
-                  EMERGENCY HOTLINE / CALL NUMBER
+                  Hotline Number
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -333,7 +315,7 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
                       setSelectedMode('CALL_OR_EMAIL');
                       triggerBackupOption(
                         'CALL_OR_EMAIL',
-                        '3. SEND VIA CALL NUMBER OR EMAIL',
+                        '3. Direct Hotline / Email',
                         `CALL: ${callNumber}`
                       );
                     }}
@@ -346,7 +328,7 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
 
               <div className="space-y-1.5">
                 <label className="block text-[11px] font-mono text-slate-400">
-                  EMERGENCY DISPATCH EMAIL
+                  Dispatch Email
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -366,7 +348,7 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
                       setSelectedMode('CALL_OR_EMAIL');
                       triggerBackupOption(
                         'CALL_OR_EMAIL',
-                        '3. SEND VIA CALL NUMBER OR EMAIL',
+                        '3. Direct Hotline / Email',
                         `EMAIL: ${emailAddress}`
                       );
                     }}

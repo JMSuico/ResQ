@@ -847,8 +847,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         existing.marker.on('click', (e) => {
           if (e && e.originalEvent) {
             L.DomEvent.stopPropagation(e.originalEvent);
-          } else if (e && typeof (e as any).stopPropagation === 'function') {
-            (e as any).stopPropagation();
+          } else {
+            const stoppableEvent = e as unknown as { stopPropagation?: () => void };
+            stoppableEvent.stopPropagation?.();
           }
           closedIncidentIdRef.current = null;
           setActivePointer(inc);
@@ -869,8 +870,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       marker.on('click', (e) => {
         if (e && e.originalEvent) {
           L.DomEvent.stopPropagation(e.originalEvent);
-        } else if (e && typeof (e as any).stopPropagation === 'function') {
-          (e as any).stopPropagation();
+        } else {
+          const stoppableEvent = e as unknown as { stopPropagation?: () => void };
+          stoppableEvent.stopPropagation?.();
         }
         closedIncidentIdRef.current = null;
         setActivePointer(inc);

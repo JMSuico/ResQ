@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { Check, FileText, MapPin, Ambulance, ZoomIn, Star } from 'lucide-react';
 import { getMyReports, ReportItem } from '@/Endpoints/reportsApi';
 import { Button } from '@/Shared/Button';
 import { ImageLightboxModal } from '@/Shared/ImageLightboxModal';
@@ -12,7 +13,7 @@ import { SearchBar } from '@/Shared/SearchBar';
 import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
-import { formatIsoTimestamp, formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
+import { formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
 import { SEVERITY_COLORS } from '@/Libs/Assets/data';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { useDistressBeacon } from '@/Hooks/useDistressBeacon';
@@ -173,20 +174,13 @@ export const MyReportsHistory: React.FC = () => {
       {/* 1. Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-sky-600/20 text-sky-400 text-xs font-mono font-bold border border-sky-600/40 mb-1.5">
-            <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
-            <span>INCIDENT LIFECYCLE AUDIT</span>
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">My Emergency Reports Timeline</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Real-time status progression from submission through dispatch and final resolution
-          </p>
+          <h1 className="text-2xl font-black text-white tracking-tight">My Reports</h1>
         </div>
 
         <div className="flex items-center gap-3">
           <Link to="/civilian/report">
             <Button variant="danger" size="sm" className="font-bold min-h-[38px]">
-              + File New Report
+              + New Report
             </Button>
           </Link>
         </div>
@@ -195,7 +189,7 @@ export const MyReportsHistory: React.FC = () => {
       {/* 2. Feedback Success Toast */}
       {feedbackSuccessToast && (
         <div className="p-3.5 rounded-xl bg-emerald-950/95 border border-emerald-500 text-emerald-200 text-xs font-medium flex items-center gap-3 shadow-lg shadow-emerald-950/50">
-          <span className="text-base">✓</span>
+          <Check className="w-4 h-4 flex-shrink-0" />
           <span>{feedbackSuccessToast}</span>
         </div>
       )}
@@ -255,18 +249,18 @@ export const MyReportsHistory: React.FC = () => {
       {/* 4. Empty State */}
       {filteredReports.length === 0 ? (
         <div className="tactical-card p-12 text-center flex flex-col items-center justify-center gap-3 rounded-2xl bg-slate-900/60 border border-slate-800">
-          <div className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center text-2xl">
-            📋
+          <div className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-400">
+            <FileText className="w-6 h-6" />
           </div>
-          <h3 className="text-base font-bold text-white">No Emergency Reports Found</h3>
+          <h3 className="text-base font-bold text-white">No Reports Found</h3>
           <p className="text-xs text-slate-400 max-w-sm">
             {searchQuery
-              ? `No records matching "${searchQuery}". Clear your search query to view all.`
-              : 'You have not submitted any emergency accident reports yet. Reports filed via 1-Tap SOS or the detailed reporting form will be tracked here in real-time.'}
+              ? `No reports matching "${searchQuery}".`
+              : 'No reports submitted yet.'}
           </p>
           <Link to="/civilian/report" className="mt-2">
             <Button variant="danger" size="sm" className="font-bold">
-              Submit Incident Report
+              Submit Report
             </Button>
           </Link>
         </div>
@@ -299,9 +293,9 @@ export const MyReportsHistory: React.FC = () => {
 
                     <h2 className="text-base font-bold text-white mt-1">{r.title}</h2>
                     <span className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                      <span>📍</span>
+                      <MapPin className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
                       <span>{r.locationLabel || 'Katipunan Municipal Road Sector'}</span>
-                      <span className="text-slate-600">•</span>
+                      <span className="text-slate-600">/</span>
                       <span className="font-mono text-[10px] text-slate-400">
                         {formatGpsCoord(r.latitude, r.longitude)}
                       </span>
@@ -310,8 +304,9 @@ export const MyReportsHistory: React.FC = () => {
 
                   {/* Status Badge & Approaching Unit Indicator */}
                   <div className="flex flex-col sm:items-end gap-1.5">
-                    <span className={`px-3 py-1 rounded-full text-xs font-mono font-bold uppercase border ${badgeClasses.bg} ${badgeClasses.text} ${badgeClasses.border}`}>
-                      ● {normalizedStatus}
+                    <span className={`px-3 py-1 rounded-full text-xs font-mono font-bold uppercase border inline-flex items-center gap-1.5 ${badgeClasses.bg} ${badgeClasses.text} ${badgeClasses.border}`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                      <span>{normalizedStatus}</span>
                     </span>
                     <span className="text-[10px] font-mono text-slate-400">
                       Filed {formatRelativeTime(r.createdAt)}
@@ -319,7 +314,8 @@ export const MyReportsHistory: React.FC = () => {
 
                     {normalizedStatus === 'DISPATCHED' && r.allocatedUnitCode && (
                       <span className="mt-1 px-2.5 py-0.5 rounded bg-cyan-950/90 text-cyan-300 border border-cyan-500/40 font-mono text-[10px] font-bold flex items-center gap-1.5 animate-pulse">
-                        <span>🚑 Unit En Route:</span>
+                        <Ambulance className="w-3.5 h-3.5" />
+                        <span>En Route:</span>
                         <strong className="text-white">{r.allocatedUnitCode}</strong>
                       </span>
                     )}
@@ -328,9 +324,10 @@ export const MyReportsHistory: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setSelectedFeedbackReport(r)}
-                        className="mt-1 text-[11px] font-mono text-emerald-400 hover:text-emerald-300 font-bold underline text-right"
+                        className="mt-1 text-[11px] font-mono text-emerald-400 hover:text-emerald-300 font-bold underline text-right inline-flex items-center gap-1"
                       >
-                        ★ Rate Response Quality
+                        <Star className="w-3 h-3" />
+                        <span>Rate Response</span>
                       </button>
                     )}
                   </div>
@@ -339,10 +336,10 @@ export const MyReportsHistory: React.FC = () => {
                 {/* Real-time Stepped Incident Progression Bar */}
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-2">
                   <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 font-bold">
-                    <span className={currentStage >= 0 ? 'text-amber-400' : 'text-slate-500'}>1. Submitted</span>
-                    <span className={currentStage >= 1 ? 'text-indigo-400' : 'text-slate-500'}>2. Command Verified</span>
-                    <span className={currentStage >= 2 ? 'text-cyan-400' : 'text-slate-500'}>3. Units Dispatched</span>
-                    <span className={currentStage >= 3 ? 'text-emerald-400' : 'text-slate-500'}>4. Resolved</span>
+                    <span className={currentStage >= 0 ? 'text-amber-400' : 'text-slate-500'}>Submitted</span>
+                    <span className={currentStage >= 1 ? 'text-indigo-400' : 'text-slate-500'}>Verified</span>
+                    <span className={currentStage >= 2 ? 'text-cyan-400' : 'text-slate-500'}>Dispatched</span>
+                    <span className={currentStage >= 3 ? 'text-emerald-400' : 'text-slate-500'}>Resolved</span>
                   </div>
 
                   <div className="relative w-full h-2 rounded-full bg-slate-800 overflow-hidden">
@@ -364,7 +361,7 @@ export const MyReportsHistory: React.FC = () => {
                 <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
                   {r.note && (
                     <p className="text-xs text-slate-300 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 flex-1 leading-relaxed">
-                      <span className="text-slate-500 font-mono text-[10px] uppercase block mb-1">REPORTER FIELD NOTES:</span>
+                      <span className="text-slate-500 font-mono text-[10px] uppercase block mb-1">Notes:</span>
                       {r.note}
                     </p>
                   )}
@@ -381,8 +378,9 @@ export const MyReportsHistory: React.FC = () => {
                           alt="Incident scene capture"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                         />
-                        <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-mono font-bold">
-                          🔍 Zoom
+                        <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1 text-white text-xs font-mono font-bold">
+                          <ZoomIn className="w-3.5 h-3.5" />
+                          <span>Zoom</span>
                         </div>
                       </button>
                     </div>
@@ -455,9 +453,10 @@ export const MyReportsHistory: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => setSelectedFeedbackReport(r)}
-                              className="px-2 py-1 rounded bg-emerald-950 border border-emerald-600/50 text-emerald-300 text-[10px] font-bold"
+                              className="px-2 py-1 rounded bg-emerald-950 border border-emerald-600/50 text-emerald-300 text-[10px] font-bold inline-flex items-center gap-1"
                             >
-                              Rate ★
+                              <Star className="w-3 h-3" />
+                              <span>Rate</span>
                             </button>
                           )}
                         </div>
@@ -481,14 +480,14 @@ export const MyReportsHistory: React.FC = () => {
         {selectedFeedbackReport && (
           <div className="flex flex-col gap-4">
             <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono">
-              <span className="text-slate-500 block mb-0.5">RESOLVED INCIDENT:</span>
+              <span className="text-slate-500 block mb-0.5">Resolved:</span>
               <span className="font-bold text-white block">#{selectedFeedbackReport.referenceCode} - {selectedFeedbackReport.title}</span>
-              <span className="text-emerald-400 text-[10px] block mt-1">Dispatched: {selectedFeedbackReport.allocatedUnitCode || 'Municipal Response Apparatus'}</span>
+              <span className="text-emerald-400 text-[10px] block mt-1">Unit: {selectedFeedbackReport.allocatedUnitCode || 'Municipal Response Unit'}</span>
             </div>
 
             <div className="flex flex-col gap-2">
               <label className="text-xs font-bold text-slate-200">
-                How would you rate the speed & professionalism of responders?
+                Rate Response
               </label>
               <div className="flex items-center gap-2">
                 {[1, 2, 3, 4, 5].map((star) => (
@@ -496,11 +495,14 @@ export const MyReportsHistory: React.FC = () => {
                     key={star}
                     type="button"
                     onClick={() => setFeedbackRating(star)}
-                    className={`text-2xl transition-transform hover:scale-125 ${
-                      star <= feedbackRating ? 'text-amber-400' : 'text-slate-700'
-                    }`}
+                    className="p-1 transition-transform hover:scale-125"
+                    aria-label={`Rate ${star} stars`}
                   >
-                    ★
+                    <Star
+                      className={`w-5 h-5 ${
+                        star <= feedbackRating ? 'fill-amber-400 text-amber-400' : 'text-slate-700'
+                      }`}
+                    />
                   </button>
                 ))}
                 <span className="ml-2 font-mono text-xs font-bold text-slate-300">

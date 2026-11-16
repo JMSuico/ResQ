@@ -308,35 +308,32 @@ export const AnalyticsReportsPage: FC = () => {
     return Math.max(0, (summary?.totalIncidents ?? 0) - (summary?.resolvedCount ?? 0));
   }, [summary]);
 
-  // Mathematical formula progress tracker bound to real live database telemetry
+  // Operational metrics tracker bound to live database telemetry
   const analysisItems = useMemo(
     () => [
       {
-        title: 'Triage Ingestion Velocity Algorithm (TIVA)',
-        formula: 'V(t) = \\sum_{i=1}^{n} (w_i \\cdot S_i) / \\Delta t',
-        status: `LIVE (${summary?.totalIncidents ?? 0} Ingested, ${summary?.criticalIncidents ?? 0} SOS, Index: ${tivaVelocity})`,
-        description: 'Calculates continuous weight-adjusted report density per square kilometer.'
+        title: 'Triage Ingestion Velocity',
+        status: `${summary?.totalIncidents ?? 0} reports · ${summary?.criticalIncidents ?? 0} SOS · Index ${tivaVelocity}`,
+        description: 'Weighted report density across active municipal sectors.'
       },
       {
-        title: 'Anti-Spoofing Laplacian Variance Kernel',
-        formula: '\\sigma^2 = \\frac{1}{N} \\sum (L(x,y) - \\mu)^2 \\ge 70.0',
-        status: `VERIFIED (${sharpnessPercent} capture sharpness, avg ${avgLaplacianVar} Var)`,
-        description: 'Rejects spoofed screenshots and verifies raw CMOS sensor pixel gradients.'
+        title: 'Capture Sharpness Verification',
+        status: `${sharpnessPercent} sharp · Avg ${avgLaplacianVar}`,
+        description: 'Rejects blurred or spoofed frames before triage.'
       },
       {
-        title: 'Multi-Agency Dispatch Optimization Ratio',
-        formula: 'D_{ratio} = \\frac{Units_{Dispatched}}{Units_{Available}} \\times 100\\%',
+        title: 'Dispatch Allocation Ratio',
         status:
           (summary?.totalResponders ?? 0) > 0
-            ? `${dispatchRatioPercent} Fleet Allocation (${summary?.activeDispatches ?? 0}/${summary?.totalResponders ?? 0} Units Dispatched)`
-            : '0.0% Fleet Allocation',
-        description: 'Ensures equitable distribution of emergency responders across municipal sectors.'
+            ? `${dispatchRatioPercent} (${summary?.activeDispatches ?? 0}/${summary?.totalResponders ?? 0} units)`
+            : '0.0% allocated',
+        description: 'Active dispatches relative to total available responders.'
       }
     ],
     [summary, tivaVelocity, sharpnessPercent, avgLaplacianVar, dispatchRatioPercent]
   );
 
-  // Dynamic Milestone Progress computed from actual live database telemetry
+  // Dynamic Milestone Progress computed from live database telemetry
   const progressItems = useMemo(() => {
     const gpsRate =
       validReports.length > 0
@@ -350,10 +347,10 @@ export const AnalyticsReportsPage: FC = () => {
         : 100;
 
     return [
-      { milestone: 'Real-time GPS sensor telemetry pipeline', progress: gpsRate, date: 'October 2026' },
-      { milestone: 'Multi-port role clearance isolation (Port 1996 / 1997 / 1998)', progress: 100, date: 'October 2026' },
-      { milestone: 'Automated triage severity auto-dispatch matrix', progress: triageAutoRate, date: 'In Production' },
-      { milestone: 'Automated Excel/PDF intelligence digest engine', progress: 100, date: 'Active' }
+      { milestone: 'GPS Telemetry Coverage', progress: gpsRate, date: 'Active' },
+      { milestone: 'Multi-Port Access Isolation', progress: 100, date: 'Active' },
+      { milestone: 'Automated Triage Routing', progress: triageAutoRate, date: 'In Production' },
+      { milestone: 'CSV & PDF Report Export', progress: 100, date: 'Active' }
     ];
   }, [validReports, summary]);
 
@@ -396,10 +393,10 @@ export const AnalyticsReportsPage: FC = () => {
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase flex items-center gap-2.5">
             <Activity className="w-5 h-5 text-rose-500 animate-pulse" />
-            Analytics & Executive Intelligence Reports
+            Analytics & Reports
           </h1>
           <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Mission-critical statistical modeling, response curve analysis & audit digests
+            Response curves and operational metrics
           </p>
         </div>
 
@@ -410,7 +407,7 @@ export const AnalyticsReportsPage: FC = () => {
             options={[
               { value: '7d', label: 'Past 7 Days' },
               { value: '30d', label: 'Past 30 Days' },
-              { value: 'quarter', label: 'Quarterly Triage' },
+              { value: 'quarter', label: 'Quarterly' },
               { value: 'annual', label: 'Annual 2026' }
             ]}
             className="min-w-[150px]"
@@ -422,10 +419,10 @@ export const AnalyticsReportsPage: FC = () => {
             onClick={() => void loadData()}
             disabled={isRefreshing}
             className="text-xs font-mono font-bold flex items-center gap-1.5 border-slate-600 hover:border-slate-400"
-            title="Refresh Live Telemetry"
+            title="Refresh Telemetry"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            SYNC
+            Sync
           </Button>
 
           <Button
@@ -435,7 +432,7 @@ export const AnalyticsReportsPage: FC = () => {
             className="text-xs font-mono font-bold flex items-center gap-1.5 border-rose-500/50 text-rose-300 hover:bg-rose-950/60"
           >
             <Eye className="w-3.5 h-3.5" />
-            DRILL-DOWN MODAL
+            Details
           </Button>
 
           <Button
@@ -445,7 +442,7 @@ export const AnalyticsReportsPage: FC = () => {
             className="text-xs font-mono font-bold flex items-center gap-1.5"
           >
             <Download className="w-3.5 h-3.5" />
-            EXPORT EXCEL
+            Export CSV
           </Button>
 
           <Button
@@ -455,7 +452,7 @@ export const AnalyticsReportsPage: FC = () => {
             className="text-xs font-mono font-bold flex items-center gap-1.5 border-slate-600 hover:border-slate-400"
           >
             <FileText className="w-3.5 h-3.5" />
-            PDF DIGEST
+            Print PDF
           </Button>
         </div>
       </div>
@@ -540,19 +537,16 @@ export const AnalyticsReportsPage: FC = () => {
         <div className="tactical-card p-5">
           <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-sky-400" />
-            Mathematical & Algorithmic Analysis List
+            Operational Metrics
           </h3>
           <div className="space-y-3">
             {analysisItems.map((item, idx) => (
-              <div key={idx} className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-700/60">
-                <div className="flex items-center justify-between">
+              <div key={idx} className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-700/60 space-y-1">
+                <div className="flex items-center justify-between gap-2">
                   <h4 className="text-xs font-bold text-rose-300">{item.title}</h4>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-emerald-400 font-bold">
                     {item.status}
                   </span>
-                </div>
-                <div className="my-1.5 p-2 rounded bg-slate-950 border border-slate-800 font-mono text-[11px] text-sky-300">
-                  {item.formula}
                 </div>
                 <p className="text-[11px] text-slate-400">{item.description}</p>
               </div>
@@ -564,7 +558,7 @@ export const AnalyticsReportsPage: FC = () => {
         <div className="tactical-card p-5">
           <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            Tactical Architecture Milestone Progress
+            Milestones
           </h3>
           <div className="space-y-4">
             {progressItems.map((p, idx) => (
@@ -580,7 +574,7 @@ export const AnalyticsReportsPage: FC = () => {
                   />
                 </div>
                 <div className="flex justify-end text-[10px] font-mono text-slate-500">
-                  <span>Target: {p.date}</span>
+                  <span>{p.date}</span>
                 </div>
               </div>
             ))}
@@ -593,22 +587,22 @@ export const AnalyticsReportsPage: FC = () => {
         <DefaultFloatingModalCard
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          title="Deep Intelligence Drill-Down Analysis"
-          subtitle="Granular telemetry, Laplacian blur thresholds, and sector dispatch accuracy"
+          title="Operational Details"
+          subtitle="Live telemetry and capture quality summary"
           className="max-w-3xl"
         >
           <div className="space-y-4 text-xs text-slate-300">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 text-center">
-                <p className="text-[10px] text-slate-400 uppercase font-mono">Laplacian Baseline</p>
-                <h4 className="text-lg font-black text-white mt-1">{avgLaplacianVar} Var</h4>
+                <p className="text-[10px] text-slate-400 uppercase font-mono">Sharpness Avg</p>
+                <h4 className="text-lg font-black text-white mt-1">{avgLaplacianVar}</h4>
               </div>
               <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 text-center">
                 <p className="text-[10px] text-slate-400 uppercase font-mono">Active Reports</p>
-                <h4 className="text-lg font-black text-rose-400 mt-1">{activeReportsCount} Live</h4>
+                <h4 className="text-lg font-black text-rose-400 mt-1">{activeReportsCount}</h4>
               </div>
               <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 text-center">
-                <p className="text-[10px] text-slate-400 uppercase font-mono">Duty Allocation</p>
+                <p className="text-[10px] text-slate-400 uppercase font-mono">Duty Roster</p>
                 <h4 className="text-lg font-black text-sky-400 mt-1">
                   {summary.onDutyResponders} / {summary.totalResponders}
                 </h4>
@@ -619,13 +613,10 @@ export const AnalyticsReportsPage: FC = () => {
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-              <h5 className="font-bold text-white text-xs uppercase font-mono">Executive Summary</h5>
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+              <h5 className="font-bold text-white text-xs uppercase font-mono">Summary</h5>
               <p className="leading-relaxed text-slate-300 text-[11.5px]">
-                Telemetry indicates that zero presentation tabs on login screens coupled with authoritative server-side
-                role detection has reduced cross-portal authentication errors by 100%. Anti-spoofing camera pipelines
-                continue enforcing single-frame live verification with burn-in GPS metadata watermarking, maintaining a{' '}
-                {sharpnessPercent} capture quality standard across municipal response teams.
+                {sharpnessPercent} of captured reports meet sharpness standards across {summary.totalIncidents} total incidents, with {summary.onDutyResponders} of {summary.totalResponders} responders on duty.
               </p>
             </div>
           </div>

@@ -39,12 +39,12 @@ export const IdVerificationBanner: React.FC<IdVerificationBannerProps> = ({
 }) => {
   const resolveIdleHint = (): string => {
     if (!hasFrontImage && !hasBackImage) {
-      return 'Upload both Front and Back Government ID images above to verify authenticity and unlock Personal Information.';
+      return 'Upload Front & Back ID images to verify.';
     }
     if (!hasFrontImage) {
-      return 'Front ID image still required. Upload the Front side of your Government ID to begin background verification.';
+      return 'Upload Front ID.';
     }
-    return 'Back ID image still required. Upload the Back side of your Government ID to begin background verification.';
+    return 'Upload Back ID.';
   };
 
   return (
@@ -82,9 +82,7 @@ export const IdVerificationBanner: React.FC<IdVerificationBannerProps> = ({
           <div className="p-1.5 rounded-lg bg-rose-950/80 border border-rose-500/40 shrink-0">
             <Loader2 className="w-4 h-4 text-[#ff5c74] animate-spin" />
           </div>
-          <span>
-            Analyzing Government ID authenticity &amp; extracting visible text in background...
-          </span>
+          <span>Verifying Government ID…</span>
         </div>
       )}
 
@@ -101,18 +99,18 @@ export const IdVerificationBanner: React.FC<IdVerificationBannerProps> = ({
             </div>
             <div>
               <div className="font-mono text-[11.5px] font-bold text-[#5fe0a4]">
-                Government ID Verified by AI — Review &amp; Complete Details Below
+                ID Verified
               </div>
               {detectedIdLabel && (
                 <div className="font-mono text-[10px] text-emerald-200/80 mt-0.5">
-                  Detected Document: {detectedIdLabel}
+                  {detectedIdLabel}
                 </div>
               )}
             </div>
           </div>
           {hasStandbyToken && (
             <span className="self-start sm:self-center shrink-0 px-2.5 py-1 rounded border border-emerald-500/40 bg-emerald-950/70 font-mono text-[9.5px] font-bold uppercase tracking-wider text-emerald-200">
-              Standby Token Cached
+              Token Ready
             </span>
           )}
         </div>
@@ -131,7 +129,7 @@ export const IdVerificationBanner: React.FC<IdVerificationBannerProps> = ({
             </div>
             <div>
               <div className="font-mono text-[11.5px] font-bold text-[#ffb454]">
-                AI Verification Temporarily Unavailable — Manual Entry Unlocked for Admin Review
+                AI Unavailable — Manual Review
               </div>
               {errorMessage && (
                 <div className="font-sans text-[11px] text-amber-200/85 mt-0.5">
@@ -147,7 +145,7 @@ export const IdVerificationBanner: React.FC<IdVerificationBannerProps> = ({
             className="id-verification-banner__retry-btn self-start sm:self-center shrink-0 px-3 py-1.5 rounded-lg border border-amber-500/45 bg-amber-950/60 hover:bg-amber-900/70 text-amber-100 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Retry AI Check</span>
+            <span>Retry</span>
           </button>
         </div>
       )}
@@ -166,7 +164,7 @@ export const IdVerificationBanner: React.FC<IdVerificationBannerProps> = ({
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#ff5c74]">
-                  Government ID Verification Rejected
+                  ID Rejected
                 </span>
                 {errorCode && (
                   <span className="px-2 py-0.5 rounded bg-rose-950/90 border border-rose-500/45 font-mono text-[9.5px] font-bold text-rose-200">
@@ -176,7 +174,7 @@ export const IdVerificationBanner: React.FC<IdVerificationBannerProps> = ({
               </div>
               <p className="font-sans text-xs text-rose-100/95 leading-relaxed m-0">
                 {errorMessage ||
-                  'The uploaded Government ID failed verification. Please upload clear Front and Back photos matching your selected ID type.'}
+                  'Upload clear Front & Back ID photos matching your selected ID type.'}
               </p>
             </div>
           </div>
@@ -187,7 +185,7 @@ export const IdVerificationBanner: React.FC<IdVerificationBannerProps> = ({
             className="id-verification-banner__retry-btn self-start sm:self-center shrink-0 px-3 py-1.5 rounded-lg border border-[#ff5c74]/60 bg-rose-950/80 hover:bg-rose-900 text-white font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Retry Verification</span>
+            <span>Retry</span>
           </button>
         </div>
       )}

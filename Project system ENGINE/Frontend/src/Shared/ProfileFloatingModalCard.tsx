@@ -132,7 +132,7 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_#f43f5e]" />
             <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-slate-400">
-              TACTICAL PROFILE &bull; C2 HUD
+              Profile
             </span>
           </div>
           <button
@@ -202,7 +202,7 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
           <div className="px-3 py-2 bg-slate-950/80 rounded-xl border border-slate-800 flex items-center justify-between">
             <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider flex items-center gap-1">
               <User className="w-3 h-3 text-slate-500" />
-              <span>OPERATOR / CITIZEN ID</span>
+              <span>ID</span>
             </span>
             <span className="font-bold text-sky-400 tracking-wider">
               {employeeOrResidentId}
@@ -218,12 +218,12 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
             {isVerified ? (
               <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>BIOMETRICALLY VERIFIED</span>
+                <span>Verified</span>
               </span>
             ) : (
               <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1">
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                <span>PENDING SCAN</span>
+                <span>Pending</span>
               </span>
             )}
           </div>

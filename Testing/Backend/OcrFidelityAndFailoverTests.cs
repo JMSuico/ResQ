@@ -3,11 +3,13 @@
 // Invariant: C# .NET 10, xUnit 2.9.3, custom HttpMessageHandler stubs, universal lambda expressions (=>), zero hardcoded secrets.
 
 using System.Net;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Backend.Features.Api.DTOs;
 using Backend.Features.Services.Implementations;
 using Backend.Features.Services.Interfaces;
+using Backend.Features.Services.Verification;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -464,6 +466,183 @@ public class OcrFidelityAndFailoverTests
             AssertNoBannedDummyArtifacts(ocrResult);
             Assert.Empty(handler.RequestedModels);
         });
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_UsesSufficientMaxTokensAndCompactSingleLineSchema_ToPreventTruncation()
+    {
+        const string compactSuccessJson =
+            "{\"unreadable\":false,\"isGenuineId\":true,\"authenticityVerdict\":\"GENUINE_PHYSICAL_ID\",\"detectedIdType\":\"drivers\",\"matchesSelectedIdType\":true,\"frontSlotDetectedSide\":\"FRONT\",\"backSlotDetectedSide\":\"BACK\",\"areSidesIdentical\":false,\"confidence\":0.95,\"IdType\":\"DRIVERS_LICENSE\",\"fields\":{\"FirstName\":\"JHONMARK\",\"Surname\":\"SUICO\",\"LicenseNumber\":\"J07-22-302560\",\"DateOfBirth\":\"2004-02-20\",\"Sex\":\"M\"}}";
+
+        var claudeStub = new StubClaudeMessagesClient(compactSuccessJson);
+        var evaluator = new SharedGovIdForensicsEvaluator(
+            BuildClaudeConfig(),
+            claudeStub,
+            NullLogger<SharedGovIdForensicsEvaluator>.Instance);
+
+        byte[] frontBytes = CreateMinimalPngBytes();
+        byte[] backBytes = [.. frontBytes, 0x01];
+
+        GovIdForensicsResult result = await evaluator.EvaluateAsync(
+            new GovIdAuthenticityInput(
+                FrontBytes: frontBytes,
+                FrontMimeType: "image/png",
+                BackBytes: backBytes,
+                BackMimeType: "image/png",
+                SelectedIdType: "drivers",
+                PreferredModel: null,
+                RequireDualSideVerification: true),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.NotNull(claudeStub.CapturedPayload);
+
+        string payloadJson = JsonSerializer.Serialize(claudeStub.CapturedPayload);
+        using var doc = JsonDocument.Parse(payloadJson);
+        JsonElement root = doc.RootElement;
+
+        int maxTokens = root.GetProperty("max_tokens").GetInt32();
+        Assert.InRange(maxTokens, 900, 1280);
+
+        var systemBuilder = new StringBuilder();
+        foreach (JsonElement block in root.GetProperty("system").EnumerateArray())
+        {
+            if (block.TryGetProperty("text", out JsonElement textProp) &&
+                textProp.ValueKind == JsonValueKind.String)
+            {
+                systemBuilder.AppendLine(textProp.GetString());
+            }
+        }
+
+        string systemPrompt = systemBuilder.ToString();
+        bool instructsCompactSingleLine =
+            systemPrompt.Contains("single-line", StringComparison.OrdinalIgnoreCase) ||
+            systemPrompt.Contains("single line", StringComparison.OrdinalIgnoreCase) ||
+            systemPrompt.Contains("minified", StringComparison.OrdinalIgnoreCase);
+        Assert.True(
+            instructsCompactSingleLine,
+            $"Expected system prompt to instruct compact single-line/minified JSON to prevent truncation. Prompt: {systemPrompt}");
+
+        bool instructsNullOmission =
+            systemPrompt.Contains("omit", StringComparison.OrdinalIgnoreCase) &&
+            systemPrompt.Contains("null", StringComparison.OrdinalIgnoreCase);
+        Assert.True(
+            instructsNullOmission,
+            $"Expected system prompt to instruct omitting null/absent fields. Prompt: {systemPrompt}");
+    }
+
+    [Fact]
+    public void ParseForensicOcrResponse_ExtractsBalancedJsonFromProseAndFences()
+    {
+        string rawText = """
+            Forensic analysis {note}: verified security features on the Philippine Driver's License before extracting visible text.
+            ```json
+            {
+              "unreadable": false,
+              "isGenuineId": true,
+              "authenticityVerdict": "GENUINE_PHYSICAL_ID",
+              "detectedIdType": "drivers",
+              "detectedIdLabel": "Philippine Driver's License",
+              "matchesSelectedIdType": true,
+              "frontSlotDetectedSide": "FRONT",
+              "backSlotDetectedSide": "BACK",
+              "areSidesIdentical": false,
+              "confidence": 0.96,
+              "IdType": "DRIVERS_LICENSE",
+              "fields": {
+                "FirstName": "JHONMARK",
+                "Surname": "SUICO",
+                "LicenseNumber": "J07-22-302560",
+                "DateOfBirth": "2004-02-20",
+                "Sex": "M"
+              }
+            }
+            ```
+            Trailing remarks: unseen fields were omitted from the JSON object above.
+            """;
+
+        GovIdForensicsResult result = InvokeParseForensicOcrResponse(rawText);
+
+        Assert.True(result.Success);
+        Assert.True(result.IsGenuineId);
+        Assert.NotNull(result.Fields);
+        Assert.Equal("JHONMARK", result.Fields!.FirstName);
+        Assert.Equal("SUICO", result.Fields.Surname);
+        Assert.Equal("J07-22-302560", result.Fields.LicenseNumber);
+        Assert.Equal("2004-02-20", result.Fields.DateOfBirth);
+        Assert.Equal("Male", result.Fields.Sex);
+    }
+
+    [Fact]
+    public void ParseForensicOcrResponse_ParsesCompactFlatScalarFieldsWithOmittedNulls()
+    {
+        const string compactMinifiedJson =
+            "{\"unreadable\":false,\"isGenuineId\":true,\"authenticityVerdict\":\"GENUINE_PHYSICAL_ID\",\"detectedIdType\":\"drivers\",\"matchesSelectedIdType\":true,\"frontSlotDetectedSide\":\"FRONT\",\"backSlotDetectedSide\":\"BACK\",\"areSidesIdentical\":false,\"confidence\":0.95,\"IdType\":\"DRIVERS_LICENSE\",\"fields\":{\"FirstName\":\"JHONMARK\",\"Surname\":\"SUICO\",\"LicenseNumber\":\"J07-22-302560\",\"DateOfBirth\":\"2004-02-20\",\"Sex\":\"M\",\"Barangay\":\"POBLACION\",\"CityOrMunicipality\":\"MANUKAN\",\"Province\":\"ZAMBOANGA DEL NORTE\",\"Weight\":\"52\",\"Height\":\"1.71\"}}";
+
+        GovIdForensicsResult result = InvokeParseForensicOcrResponse(compactMinifiedJson);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Fields);
+        Assert.Equal("JHONMARK", result.Fields!.FirstName);
+        Assert.Equal("SUICO", result.Fields.Surname);
+        Assert.Equal("Male", result.Fields.Sex);
+        Assert.Equal("2004-02-20", result.Fields.DateOfBirth);
+        Assert.Equal("J07-22-302560", result.Fields.LicenseNumber);
+        Assert.Equal("POBLACION", result.Fields.Barangay);
+        Assert.Equal("MANUKAN", result.Fields.CityOrMunicipality);
+        Assert.Equal("ZAMBOANGA DEL NORTE", result.Fields.Province);
+        Assert.Equal("52", result.Fields.Weight);
+        Assert.Equal("1.71", result.Fields.Height);
+
+        Assert.Equal("JHONMARK", result.Fields.ExtractedFields["FirstName"].Value);
+        Assert.Equal("SUICO", result.Fields.ExtractedFields["Surname"].Value);
+        Assert.Equal("2004-02-20", result.Fields.ExtractedFields["DateOfBirth"].Value);
+        Assert.Equal("J07-22-302560", result.Fields.ExtractedFields["LicenseNumber"].Value);
+
+        Assert.Null(result.Fields.MiddleName);
+        Assert.Null(result.Fields.Suffix);
+        Assert.False(result.Fields.ExtractedFields.ContainsKey("MiddleName"));
+        Assert.False(result.Fields.ExtractedFields.ContainsKey("Suffix"));
+    }
+
+    private static GovIdForensicsResult InvokeParseForensicOcrResponse(
+        string rawText,
+        string provider = "claude-sonnet-4-6",
+        string? selectedIdType = "drivers",
+        bool hasBackBytes = true,
+        string imagePairSha256 = "test-sha256")
+    {
+        MethodInfo? method = typeof(SharedGovIdForensicsEvaluator).GetMethod(
+            "ParseForensicOcrResponse",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+
+        object? result = method!.Invoke(null, [rawText, provider, selectedIdType, hasBackBytes, imagePairSha256]);
+        return Assert.IsType<GovIdForensicsResult>(result);
+    }
+
+    private sealed class StubClaudeMessagesClient(string responseRawText) : IClaudeMessagesClient
+    {
+        public bool IsConfigured => true;
+        public string PrimaryModel => "claude-sonnet-4-6";
+        public string FallbackModel => "claude-sonnet-5-5";
+        public IReadOnlyDictionary<string, object>? CapturedPayload { get; private set; }
+
+        public Task<ClaudeMessageAttemptResult> SendMessagesAsync(
+            IReadOnlyDictionary<string, object> payloadWithoutModel,
+            CancellationToken ct = default,
+            string? modelOverride = null)
+        {
+            CapturedPayload = payloadWithoutModel;
+            return Task.FromResult(new ClaudeMessageAttemptResult(
+                Success: true,
+                RawText: responseRawText,
+                ModelUsed: PrimaryModel,
+                ErrorCode: null,
+                ErrorMessage: null,
+                HttpStatusCode: 200,
+                UsedFallbackModel: false));
+        }
     }
 
     private sealed record StubRequestContext(string? Model, string Body, HttpRequestMessage Request);

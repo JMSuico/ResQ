@@ -316,9 +316,9 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
         stopStream(); // Single snapshot lock: kill stream
 
         if (blurry) {
-          setHint(`[BLURRY DETECTED] Score: ${variance} · Target: ${dynamicCheck.threshold}. Flagged for manual LDRRMO verification; GPS coordinates locked.`);
+          setHint(`Low clarity (${variance}) — flagged for review.`);
         } else {
-          setHint(`[VERIFIED CLEAR] Evidence locked (Score: ${variance} · Target: ${dynamicCheck.threshold}). Add optional details and dispatch to command.`);
+          setHint(`Photo clear (${variance}) — ready.`);
         }
       }
     } else {
@@ -379,12 +379,12 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
         <header className="camera__head">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ color: '#e8114c', fontWeight: 700, fontSize: '13px', letterSpacing: '0.5px' }}>
-              LIVE EMERGENCY REPORT
+              Emergency Report
             </span>
             {isBlurry && (
               <span className="inline-flex items-center gap-1" style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                <span>Requires Manual Verification (Target: {activeThreshold})</span>
+                <span>Low Clarity</span>
               </span>
             )}
           </div>
@@ -449,16 +449,16 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
         </div>
 
         <p className="camera__place flex items-center flex-wrap gap-1">
-          <span>Location: <strong>{currentBarangay}</strong> &middot; Lat: <code>{coords.latitude.toFixed(6)}</code>, Lng: <code>{coords.longitude.toFixed(6)}</code> (&plusmn;{Math.round(coords.accuracy)}m) &middot;</span>
+          <span><strong>{currentBarangay}</strong> &middot; <code>{coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}</code> &middot;</span>
           {isHardwareGeolocated ? (
             <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold">
               <Crosshair className="w-3.5 h-3.5" />
-              <span>Hardware GPS Locked</span>
+              <span>Hardware GPS</span>
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 text-slate-400">
               <Crosshair className="w-3.5 h-3.5 text-amber-400" />
-              <span>Ground Reference</span>
+              <span>Ground Ref</span>
             </span>
           )}
         </p>

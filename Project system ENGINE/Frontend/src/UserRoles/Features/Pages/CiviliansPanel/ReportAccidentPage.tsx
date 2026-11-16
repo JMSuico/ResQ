@@ -13,8 +13,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Camera,
-  Zap,
-  Clock
+  Zap
 } from 'lucide-react';
 import { createReport } from '@/Endpoints/reportsApi';
 import { Button } from '@/Shared/Button';
@@ -155,13 +154,9 @@ export const ReportAccidentPage: React.FC = () => {
       {/* 1. Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-rose-600/20 text-rose-400 text-xs font-mono font-bold border border-rose-600/40 mb-1.5">
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-            <span>MUNICIPAL INCIDENT INTAKE PROTOCOL</span>
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Report Road Incident / Emergency</h1>
+          <h1 className="text-2xl font-black text-white tracking-tight">Report Emergency</h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Direct emergency line to LDRRMO Command, RHU Medics, BFP Fire, and PNP Police
+            Direct report to LDRRMO, RHU, BFP, and PNP.
           </p>
         </div>
 
@@ -171,7 +166,7 @@ export const ReportAccidentPage: React.FC = () => {
           className="self-start sm:self-auto px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-mono transition-colors flex items-center gap-1.5"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Return to Hub</span>
+          <span>Back</span>
         </button>
       </div>
 
@@ -185,10 +180,7 @@ export const ReportAccidentPage: React.FC = () => {
           <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center font-bold text-[11px] flex-shrink-0">
             1
           </span>
-          <div className="flex flex-col truncate">
-            <span className="font-bold text-emerald-400 text-[10px] uppercase">STEP 1</span>
-            <span className="text-slate-200 text-xs truncate">GPS Telemetry</span>
-          </div>
+          <span className="text-slate-200 text-xs font-bold truncate">1. GPS Location</span>
         </button>
 
         <button
@@ -207,10 +199,7 @@ export const ReportAccidentPage: React.FC = () => {
           >
             {imageDataUrl ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : '2'}
           </span>
-          <div className="flex flex-col truncate">
-            <span className={`font-bold text-[10px] uppercase ${imageDataUrl ? 'text-emerald-400' : 'text-rose-400'}`}>STEP 2</span>
-            <span className="text-slate-200 text-xs truncate">{imageDataUrl ? 'Photo Locked' : 'Camera HUD'}</span>
-          </div>
+          <span className="text-slate-200 text-xs font-bold truncate">2. Live Photo</span>
         </button>
 
         <button
@@ -221,10 +210,7 @@ export const ReportAccidentPage: React.FC = () => {
           <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center justify-center font-bold text-[11px] flex-shrink-0">
             3
           </span>
-          <div className="flex flex-col truncate">
-            <span className="font-bold text-slate-400 text-[10px] uppercase">STEP 3</span>
-            <span className="text-slate-300 text-xs truncate">Classification</span>
-          </div>
+          <span className="text-slate-300 text-xs font-bold truncate">3. Details</span>
         </button>
       </div>
 
@@ -244,17 +230,17 @@ export const ReportAccidentPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className={`w-2.5 h-2.5 rounded-full ${isHardwareGeolocated ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
               <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
-                Step 1: Real-Time Hardware GPS Telemetry
+                1. GPS Location
               </h2>
             </div>
             <button
               type="button"
               onClick={handleForceResync}
               className="text-xs font-mono text-sky-400 hover:text-sky-300 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-950 border border-slate-800 hover:border-sky-500/40 transition-colors"
-              title="Force sensor resynchronization"
+              title="Resync GPS"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isResyncing ? 'animate-spin' : ''}`} />
-              <span>{isResyncing ? 'Resyncing...' : 'Force Resync'}</span>
+              <span>{isResyncing ? 'Resyncing...' : 'Resync'}</span>
             </button>
           </div>
 
@@ -293,31 +279,19 @@ export const ReportAccidentPage: React.FC = () => {
           </div>
         </div>
 
-        {/* STEP 2: CAMERA PREVIEW HUD FRAME & ANTI-SPOOFING INDICATOR */}
+        {/* STEP 2: LIVE PHOTO */}
         <div ref={stepCameraRef} className="tactical-card p-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col gap-4 shadow-lg">
           <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
               <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
-                Step 2: Live Camera HUD & Anti-Spoofing Evidence
+                2. Live Photo
               </h2>
             </div>
-            <span className="text-[10px] font-mono text-rose-400 bg-rose-950/60 px-2 py-0.5 rounded border border-rose-600/30">
-              NO GALLERY UPLOAD
+            <span className="text-xs text-slate-400 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
+              <span>Live camera only.</span>
             </span>
-          </div>
-
-          {/* Anti-Spoofing Protocol Directive Callout */}
-          <div className="p-3 rounded-xl bg-slate-950 border border-rose-900/40 flex items-start gap-3 text-xs">
-            <div className="w-7 h-7 rounded-lg bg-rose-950/80 border border-rose-600/40 flex items-center justify-center text-rose-400 font-bold flex-shrink-0 mt-0.5">
-              <ShieldCheck className="w-4 h-4 text-rose-400" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-bold text-white text-xs">Anti-Spoofing Hardware Policy Enforced</span>
-              <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                Pre-recorded gallery image uploads are prohibited to prevent false alerts. Only authentic live WebRTC camera frames with embedded coordinates watermark and Laplacian clarity scoring are accepted.
-              </p>
-            </div>
           </div>
 
           {/* Camera Viewfinder / Preview HUD Frame */}
@@ -361,8 +335,7 @@ export const ReportAccidentPage: React.FC = () => {
                     <div className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
                   </div>
                 </div>
-                <span className="text-xs font-mono font-bold text-slate-300">Live Camera Standby</span>
-                <span className="text-[10px] text-slate-500 mt-1">Tap button below to launch camera</span>
+                <span className="text-xs font-mono font-bold text-slate-300">Camera Ready</span>
               </div>
             )}
 
@@ -384,11 +357,8 @@ export const ReportAccidentPage: React.FC = () => {
                     className="w-full sm:w-auto min-h-[48px] px-5 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-lg shadow-rose-950/60 active:scale-[0.98] transition-all"
                   >
                     <Camera className="w-5 h-5 text-white animate-pulse" />
-                    <span>Activate Live Emergency Camera</span>
+                    <span>Open Camera</span>
                   </button>
-                  <p className="text-[11px] text-slate-400">
-                    Your camera stream will embed an indelible cryptographic GPS watermark into the image buffer.
-                  </p>
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
@@ -397,7 +367,7 @@ export const ReportAccidentPage: React.FC = () => {
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                       <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1.5">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Tamper-proof evidence snapshot locked</span>
+                        <span>Photo Attached</span>
                       </span>
                     </div>
 
@@ -414,11 +384,11 @@ export const ReportAccidentPage: React.FC = () => {
                   <p className="text-xs text-slate-300 leading-relaxed">
                     {captureMetadata?.isBlurry ? (
                       <span className="text-amber-300">
-                        Notice: Image flagged with low clarity score (variance {captureMetadata.varianceScore.toFixed(1)} &lt; threshold {captureMetadata.dynamicThreshold.toFixed(1)}). It will be marked for LDRRMO Manual Verification while dispatches proceed immediately.
+                        Low clarity ({captureMetadata.varianceScore.toFixed(1)}) — marked for manual review.
                       </span>
                     ) : (
                       <span className="text-emerald-300">
-                        Optimal optical clarity verified (score: {captureMetadata?.varianceScore.toFixed(1)}). Clear evidence ready for instant responder triage.
+                        Clarity verified ({captureMetadata?.varianceScore.toFixed(1)}).
                       </span>
                     )}
                   </p>
@@ -428,31 +398,27 @@ export const ReportAccidentPage: React.FC = () => {
           </div>
         </div>
 
-        {/* STEP 3: INCIDENT CLASSIFICATION & URGENCY DETAILS */}
+        {/* STEP 3: DETAILS */}
         <div ref={stepTriageRef} className="tactical-card p-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col gap-4 shadow-lg">
           <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
               <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
-                Step 3: Incident Classification & Triage
+                3. Details
               </h2>
             </div>
-            <span className="text-[10px] font-mono text-sky-400 bg-sky-950/60 px-2 py-0.5 rounded border border-sky-600/30">
-              DISPATCH ROUTING
-            </span>
           </div>
 
           {/* Headline */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-200 flex items-center justify-between">
-              <span>Incident Headline / Summary <span className="text-rose-500">*</span></span>
-              <span className="text-[11px] text-slate-500 font-normal">Brief summary for dispatcher HUD</span>
+            <label className="text-xs font-semibold text-slate-200">
+              Title <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Motorcycle collision along National Hwy, head trauma sustained"
+              placeholder="e.g. Motorcycle collision along National Hwy"
               required
               className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-sky-500"
             />
@@ -461,7 +427,7 @@ export const ReportAccidentPage: React.FC = () => {
           {/* Category & Severity Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-200">Incident Category</label>
+              <label className="text-xs font-semibold text-slate-200">Category</label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
@@ -472,66 +438,37 @@ export const ReportAccidentPage: React.FC = () => {
                 ))}
               </select>
 
-              {/* Dynamic Agency Routing Tag */}
               <div className="mt-1 p-2 rounded-lg bg-slate-950 border border-slate-800 text-[10px] font-mono">
                 <span className="text-slate-400">Routes to: </span>
                 <span className="text-sky-400 font-bold">{routingInfo.agencies.join(', ')}</span>
-                <p className="text-slate-500 text-[9px] mt-0.5">{routingInfo.desc}</p>
               </div>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-200">Perceived Severity Tier</label>
+              <label className="text-xs font-semibold text-slate-200">Severity</label>
               <select
                 value={severity}
                 onChange={(e) => setSeverity(e.target.value)}
                 className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-sky-500"
               >
-                <option value="Critical">[CRITICAL] Immediate Danger / Severe Trauma</option>
-                <option value="High">[HIGH] Injuries / Fire Hazard / Road Block</option>
-                <option value="Medium">[MEDIUM] Assistance Required / Stable</option>
-                <option value="Low">[LOW] Minor Collision / Advisory</option>
+                <option value="Critical">Critical — Immediate Danger</option>
+                <option value="High">High — Injuries / Hazard</option>
+                <option value="Medium">Medium — Assistance Needed</option>
+                <option value="Low">Low — Minor Incident</option>
               </select>
-
-              <div className="mt-1 p-2 rounded-lg bg-slate-950 border border-slate-800 text-[10px] font-mono text-slate-400">
-                {severity === 'Critical' && (
-                  <span className="text-rose-400 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>Triggers siren alert across municipal dispatch terminals</span>
-                  </span>
-                )}
-                {severity === 'High' && (
-                  <span className="text-orange-400 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>Dispatches field unit within 3 minutes</span>
-                  </span>
-                )}
-                {severity === 'Medium' && (
-                  <span className="text-amber-400 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>Queued for active response unit dispatch</span>
-                  </span>
-                )}
-                {severity === 'Low' && (
-                  <span className="text-emerald-400 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>Logged in community registry for monitoring</span>
-                  </span>
-                )}
-              </div>
             </div>
           </div>
 
           {/* Observations */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-slate-200">
-              Field Observations / Urgent Details <span className="text-slate-500">(Optional)</span>
+              Notes <span className="text-slate-500">(Optional)</span>
             </label>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={3}
-              placeholder="Describe injuries, persons trapped, fuel leakage, smoke, or traffic congestion..."
+              placeholder="Injuries, hazards, or traffic details..."
               className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-sky-500 leading-relaxed"
             />
           </div>
@@ -547,12 +484,8 @@ export const ReportAccidentPage: React.FC = () => {
             className="w-full !py-4 font-black uppercase tracking-wider text-sm shadow-xl shadow-rose-950/80 rounded-xl"
             icon={<Zap className="w-5 h-5" />}
           >
-            Review & Transmit Emergency Report
+            Submit Report
           </Button>
-
-          <p className="text-center text-[11px] font-mono text-slate-500">
-            Emergency reports are broadcast in real-time to LDRRMO Municipal Command and active units.
-          </p>
         </div>
       </form>
 
@@ -560,51 +493,41 @@ export const ReportAccidentPage: React.FC = () => {
       <DefaultFloatingModalCard
         isOpen={isConfirmModalOpen}
         onClose={() => setIsConfirmModalOpen(false)}
-        title="Confirm Emergency Transmission"
+        title="Confirm Report"
         size="md"
       >
         <div className="flex flex-col gap-4">
-          <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-600/50 text-xs text-rose-200">
-            <p className="font-bold text-sm text-white mb-1 flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-              <span>Broadcast to Command Center</span>
-            </p>
-            <p className="text-[11px] text-rose-300">
-              This report will immediately alert LDRRMO dispatchers and ping designated field apparatus. Verify details below before broadcasting.
-            </p>
-          </div>
-
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-2.5 text-xs font-mono">
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">HEADLINE:</span>
+              <span className="text-slate-500">Title</span>
               <span className="text-white font-bold truncate max-w-[240px]">{title}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">ROUTED TO:</span>
+              <span className="text-slate-500">Routing</span>
               <span className="text-sky-400 font-bold">{routingInfo.agencies.join(', ')}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">SEVERITY:</span>
-              <span className="text-rose-400 font-bold uppercase">{severity} TIER</span>
+              <span className="text-slate-500">Severity</span>
+              <span className="text-rose-400 font-bold uppercase">{severity}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">GPS TELEMETRY:</span>
+              <span className="text-slate-500">Location</span>
               <span className="text-emerald-400 font-bold">
                 {coords.latitude.toFixed(5)}° N, {coords.longitude.toFixed(5)}° E (±{Math.round(coords.accuracy)}m)
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">IMAGE EVIDENCE:</span>
+              <span className="text-slate-500">Photo</span>
               <span className={imageDataUrl ? 'text-emerald-400 font-bold flex items-center gap-1' : 'text-amber-400 font-bold flex items-center gap-1'}>
                 {imageDataUrl ? (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Live Camera Attached</span>
+                    <span>Attached</span>
                   </>
                 ) : (
                   <>
                     <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>No Photo Attached</span>
+                    <span>None</span>
                   </>
                 )}
               </span>
@@ -619,14 +542,14 @@ export const ReportAccidentPage: React.FC = () => {
               onClick={handleFinalSubmit}
               className="flex-1 !py-3 font-black uppercase tracking-wider text-xs shadow-lg shadow-rose-950/60"
             >
-              Confirm & Broadcast Now
+              Submit Report
             </Button>
             <Button
               variant="outline"
               size="md"
               onClick={() => setIsConfirmModalOpen(false)}
             >
-              Edit Details
+              Cancel
             </Button>
           </div>
         </div>

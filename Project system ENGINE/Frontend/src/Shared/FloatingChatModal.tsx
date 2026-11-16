@@ -4,15 +4,13 @@
 
 import React, { FC, useState, useEffect, useRef, useCallback } from 'react';
 import {
-  MessageSquare,
   Send,
   Shield,
   Activity,
   AlertTriangle,
   X,
   Clock,
-  Radio,
-  CheckCheck
+  Radio
 } from 'lucide-react';
 
 export interface ChatMessage {
@@ -130,11 +128,11 @@ export const FloatingChatModal: FC<FloatingChatModalProps> = ({
           </div>
           <div className="flex flex-col">
             <h3 className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
-              <span>{channelName}</span>
+              <span>Comms &middot; {unitCallsign}</span>
             </h3>
             <span className="text-[10px] text-slate-400 flex items-center gap-1">
               <Activity className="w-2.5 h-2.5 text-emerald-400" />
-              <span>LIVE HUD COMMS &bull; {unitCallsign}</span>
+              <span>{channelName}</span>
             </span>
           </div>
         </div>
@@ -152,7 +150,7 @@ export const FloatingChatModal: FC<FloatingChatModalProps> = ({
       {activeIncidentId && (
         <div className="px-3 py-1.5 bg-rose-950/40 border-b border-rose-900/40 text-[10px] text-rose-300 flex items-center gap-1.5">
           <AlertTriangle className="w-3 h-3 text-rose-400 flex-shrink-0" />
-          <span className="truncate">Active Incident Dispatched: #{activeIncidentId}</span>
+          <span className="truncate">Incident #{activeIncidentId}</span>
         </div>
       )}
 
@@ -217,7 +215,7 @@ export const FloatingChatModal: FC<FloatingChatModalProps> = ({
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="Type tactical message or dispatch update..."
+            placeholder="Type message..."
             className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-100 text-xs placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
           <button
@@ -238,12 +236,8 @@ export const FloatingChatModal: FC<FloatingChatModalProps> = ({
               onChange={(e) => setIsPriority(e.target.checked)}
               className="w-3.5 h-3.5 rounded border-slate-700 text-rose-600 bg-slate-900 focus:ring-rose-500"
             />
-            <span className={isPriority ? 'text-rose-400 font-bold' : ''}>Flag Priority Code 3</span>
+            <span className={isPriority ? 'text-rose-400 font-bold' : ''}>Priority Flag</span>
           </label>
-          <span className="flex items-center gap-1 text-slate-500">
-            <CheckCheck className="w-3 h-3 text-sky-500" />
-            <span>Encrypted AES-256</span>
-          </span>
         </div>
       </form>
     </div>

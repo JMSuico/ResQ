@@ -573,42 +573,42 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           icon: Send,
           badgeClass: 'bg-sky-950/90 text-sky-300 border-sky-500/60',
           iconWrapClass: 'bg-sky-950/80 border-sky-500/50 text-sky-400',
-          routeLabel: 'OPEN REQUEST & DEPLOY'
+          routeLabel: 'Request & Deploy'
         };
       case 'ADMIN REQUEST YOU TO DEPLOY':
         return {
           icon: Radio,
           badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-500/70 animate-pulse',
           iconWrapClass: 'bg-rose-950/80 border-rose-500/60 text-rose-400',
-          routeLabel: 'DEPLOY ORDER -> REQUEST & DEPLOY'
+          routeLabel: 'Deploy Order'
         };
       case 'INCIDENT HAPPENS ON':
         return {
           icon: AlertTriangle,
           badgeClass: 'bg-amber-950/90 text-amber-300 border-amber-500/60',
           iconWrapClass: 'bg-amber-950/80 border-amber-500/50 text-amber-400',
-          routeLabel: 'OPEN CASUALTY DISPATCHES'
+          routeLabel: 'Dispatches'
         };
       case 'SUBMITTED INCIDENT LOGS':
         return {
           icon: FileText,
           badgeClass: 'bg-indigo-950/90 text-indigo-300 border-indigo-500/60',
           iconWrapClass: 'bg-indigo-950/80 border-indigo-500/50 text-indigo-400',
-          routeLabel: 'OPEN INCIDENT LOGS'
+          routeLabel: 'Incident Logs'
         };
       case 'VERIFIED SUBMITTED INCIDENT LOGS':
         return {
           icon: ShieldCheck,
           badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-500/60',
           iconWrapClass: 'bg-rose-950/80 border-rose-500/50 text-[#ff5c74]',
-          routeLabel: 'VIEW 5-MIN VERIFIED TIMER'
+          routeLabel: 'Verified Timer'
         };
       case 'CLOSE CASE':
         return {
           icon: CheckCircle2,
           badgeClass: 'bg-rose-950/90 text-rose-200 border-rose-500/60',
           iconWrapClass: 'bg-rose-950/80 border-rose-500/50 text-[#ff5c74]',
-          routeLabel: 'VIEW CLOSED CASE LOG'
+          routeLabel: 'Closed Case'
         };
     }
   };
@@ -670,7 +670,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
             <span className="brandbar__mark">
               Res<span className="brandbar__accent">Qtrack</span>
             </span>
-            <span className="brandbar__sub">Katipunan Emergency Response</span>
+            <span className="brandbar__sub">Katipunan Dispatch</span>
           </div>
         ) : (
           <div className="flex items-center justify-center w-full">
@@ -688,10 +688,10 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           id="search"
           type="search"
           name="q"
-          placeholder="Search coordinates, incident ID, or responder..."
+          placeholder="Search incidents..."
           autoComplete="off"
           spellCheck={false}
-          aria-label="Search coordinates, incident ID, or responder"
+          aria-label="Search incidents"
         />
       </form>
 
@@ -701,8 +701,8 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
             className="iconbtn relative flex items-center justify-center p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all"
             type="button"
             id="btn-alerts"
-            title="Hospital ER Alarms & Tactical Notifications"
-            aria-label={`Notifications and Hospital ER Alarms (${unreadCount} unread)`}
+            title="Notifications"
+            aria-label={`Notifications (${unreadCount} unread)`}
             aria-haspopup="true"
             aria-expanded={isAlertsOpen}
             aria-controls="alerts-panel"
@@ -719,7 +719,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
             )}
           </button>
 
-          {/* Consolidated Hospital ER Alarms & 6-Category Responder Notification Bell Popover */}
+          {/* Notification Bell Popover */}
           {isAlertsOpen && typeof document !== 'undefined' && createPortal(
             <>
               <div
@@ -732,7 +732,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                   isMobile ? 'inset-x-2 w-auto' : 'w-[400px] sm:w-[480px] md:w-[540px]'
                 } max-w-[calc(100vw-1rem)] max-h-[85vh] border border-slate-700/90 shadow-2xl rounded-2xl bg-slate-950/98 backdrop-blur-xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150`}
                 id="alerts-panel"
-                aria-label="Hospital ER Alarms and Tactical Notifications"
+                aria-label="Notifications"
                 role="region"
                 onClick={(e: React.MouseEvent<HTMLElement>) => e.stopPropagation()}
               >
@@ -742,16 +742,16 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping flex-shrink-0" />
                     <Bell className="w-4 h-4 text-sky-400 flex-shrink-0" aria-hidden="true" />
-                    <h2 className="text-xs font-black font-mono tracking-wider text-white uppercase truncate">
-                      HOSPITAL ER ALARMS &amp; DISPATCH NOTIFICATIONS
+                    <h2 className="text-xs font-black font-mono tracking-wider text-white truncate">
+                      Notifications
                     </h2>
                     {unreadCount > 0 ? (
                       <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-rose-600/30 text-rose-300 border border-rose-500/50 rounded flex-shrink-0">
-                        {unreadCount} NEW
+                        {unreadCount} New
                       </span>
                     ) : (
                       <span className="text-[10px] font-mono text-rose-300 flex-shrink-0">
-                        ALL CLEAR
+                        All Clear
                       </span>
                     )}
                   </div>
@@ -779,7 +779,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                       }`}
                     >
                       {sirenMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-                      <span>{sirenMuted ? 'ER SIREN MUTED' : 'ER SIREN ACTIVE'}</span>
+                      <span>{sirenMuted ? 'Siren Muted' : 'Siren Active'}</span>
                     </button>
 
                     <button
@@ -790,7 +790,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                       }}
                       className="px-2 py-1 rounded text-[10px] font-mono font-bold bg-slate-950 text-sky-400 border border-slate-800 hover:border-sky-500/50 transition-colors"
                     >
-                      RADAR BOARD
+                      Radar
                     </button>
                   </div>
 
@@ -802,7 +802,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                       title="Mark all notifications as read"
                     >
                       <CheckCheck className="w-3 h-3" />
-                      <span>MARK ALL READ</span>
+                      <span>Mark All Read</span>
                     </button>
 
                     <button
@@ -812,12 +812,12 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                       title="Clear read notifications"
                     >
                       <Trash2 className="w-3 h-3" />
-                      <span>CLEAR READ</span>
+                      <span>Clear Read</span>
                     </button>
                   </div>
                 </div>
 
-                {/* Category Filter Pills (All + Unread + 6 User-Requested Notification Categories) */}
+                {/* Category Filter Pills */}
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
                   <button
                     type="button"
@@ -828,7 +828,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                         : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    ALL ({notifications.length})
+                    All ({notifications.length})
                   </button>
 
                   <button
@@ -840,7 +840,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                         : 'bg-slate-950 text-amber-300 border-amber-900/60 hover:border-amber-700'
                     }`}
                   >
-                    UNREAD ({unreadCount})
+                    Unread ({unreadCount})
                   </button>
 
                   {NOTIFICATION_CATEGORIES.map((category) => {
@@ -870,10 +870,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                   <li className="p-8 text-center text-slate-400 flex flex-col items-center justify-center gap-1.5">
                     <Bell className="w-7 h-7 text-slate-600" />
                     <p className="text-xs font-mono font-bold text-slate-300">
-                      NO NOTIFICATIONS IN [{activeFilter}]
-                    </p>
-                    <p className="text-[11px] font-mono text-slate-500">
-                      Hospital ER alarms and responder dispatch channels are actively monitored.
+                      No notifications
                     </p>
                   </li>
                 ) : (
@@ -945,12 +942,12 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                                 className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/50 text-[10px] font-mono font-bold inline-flex items-center gap-1"
                               >
                                 <Check className="w-3 h-3 text-[#ff5c74]" />
-                                <span>ACK READ</span>
+                                <span>Acknowledge</span>
                               </button>
                             ) : (
                               <span className="text-[10px] font-mono text-slate-500 inline-flex items-center gap-1">
                                 <Check className="w-3 h-3 text-rose-400" />
-                                <span>ACKNOWLEDGED</span>
+                                <span>Acknowledged</span>
                               </span>
                             )}
                           </div>

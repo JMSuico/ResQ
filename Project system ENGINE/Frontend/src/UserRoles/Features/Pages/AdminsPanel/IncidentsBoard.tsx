@@ -3,9 +3,9 @@
 // DO NOT allow non-super-admins to allocate agency duty units.
 
 import React, { useState, useEffect } from 'react';
-import { getAllReports } from '@/Endpoints/reportsApi';
+import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
 import { verifyReport, allocateReportUnit } from '@/Endpoints/adminGovernanceApi';
-import { getDutyRoster } from '@/Endpoints/responderOpsApi';
+import { getDutyRoster, DutyUnit } from '@/Endpoints/responderOpsApi';
 import { Button } from '@/Shared/Button';
 import { SearchBar } from '@/Shared/FormPrimitives';
 import { DefaultFloatingModalCard } from '@/Shared/DefaultFloatingModalCard';
@@ -14,14 +14,14 @@ import { formatIsoTimestamp, formatGpsCoord } from '@/Libs/Assets/formatters';
 import { SEVERITY_COLORS, STATUS_COLORS } from '@/Libs/Assets/data';
 
 export const IncidentsBoard: React.FC = () => {
-  const [reports, setReports] = useState<any[]>([]);
-  const [dutyUnits, setDutyUnits] = useState<any[]>([]);
+  const [reports, setReports] = useState<ReportItem[]>([]);
+  const [dutyUnits, setDutyUnits] = useState<DutyUnit[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [selectedSeverity, setSelectedSeverity] = useState('ALL');
 
   // Allocation Modal State
-  const [allocatingReport, setAllocatingReport] = useState<any | null>(null);
+  const [allocatingReport, setAllocatingReport] = useState<ReportItem | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string>('');
 
   // Lightbox State
@@ -76,8 +76,8 @@ export const IncidentsBoard: React.FC = () => {
       {/* Header & Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-white">Live Incidents Command Board</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Triage verification and tactical multi-agency unit dispatch</p>
+          <h2 className="text-xl font-bold text-white">Incidents Board</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Triage and dispatch</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -171,10 +171,10 @@ export const IncidentsBoard: React.FC = () => {
                       <td className="p-3.5">
                         {r.hasImage ? (
                           <button
-                            onClick={() => setLightboxImageUrl(r.imageUrl)}
+                            onClick={() => setLightboxImageUrl(r.imageUrl ?? null)}
                             className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-mono border border-slate-700"
                           >
-                            📷 View PNG
+                            View PNG
                           </button>
                         ) : (
                           <span className="text-slate-600 text-[10px]">No photo</span>

@@ -436,16 +436,45 @@ public class AuthService(
     private const int MaxFailedLoginAttempts = 5;
     private static readonly TimeSpan LockoutWindow = TimeSpan.FromMinutes(15);
 
-    private async Task<bool> IsAccountLockedOutAsync(string email, CancellationToken ct)
+    private async Task<string?> GetLockoutErrorMessageAsync(string email, CancellationToken ct)
     {
-        if (db == null || string.IsNullOrWhiteSpace(email)) return false;
+        if (db == null || string.IsNullOrWhiteSpace(email))
+            return null;
+
         string normalized = email.Trim().ToLowerInvariant();
-        DateTime cutoff = DateTime.UtcNow - LockoutWindow;
-        int recentFailures = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.CountAsync(
-            db.LoginAttempts,
-            a => a.AccountIdentifier == normalized && !a.Success && a.AttemptedAtUtc >= cutoff,
-            ct);
-        return recentFailures >= MaxFailedLoginAttempts;
+        DateTime windowStart = DateTime.UtcNow - LockoutWindow;
+
+        DateTime? lastSuccessUtc = await db.LoginAttempts
+            .Where(a => a.AccountIdentifier == normalized && a.Success)
+            .OrderByDescending(a => a.AttemptedAtUtc)
+            .Select(a => (DateTime?)a.AttemptedAtUtc)
+            .FirstOrDefaultAsync(ct);
+
+        IQueryable<LoginAttempt> failureQuery = db.LoginAttempts
+            .Where(a => a.AccountIdentifier == normalized && !a.Success);
+
+        if (lastSuccessUtc.HasValue && lastSuccessUtc.Value >= windowStart)
+        {
+            DateTime successUtc = lastSuccessUtc.Value;
+            failureQuery = failureQuery.Where(a => a.AttemptedAtUtc > successUtc);
+        }
+        else
+        {
+            failureQuery = failureQuery.Where(a => a.AttemptedAtUtc >= windowStart);
+        }
+
+        List<DateTime> recentFailureTimes = await failureQuery
+            .OrderBy(a => a.AttemptedAtUtc)
+            .Select(a => a.AttemptedAtUtc)
+            .ToListAsync(ct);
+
+        if (recentFailureTimes.Count < MaxFailedLoginAttempts)
+            return null;
+
+        DateTime oldestBlockingFailureUtc = recentFailureTimes[^MaxFailedLoginAttempts];
+        DateTime unlockUtc = oldestBlockingFailureUtc + LockoutWindow;
+        int remainingMinutes = Math.Clamp((int)Math.Ceiling((unlockUtc - DateTime.UtcNow).TotalMinutes), 1, (int)LockoutWindow.TotalMinutes);
+        return $"Account temporarily locked due to repeated failed sign-in attempts. Please wait {remainingMinutes} {(remainingMinutes == 1 ? "minute" : "minutes")}.";
     }
 
     private async Task RecordLoginAttemptAsync(string email, string attemptType, string ipAddress, string userAgent, bool success, string? failureReason, CancellationToken ct)
@@ -476,8 +505,8 @@ public class AuthService(
             return (false, "Invalid credentials. Email address is the sole login identifier; display name cannot be used to sign in.", null, null);
         }
 
-        if (await IsAccountLockedOutAsync(normalizedEmail, ct))
-            return (false, "Account temporarily locked due to repeated failed sign-in attempts. Please wait 15 minutes.", null, null);
+        if (await GetLockoutErrorMessageAsync(normalizedEmail, ct) is string lockoutError)
+            return (false, lockoutError, null, null);
 
         var user = await userRepo.GetByEmailAsync(normalizedEmail, ct);
         if (user == null)
@@ -608,8 +637,8 @@ public class AuthService(
             if (!normalizedEmail.Contains('@'))
                 return (false, "Invalid credentials. Email address is the sole login identifier.", null, null);
 
-            if (await IsAccountLockedOutAsync(normalizedEmail, ct))
-                return (false, "Account temporarily locked due to repeated failed sign-in attempts. Please wait 15 minutes.", null, null);
+            if (await GetLockoutErrorMessageAsync(normalizedEmail, ct) is string lockoutError)
+                return (false, lockoutError, null, null);
 
             user = await userRepo.GetByEmailAsync(normalizedEmail, ct);
             if (user == null)

@@ -184,8 +184,7 @@ export const LoginPage: FC = () => {
         {/* ResQTrack Brand Header with Decorative Crimson Accent Bar */}
         <header className="brand">
           <h1 className="brand__mark">RESQTRACK</h1>
-          <p className="brand__lead">Smart Emergency Response</p>
-          <p className="brand__sub">System with Image Processing and Real-Time Tracking</p>
+          <p className="brand__lead">Emergency Portal</p>
           <div className="brand__bar" aria-hidden="true" />
         </header>
 
@@ -229,22 +228,12 @@ export const LoginPage: FC = () => {
           <h2 className="visually-hidden" id="panel-title">Sign In</h2>
 
           <form className="panel__body" id="login-form" onSubmit={handleSubmit} noValidate>
-            {/* Live Telemetry HUD Status Row */}
-            <div className="flex items-center justify-between font-mono text-[9.5px] tracking-wider text-rose-300/80 border-b border-rose-500/20 pb-2 mb-3">
-              <span className="flex items-center gap-1.5 font-bold">
-                <span className="inline-block w-2 h-2 rounded-full bg-[#ff5c74] animate-pulse shadow-[0_0_8px_#e8114c]" />
-                AUTH ENGINE // SYS.ONLINE
-              </span>
-              <span className="text-slate-400 tracking-widest hidden sm:inline">GATEWAY // 256-BIT</span>
-            </div>
-
             {/* Email Address Field */}
             <div className={`field ${emailError ? 'is-invalid' : ''}`} style={{ marginTop: '8px' }}>
               <div className="flex items-center justify-between mb-1">
                 <label className="font-mono text-[10.5px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="email">
-                  Email Address
+                  Email *
                 </label>
-                <span className="font-mono text-[9px] text-rose-400/90 tracking-widest">[AUTH.IDENTIFIER]</span>
               </div>
               <div
                 className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -285,18 +274,15 @@ export const LoginPage: FC = () => {
             {/* Password Field */}
             <div className={`field field--password ${passwordError ? 'is-invalid' : ''}`} style={{ marginTop: '10px' }}>
               <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <label className="font-mono text-[10.5px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="password">
-                    Clearance Key
-                  </label>
-                  <span className="font-mono text-[9px] text-rose-400/90 tracking-widest">[ARGON2.KEY]</span>
-                </div>
+                <label className="font-mono text-[10.5px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="password">
+                  Password *
+                </label>
                 <a
                   className="link link--quiet font-mono text-[10px] text-rose-400 hover:text-rose-300 font-semibold transition-colors"
                   href="#"
                   onClick={handleForgotPassword}
                 >
-                  Forgot key?
+                  Forgot password?
                 </a>
               </div>
               <div
@@ -363,7 +349,7 @@ export const LoginPage: FC = () => {
                 }}
                 label={
                   <span className="text-[11px] text-slate-300 font-medium select-none">
-                    Confirm operational access terms
+                    Accept access terms
                   </span>
                 }
               />
@@ -409,7 +395,7 @@ export const LoginPage: FC = () => {
                 }
                 className="!h-[46px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-black !tracking-widest !uppercase !shadow-lg !shadow-[#e8114c]/40 active:!scale-[0.99] transition-all rounded-lg group cursor-pointer border border-[#ff5c74]/50"
               >
-                {isLoading ? 'Authenticating...' : isSuccess ? 'Access Granted' : 'AUTHENTICATE & ENTER'}
+                {isLoading ? 'Signing in...' : isSuccess ? 'Access Granted' : 'Sign In'}
               </Button>
 
               <button
@@ -419,7 +405,7 @@ export const LoginPage: FC = () => {
                 className="w-full !h-[42px] rounded-lg border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-[0_0_12px_rgba(232,17,76,0.15)] hover:border-rose-400"
               >
                 <Camera className="w-4 h-4 text-[#ff5c74]" />
-                <span>Sign In with Facial Biometrics</span>
+                <span>Biometric Face Login</span>
               </button>
             </div>
 

@@ -10,6 +10,7 @@ import {
   Shield,
   Award,
   AlertTriangle,
+  Check,
   Phone,
   Stethoscope,
   Flame,
@@ -267,25 +268,25 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
   };
 
   const tabs = [
-    { key: 'info', step: '01', label: 'Identity & Vitals', icon: User },
-    { key: 'address', step: '02', label: 'Residence Sector', icon: MapPin },
-    { key: 'role', step: '03', label: 'Governance & Role', icon: Shield },
-    { key: 'credentials', step: '04', label: 'Emergency Badges', icon: Award },
+    { key: 'info', label: 'Profile', icon: User },
+    { key: 'address', label: 'Address', icon: MapPin },
+    { key: 'role', label: 'Role', icon: Shield },
+    { key: 'credentials', label: 'Credentials', icon: Award },
   ] as const;
 
   return (
     <DefaultFloatingModalCard
       isOpen={isOpen}
       onClose={onClose}
-      title={`Modify Profile: ${user?.fullName || ''}`}
-      subtitle="Update station assignment, Philippine credentials, authorization status, and contact telemetry"
+      title={`Edit User: ${user?.fullName || ''}`}
+      subtitle="Update profile, role, and credentials"
       maxWidth="2xl"
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-xs text-slate-200">
         {isLoading && (
           <div className="p-10 text-center text-slate-400 space-y-2">
             <div className="w-7 h-7 border-2 border-sky-400 border-t-transparent rounded-full animate-spin mx-auto" />
-            <div className="font-mono text-xs">Retrieving authoritative database record…</div>
+            <div className="font-mono text-xs">Loading user details…</div>
           </div>
         )}
 
@@ -340,7 +341,6 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                         : 'text-slate-400 hover:text-slate-200 hover:bg-[#0e243a]/80'
                     }`}
                   >
-                    <span className="text-[10px] text-slate-500 font-bold">{tab.step}</span>
                     <TabIcon className="w-3.5 h-3.5" />
                     <span>{tab.label}</span>
                   </button>
@@ -882,10 +882,13 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
             {isSubmitting ? (
               <>
                 <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Committing Changes…
+                Saving…
               </>
             ) : (
-              <>✓ Commit Changes</>
+              <>
+                <Check className="w-3.5 h-3.5" />
+                Save Changes
+              </>
             )}
           </button>
         </div>

@@ -278,15 +278,9 @@ export const ResponderProfile: React.FC = () => {
         </div>
       )}
 
-      {/* Page Header: PROFILE SETTINGS */}
+      {/* Page Header: Profile Settings */}
       <div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse" />
-          <span className="text-xs font-mono font-bold text-sky-400">RHU EMERGENCY MEDICAL SERVICES</span>
-          <span className="text-slate-600 font-mono">|</span>
-          <span className="text-xs font-mono text-slate-400">OFFICER IDENTIFICATION &amp; RADAR HUD PREFERENCES</span>
-        </div>
-        <h1 className="text-2xl font-black text-white tracking-tight uppercase">PROFILE SETTINGS</h1>
+        <h1 className="text-2xl font-black text-white tracking-tight">Profile Settings</h1>
       </div>
 
       {/* Responder Credentials & Apparatus Config Card */}
@@ -311,7 +305,7 @@ export const ResponderProfile: React.FC = () => {
               title="Upload Officer Photo"
             >
               <Camera className="w-5 h-5 mb-0.5 text-sky-400" />
-              <span>PHOTO</span>
+              <span>Photo</span>
               <input
                 type="file"
                 accept="image/*"
@@ -327,7 +321,7 @@ export const ResponderProfile: React.FC = () => {
               {session?.faceVerified && (
                 <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-mono font-bold inline-flex items-center gap-1">
                   <Shield className="w-3 h-3" />
-                  <span>BIOMETRICALLY VERIFIED</span>
+                  <span>Verified</span>
                 </span>
               )}
             </div>
@@ -360,22 +354,22 @@ export const ResponderProfile: React.FC = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
           <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
-            <span className="text-slate-500 block text-[10px]">OPERATIONAL ROLE</span>
+            <span className="text-slate-500 block text-[10px]">Role</span>
             <span className="text-white font-bold">{session?.role || 'Responder'}</span>
           </div>
 
           <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
-            <span className="text-slate-500 block text-[10px]">ASSIGNED UNIT AGENCY</span>
+            <span className="text-slate-500 block text-[10px]">Unit Agency</span>
             <span className="text-sky-400 font-bold">{session?.unit || 'RHU'}</span>
           </div>
 
           <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
-            <span className="text-slate-500 block text-[10px]">BADGE / EMPLOYEE ID</span>
+            <span className="text-slate-500 block text-[10px]">Employee ID</span>
             <span className="text-white font-bold">{session?.employeeOrResidentId || 'RES-RHU-019'}</span>
           </div>
 
           <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
-            <span className="text-slate-500 block text-[10px]">RANK / TITLE</span>
+            <span className="text-slate-500 block text-[10px]">Rank / Title</span>
             <span className="text-white font-bold">{session?.rankOrTitle || 'EMS Trauma Medic'}</span>
           </div>
         </div>
@@ -383,21 +377,21 @@ export const ResponderProfile: React.FC = () => {
         {/* Tactical Field Apparatus & Radio Config */}
         <form onSubmit={handleSave} className="flex flex-col gap-4 pt-4 border-t border-slate-800 text-xs font-mono">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-slate-300 tracking-wider flex items-center gap-1.5">
               <Radio className="w-3.5 h-3.5 text-sky-400" />
-              <span>FIELD APPARATUS &amp; RADIO TELEMETRY CONFIG</span>
+              <span>Unit &amp; Radio Settings</span>
             </span>
             {isSaved && (
               <span className="text-emerald-400 font-bold inline-flex items-center gap-1">
                 <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span>SETTINGS PERSISTED</span>
+                <span>Saved</span>
               </span>
             )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-slate-400 text-[10px] uppercase">Assigned Radio Frequency</label>
+              <label className="text-slate-400 text-[10px]">Radio Frequency</label>
               <input
                 type="text"
                 value={radioFreq}
@@ -408,7 +402,7 @@ export const ResponderProfile: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-slate-400 text-[10px] uppercase">Apparatus Plate / Call Sign</label>
+              <label className="text-slate-400 text-[10px]">Unit Call Sign</label>
               <input
                 type="text"
                 value={apparatusPlate}
@@ -419,7 +413,7 @@ export const ResponderProfile: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-slate-400 text-[10px] uppercase">Duty Cellular Hotline</label>
+              <label className="text-slate-400 text-[10px]">Duty Phone</label>
               <input
                 type="text"
                 value={emergencyPhone}
@@ -432,38 +426,35 @@ export const ResponderProfile: React.FC = () => {
 
           <div className="flex justify-end pt-2">
             <Button type="submit" variant="primary" size="sm" className="font-bold">
-              Save Apparatus Settings
+              Save Settings
             </Button>
           </div>
         </form>
       </div>
 
-      {/* Satellite Radar UI Pointer Visibility Settings Card */}
+      {/* Map Pin Visibility Settings Card */}
       <div className="tactical-card p-6 flex flex-col gap-5 bg-slate-900/90 border border-slate-800 rounded-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-800">
           <div>
             <div className="flex items-center gap-2">
               <Radar className="w-4 h-4 text-sky-400" />
-              <h2 className="text-sm font-black font-mono uppercase tracking-wider text-white">
-                SATELLITE RADAR UI POINTER VISIBILITY SETTINGS
+              <h2 className="text-sm font-black font-mono tracking-wider text-white">
+                Map Pin Visibility
               </h2>
             </div>
             <p className="text-xs font-mono text-slate-400 mt-1">
-              Configure how non-medic incident pointers (BFP Fire / PNP Police) render on the EMS Trauma Board radar map
+              Control how non-medic pins render on the incident map.
             </p>
           </div>
-          <span className="px-2.5 py-1 rounded-full bg-sky-950/80 border border-sky-500/40 text-[10px] font-mono font-bold text-sky-300 self-start sm:self-center">
-            REAL-TIME RADAR SYNC
-          </span>
         </div>
 
-        {/* Setting 1 — Non-Medic Pointer Pale Color Indication */}
+        {/* Setting 1 — Dim Non-Medic Pins */}
         <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Palette className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-              <span className="text-xs font-mono font-bold text-white uppercase tracking-wide">
-                Setting 1 — Non-Medic Pointer Pale Color Indication
+              <span className="text-xs font-mono font-bold text-white tracking-wide">
+                Dim Non-Medic Pins
               </span>
             </div>
             <span
@@ -473,11 +464,11 @@ export const ResponderProfile: React.FC = () => {
                   : 'bg-slate-900 text-slate-400 border-slate-700'
               }`}
             >
-              {paleNonMedicEnabled ? 'ENABLED (PALE COLOR)' : 'DISABLED (NORMAL COLOR)'}
+              {paleNonMedicEnabled ? 'Enabled' : 'Disabled'}
             </span>
           </div>
           <p className="text-[11px] font-mono text-slate-400">
-            Controls whether non-medic pointers on the EMS TRAUMA BOARD radar map are rendered in pale desaturated color so RHU Medic priorities stand out clearly.
+            Desaturate non-medic pins so medical priorities stand out.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
@@ -486,7 +477,7 @@ export const ResponderProfile: React.FC = () => {
                 syncPointerSettings(
                   true,
                   hideNonMedicWhenSorted,
-                  'Radar Pointer Setting Updated: Non-Medic Pale Color ENABLED'
+                  'Non-medic pin dimming enabled'
                 )
               }
               className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
@@ -503,11 +494,11 @@ export const ResponderProfile: React.FC = () => {
                   syncPointerSettings(
                     true,
                     hideNonMedicWhenSorted,
-                    'Radar Pointer Setting Updated: Non-Medic Pale Color ENABLED'
+                    'Non-medic pin dimming enabled'
                   )
                 }
-                label="ENABLED (PALE COLOR)"
-                description="Render non-medic incident markers in desaturated pale tone on EMS Trauma Board"
+                label="Dimmed"
+                description="Desaturate non-medic pins on the map"
               />
             </div>
 
@@ -516,7 +507,7 @@ export const ResponderProfile: React.FC = () => {
                 syncPointerSettings(
                   false,
                   hideNonMedicWhenSorted,
-                  'Radar Pointer Setting Updated: Non-Medic Pale Color DISABLED (Normal Color)'
+                  'Non-medic pin dimming disabled'
                 )
               }
               className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
@@ -533,23 +524,23 @@ export const ResponderProfile: React.FC = () => {
                   syncPointerSettings(
                     false,
                     hideNonMedicWhenSorted,
-                    'Radar Pointer Setting Updated: Non-Medic Pale Color DISABLED (Normal Color)'
+                    'Non-medic pin dimming disabled'
                   )
                 }
-                label="DISABLED (NORMAL COLOR)"
-                description="Render all agency incident markers in full standard saturation"
+                label="Standard"
+                description="Show all pins in full color"
               />
             </div>
           </div>
         </div>
 
-        {/* Setting 2 — Non-Medic Pointer Visibility When Sorted */}
+        {/* Setting 2 — Non-Medic Visibility When Filtered */}
         <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Eye className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span className="text-xs font-mono font-bold text-white uppercase tracking-wide">
-                Setting 2 — Non-Medic Pointer Visibility When Sorted
+              <span className="text-xs font-mono font-bold text-white tracking-wide">
+                Non-Medic Visibility
               </span>
             </div>
             <span
@@ -559,13 +550,11 @@ export const ResponderProfile: React.FC = () => {
                   : 'bg-rose-950 text-rose-300 border-rose-600'
               }`}
             >
-              {!hideNonMedicWhenSorted
-                ? 'SHOW PALE NON-MEDIC POINTERS'
-                : 'MAKE DIRECTLY NOT VISIBLE (HIDE NON-MEDIC POINTERS)'}
+              {!hideNonMedicWhenSorted ? 'Show Dimmed' : 'Hidden'}
             </span>
           </div>
           <p className="text-[11px] font-mono text-slate-400">
-            Controls whether non-assigned pointers for medics remain visible in pale mode or are completely hidden on the radar map when sorted.
+            Keep non-medic pins dimmed or hide them completely when sorted.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
@@ -574,7 +563,7 @@ export const ResponderProfile: React.FC = () => {
                 syncPointerSettings(
                   paleNonMedicEnabled,
                   false,
-                  'Radar Pointer Visibility: SHOW PALE NON-MEDIC POINTERS'
+                  'Showing dimmed non-medic pins'
                 )
               }
               className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
@@ -591,11 +580,11 @@ export const ResponderProfile: React.FC = () => {
                   syncPointerSettings(
                     paleNonMedicEnabled,
                     false,
-                    'Radar Pointer Visibility: SHOW PALE NON-MEDIC POINTERS'
+                    'Showing dimmed non-medic pins'
                   )
                 }
-                label="SHOW PALE NON-MEDIC POINTERS"
-                description="Keep non-medic pointers visible on radar with pale styling for peripheral situational awareness"
+                label="Show Dimmed"
+                description="Keep non-medic pins visible in pale styling"
               />
             </div>
 
@@ -604,7 +593,7 @@ export const ResponderProfile: React.FC = () => {
                 syncPointerSettings(
                   paleNonMedicEnabled,
                   true,
-                  'Radar Pointer Visibility: MAKE DIRECTLY NOT VISIBLE (HIDE NON-MEDIC POINTERS)'
+                  'Hiding non-medic pins'
                 )
               }
               className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
@@ -621,11 +610,11 @@ export const ResponderProfile: React.FC = () => {
                   syncPointerSettings(
                     paleNonMedicEnabled,
                     true,
-                    'Radar Pointer Visibility: MAKE DIRECTLY NOT VISIBLE (HIDE NON-MEDIC POINTERS)'
+                    'Hiding non-medic pins'
                   )
                 }
-                label="MAKE DIRECTLY NOT VISIBLE (HIDE NON-MEDIC POINTERS)"
-                description="Completely hide non-assigned pointers on the EMS Trauma Board radar map"
+                label="Hide Non-Medic Pins"
+                description="Hide non-assigned pins on the map"
               />
             </div>
           </div>

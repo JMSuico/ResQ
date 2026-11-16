@@ -14,6 +14,7 @@ using Backend.Features.Data;
 using Backend.Features.Data.Enums;
 using Backend.Features.Data.Models;
 using Backend.Features.Helpers.Infrastructure;
+using Backend.Features.Repositories.Implementations;
 using Backend.Features.Services.Implementations;
 using Backend.Features.Services.Interfaces;
 using Backend.Features.Services.Verification;
@@ -98,8 +99,8 @@ public class FastOcrAndHybridBiometricTests
             JsonElement root = doc.RootElement;
 
             int maxTokens = root.GetProperty("max_tokens").GetInt32();
-            Assert.InRange(maxTokens, 1, 640);
-            Assert.True(maxTokens < 1280, $"Expected compact max_tokens < 1280, actual: {maxTokens}");
+            Assert.InRange(maxTokens, 768, 1280);
+            Assert.True(maxTokens <= 1280, $"Expected compact max_tokens <= 1280, actual: {maxTokens}");
 
             Assert.True(root.TryGetProperty("system", out JsonElement systemProp));
             Assert.Equal(JsonValueKind.Array, systemProp.ValueKind);
@@ -124,8 +125,13 @@ public class FastOcrAndHybridBiometricTests
                 }
             }
 
+            string systemPromptText = systemTexts.ToString();
             Assert.True(hasEphemeralCacheControl, "Expected at least one system prompt block with cache_control.type == 'ephemeral'.");
-            Assert.DoesNotContain("\"RawText\": <verbatim", systemTexts.ToString(), StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("\"RawText\": <verbatim", systemPromptText, StringComparison.OrdinalIgnoreCase);
+            Assert.True(
+                systemPromptText.Contains("single-line", StringComparison.OrdinalIgnoreCase) ||
+                systemPromptText.Contains("omit", StringComparison.OrdinalIgnoreCase),
+                "Expected compact single-line or omit instruction in forensic system prompt.");
         });
     }
 
@@ -582,6 +588,211 @@ public class FastOcrAndHybridBiometricTests
             Assert.Equal("alice@resqtrack.ph", caseB1ToN.MatchedEmail);
             Assert.Contains(handler.CapturedRequests, r => r.Body.Contains(aliceCenterBase64, StringComparison.Ordinal));
         });
+    }
+
+    [Fact]
+    public async Task AuthService_SuccessfulSignIn_ResetsPriorFailedLoginLockoutWindow()
+    {
+        using var db = CreateInMemoryDbContext();
+        var userRepo = new UserRepository(db);
+        var sessionRepo = new SessionRepository(db);
+        var auditRepo = new AuditLogRepository(db);
+        var authService = new AuthService(userRepo, sessionRepo, auditRepo, db);
+
+        const string validPassword = "CorrectPassword123!@#";
+        var (hash, salt) = ScryptPasswordHelper.HashPassword(validPassword);
+
+        var pwUser = new User
+        {
+            Email = "pw.lockout.reset@resqtrack.gov.ph",
+            FullName = "PW LOCKOUT RESET",
+            Role = UserRole.Civilian,
+            Status = AccountStatus.Verified,
+            PasswordHash = hash,
+            PasswordSalt = salt
+        };
+
+        var bioUser = new User
+        {
+            Email = "bio.lockout.reset@resqtrack.gov.ph",
+            FullName = "BIO LOCKOUT RESET",
+            Role = UserRole.Civilian,
+            Status = AccountStatus.Verified,
+            PasswordHash = hash,
+            PasswordSalt = salt
+        };
+
+        await userRepo.AddAsync(pwUser);
+        await userRepo.AddAsync(bioUser);
+
+        float[] enrolledVector = new float[128];
+        enrolledVector[0] = 1.0f;
+
+        db.BiometricEnrollments.Add(new BiometricEnrollment
+        {
+            UserId = bioUser.Id,
+            EncryptedTemplateData = ToFloatBytes(enrolledVector),
+            TemplateFormat = "128D_FLOAT32_NORMALIZED",
+            ModelIdentifier = "ResQTrack_Hybrid_CSLBP_Gabor_Haar",
+            ModelVersion = "v1.0.0",
+            EnrollmentStatus = "ACTIVE",
+            EnrolledAtUtc = DateTime.UtcNow
+        });
+
+        DateTime now = DateTime.UtcNow;
+
+        for (int i = 0; i < 5; i++)
+        {
+            db.LoginAttempts.Add(new LoginAttempt
+            {
+                AccountIdentifier = pwUser.Email,
+                AttemptType = "PASSWORD",
+                Success = false,
+                FailureReason = "INVALID_PASSWORD",
+                AttemptedAtUtc = now.AddMinutes(-6 + i)
+            });
+
+            db.LoginAttempts.Add(new LoginAttempt
+            {
+                AccountIdentifier = bioUser.Email,
+                AttemptType = "BIOMETRIC_1TO1",
+                Success = false,
+                FailureReason = "BIOMETRIC_MISMATCH",
+                AttemptedAtUtc = now.AddMinutes(-6 + i)
+            });
+        }
+
+        // Recorded successful attempt strictly after the 5 failures resets the lockout cutoff.
+        db.LoginAttempts.AddRange(
+            new LoginAttempt
+            {
+                AccountIdentifier = pwUser.Email,
+                AttemptType = "PASSWORD",
+                Success = true,
+                AttemptedAtUtc = now.AddSeconds(-10)
+            },
+            new LoginAttempt
+            {
+                AccountIdentifier = bioUser.Email,
+                AttemptType = "BIOMETRIC_1TO1",
+                Success = true,
+                AttemptedAtUtc = now.AddSeconds(-10)
+            });
+
+        await db.SaveChangesAsync();
+
+        var (pwSuccess, pwError, pwToken, _) = await authService.LoginAsync(
+            new LoginRequest(pwUser.Email, validPassword, "Civilian", "Landing"),
+            "127.0.0.1",
+            "TestAgent");
+
+        Assert.True(pwSuccess, $"Expected password login after success reset to succeed, got error: {pwError}");
+        Assert.Null(pwError);
+        Assert.False(string.IsNullOrWhiteSpace(pwToken));
+
+        var (bioSuccess, bioError, bioToken, _) = await authService.BiometricLoginAsync(
+            new BiometricLoginRequest(bioUser.Email, enrolledVector),
+            "127.0.0.1",
+            "TestAgent");
+
+        Assert.True(bioSuccess, $"Expected biometric login after success reset to succeed, got error: {bioError}");
+        Assert.Null(bioError);
+        Assert.False(string.IsNullOrWhiteSpace(bioToken));
+    }
+
+    [Fact]
+    public async Task AuthService_ExpiredLockoutWindowAllowsLogin_AndActiveLockoutReportsDynamicRemainingMinutes()
+    {
+        using var db = CreateInMemoryDbContext();
+        var userRepo = new UserRepository(db);
+        var sessionRepo = new SessionRepository(db);
+        var auditRepo = new AuditLogRepository(db);
+        var authService = new AuthService(userRepo, sessionRepo, auditRepo, db);
+
+        const string validPassword = "CorrectPassword123!@#";
+        var (hash, salt) = ScryptPasswordHelper.HashPassword(validPassword);
+
+        var expiredUser = new User
+        {
+            Email = "expired.lockout@resqtrack.gov.ph",
+            FullName = "EXPIRED LOCKOUT USER",
+            Role = UserRole.Civilian,
+            Status = AccountStatus.Verified,
+            PasswordHash = hash,
+            PasswordSalt = salt
+        };
+
+        var activeLockedUser = new User
+        {
+            Email = "active.lockout@resqtrack.gov.ph",
+            FullName = "ACTIVE LOCKOUT USER",
+            Role = UserRole.Civilian,
+            Status = AccountStatus.Verified,
+            PasswordHash = hash,
+            PasswordSalt = salt
+        };
+
+        await userRepo.AddAsync(expiredUser);
+        await userRepo.AddAsync(activeLockedUser);
+
+        DateTime now = DateTime.UtcNow;
+
+        for (int i = 0; i < 5; i++)
+        {
+            db.LoginAttempts.Add(new LoginAttempt
+            {
+                AccountIdentifier = expiredUser.Email,
+                AttemptType = "PASSWORD",
+                Success = false,
+                FailureReason = "INVALID_PASSWORD",
+                AttemptedAtUtc = now.AddMinutes(-16)
+            });
+
+            db.LoginAttempts.Add(new LoginAttempt
+            {
+                AccountIdentifier = activeLockedUser.Email,
+                AttemptType = "PASSWORD",
+                Success = false,
+                FailureReason = "INVALID_PASSWORD",
+                AttemptedAtUtc = now.AddMinutes(-10).AddSeconds(-1)
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        var (expiredSuccess, expiredError, expiredToken, _) = await authService.LoginAsync(
+            new LoginRequest(expiredUser.Email, validPassword, "Civilian", "Landing"),
+            "127.0.0.1",
+            "TestAgent");
+
+        Assert.True(expiredSuccess, $"Expected login with expired (>15m) failures to succeed, got error: {expiredError}");
+        Assert.Null(expiredError);
+        Assert.False(string.IsNullOrWhiteSpace(expiredToken));
+
+        var (lockedSuccess, lockedError, _, _) = await authService.LoginAsync(
+            new LoginRequest(activeLockedUser.Email, validPassword, "Civilian", "Landing"),
+            "127.0.0.1",
+            "TestAgent");
+
+        Assert.False(lockedSuccess);
+        Assert.NotNull(lockedError);
+        Assert.Contains("locked", lockedError, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("wait 5 minute", lockedError, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("wait 15 minute", lockedError, StringComparison.OrdinalIgnoreCase);
+
+        float[] probeVector = new float[128];
+        probeVector[0] = 1.0f;
+
+        var (bioLockedSuccess, bioLockedError, _, _) = await authService.BiometricLoginAsync(
+            new BiometricLoginRequest(activeLockedUser.Email, probeVector),
+            "127.0.0.1",
+            "TestAgent");
+
+        Assert.False(bioLockedSuccess);
+        Assert.NotNull(bioLockedError);
+        Assert.Contains("locked", bioLockedError, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("wait 5 minute", bioLockedError, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("wait 15 minute", bioLockedError, StringComparison.OrdinalIgnoreCase);
     }
 
     private static AppDbContext CreateInMemoryDbContext() =>

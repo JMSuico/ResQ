@@ -185,20 +185,20 @@ const BACKUP_OPTIONS = [
   {
     id: 'OPTION_1_ADMIN_DISPATCH',
     number: 1,
-    label: '1. RECOMMEND REQUEST BACKUP VIA REQUESTING IN ADMIN SO ADMIN CAN DISPATCH REQUEST',
-    description: 'Escalates formal tactical backup request to LDRRMO Command Admin Center for multi-unit dispatch.'
+    label: 'Request Admin Dispatch',
+    description: 'Escalate backup request to Command Admin'
   },
   {
     id: 'OPTION_2_NEARBY_DISTRESS',
     number: 2,
-    label: '2. SEND DISTRESS SIGNAL FOR ALL NEARBY RESPONDERS (MEDIC OR NON-MEDIC RESPONDERS)',
-    description: 'Broadcasts high-priority GPS distress beacon to all RHU Medic, BFP Fire, and PNP units within radius.'
+    label: 'Nearby Distress Beacon',
+    description: 'Alert all nearby responder units'
   },
   {
     id: 'OPTION_3_CALL_OR_EMAIL',
     number: 3,
-    label: '3. SEND VIA CALL NUMBER OR EMAIL',
-    description: 'Transmits direct emergency hotline dispatch payload via cellular voice call link and tactical email gateway.'
+    label: 'Call or Email Dispatch',
+    description: 'Send dispatch via hotline or email'
   }
 ] as const;
 
@@ -457,7 +457,7 @@ export const UnitIncidentsFeed: React.FC = () => {
     switch (session?.unit) {
       case 'FIRE':
         return {
-          label: 'BFP BUREAU OF FIRE PROTECTION',
+          label: 'BFP Fire Protection',
           code: 'BFP-FIRE',
           badgeClass: 'bg-orange-500/20 text-orange-300 border-orange-500/50',
           icon: Flame,
@@ -465,7 +465,7 @@ export const UnitIncidentsFeed: React.FC = () => {
         };
       case 'PNP':
         return {
-          label: 'PNP POLICE TACTICAL DISPATCH',
+          label: 'PNP Dispatch',
           code: 'PNP-POL',
           badgeClass: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50',
           icon: Shield,
@@ -474,7 +474,7 @@ export const UnitIncidentsFeed: React.FC = () => {
       case 'RHU':
       default:
         return {
-          label: 'RHU EMERGENCY MEDICAL SERVICES',
+          label: 'RHU EMS',
           code: 'RHU-EMS',
           badgeClass: 'bg-sky-500/20 text-sky-300 border-sky-500/50',
           icon: Ambulance,
@@ -630,7 +630,7 @@ export const UnitIncidentsFeed: React.FC = () => {
     e?.stopPropagation();
     const text = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     navigator.clipboard?.writeText(text);
-    showToast(`COORDINATES COPIED: ${text}`);
+    showToast(`Coordinates copied: ${text}`);
   };
 
   // Task 3: NAVIGATE GPS redirect to /responder?expandMap=true&focusIncidentId={incident.id}
@@ -667,7 +667,7 @@ export const UnitIncidentsFeed: React.FC = () => {
       );
     }
 
-    showToast(`REDIRECTING TO EMS TRAUMA BOARD MAP // PINPOINTING ${inc.referenceCode}`);
+    showToast(`Opening map for ${inc.referenceCode}`);
     navigate(`/responder?expandMap=true&focusIncidentId=${encodeURIComponent(inc.id)}`);
   };
 
@@ -708,7 +708,7 @@ export const UnitIncidentsFeed: React.FC = () => {
 
     try {
       await sendEmergencyBroadcast({
-        title: `[BACKUP OPTION ${chosenOption.number}] ${backupModalIncident.referenceCode}`,
+        title: `Backup Request · ${backupModalIncident.referenceCode}`,
         message: `${chosenOption.label} — ${backupNote} (Target: ${backupAgency})`,
         severity: 'Critical'
       });
@@ -722,17 +722,17 @@ export const UnitIncidentsFeed: React.FC = () => {
     });
 
     broadcastNotificationEvent(
-      `BACKUP REQUESTED // ${backupModalIncident.referenceCode}`,
+      `Backup Request · ${backupModalIncident.referenceCode}`,
       `${chosenOption.label} (${nowFormatted})`,
       { backupRecord }
     );
 
     if (optionId === 'OPTION_3_CALL_OR_EMAIL') {
-      showToast(`BACKUP TRANSMITTED VIA CALL (${backupPhone}) & EMAIL (${backupEmail})`);
+      showToast(`Backup sent via ${backupPhone} / ${backupEmail}`);
     } else if (optionId === 'OPTION_2_NEARBY_DISTRESS') {
-      showToast(`DISTRESS SIGNAL BROADCASTED TO ALL NEARBY MEDIC & NON-MEDIC RESPONDERS`);
+      showToast('Distress signal sent to nearby units');
     } else {
-      showToast(`BACKUP REQUEST RECOMMENDED TO ADMIN FOR IMMEDIATE DISPATCH`);
+      showToast('Backup request sent to Admin');
     }
 
     setBackupModalIncident(null);
@@ -752,7 +752,7 @@ export const UnitIncidentsFeed: React.FC = () => {
     const remainingSlots = MAX_EVIDENCE_SLOTS - currentList.length;
 
     if (remainingSlots <= 0) {
-      showToast(`MAXIMUM 40 EVIDENCE IMAGES/VIDEOS REACHED FOR ${evidenceModalIncident.referenceCode}`);
+      showToast(`Max 40 evidence items reached for ${evidenceModalIncident.referenceCode}`);
       return;
     }
 
@@ -774,7 +774,7 @@ export const UnitIncidentsFeed: React.FC = () => {
             slotIndex: newSlotNumber,
             url: dataUrl,
             mediaType: isVideo ? 'video' : 'image',
-            caption: `${file.name} (Slot #${newSlotNumber}/40)`,
+            caption: `${file.name} (${newSlotNumber}/40)`,
             capturedAtFormatted: formatExactTimestampWithSeconds(now),
             capturedAtIso: now.toISOString(),
             uploadedBy: session?.fullName || 'RHU Field Responder'
@@ -792,7 +792,7 @@ export const UnitIncidentsFeed: React.FC = () => {
       reader.readAsDataURL(file);
     });
 
-    showToast(`ATTACHED ${filesToProcess.length} TIMESTAMPED EVIDENCE FILE(S) TO ${evidenceModalIncident.referenceCode}`);
+    showToast(`Attached ${filesToProcess.length} file(s) to ${evidenceModalIncident.referenceCode}`);
     e.target.value = '';
   };
 
@@ -800,7 +800,7 @@ export const UnitIncidentsFeed: React.FC = () => {
     if (!evidenceModalIncident) return;
     const currentList = evidenceMap[evidenceModalIncident.id] || [];
     if (currentList.length >= MAX_EVIDENCE_SLOTS) {
-      showToast(`ALL 40 EVIDENCE SLOTS ARE FULL FOR ${evidenceModalIncident.referenceCode}`);
+      showToast(`All 40 evidence slots full (${evidenceModalIncident.referenceCode})`);
       return;
     }
 
@@ -843,7 +843,7 @@ export const UnitIncidentsFeed: React.FC = () => {
     } catch {
       // ignore
     }
-    showToast(`CAPTURED EVIDENCE SLOT #${nextSlot}/40 (${formattedTs})`);
+    showToast(`Captured evidence #${nextSlot}/40`);
   };
 
   const handleRemoveEvidenceSlot = (incidentId: string, evidenceId: string) => {
@@ -917,7 +917,7 @@ export const UnitIncidentsFeed: React.FC = () => {
       setActiveCasualtyTabIndex(updated.length - 1);
       return updated;
     });
-    showToast(`ADDED NEW CASUALTY PCR VITAL FORM (#${draftCasualties.length + 1})`);
+    showToast(`Added casualty #${draftCasualties.length + 1}`);
   };
 
   const handleUpdateActiveCasualtyField = <K extends keyof CasualtyVitalEntry>(
@@ -1010,7 +1010,7 @@ export const UnitIncidentsFeed: React.FC = () => {
       });
 
       showToast(
-        `SAVED ${validatedEntries.length} CASUALTY PCR VITAL RECORD(S) FOR ${activePcrIncident.referenceCode}`
+        `Saved ${validatedEntries.length} PCR record(s) for ${activePcrIncident.referenceCode}`
       );
       setActivePcrIncident(null);
     } finally {
@@ -1065,12 +1065,12 @@ export const UnitIncidentsFeed: React.FC = () => {
     });
 
     broadcastNotificationEvent(
-      `UNIT RESPONDED // ${inc.referenceCode}`,
-      `Pointer turned GREEN (#10B981) at ${inc.locationLabel || 'Incident Sector'} (${nowFormatted})`,
+      `Responded · ${inc.referenceCode}`,
+      `${inc.locationLabel || 'Incident Sector'} (${nowFormatted})`,
       { incidentId: inc.id, pointerColor: '#10B981', status: 'Responded' }
     );
 
-    showToast(`DISPATCH [${inc.referenceCode}] MARKED RESPONDED — MAP POINTER GREEN (#10B981)`);
+    showToast(`${inc.referenceCode} marked Responded`);
   };
 
   const handleStatusTransition = async (
@@ -1213,14 +1213,12 @@ export const UnitIncidentsFeed: React.FC = () => {
     });
 
     broadcastNotificationEvent(
-      `REPORT SUBMITTED TO INCIDENT LOGS // ${inc.referenceCode}`,
-      `Submitted ${incEvidences.length} Evidence(s) & ${incPcrs.length} PCR Record(s) to Admin. 05:00 Closure Countdown started.`,
+      `Report Submitted · ${inc.referenceCode}`,
+      `${incEvidences.length} Evidence · ${incPcrs.length} PCR · 05:00 countdown started`,
       { logSubmission }
     );
 
-    showToast(
-      `REPORT [${inc.referenceCode}] SAVED TO INCIDENT LOGS — 05:00 SOLVED COUNTDOWN STARTED`
-    );
+    showToast(`${inc.referenceCode} submitted to Incident Logs`);
   };
 
   const handleCompleteCountdownImmediately = (inc: ReportItem, e?: React.MouseEvent) => {
@@ -1240,7 +1238,7 @@ export const UnitIncidentsFeed: React.FC = () => {
     setIncidents((prev) =>
       prev.map((item) => (item.id === inc.id ? { ...item, status: 'Closed' } : item))
     );
-    showToast(`CASE [${inc.referenceCode}] VERIFIED 100% SOLVED (CLOSED) — GREEN POINTER FADED OUT`);
+    showToast(`${inc.referenceCode} closed`);
   };
 
   const activeCasualtyDraft = draftCasualties[activeCasualtyTabIndex] || draftCasualties[0];
@@ -1259,47 +1257,45 @@ export const UnitIncidentsFeed: React.FC = () => {
         </div>
       )}
 
-      {/* TASK 1 & TASK 2: Header Rename ("CASUALTY FIELD DISPATCHES"), Subtitle Removal & Sort/Filter Controls */}
+      {/* Header, KPI Telemetry & Filter Controls */}
       <div className="tactical-card p-5 bg-slate-900/90 border-2 border-slate-700/80 rounded-xl shadow-2xl">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span
-                className={`px-2.5 py-0.5 rounded text-[11px] font-mono font-black border uppercase tracking-wider inline-flex items-center gap-1.5 ${agencyBadge.badgeClass}`}
+                className={`px-2.5 py-0.5 rounded text-[11px] font-mono font-bold border tracking-wide inline-flex items-center gap-1.5 ${agencyBadge.badgeClass}`}
               >
                 <agencyBadge.icon className="w-3.5 h-3.5" />
                 <span>{agencyBadge.label}</span>
               </span>
-              <span className="text-slate-600 font-mono">|</span>
-              <span className="text-xs font-mono font-bold text-sky-400">UNIT INCIDENTS FEED</span>
             </div>
-            <h1 className="text-xl md:text-2xl font-black text-white tracking-wide uppercase">
-              CASUALTY FIELD DISPATCHES
+            <h1 className="text-xl md:text-2xl font-black text-white tracking-tight">
+              Unit Dispatches
             </h1>
           </div>
 
           {/* Rapid Field Telemetry Badges */}
           <div className="flex items-center gap-2 font-mono text-xs">
             <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center">
-              <span className="text-[10px] text-slate-400 font-bold">TOTAL</span>
+              <span className="text-[10px] text-slate-400 font-semibold">Total</span>
               <span className="text-base font-black text-white">{allCount}</span>
             </div>
             <div className="px-3 py-1.5 rounded-lg bg-rose-950/60 border border-rose-800/80 flex flex-col items-center">
-              <span className="text-[10px] text-rose-400 font-bold">CRITICAL</span>
+              <span className="text-[10px] text-rose-400 font-semibold">Critical</span>
               <span className="text-base font-black text-rose-400 animate-pulse">{criticalCount}</span>
             </div>
             <div className="px-3 py-1.5 rounded-lg bg-amber-950/60 border border-amber-800/80 flex flex-col items-center">
-              <span className="text-[10px] text-amber-400 font-bold">ACTIVE</span>
+              <span className="text-[10px] text-amber-400 font-semibold">Active</span>
               <span className="text-base font-black text-amber-400">{activeCount}</span>
             </div>
             <div className="px-3 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-800/80 flex flex-col items-center">
-              <span className="text-[10px] text-emerald-400 font-bold">RESOLVED</span>
+              <span className="text-[10px] text-emerald-400 font-semibold">Resolved</span>
               <span className="text-base font-black text-emerald-400">{resolvedCount}</span>
             </div>
           </div>
         </div>
 
-        {/* TASK 2: Backend-Connected Filter Tabs, SearchBar with useDebounce, Priority Sort & TableCardToggle */}
+        {/* Filter Tabs, SearchBar, Sort & TableCardToggle */}
         <div className="mt-4 pt-3 border-t border-slate-800/80 flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
             <button
@@ -1311,7 +1307,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
               }`}
             >
-              ALL DISPATCHES ({allCount})
+              All ({allCount})
             </button>
             <button
               type="button"
@@ -1323,7 +1319,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               }`}
             >
               <AlertTriangle className="w-3.5 h-3.5" />
-              <span>CRITICAL / SEVERE ({criticalCount})</span>
+              <span>Critical ({criticalCount})</span>
             </button>
             <button
               type="button"
@@ -1335,7 +1331,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               }`}
             >
               <Zap className="w-3.5 h-3.5" />
-              <span>ACTIVE QUEUE ({activeCount})</span>
+              <span>Active ({activeCount})</span>
             </button>
             <button
               type="button"
@@ -1347,7 +1343,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               }`}
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>RESOLVED ({resolvedCount})</span>
+              <span>Resolved ({resolvedCount})</span>
             </button>
           </div>
 
@@ -1355,7 +1351,7 @@ export const UnitIncidentsFeed: React.FC = () => {
             <SearchBar
               value={searchQuery}
               onChange={setSearchQuery}
-              placeholder="Search ref code, street, reporter..."
+              placeholder="Search ref, location, reporter..."
               className="w-full sm:w-60"
             />
 
@@ -1369,16 +1365,16 @@ export const UnitIncidentsFeed: React.FC = () => {
                 className="bg-transparent text-slate-200 font-bold focus:outline-none cursor-pointer"
               >
                 <option value="CRITICAL_FIRST" className="bg-slate-900 text-white">
-                  SORT: CRITICAL / SEVERITY
+                  Sort: Severity
                 </option>
                 <option value="NEWEST_FIRST" className="bg-slate-900 text-white">
-                  SORT: NEWEST DISPATCH
+                  Sort: Newest
                 </option>
                 <option value="OLDEST_FIRST" className="bg-slate-900 text-white">
-                  SORT: OLDEST DISPATCH
+                  Sort: Oldest
                 </option>
                 <option value="STATUS_ORDER" className="bg-slate-900 text-white">
-                  SORT: TACTICAL STATUS
+                  Sort: Status
                 </option>
               </select>
             </div>
@@ -1391,14 +1387,14 @@ export const UnitIncidentsFeed: React.FC = () => {
       {/* LOADING OR EMPTY STATE */}
       {loading ? (
         <div className="tactical-card p-12 text-center text-sky-400 font-mono text-sm animate-pulse">
-          LOADING CASUALTY FIELD DISPATCH TELEMETRY...
+          Loading dispatches...
         </div>
       ) : paginatedItems.length === 0 ? (
         <div className="tactical-card p-12 text-center bg-slate-900/60 border border-slate-800 rounded-xl">
           <Radio className="w-8 h-8 mx-auto mb-2 text-slate-500" />
-          <h3 className="text-base font-bold text-white font-mono">ALL ASSIGNED QUEUES CLEAR</h3>
+          <h3 className="text-base font-bold text-white font-mono">No dispatches</h3>
           <p className="text-xs text-slate-400 font-mono mt-1">
-            No casualty dispatches found matching filter [{filterMode}]. Standing by on frequency.
+            No matching dispatches.
           </p>
         </div>
       ) : viewMode === 'card' ? (
@@ -1416,22 +1412,22 @@ export const UnitIncidentsFeed: React.FC = () => {
             const isModerate = inc.severity === 'Medium';
 
             const severityBadge = isCritical ? (
-              <span className="px-2.5 py-0.5 rounded bg-rose-950 text-rose-300 border-2 border-rose-500 text-[10px] font-black uppercase font-mono tracking-wider animate-pulse flex items-center gap-1 shadow-[0_0_8px_rgba(244,63,94,0.4)]">
+              <span className="px-2.5 py-0.5 rounded bg-rose-950 text-rose-300 border-2 border-rose-500 text-[10px] font-black font-mono tracking-wide animate-pulse flex items-center gap-1 shadow-[0_0_8px_rgba(244,63,94,0.4)]">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
-                <span>CRITICAL</span>
+                <span>Critical</span>
               </span>
             ) : isSevere ? (
-              <span className="px-2.5 py-0.5 rounded bg-orange-950 text-orange-300 border border-orange-500 text-[10px] font-extrabold uppercase font-mono tracking-wider flex items-center gap-1">
+              <span className="px-2.5 py-0.5 rounded bg-orange-950 text-orange-300 border border-orange-500 text-[10px] font-extrabold font-mono tracking-wide flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3 text-orange-400" />
-                <span>SEVERE</span>
+                <span>Severe</span>
               </span>
             ) : isModerate ? (
-              <span className="px-2.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500 text-[10px] font-bold uppercase font-mono tracking-wider">
-                MODERATE
+              <span className="px-2.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500 text-[10px] font-bold font-mono tracking-wide">
+                Moderate
               </span>
             ) : (
-              <span className="px-2.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500 text-[10px] font-bold uppercase font-mono tracking-wider">
-                ROUTINE
+              <span className="px-2.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500 text-[10px] font-bold font-mono tracking-wide">
+                Routine
               </span>
             );
 
@@ -1441,42 +1437,42 @@ export const UnitIncidentsFeed: React.FC = () => {
                 text: 'text-purple-300',
                 border: 'border-purple-600/60',
                 dot: 'bg-purple-400',
-                label: 'ALLOCATED DISPATCH'
+                label: 'Allocated'
               },
               EnRoute: {
                 bg: 'bg-amber-950/80',
                 text: 'text-amber-300',
                 border: 'border-amber-500',
                 dot: 'bg-amber-400 animate-ping',
-                label: 'EN ROUTE'
+                label: 'En Route'
               },
               OnScene: {
                 bg: 'bg-cyan-950/80',
                 text: 'text-cyan-300',
                 border: 'border-cyan-500',
                 dot: 'bg-cyan-400 animate-pulse',
-                label: 'ON SCENE'
+                label: 'On Scene'
               },
               Responded: {
                 bg: 'bg-emerald-950/90',
                 text: 'text-emerald-300',
                 border: 'border-emerald-400',
                 dot: 'bg-[#10B981] animate-ping',
-                label: 'RESPONDED (GREEN POINTER #10B981)'
+                label: 'Responded'
               },
               Resolved: {
                 bg: 'bg-emerald-950/80',
                 text: 'text-emerald-300',
                 border: 'border-emerald-500',
                 dot: 'bg-emerald-400',
-                label: 'RESOLVED'
+                label: 'Resolved'
               },
               Closed: {
                 bg: 'bg-slate-900/90',
                 text: 'text-emerald-400',
                 border: 'border-emerald-600/50',
                 dot: 'bg-emerald-500 opacity-40',
-                label: '100% SOLVED (CLOSED)'
+                label: 'Closed'
               }
             }[effectiveStatus] || {
               bg: 'bg-slate-900',
@@ -1516,12 +1512,12 @@ export const UnitIncidentsFeed: React.FC = () => {
                         />
                         <div className="absolute inset-0 bg-slate-950/50 group-hover:bg-slate-950/20 rounded-lg flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-mono font-bold text-sky-300">
                           <Eye className="w-4 h-4 mb-0.5" />
-                          <span>{incEvidences.length}/40 SLOTS</span>
+                          <span>{incEvidences.length}/40</span>
                         </div>
                         {inc.isHardwareGeolocated && (
                           <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-slate-950/90 border border-emerald-500 text-[9px] font-mono text-emerald-400 font-bold inline-flex items-center gap-1">
                             <Lock className="w-2.5 h-2.5" />
-                            <span>LOCKED</span>
+                            <span>GPS</span>
                           </span>
                         )}
                       </div>
@@ -1529,7 +1525,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-lg bg-slate-950 border-2 border-slate-800 hover:border-sky-500/60 flex flex-col items-center justify-center text-slate-500 transition-colors">
                         <Camera className="w-6 h-6 mb-1 text-slate-400" />
                         <span className="text-[10px] font-mono text-slate-400 font-bold">
-                          0/40 EVIDENCE
+                          0/40
                         </span>
                       </div>
                     )}
@@ -1543,7 +1539,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       </span>
 
                       <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-black border uppercase tracking-wider inline-flex items-center gap-1 ${agencyBadge.badgeClass}`}
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border tracking-wide inline-flex items-center gap-1 ${agencyBadge.badgeClass}`}
                       >
                         <agencyBadge.icon className="w-3 h-3" />
                         <span>{activeAgencyUnit}</span>
@@ -1552,7 +1548,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       {severityBadge}
 
                       <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-black border uppercase tracking-wider flex items-center gap-1 ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border}`}
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border tracking-wide flex items-center gap-1 ${statusConfig.bg} ${statusConfig.text} ${statusConfig.border}`}
                       >
                         <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dot}`} />
                         <span>{statusConfig.label}</span>
@@ -1561,14 +1557,14 @@ export const UnitIncidentsFeed: React.FC = () => {
                       {incPcrs.length > 0 && (
                         <span className="px-2 py-0.5 rounded bg-rose-950/90 text-rose-300 border border-rose-500/60 text-[10px] font-mono font-bold inline-flex items-center gap-1">
                           <HeartPulse className="w-3 h-3 text-rose-400" />
-                          <span>{incPcrs.length} PCR VITAL(S)</span>
+                          <span>{incPcrs.length} PCR</span>
                         </span>
                       )}
 
                       {timerState?.verified && !timerState.closed && (
                         <span className="px-2.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-400 text-[10px] font-mono font-black inline-flex items-center gap-1.5 animate-pulse">
                           <Timer className="w-3 h-3 text-emerald-400" />
-                          <span>SOLVED VERIFICATION: {formatCountdownMmSs(timerState.remaining)}</span>
+                          <span>{formatCountdownMmSs(timerState.remaining)}</span>
                         </span>
                       )}
                     </div>
@@ -1577,8 +1573,8 @@ export const UnitIncidentsFeed: React.FC = () => {
                       {inc.title}
                     </h2>
 
-                    <p className="text-xs text-slate-300 mt-1 max-w-2xl font-sans leading-relaxed">
-                      {inc.note || 'No specific field dispatcher annotations provided.'}
+                    <p className="text-xs text-slate-300 mt-1 max-w-2xl font-sans line-clamp-2">
+                      {inc.note || 'No field notes.'}
                     </p>
 
                     <div className="flex flex-wrap items-center gap-y-1.5 gap-x-4 mt-3 text-xs font-mono text-slate-400 pt-2 border-t border-slate-800/80">
@@ -1602,13 +1598,15 @@ export const UnitIncidentsFeed: React.FC = () => {
 
                       <span className="inline-flex items-center gap-1">
                         <User className="w-3 h-3 text-slate-500" />
-                        <span>{inc.reporterName || 'Civilian Resident'}</span>
+                        <span>{inc.reporterName || 'Civilian'}</span>
                       </span>
 
-                      <span className="text-slate-400 inline-flex items-center gap-1">
+                      <span
+                        className="text-slate-400 inline-flex items-center gap-1"
+                        title={formatExactTimestampWithSeconds(inc.createdAt)}
+                      >
                         <Clock className="w-3 h-3 text-slate-500" />
-                        <span>{formatExactTimestampWithSeconds(inc.createdAt)}</span>
-                        <span className="text-slate-500">({formatRelativeTime(inc.createdAt)})</span>
+                        <span>{formatRelativeTime(inc.createdAt)}</span>
                       </span>
                     </div>
                   </div>
@@ -1623,11 +1621,11 @@ export const UnitIncidentsFeed: React.FC = () => {
                   <button
                     type="button"
                     onClick={(e) => handleNavigateGpsToTraumaBoard(inc, e)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-sky-950 text-sky-300 border border-sky-500/50 text-xs font-mono font-bold uppercase tracking-wider active:scale-95 transition-all shadow-md cursor-pointer"
-                    title="Open EMS Trauma Board Expanded Map focused on this incident pointer"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-sky-950 text-sky-300 border border-sky-500/50 text-xs font-mono font-bold active:scale-95 transition-all shadow-md cursor-pointer"
+                    title="Open map focused on this incident"
                   >
                     <Navigation className="w-3.5 h-3.5" />
-                    <span>NAVIGATE GPS</span>
+                    <span>Navigate</span>
                   </button>
 
                   {/* TASK 3: CALL BACKUP 3-Option Modal Trigger */}
@@ -1636,25 +1634,25 @@ export const UnitIncidentsFeed: React.FC = () => {
                     onClick={() => {
                       setBackupModalIncident(inc);
                       setBackupNote(
-                        `Requesting immediate tactical backup at ${inc.locationLabel || 'Incident Sector'} (${inc.referenceCode})`
+                        `Backup requested at ${inc.locationLabel || 'Incident Sector'} (${inc.referenceCode})`
                       );
                     }}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-500/50 text-xs font-mono font-bold uppercase tracking-wider active:scale-95 transition-all shadow-md cursor-pointer"
-                    title="Open 3-Option Tactical Backup Modal"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-500/50 text-xs font-mono font-bold active:scale-95 transition-all shadow-md cursor-pointer"
+                    title="Request backup"
                   >
                     <Shield className="w-3.5 h-3.5" />
-                    <span>CALL BACKUP</span>
+                    <span>Backup</span>
                   </button>
 
                   {/* TASK 4: 40-Image Timestamped EVIDENCE Lightbox Modal Trigger */}
                   <button
                     type="button"
                     onClick={(e) => openEvidenceModal(inc, e)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-xs font-mono font-bold uppercase tracking-wider active:scale-95 transition-all cursor-pointer"
-                    title="Inspect or attach up to 40 timestamped evidence photos/videos"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-xs font-mono font-bold active:scale-95 transition-all cursor-pointer"
+                    title="View or attach evidence"
                   >
                     <Camera className="w-3.5 h-3.5 text-sky-400" />
-                    <span>EVIDENCE ({incEvidences.length}/40)</span>
+                    <span>Evidence ({incEvidences.length}/40)</span>
                   </button>
 
                   {/* TASK 5: Specialized Agency Operation Trigger (RHU Multi-Casualty PCR Vitals + Fire/PNP compatibility) */}
@@ -1662,11 +1660,11 @@ export const UnitIncidentsFeed: React.FC = () => {
                     <button
                       type="button"
                       onClick={(e) => openPcrModalForIncident(inc, e)}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-950/90 hover:bg-rose-900 text-rose-300 border border-rose-600/70 text-xs font-mono font-bold uppercase tracking-wider active:scale-95 transition-all shadow-md cursor-pointer"
-                      title="Record Multi-Casualty Patient Care Record & Vitals"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-950/90 hover:bg-rose-900 text-rose-300 border border-rose-600/70 text-xs font-mono font-bold active:scale-95 transition-all shadow-md cursor-pointer"
+                      title="Record patient vitals"
                     >
                       <HeartPulse className="w-3.5 h-3.5 text-rose-400" />
-                      <span>PCR VITALS {incPcrs.length > 0 ? `(${incPcrs.length})` : ''}</span>
+                      <span>PCR {incPcrs.length > 0 ? `(${incPcrs.length})` : ''}</span>
                     </button>
                   )}
 
@@ -1674,11 +1672,11 @@ export const UnitIncidentsFeed: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setActiveAlarmIncident(inc)}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-950/90 hover:bg-amber-900 text-amber-300 border border-amber-600/70 text-xs font-mono font-bold uppercase tracking-wider active:scale-95 transition-all shadow-md cursor-pointer"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-950/90 hover:bg-amber-900 text-amber-300 border border-amber-600/70 text-xs font-mono font-bold active:scale-95 transition-all shadow-md cursor-pointer"
                       title="Update Fire Alarm Level"
                     >
                       <Flame className="w-3.5 h-3.5 text-amber-400" />
-                      <span>FIRE ALARM</span>
+                      <span>Fire Alarm</span>
                     </button>
                   )}
 
@@ -1686,11 +1684,11 @@ export const UnitIncidentsFeed: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setActiveBlotterIncident(inc)}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-950/90 hover:bg-blue-900 text-blue-300 border border-blue-600/70 text-xs font-mono font-bold uppercase tracking-wider active:scale-95 transition-all shadow-md cursor-pointer"
-                      title="File Official Police Blotter Record"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-950/90 hover:bg-blue-900 text-blue-300 border border-blue-600/70 text-xs font-mono font-bold active:scale-95 transition-all shadow-md cursor-pointer"
+                      title="File Police Blotter"
                     >
                       <Shield className="w-3.5 h-3.5 text-blue-400" />
-                      <span>BLOTTER</span>
+                      <span>Blotter</span>
                     </button>
                   )}
 
@@ -1698,26 +1696,26 @@ export const UnitIncidentsFeed: React.FC = () => {
                   <button
                     type="button"
                     onClick={(e) => handleMarkRespondedGreenPointer(inc, e)}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-mono text-xs font-black uppercase tracking-wider border active:scale-95 transition-all cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-mono text-xs font-black border active:scale-95 transition-all cursor-pointer ${
                       isResponded
                         ? 'bg-[#10B981] text-slate-950 border-white shadow-[0_0_15px_rgba(16,185,129,0.6)]'
                         : 'bg-emerald-950/90 hover:bg-[#10B981] text-emerald-300 hover:text-slate-950 border-[#10B981]'
                     }`}
-                    title="Mark location as Responded and turn map pointer GREEN (#10B981)"
+                    title="Mark Responded"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>RESPONDED</span>
+                    <span>Responded</span>
                   </button>
 
                   {/* TASK 5: "SUBMIT REPORT" Button to Admin & INCIDENT LOGS */}
                   <button
                     type="button"
                     onClick={(e) => handleSubmitReportToIncidentLogs(inc, e)}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-mono text-xs font-black uppercase tracking-wider border border-white shadow-[0_0_15px_rgba(14,165,233,0.45)] active:scale-95 transition-all cursor-pointer"
-                    title="Submit all recorded evidences & PCR vitals to Admin and save into INCIDENT LOGS"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-mono text-xs font-black border border-white shadow-[0_0_15px_rgba(14,165,233,0.45)] active:scale-95 transition-all cursor-pointer"
+                    title="Submit report to Incident Logs"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>SUBMIT REPORT</span>
+                    <span>Submit Report</span>
                   </button>
                 </div>
               </div>
@@ -1728,15 +1726,15 @@ export const UnitIncidentsFeed: React.FC = () => {
         /* TABLE VIEW */
         <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/90 shadow-2xl">
           <table className="w-full text-left text-xs font-mono">
-            <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+            <thead className="bg-slate-950 text-slate-400 text-[11px] border-b border-slate-800">
               <tr>
-                <th className="p-3.5">Ref Code</th>
+                <th className="p-3.5">Ref</th>
                 <th className="p-3.5">Severity</th>
-                <th className="p-3.5">Title / Summary</th>
+                <th className="p-3.5">Incident</th>
                 <th className="p-3.5">Location</th>
                 <th className="p-3.5">Evidence / PCR</th>
-                <th className="p-3.5">Status / Pointer</th>
-                <th className="p-3.5 text-right">Tactical Actions</th>
+                <th className="p-3.5">Status</th>
+                <th className="p-3.5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 bg-slate-950/40">
@@ -1771,8 +1769,8 @@ export const UnitIncidentsFeed: React.FC = () => {
                       {inc.locationLabel || formatGpsCoord(inc.latitude, inc.longitude)}
                     </td>
                     <td className="p-3.5 whitespace-nowrap">
-                      <span className="text-sky-300 font-bold">{incEvidences.length}/40 Evid</span>
-                      <span className="mx-1.5 text-slate-600">|</span>
+                      <span className="text-sky-300 font-bold">{incEvidences.length}/40</span>
+                      <span className="mx-1.5 text-slate-600">·</span>
                       <span className="text-rose-300 font-bold">{incPcrs.length} PCR</span>
                     </td>
                     <td className="p-3.5 whitespace-nowrap">
@@ -1801,7 +1799,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                           onClick={(e) => handleNavigateGpsToTraumaBoard(inc, e)}
                           className="px-2 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
                         >
-                          <span>NAVIGATE GPS</span>
+                          <span>Navigate</span>
                           <ArrowUpRight className="w-3 h-3" />
                         </button>
                         <button
@@ -1809,19 +1807,19 @@ export const UnitIncidentsFeed: React.FC = () => {
                           onClick={() => {
                             setBackupModalIncident(inc);
                             setBackupNote(
-                              `Requesting immediate tactical backup at ${inc.locationLabel || 'Incident Location'}`
+                              `Backup requested at ${inc.locationLabel || 'Incident Location'}`
                             );
                           }}
                           className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
                         >
-                          <span>CALL BACKUP</span>
+                          <span>Backup</span>
                         </button>
                         <button
                           type="button"
                           onClick={(e) => openEvidenceModal(inc, e)}
                           className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold text-[10px] cursor-pointer"
                         >
-                          EVIDENCE
+                          Evidence
                         </button>
                         {activeAgencyUnit === 'RHU' && (
                           <button
@@ -1829,7 +1827,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                             onClick={(e) => openPcrModalForIncident(inc, e)}
                             className="px-2 py-1 rounded bg-rose-900 hover:bg-rose-800 text-rose-200 font-bold text-[10px] cursor-pointer"
                           >
-                            PCR VITALS
+                            PCR
                           </button>
                         )}
                         {activeAgencyUnit === 'FIRE' && (
@@ -1838,7 +1836,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                             onClick={() => setActiveAlarmIncident(inc)}
                             className="px-2 py-1 rounded bg-amber-900 hover:bg-amber-800 text-amber-200 font-bold text-[10px] cursor-pointer"
                           >
-                            FIRE ALARM
+                            Alarm
                           </button>
                         )}
                         {activeAgencyUnit === 'PNP' && (
@@ -1847,7 +1845,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                             onClick={() => setActiveBlotterIncident(inc)}
                             className="px-2 py-1 rounded bg-blue-900 hover:bg-blue-800 text-blue-200 font-bold text-[10px] cursor-pointer"
                           >
-                            BLOTTER
+                            Blotter
                           </button>
                         )}
                         <button
@@ -1855,14 +1853,14 @@ export const UnitIncidentsFeed: React.FC = () => {
                           onClick={(e) => handleMarkRespondedGreenPointer(inc, e)}
                           className="px-2 py-1 rounded bg-[#10B981] hover:bg-emerald-400 text-slate-950 font-black text-[10px] cursor-pointer"
                         >
-                          RESPONDED
+                          Responded
                         </button>
                         <button
                           type="button"
                           onClick={(e) => handleSubmitReportToIncidentLogs(inc, e)}
                           className="px-2 py-1 rounded bg-sky-400 hover:bg-sky-300 text-slate-950 font-black text-[10px] cursor-pointer"
                         >
-                          SUBMIT REPORT
+                          Submit
                         </button>
                       </div>
                     </td>
@@ -1874,18 +1872,17 @@ export const UnitIncidentsFeed: React.FC = () => {
         </div>
       )}
 
-      {/* TASK 2: Global Pagination Bar */}
+      {/* Global Pagination Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-900/90 border border-slate-800 text-xs font-mono text-slate-400">
         <div className="flex items-center gap-3">
           <span>
-            SHOWING{' '}
             <strong className="text-white">
               {totalItems === 0 ? 0 : startIndex + 1}-{endIndex}
             </strong>{' '}
-            OF <strong className="text-sky-400">{totalItems}</strong> DISPATCHES
+            of <strong className="text-sky-400">{totalItems}</strong>
           </span>
           <div className="flex items-center gap-1.5">
-            <span>ROWS:</span>
+            <span>Rows:</span>
             <Dropdown
               variant="pagination"
               value={String(pageSize)}
@@ -1903,10 +1900,10 @@ export const UnitIncidentsFeed: React.FC = () => {
             className="px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:border-sky-500 disabled:opacity-40 cursor-pointer inline-flex items-center gap-1"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
-            <span>PREV</span>
+            <span>Prev</span>
           </button>
           <span className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-white font-bold">
-            PAGE {currentPage} / {totalPages}
+            {currentPage} / {totalPages}
           </span>
           <button
             type="button"
@@ -1914,19 +1911,19 @@ export const UnitIncidentsFeed: React.FC = () => {
             onClick={nextPage}
             className="px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 hover:border-sky-500 disabled:opacity-40 cursor-pointer inline-flex items-center gap-1"
           >
-            <span>NEXT</span>
+            <span>Next</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* TASK 2: Row/Card Click -> DefaultFloatingModalCard Full Incident Details */}
+      {/* Incident Details Modal */}
       {selectedDetailIncident && (
         <DefaultFloatingModalCard
           isOpen={selectedDetailIncident !== null}
           onClose={() => setSelectedDetailIncident(null)}
-          title={`DISPATCH DOSSIER // ${selectedDetailIncident.referenceCode}`}
-          subtitle={`${selectedDetailIncident.title} — ${selectedDetailIncident.locationLabel || formatGpsCoord(selectedDetailIncident.latitude, selectedDetailIncident.longitude)}`}
+          title={`${selectedDetailIncident.referenceCode} — Dispatch`}
+          subtitle={selectedDetailIncident.locationLabel || formatGpsCoord(selectedDetailIncident.latitude, selectedDetailIncident.longitude)}
           size="2xl"
           footer={
             <div className="flex flex-wrap items-center justify-between w-full gap-2">
@@ -1937,7 +1934,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   onClick={() => handleNavigateGpsToTraumaBoard(selectedDetailIncident)}
                   icon={<Navigation className="w-3.5 h-3.5" />}
                 >
-                  NAVIGATE GPS
+                  Navigate
                 </Button>
                 <Button
                   variant="outline"
@@ -1949,7 +1946,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   }}
                   icon={<Camera className="w-3.5 h-3.5" />}
                 >
-                  EVIDENCE ({(evidenceMap[selectedDetailIncident.id] || []).length}/40)
+                  Evidence ({(evidenceMap[selectedDetailIncident.id] || []).length}/40)
                 </Button>
               </div>
               <div className="flex items-center gap-2">
@@ -1959,7 +1956,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   onClick={() => handleMarkRespondedGreenPointer(selectedDetailIncident)}
                   icon={<CheckCircle2 className="w-3.5 h-3.5" />}
                 >
-                  RESPONDED (#10B981)
+                  Responded
                 </Button>
                 <Button
                   variant="primary"
@@ -1967,7 +1964,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   onClick={() => handleSubmitReportToIncidentLogs(selectedDetailIncident)}
                   icon={<Send className="w-3.5 h-3.5" />}
                 >
-                  SUBMIT REPORT
+                  Submit Report
                 </Button>
               </div>
             </div>
@@ -1976,33 +1973,33 @@ export const UnitIncidentsFeed: React.FC = () => {
           <div className="space-y-4 text-xs font-mono text-slate-200">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-slate-950 border border-slate-800">
               <div>
-                <span className="text-[10px] text-slate-400 block">REFERENCE CODE</span>
+                <span className="text-[10px] text-slate-400 block">Reference</span>
                 <span className="text-sm font-black text-sky-400">
                   {selectedDetailIncident.referenceCode}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] text-slate-400 block">SEVERITY &amp; CATEGORY</span>
+                <span className="text-[10px] text-slate-400 block">Severity &amp; Category</span>
                 <span className="text-sm font-black text-rose-400">
-                  {selectedDetailIncident.severity.toUpperCase()} // {selectedDetailIncident.category}
+                  {selectedDetailIncident.severity} · {selectedDetailIncident.category}
                 </span>
               </div>
               <div>
-                <span className="text-[10px] text-slate-400 block">CURRENT STATUS</span>
+                <span className="text-[10px] text-slate-400 block">Status</span>
                 <span className="text-sm font-black text-emerald-400">
-                  {getEffectiveStatus(selectedDetailIncident).toUpperCase()}
+                  {getEffectiveStatus(selectedDetailIncident)}
                 </span>
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
-              <div className="text-slate-400 text-[10px] font-bold uppercase">
-                FIELD DISPATCH NARRATIVE &amp; TIMESTAMP
+              <div className="text-slate-400 text-[10px] font-bold">
+                {selectedDetailIncident.title}
               </div>
               <p className="text-sm font-sans text-white">{selectedDetailIncident.note}</p>
               <div className="flex flex-wrap items-center gap-4 pt-2 text-[11px] text-slate-400">
                 <span>
-                  REPORTED AT:{' '}
+                  Reported:{' '}
                   <strong className="text-sky-300">
                     {formatExactTimestampWithSeconds(selectedDetailIncident.createdAt)}
                   </strong>
@@ -2014,23 +2011,21 @@ export const UnitIncidentsFeed: React.FC = () => {
                   </strong>
                 </span>
                 <span>
-                  REPORTER: <strong className="text-white">{selectedDetailIncident.reporterName}</strong>
+                  Reporter: <strong className="text-white">{selectedDetailIncident.reporterName}</strong>
                 </span>
               </div>
             </div>
 
-            {/* 5-Minute Admin/AI Verification Countdown Panel */}
+            {/* 5-Minute Verification Countdown */}
             {countdownTimers[selectedDetailIncident.id]?.verified && (
               <div className="p-4 rounded-xl bg-emerald-950/50 border-2 border-[#10B981] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
                   <div className="text-xs font-black text-emerald-300 flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-[#10B981]" />
-                    <span>
-                      ADMIN &amp; AI VERIFIED LOCATION DONE — 5-MINUTE SOLVED COUNTDOWN
-                    </span>
+                    <span>Verification Countdown</span>
                   </div>
                   <p className="text-[11px] text-slate-300 mt-1">
-                    When countdown reaches 00:00, green pointer (#10B981) fades out and case is marked 100% solved (Closed).
+                    Auto-closes at 00:00.
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -2043,7 +2038,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       size="xs"
                       onClick={(e) => handleCompleteCountdownImmediately(selectedDetailIncident, e)}
                     >
-                      Complete 00:00 Now
+                      Close Now
                     </Button>
                   )}
                 </div>
@@ -2053,12 +2048,12 @@ export const UnitIncidentsFeed: React.FC = () => {
         </DefaultFloatingModalCard>
       )}
 
-      {/* TASK 3: 3-OPTION CALL BACKUP FLOATING MODAL */}
+      {/* 3-Option Call Backup Modal */}
       {backupModalIncident && (
         <DefaultFloatingModalCard
           isOpen={backupModalIncident !== null}
           onClose={() => setBackupModalIncident(null)}
-          title={`CALL TACTICAL BACKUP // ${backupModalIncident.referenceCode}`}
+          title={`Request Backup — ${backupModalIncident.referenceCode}`}
           subtitle={
             backupModalIncident.locationLabel ||
             formatGpsCoord(backupModalIncident.latitude, backupModalIncident.longitude)
@@ -2075,26 +2070,23 @@ export const UnitIncidentsFeed: React.FC = () => {
                 onClick={() => handleExecuteBackupOption(selectedBackupOption)}
                 icon={<Radio className="w-3.5 h-3.5" />}
               >
-                Execute Selected Backup Protocol
+                Send Backup Request
               </Button>
             </div>
           }
         >
           <div className="flex flex-col gap-4 text-slate-200">
             <div className="p-3 rounded-lg bg-indigo-950/40 border border-indigo-500/50 text-xs font-mono">
-              <span className="font-bold text-indigo-300 block mb-0.5">
-                ACTIVE CASUALTY INCIDENT CONTEXT:
-              </span>
               <p className="text-white font-bold">{backupModalIncident.title}</p>
               <p className="text-slate-400 text-[11px] mt-0.5">
-                Coordinates: {formatGpsCoord(backupModalIncident.latitude, backupModalIncident.longitude)} | Timestamp: {formatExactTimestampWithSeconds(new Date())}
+                {formatGpsCoord(backupModalIncident.latitude, backupModalIncident.longitude)} · {formatExactTimestampWithSeconds(new Date())}
               </p>
             </div>
 
-            {/* 3 Exact Backup Options */}
+            {/* 3 Backup Options */}
             <div className="flex flex-col gap-2.5">
-              <label className="text-xs font-mono font-bold text-sky-400 uppercase">
-                SELECT TACTICAL BACKUP TRANSMISSION PROTOCOL (3 OPTIONS):
+              <label className="text-xs font-mono font-bold text-sky-400">
+                Protocol
               </label>
               {BACKUP_OPTIONS.map((opt) => {
                 const isSelected = selectedBackupOption === opt.id;
@@ -2118,10 +2110,10 @@ export const UnitIncidentsFeed: React.FC = () => {
                           {opt.number}
                         </span>
                         <div>
-                          <div className="text-xs font-mono font-black text-white leading-snug">
+                          <div className="text-xs font-mono font-bold text-white leading-snug">
                             {opt.label}
                           </div>
-                          <p className="text-[11px] text-slate-400 mt-1">{opt.description}</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">{opt.description}</p>
                         </div>
                       </div>
                       <button
@@ -2131,9 +2123,9 @@ export const UnitIncidentsFeed: React.FC = () => {
                           setSelectedBackupOption(opt.id);
                           handleExecuteBackupOption(opt.id);
                         }}
-                        className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-[10px] font-bold uppercase tracking-wider flex-shrink-0 cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-[10px] font-bold flex-shrink-0 cursor-pointer"
                       >
-                        DISPATCH #{opt.number}
+                        Send
                       </button>
                     </div>
                   </div>
@@ -2146,7 +2138,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                 <div>
                   <label className="text-[11px] font-mono text-slate-400 flex items-center gap-1 mb-1">
                     <Phone className="w-3 h-3 text-sky-400" />
-                    <span>EMERGENCY CALL NUMBER</span>
+                    <span>Phone</span>
                   </label>
                   <input
                     type="text"
@@ -2158,7 +2150,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                 <div>
                   <label className="text-[11px] font-mono text-slate-400 flex items-center gap-1 mb-1">
                     <Mail className="w-3 h-3 text-sky-400" />
-                    <span>DISPATCH EMAIL GATEWAY</span>
+                    <span>Email</span>
                   </label>
                   <input
                     type="email"
@@ -2172,7 +2164,7 @@ export const UnitIncidentsFeed: React.FC = () => {
 
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-mono font-bold text-slate-300">
-                TARGET RESPONDER FORCE:
+                Target Unit
               </label>
               <div className="grid grid-cols-4 gap-2">
                 {(['ALL', 'RHU', 'FIRE', 'PNP'] as const).map((ag) => (
@@ -2190,7 +2182,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                     {ag === 'FIRE' && <Flame className="w-3.5 h-3.5" />}
                     {ag === 'PNP' && <Shield className="w-3.5 h-3.5" />}
                     {ag === 'ALL' && <Radio className="w-3.5 h-3.5" />}
-                    <span>{ag === 'ALL' ? 'ALL UNITS' : ag}</span>
+                    <span>{ag === 'ALL' ? 'All' : ag}</span>
                   </button>
                 ))}
               </div>
@@ -2198,7 +2190,7 @@ export const UnitIncidentsFeed: React.FC = () => {
 
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-mono font-bold text-slate-300">
-                TACTICAL SITUATION NOTE:
+                Note
               </label>
               <textarea
                 value={backupNote}
@@ -2212,22 +2204,21 @@ export const UnitIncidentsFeed: React.FC = () => {
         </DefaultFloatingModalCard>
       )}
 
-      {/* TASK 4: 40-IMAGE TIMESTAMPED EVIDENCE FLOATING MODAL */}
+      {/* 40-Image Timestamped Evidence Modal */}
       {evidenceModalIncident && (
         <DefaultFloatingModalCard
           isOpen={evidenceModalIncident !== null}
           onClose={() => setEvidenceModalIncident(null)}
-          title={`FIELD EVIDENCE VAULT (UP TO 40 IMAGES/VIDEOS) // ${evidenceModalIncident.referenceCode}`}
-          subtitle={`Capacity: ${currentModalEvidences.length} / ${MAX_EVIDENCE_SLOTS} Slots Used — Exact Timestamping (YYYY-MM-DD hh:mm:ss A)`}
+          title={`Evidence — ${evidenceModalIncident.referenceCode}`}
+          subtitle={`${currentModalEvidences.length} / ${MAX_EVIDENCE_SLOTS} items`}
           size="4xl"
           footer={
             <div className="flex flex-wrap items-center justify-between w-full gap-2">
               <div className="text-xs font-mono text-slate-400">
-                SLOT CAPACITY:{' '}
                 <strong className="text-sky-400">
                   {currentModalEvidences.length} / {MAX_EVIDENCE_SLOTS}
                 </strong>{' '}
-                MEDIA ITEMS RECORDED
+                used
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -2245,7 +2236,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   disabled={currentModalEvidences.length >= MAX_EVIDENCE_SLOTS}
                   icon={<Upload className="w-3.5 h-3.5" />}
                 >
-                  Upload Photos/Videos
+                  Upload
                 </Button>
                 <Button
                   variant="primary"
@@ -2254,20 +2245,20 @@ export const UnitIncidentsFeed: React.FC = () => {
                   disabled={currentModalEvidences.length >= MAX_EVIDENCE_SLOTS}
                   icon={<Camera className="w-3.5 h-3.5" />}
                 >
-                  Capture Timestamped Frame (+1)
+                  Capture Frame (+1)
                 </Button>
               </div>
             </div>
           }
         >
           <div className="flex flex-col gap-4">
-            {/* Active Evidence Viewer with Exact Date & Time including Seconds and AM/PM */}
+            {/* Active Evidence Viewer */}
             {activeEvidenceItem ? (
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
                   <div className="flex items-center gap-2">
                     <span className="px-2.5 py-0.5 rounded bg-sky-500/20 border border-sky-500/50 text-sky-300 font-mono text-xs font-black">
-                      SLOT #{activeEvidenceItem.slotIndex} OF {MAX_EVIDENCE_SLOTS}
+                      #{activeEvidenceItem.slotIndex}/{MAX_EVIDENCE_SLOTS}
                     </span>
                     <span className="text-xs font-mono font-bold text-white">
                       {activeEvidenceItem.caption}
@@ -2283,14 +2274,14 @@ export const UnitIncidentsFeed: React.FC = () => {
                         type="button"
                         onClick={() => {
                           setLightboxTitle(
-                            `${evidenceModalIncident.referenceCode} — Slot #${activeEvidenceItem.slotIndex}/40 (${activeEvidenceItem.capturedAtFormatted})`
+                            `${evidenceModalIncident.referenceCode} · #${activeEvidenceItem.slotIndex}/40 (${activeEvidenceItem.capturedAtFormatted})`
                           );
                           setLightboxImageUrl(activeEvidenceItem.url);
                         }}
                         className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-500/40 font-mono text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
-                        <span>FULL ZOOM</span>
+                        <span>Zoom</span>
                       </button>
                     )}
                     <button
@@ -2299,7 +2290,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                         handleRemoveEvidenceSlot(evidenceModalIncident.id, activeEvidenceItem.id)
                       }
                       className="p-1.5 rounded bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-700/50 cursor-pointer"
-                      title="Remove evidence item"
+                      title="Remove item"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -2319,7 +2310,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       alt={activeEvidenceItem.caption}
                       onClick={() => {
                         setLightboxTitle(
-                          `${evidenceModalIncident.referenceCode} — Slot #${activeEvidenceItem.slotIndex}/40 (${activeEvidenceItem.capturedAtFormatted})`
+                          `${evidenceModalIncident.referenceCode} · #${activeEvidenceItem.slotIndex}/40 (${activeEvidenceItem.capturedAtFormatted})`
                         );
                         setLightboxImageUrl(activeEvidenceItem.url);
                       }}
@@ -2330,7 +2321,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               </div>
             ) : (
               <div className="p-8 rounded-xl bg-slate-950 border border-slate-800 text-center font-mono text-xs text-slate-400">
-                No evidence media in slot. Click &ldquo;Capture Timestamped Frame&rdquo; or &ldquo;Upload Photos/Videos&rdquo; below to populate up to 40 slots.
+                No evidence recorded. Upload or capture a frame below.
               </div>
             )}
 
@@ -2338,10 +2329,7 @@ export const UnitIncidentsFeed: React.FC = () => {
             <div>
               <div className="flex items-center justify-between mb-2 font-mono text-xs">
                 <span className="text-slate-300 font-bold">
-                  40-IMAGE / VIDEO GALLERY MATRIX (SLOTS 1 TO 40):
-                </span>
-                <span className="text-slate-400">
-                  Click any populated slot to inspect exact timestamp (YYYY-MM-DD hh:mm:ss A)
+                  Slots (1–40)
                 </span>
               </div>
               <div className="grid grid-cols-4 sm:grid-cols-8 md:grid-cols-10 gap-2 max-h-56 overflow-y-auto p-2 rounded-xl bg-slate-950/90 border border-slate-800">
@@ -2368,8 +2356,8 @@ export const UnitIncidentsFeed: React.FC = () => {
                       }`}
                       title={
                         item
-                          ? `Slot #${idx + 1}: ${item.capturedAtFormatted}`
-                          : `Empty Slot #${idx + 1} (Click to capture)`
+                          ? `#${idx + 1}: ${item.capturedAtFormatted}`
+                          : `Slot #${idx + 1}`
                       }
                     >
                       {item ? (
@@ -2391,10 +2379,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                           </span>
                         </>
                       ) : (
-                        <>
-                          <span className="font-bold">#{idx + 1}</span>
-                          <span className="text-[8px]">EMPTY</span>
-                        </>
+                        <span className="font-bold">#{idx + 1}</span>
                       )}
                     </button>
                   );
@@ -2413,17 +2398,17 @@ export const UnitIncidentsFeed: React.FC = () => {
         title={lightboxTitle}
       />
 
-      {/* TASK 5: MULTI-CASUALTY PCR VITALS MODAL WITH "ADD NEW PCR VITAL" BUTTON */}
+      {/* Multi-Casualty PCR Vitals Modal */}
       {activePcrIncident && (
         <DefaultFloatingModalCard
           isOpen={activePcrIncident !== null}
           onClose={() => setActivePcrIncident(null)}
-          title={`PATIENT CARE RECORD (PCR) & TRAUMA VITALS // ${activePcrIncident.referenceCode}`}
-          subtitle={`Multi-Casualty Field Triage — ${draftCasualties.length} Injured Person(s) Recorded`}
+          title={`PCR Vitals — ${activePcrIncident.referenceCode}`}
+          subtitle={`${draftCasualties.length} patient(s)`}
           size="2xl"
         >
           <form onSubmit={handleSaveAllCasualtyPcrRecords} className="space-y-4">
-            {/* Multi-Casualty Selector Strip & "ADD NEW PCR VITAL" Button */}
+            {/* Multi-Casualty Selector Strip */}
             <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-slate-950 border border-rose-900/60">
               <div className="flex flex-wrap items-center gap-1.5">
                 {draftCasualties.map((c, idx) => (
@@ -2439,7 +2424,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   >
                     <User className="w-3.5 h-3.5" />
                     <span>
-                      CASUALTY #{idx + 1}: {c.patientName || 'Unnamed'}
+                      #{idx + 1}: {c.patientName || 'Unnamed'}
                     </span>
                   </button>
                 ))}
@@ -2448,10 +2433,10 @@ export const UnitIncidentsFeed: React.FC = () => {
               <button
                 type="button"
                 onClick={handleAddNewPcrVital}
-                className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono text-xs font-black uppercase tracking-wider border border-white inline-flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
+                className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono text-xs font-black border border-white inline-flex items-center gap-1.5 shadow-md active:scale-95 transition-all cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>ADD NEW PCR VITAL</span>
+                <span>+ Add PCR</span>
               </button>
             </div>
 
@@ -2459,7 +2444,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between text-xs font-mono text-slate-400">
                   <span>
-                    EDITING CASUALTY RECORD #{activeCasualtyTabIndex + 1} — TIMESTAMP:{' '}
+                    Patient #{activeCasualtyTabIndex + 1} ·{' '}
                     <strong className="text-emerald-400">{activeCasualtyDraft.recordedAt}</strong>
                   </span>
                   {draftCasualties.length > 1 && (
@@ -2469,16 +2454,16 @@ export const UnitIncidentsFeed: React.FC = () => {
                       className="text-rose-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
                     >
                       <Trash2 className="w-3 h-3" />
-                      <span>Remove Casualty #{activeCasualtyTabIndex + 1}</span>
+                      <span>Remove</span>
                     </button>
                   )}
                 </div>
 
-                {/* Patient Demographics (Preserved Identity Inputs) */}
+                {/* Patient Demographics */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Injured Person Full Name / Identity
+                      Patient Name
                     </label>
                     <input
                       type="text"
@@ -2487,7 +2472,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       onChange={(e) =>
                         handleUpdateActiveCasualtyField('patientName', e.target.value)
                       }
-                      placeholder="e.g. Juan dela Cruz (or Unidentified Trauma Casualty)"
+                      placeholder="Full name or Unidentified"
                       className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500"
                     />
                   </div>
@@ -2523,7 +2508,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Level of Consciousness (AVPU)
+                      Consciousness (AVPU)
                     </label>
                     <select
                       value={activeCasualtyDraft.levelOfConsciousness}
@@ -2532,19 +2517,19 @@ export const UnitIncidentsFeed: React.FC = () => {
                       }
                       className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500"
                     >
-                      <option value="Alert">Alert (Spontaneous Eye &amp; Speech)</option>
-                      <option value="Verbal">Verbal (Responds to Voice)</option>
-                      <option value="Pain">Pain (Responds to Trapezius Squeeze)</option>
-                      <option value="Unresponsive">Unresponsive (No Response)</option>
+                      <option value="Alert">Alert</option>
+                      <option value="Verbal">Verbal</option>
+                      <option value="Pain">Pain</option>
+                      <option value="Unresponsive">Unresponsive</option>
                     </select>
                   </div>
                 </div>
 
                 {/* Vitals Matrix */}
                 <div className="p-3 bg-slate-950/70 border border-rose-950/80 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2 text-rose-400 text-xs font-semibold uppercase tracking-wider">
+                  <div className="flex items-center gap-2 mb-2 text-rose-400 text-xs font-semibold">
                     <Activity className="w-3.5 h-3.5" />
-                    <span>Pre-Hospital Vitals Telemetry</span>
+                    <span>Vitals</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                     <div>
@@ -2573,7 +2558,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-[11px] text-slate-400 mb-0.5">
-                        Heart Rate (BPM)
+                        HR (BPM)
                       </label>
                       <input
                         type="number"
@@ -2597,7 +2582,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-[11px] text-slate-400 mb-0.5">
-                        Resp Rate (/min)
+                        RR (/min)
                       </label>
                       <input
                         type="number"
@@ -2614,7 +2599,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                 {/* Interventions Checkchips */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Administered Medical Interventions
+                    Interventions
                   </label>
                   <div className="flex flex-wrap gap-1.5">
                     {COMMON_INTERVENTIONS.map((item) => {
@@ -2642,7 +2627,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Chief Complaint & Clinical Field Narrative */}
+                {/* Chief Complaint & Field Notes */}
                 <div className="space-y-2">
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
@@ -2654,13 +2639,13 @@ export const UnitIncidentsFeed: React.FC = () => {
                       onChange={(e) =>
                         handleUpdateActiveCasualtyField('chiefComplaint', e.target.value)
                       }
-                      placeholder="e.g. Multiple lacerations, blunt chest trauma"
+                      placeholder="Primary injury or symptom"
                       className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Clinical Field Narrative
+                      Field Notes
                     </label>
                     <textarea
                       rows={2}
@@ -2668,7 +2653,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       onChange={(e) =>
                         handleUpdateActiveCasualtyField('narrative', e.target.value)
                       }
-                      placeholder="Pre-hospital triage notes and patient response..."
+                      placeholder="Triage notes..."
                       className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500 resize-none"
                     />
                   </div>
@@ -2684,7 +2669,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                 onClick={handleAddNewPcrVital}
                 icon={<Plus className="w-3.5 h-3.5" />}
               >
-                ADD NEW PCR VITAL
+                + Add PCR
               </Button>
               <div className="flex items-center gap-2">
                 <Button
@@ -2702,7 +2687,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   isLoading={isSavingPcr}
                   icon={<HeartPulse className="w-4 h-4" />}
                 >
-                  Store All ({draftCasualties.length}) PCR Record(s)
+                  Save ({draftCasualties.length})
                 </Button>
               </div>
             </div>
@@ -2717,7 +2702,7 @@ export const UnitIncidentsFeed: React.FC = () => {
           onClose={() => setActiveAlarmIncident(null)}
           reportId={activeAlarmIncident.id}
           onSuccess={(alarm) => {
-            showToast(`BFP ALARM LEVEL UPDATED TO ${alarm.alarmLevel.toUpperCase()}`);
+            showToast(`Alarm level: ${alarm.alarmLevel}`);
             loadIncidents();
           }}
         />
@@ -2730,7 +2715,7 @@ export const UnitIncidentsFeed: React.FC = () => {
           reportId={activeBlotterIncident.id}
           defaultLocation={activeBlotterIncident.locationLabel || 'Dipolog City Location'}
           onSuccess={(blotter) => {
-            showToast(`POLICE BLOTTER ENTRY [${blotter.blotterNumber}] SEALED WITH SHA-256`);
+            showToast(`Blotter ${blotter.blotterNumber} sealed`);
             loadIncidents();
           }}
         />

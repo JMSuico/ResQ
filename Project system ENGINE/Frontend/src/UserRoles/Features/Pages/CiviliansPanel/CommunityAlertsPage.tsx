@@ -6,13 +6,14 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { VolumeX, AlertTriangle, Shield } from 'lucide-react';
 import { getPublicAlerts } from '@/Endpoints/civilianPortalApi';
 import { AlertItem } from '@/Endpoints/reportsApi';
 import { ImageLightboxModal } from '@/Shared/ImageLightboxModal';
 import { SearchBar } from '@/Shared/SearchBar';
 import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
-import { formatIsoTimestamp, formatRelativeTime } from '@/Libs/Assets/formatters';
+import { formatRelativeTime } from '@/Libs/Assets/formatters';
 import { SEVERITY_COLORS } from '@/Libs/Assets/data';
 import { BASELINE_ALERTS } from '@/Libs/Assets/baselineFixtures';
 
@@ -70,16 +71,12 @@ export const CommunityAlertsPage: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 w-full pb-12">
-      {/* 1. Header with Official Civil Defense Verification Seal */}
+      {/* 1. Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-amber-600/20 text-amber-400 text-xs font-mono font-bold border border-amber-600/40 mb-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-            <span>AUTHENTICATED MUNICIPAL BROADCAST STREAM</span>
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Community Emergency Advisories</h1>
+          <h1 className="text-2xl font-black text-white tracking-tight">Community Alerts</h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Verified public safety notices, weather alerts, road closures, and evacuation advisories from LDRRMO Command
+            Official public safety notices and advisories from LDRRMO.
           </p>
         </div>
 
@@ -94,10 +91,10 @@ export const CommunityAlertsPage: React.FC = () => {
                 ? 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
                 : 'bg-rose-950/80 text-rose-300 border-rose-600/60 shadow-[0_0_12px_rgba(225,29,72,0.3)] animate-pulse'
             }`}
-            title={sirenMuted ? 'Unmute Emergency Siren' : 'Mute Emergency Siren'}
+            title={sirenMuted ? 'Unmute Siren' : 'Mute Siren'}
           >
-            <span>{sirenMuted ? '🔇' : '🚨'}</span>
-            <span>{sirenMuted ? 'AUDIO MUTED' : 'AUDIO ACTIVE'}</span>
+            {sirenMuted ? <VolumeX className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+            <span>{sirenMuted ? 'Muted' : 'Sound On'}</span>
           </button>
 
           <Link
@@ -113,15 +110,15 @@ export const CommunityAlertsPage: React.FC = () => {
       {criticalCount > 0 && (
         <div className="p-4 rounded-xl bg-gradient-to-r from-rose-950/90 via-slate-900 to-slate-950 border border-rose-600/60 shadow-xl flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-rose-600/20 border border-rose-500 flex items-center justify-center text-rose-400 font-black text-lg flex-shrink-0 animate-pulse">
-              🚨
+            <div className="w-9 h-9 rounded-xl bg-rose-600/20 border border-rose-500 flex items-center justify-center text-rose-400 flex-shrink-0 animate-pulse">
+              <AlertTriangle className="w-5 h-5" />
             </div>
             <div>
               <span className="text-xs font-mono font-bold text-rose-400 uppercase tracking-wider block">
-                HIGH-PRIORITY ACTIVE WARNINGS ({criticalCount})
+                Active Warnings ({criticalCount})
               </span>
               <p className="text-xs text-slate-200 mt-0.5">
-                Residents are advised to monitor official guidance, avoid flood-prone zones, and obey traffic cordons.
+                Monitor official guidance and avoid hazard zones.
               </p>
             </div>
           </div>
@@ -193,14 +190,14 @@ export const CommunityAlertsPage: React.FC = () => {
       {/* 4. Empty State */}
       {filteredAlerts.length === 0 ? (
         <div className="tactical-card p-12 text-center flex flex-col items-center justify-center gap-3 rounded-2xl bg-slate-900/60 border border-slate-800">
-          <div className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center text-2xl">
-            🛡️
+          <div className="w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-400">
+            <Shield className="w-6 h-6" />
           </div>
-          <h3 className="text-base font-bold text-white">All Municipal Sectors Nominal</h3>
+          <h3 className="text-base font-bold text-white">No Active Alerts</h3>
           <p className="text-xs text-slate-400 max-w-sm">
             {searchQuery
-              ? `No advisories found matching "${searchQuery}".`
-              : 'There are currently no active public safety warnings or weather advisories in effect for Katipunan, ZN.'}
+              ? `No alerts matching "${searchQuery}".`
+              : 'All sectors nominal. No active warnings in Katipunan, ZN.'}
           </p>
         </div>
       ) : viewMode === 'card' ? (
@@ -243,7 +240,7 @@ export const CommunityAlertsPage: React.FC = () => {
                   <div className="flex flex-col gap-1.5 flex-1">
                     <h2 className="text-base font-bold text-white leading-snug">{a.title}</h2>
                     <span className="text-[11px] font-mono text-slate-500">
-                      Dispatched by: LDRRMO Emergency Operations Center
+                      LDRRMO
                     </span>
                   </div>
 

@@ -1,13 +1,17 @@
 # ==============================================================================
 # ResQTrack Incident AI System Detection -- Master Multi-Container Topology
+# Portable across Windows, macOS, and Linux Docker hosts. Configure overrides
+# optionally via a root ".env" file (see ".env.example"); safe defaults apply
+# automatically when no ".env" file is present.
+#
 # Services:
-#   1. resqtrack-backend     (:1999) - .NET 10 Web API Core Engine
-#   2. resqtrack-admin       (:1996) - LDRRMO Admin Executive Command Center
-#   3. resqtrack-responders  (:1997) - Emergency Responders (RHU / Fire / PNP)
-#   4. resqtrack-civilian    (:1998) - Civilian SOS Emergency Incident Portal
-#   5. resqtrack-cache       (:6379) - Redis 7 Alpine Caching & Session Store
-#   6. resqtrack-db-primary  (:5432) - PostgreSQL 16 Alpine Primary Relational DB
-#   7. resqtrack-db-replica  (:5433) - PostgreSQL 16 Alpine Standby Read Replica
+#   1. resqtrack-cache       (:6379) - Redis 7 Alpine Caching & Session Store
+#   2. resqtrack-db-primary  (:5432) - PostgreSQL 16 Alpine Primary Relational DB
+#   3. resqtrack-db-replica  (:5433) - PostgreSQL 16 Alpine Standby Read Replica
+#   4. resqtrack-backend     (:1999) - .NET 10 Web API Core Engine
+#   5. resqtrack-admin       (:1996) - LDRRMO Admin Executive Command Center
+#   6. resqtrack-responders  (:1997) - Emergency Responders (RHU / Fire / PNP)
+#   7. resqtrack-civilian    (:1998) - Civilian SOS Emergency Incident Portal
 #   8. resqtrack-pgadmin     (:5050) - Visual DB Management Console (tools profile)
 # ==============================================================================
 
@@ -21,7 +25,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - resqtrack_redis_data:/data
     healthcheck:
@@ -41,22 +45,22 @@ services:
     container_name: resqtrack-postgres-primary
     restart: unless-stopped
     command: >
-      postgres 
-      -c wal_level=replica 
-      -c max_wal_senders=10 
-      -c max_replication_slots=10 
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=10
+      -c max_replication_slots=10
       -c hot_standby=on
     environment:
-      POSTGRES_DB: ResQTrackDb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: YourPassword123!
+      POSTGRES_DB: ${POSTGRES_DB:-ResQTrackDb}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-YourPassword123!}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - resqtrack_postgres_primary_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ResQTrackDb"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ResQTrackDb}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -72,19 +76,19 @@ services:
     container_name: resqtrack-postgres-replica
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ResQTrackDb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: YourPassword123!
+      POSTGRES_DB: ${POSTGRES_DB:-ResQTrackDb}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-YourPassword123!}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5433:5432"
+      - "${POSTGRES_REPLICA_PORT:-5433}:5432"
     volumes:
       - resqtrack_postgres_replica_data:/var/lib/postgresql/data
     depends_on:
       resqtrack-db-primary:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ResQTrackDb"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ResQTrackDb}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -93,7 +97,7 @@ services:
       - resqtrack-network
 
   # ----------------------------------------------------------------------------
-  # 4. Backend Core Engine (.NET 10 Web API)
+  # 4. Backend Core Engine (.NET 10 Web API -- Multi-Stage Source Build)
   # ----------------------------------------------------------------------------
   resqtrack-backend:
     build:
@@ -103,13 +107,24 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:1999
-      ASPNETCORE_ENVIRONMENT: Production
-      DatabaseProvider: PostgreSql
-      ConnectionStrings__PostgreSqlConnection: Host=resqtrack-db-primary;Port=5432;Database=ResQTrackDb;Username=postgres;Password=YourPassword123!;
-      ConnectionStrings__PostgreSqlConnection_Replica: Host=resqtrack-db-replica;Port=5432;Database=ResQTrackDb;Username=postgres;Password=YourPassword123!;
-      RedisConnection: resqtrack-cache:6379
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      DatabaseProvider: ${DATABASE_PROVIDER:-PostgreSql}
+      ConnectionStrings__PostgreSqlConnection: Host=resqtrack-db-primary;Port=5432;Database=${POSTGRES_DB:-ResQTrackDb};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-YourPassword123!};
+      ConnectionStrings__PostgreSqlConnection_Replica: Host=resqtrack-db-replica;Port=5432;Database=${POSTGRES_DB:-ResQTrackDb};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-YourPassword123!};
+      ConnectionStrings__DefaultConnection: ${SQLSERVER_CONNECTION:-Server=host.docker.internal;Database=ResQTrackDb;User Id=sa;Password=YourPassword123!;TrustServerCertificate=True;MultipleActiveResultSets=true;}
+      RedisConnection: ${REDIS_CONNECTION:-resqtrack-cache:6379}
+      Claude__ApiKey: ${ANTHROPIC_API_KEY:-}
+      Claude__Model: ${CLAUDE_MODEL:-claude-sonnet-4-6}
+      Claude__FallbackModel: ${CLAUDE_FALLBACK_MODEL:-claude-sonnet-5-5}
+      Claude__Endpoint: ${CLAUDE_ENDPOINT:-https://api.anthropic.com/v1/messages}
+      VerificationTokens__HmacSecret: ${VERIFICATION_HMAC_SECRET:-RESQTRACK-V2-TOKEN-HMAC-SHA256-DEV-SIGNING-KEY-2026-KATIPUNAN-7109}
+      Cors__AllowedOrigins: ${ALLOWED_ORIGINS:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "1999:1999"
+      - "${BACKEND_PORT:-1999}:1999"
+    volumes:
+      - resqtrack_uploads_data:/app/server-data/uploads
     depends_on:
       resqtrack-db-primary:
         condition: service_healthy
@@ -129,13 +144,15 @@ services:
     restart: unless-stopped
     environment:
       PORT: 1996
-      BACKEND_URL: http://resqtrack-backend:1999
+      BACKEND_URL: ${BACKEND_INTERNAL_URL:-http://resqtrack-backend:1999}
     ports:
-      - "1996:1996"
+      - "${ADMIN_PORT:-1996}:1996"
     volumes:
       - "./Project system ENGINE/Frontend/src:/app/src"
       - "./Project system ENGINE/Frontend/index.html:/app/index.html"
       - "./Project system ENGINE/Frontend/vite.config.ts:/app/vite.config.ts"
+      - "./Project system ENGINE/Frontend/tsconfig.json:/app/tsconfig.json"
+      - "./Project system ENGINE/Frontend/tsconfig.app.json:/app/tsconfig.app.json"
     depends_on:
       - resqtrack-backend
     networks:
@@ -152,13 +169,15 @@ services:
     restart: unless-stopped
     environment:
       PORT: 1997
-      BACKEND_URL: http://resqtrack-backend:1999
+      BACKEND_URL: ${BACKEND_INTERNAL_URL:-http://resqtrack-backend:1999}
     ports:
-      - "1997:1997"
+      - "${RESPONDER_PORT:-1997}:1997"
     volumes:
       - "./Project system ENGINE/Frontend/src:/app/src"
       - "./Project system ENGINE/Frontend/index.html:/app/index.html"
       - "./Project system ENGINE/Frontend/vite.config.ts:/app/vite.config.ts"
+      - "./Project system ENGINE/Frontend/tsconfig.json:/app/tsconfig.json"
+      - "./Project system ENGINE/Frontend/tsconfig.app.json:/app/tsconfig.app.json"
     depends_on:
       - resqtrack-backend
     networks:
@@ -175,13 +194,15 @@ services:
     restart: unless-stopped
     environment:
       PORT: 1998
-      BACKEND_URL: http://resqtrack-backend:1999
+      BACKEND_URL: ${BACKEND_INTERNAL_URL:-http://resqtrack-backend:1999}
     ports:
-      - "1998:1998"
+      - "${CIVILIAN_PORT:-1998}:1998"
     volumes:
       - "./Project system ENGINE/Frontend/src:/app/src"
       - "./Project system ENGINE/Frontend/index.html:/app/index.html"
       - "./Project system ENGINE/Frontend/vite.config.ts:/app/vite.config.ts"
+      - "./Project system ENGINE/Frontend/tsconfig.json:/app/tsconfig.json"
+      - "./Project system ENGINE/Frontend/tsconfig.app.json:/app/tsconfig.app.json"
     depends_on:
       - resqtrack-backend
     networks:
@@ -195,10 +216,10 @@ services:
     container_name: resqtrack-pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@resqtrack.gov.ph
-      PGADMIN_DEFAULT_PASSWORD: AdminPostgres2026!
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@resqtrack.gov.ph}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-AdminPostgres2026!}
     ports:
-      - "5050:80"
+      - "${PGADMIN_PORT:-5050}:80"
     depends_on:
       resqtrack-db-primary:
         condition: service_healthy
@@ -222,3 +243,5 @@ volumes:
     name: resqtrack_postgres_primary_data
   resqtrack_postgres_replica_data:
     name: resqtrack_postgres_replica_data
+  resqtrack_uploads_data:
+    name: resqtrack_uploads_data

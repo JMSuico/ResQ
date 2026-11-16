@@ -238,14 +238,7 @@ export const EmergencyNumbersPage: React.FC = () => {
       {/* 1. Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-rose-600/20 text-rose-400 text-xs font-mono font-bold border border-rose-600/40 mb-1.5">
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-            <span>24/7 KATIPUNAN MUNICIPAL DISPATCH NETWORK</span>
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Standard Emergency Hotlines Directory</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Instant click-to-call emergency lines, physical station addresses, and direct responders for Katipunan, ZN
-          </p>
+          <h1 className="text-2xl font-black text-white tracking-tight">Emergency Numbers</h1>
         </div>
       </div>
 
@@ -315,7 +308,6 @@ export const EmergencyNumbersPage: React.FC = () => {
               <div className="mt-6 pt-4 border-t border-slate-800/80 flex flex-col gap-3">
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase block font-semibold">24/7 HOTLINE DESK</span>
                     <span className="text-base font-mono font-black text-sky-400">{item.hotline}</span>
                   </div>
 
@@ -325,7 +317,7 @@ export const EmergencyNumbersPage: React.FC = () => {
                     aria-label={`Dial ${item.short} hotline`}
                   >
                     <PhoneCall className="w-4 h-4" />
-                    <span>Instant Call: {item.primaryDialNumber}</span>
+                    <span>Call {item.primaryDialNumber}</span>
                   </a>
                 </div>
 

@@ -78,121 +78,121 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isResponder = normRole === 'responder';
 
   let agencyInfo: AgencyIdentity = {
-    badge: 'LDRRMO C2',
-    name: 'Executive Command',
+    badge: 'LDRRMO',
+    name: 'Central Command',
     color: '#dc2626',
     border: '#f59e0b',
     glow: 'rgba(220, 38, 38, 0.3)',
-    category: 'MUNICIPAL COMMAND'
+    category: 'Command'
   };
 
   let menuItems: NavMenuItem[] = [];
 
   if (isLdrrmoAdmin) {
     agencyInfo = {
-      badge: 'LDRRMO // LEVEL 4',
-      name: 'Central Command C2',
+      badge: 'LDRRMO',
+      name: 'Central Command',
       color: '#dc2626',
       border: '#f59e0b',
       glow: 'rgba(220, 38, 38, 0.35)',
-      category: 'EXECUTIVE DISPATCH'
+      category: 'Command'
     };
     menuItems = [
       { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/admin/strategic-map', label: 'Strategic Map', icon: Map },
-      { to: '/admin/incidents', label: 'Incident Operations & Triage Dispatch', icon: AlertTriangle },
+      { to: '/admin/incidents', label: 'Incidents & Triage', icon: AlertTriangle },
       { to: '/admin/submitted-reports', label: 'Submitted Reports', icon: FileCheck },
-      { to: '/admin/roster', label: 'Agency Fleet Roster', icon: Users },
-      { to: '/admin/analytics', label: 'Analytics & Reports', icon: BarChart3 },
-      { to: '/admin/users', label: 'User Governance', icon: ShieldCheck },
-      { to: '/admin/alerts', label: 'Emergency Broadcasts', icon: Bell },
-      { to: '/admin/settings', label: 'System Settings', icon: Settings }
+      { to: '/admin/roster', label: 'Fleet Roster', icon: Users },
+      { to: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
+      { to: '/admin/users', label: 'Users', icon: ShieldCheck },
+      { to: '/admin/alerts', label: 'Broadcasts', icon: Bell },
+      { to: '/admin/settings', label: 'Settings', icon: Settings }
     ];
   } else if (isResponder && (normUnit === 'RHU' || normUnit === 'MEDIC')) {
     agencyInfo = {
-      badge: 'RHU // MEDIC CORPS',
-      name: 'EMS & Trauma Unit',
+      badge: 'RHU Medic',
+      name: 'EMS & Trauma',
       color: '#0284c7',
       border: '#38bdf8',
       glow: 'rgba(2, 132, 199, 0.35)',
-      category: 'MEDICAL TRIAGE'
+      category: 'Medical'
     };
     menuItems = [
-      { to: '/responder', label: 'EMS TRAUMA BOARD', icon: HeartPulse },
-      { to: '/responder/incidents', label: 'CASUALTY DISPATCHES', icon: AlertTriangle },
-      { to: '/responder/request-deploy', label: 'REQUEST & DEPLOY', icon: Send },
-      { to: '/responder/roster', label: 'AMBULANCE CREW', icon: Users },
-      { to: '/responder/reports', label: 'INCIDENT LOGS', icon: FileText },
-      { to: '/responder/profile', label: 'PROFILE SETTINGS', icon: User }
+      { to: '/responder', label: 'Dashboard', icon: HeartPulse },
+      { to: '/responder/incidents', label: 'Dispatches', icon: AlertTriangle },
+      { to: '/responder/request-deploy', label: 'Request & Deploy', icon: Send },
+      { to: '/responder/roster', label: 'Crew Roster', icon: Users },
+      { to: '/responder/reports', label: 'Incident Logs', icon: FileText },
+      { to: '/responder/profile', label: 'Profile', icon: User }
     ];
   } else if (isResponder && normUnit === 'FIRE') {
     agencyInfo = {
-      badge: 'BFP // FIRE RESCUE',
+      badge: 'BFP Fire',
       name: 'Engine Company',
       color: '#ea580c',
       border: '#f97316',
       glow: 'rgba(234, 88, 12, 0.35)',
-      category: 'FIRE & HAZMAT'
+      category: 'Fire & Hazmat'
     };
     menuItems = [
-      { to: '/responder/dashboard', label: 'Fire Command Hub', icon: Flame },
+      { to: '/responder/dashboard', label: 'Dashboard', icon: Flame },
       { to: '/responder/incidents', label: 'Hazmat & 2-Alarm', icon: AlertTriangle },
-      { to: '/responder/roster', label: 'Engine Apparatus', icon: Truck },
-      { to: '/responder/my-reports', label: 'After-Action Logs', icon: FileText },
-      { to: '/responder/alerts', label: 'Station Alarms', icon: Bell },
-      { to: '/responder/profile', label: 'Officer Profile', icon: User }
+      { to: '/responder/roster', label: 'Apparatus', icon: Truck },
+      { to: '/responder/my-reports', label: 'Incident Logs', icon: FileText },
+      { to: '/responder/alerts', label: 'Alerts', icon: Bell },
+      { to: '/responder/profile', label: 'Profile', icon: User }
     ];
   } else if (isResponder && (normUnit === 'PNP' || normUnit === 'SECURITY')) {
     agencyInfo = {
-      badge: 'PNP // POLICE FORCE',
-      name: 'Patrol & Tactical',
+      badge: 'PNP Police',
+      name: 'Patrol Unit',
       color: '#3b82f6',
       border: '#60a5fa',
       glow: 'rgba(59, 130, 246, 0.35)',
-      category: 'LAW ENFORCEMENT'
+      category: 'Law Enforcement'
     };
     menuItems = [
-      { to: '/responder/dashboard', label: 'Sector Patrol Hub', icon: Shield },
-      { to: '/responder/incidents', label: 'Blotter & Dispatches', icon: AlertTriangle },
-      { to: '/responder/roster', label: 'Patrol Beat Roster', icon: Users },
-      { to: '/responder/my-reports', label: 'Police Action Logs', icon: FileText },
-      { to: '/responder/alerts', label: 'Distress Alarms', icon: Bell },
-      { to: '/responder/profile', label: 'Officer Credentials', icon: User }
+      { to: '/responder/dashboard', label: 'Dashboard', icon: Shield },
+      { to: '/responder/incidents', label: 'Dispatches', icon: AlertTriangle },
+      { to: '/responder/roster', label: 'Patrol Roster', icon: Users },
+      { to: '/responder/my-reports', label: 'Incident Logs', icon: FileText },
+      { to: '/responder/alerts', label: 'Alerts', icon: Bell },
+      { to: '/responder/profile', label: 'Profile', icon: User }
     ];
   } else if (isResponder) {
     agencyInfo = {
-      badge: 'TACTICAL UNIT',
+      badge: 'Responder',
       name: 'Field Operations',
       color: '#64748b',
       border: '#94a3b8',
       glow: 'rgba(100, 116, 139, 0.35)',
-      category: 'FIRST RESPONSE'
+      category: 'Field Response'
     };
     menuItems = [
-      { to: '/responder/dashboard', label: 'Unit Dispatch Hub', icon: LayoutDashboard },
-      { to: '/responder/incidents', label: 'Unit Incidents', icon: AlertTriangle },
+      { to: '/responder/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/responder/incidents', label: 'Incidents', icon: AlertTriangle },
       { to: '/responder/roster', label: 'Duty Roster', icon: Users },
-      { to: '/responder/my-reports', label: 'My Action Reports', icon: FileText },
-      { to: '/responder/alerts', label: 'Unit Alerts', icon: Bell },
-      { to: '/responder/profile', label: 'Responder Profile', icon: User }
+      { to: '/responder/my-reports', label: 'Action Reports', icon: FileText },
+      { to: '/responder/alerts', label: 'Alerts', icon: Bell },
+      { to: '/responder/profile', label: 'Profile', icon: User }
     ];
   } else {
     agencyInfo = {
-      badge: 'CIVIL DEFENSE',
+      badge: 'Civilian',
       name: 'Resident Portal',
       color: '#8b5cf6',
       border: '#a78bfa',
       glow: 'rgba(139, 92, 246, 0.35)',
-      category: 'CITIZEN SERVICES'
+      category: 'Resident Services'
     };
     menuItems = [
-      { to: '/civilian/dashboard', label: 'Emergency Hub', icon: Home },
-      { to: '/civilian/live-map', label: 'Tactical Live Map', icon: Map },
-      { to: '/civilian/report', label: 'Report Incident (SOS)', icon: Camera },
-      { to: '/civilian/my-reports', label: 'My Reports Feed', icon: AlertTriangle },
-      { to: '/civilian/alerts', label: 'Municipal Warnings', icon: Bell },
-      { to: '/civilian/hotlines', label: 'Emergency Hotlines', icon: PhoneCall },
-      { to: '/civilian/profile', label: 'PhilSys Identity', icon: User }
+      { to: '/civilian/dashboard', label: 'Dashboard', icon: Home },
+      { to: '/civilian/live-map', label: 'Live Map', icon: Map },
+      { to: '/civilian/report', label: 'Report SOS', icon: Camera },
+      { to: '/civilian/my-reports', label: 'My Reports', icon: AlertTriangle },
+      { to: '/civilian/alerts', label: 'Warnings', icon: Bell },
+      { to: '/civilian/hotlines', label: 'Hotlines', icon: PhoneCall },
+      { to: '/civilian/profile', label: 'Identity', icon: User }
     ];
   }
 

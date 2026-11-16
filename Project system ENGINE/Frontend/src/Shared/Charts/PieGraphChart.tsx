@@ -141,7 +141,7 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative flex flex-col gap-2 p-4 bg-slate-900 border border-slate-800 rounded-xl select-none"
+      className="relative flex flex-col gap-2 p-4 bg-slate-900/55 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_12px_32px_-8px_rgba(2,6,23,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] select-none"
       onMouseMove={handleMouseMove}
       onMouseLeave={() => {
         setHoveredSliceIndex(null);

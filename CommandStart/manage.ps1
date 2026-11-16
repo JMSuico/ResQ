@@ -54,9 +54,34 @@ function Pause-Console {
     $null = [Console]::ReadKey($true)
 }
 
+# --- Conflict Marker & Build Error Guard (Never Silently Ignore Failures) ---
+function Test-NoMergeConflicts {
+    Write-Info "Scanning source tree for unresolved Git conflict markers..."
+    $scanRoot = Join-Path $RootDir "Project system ENGINE"
+    if (-not (Test-Path $scanRoot)) { return $true }
+
+    $hits = Get-ChildItem -Path $scanRoot -Recurse -File -Include *.cs,*.ts,*.tsx,*.js,*.jsx,*.json,*.css,*.ps1 |
+        Where-Object { $_.FullName -notmatch '[\\/](bin|obj|publish|node_modules|dist)[\\/]' } |
+        Select-String -Pattern '^(<<<<<<<|=======$|>>>>>>>)'
+
+    if ($hits) {
+        Write-Err "Unresolved Git merge/stash conflict markers detected! Build aborted:"
+        $hits | Select-Object -First 20 | ForEach-Object {
+            Write-Host "  $($_.Path):$($_.LineNumber): $($_.Line.Trim())" -ForegroundColor Red
+        }
+        Write-Warn "Fix conflicts or discard corrupted merge state cleanly before rebuilding."
+        return $false
+    }
+    return $true
+}
+
 # --- Fresh Clone Dependency & Environment Detection ---
 function Ensure-Prerequisites {
     Write-Info "Checking development runtime prerequisites..."
+
+    if (-not (Test-NoMergeConflicts)) {
+        return $false
+    }
 
     # Check dotnet
     if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
@@ -74,13 +99,18 @@ function Ensure-Prerequisites {
     $NodeModulesDir = Join-Path $FrontendDir "node_modules"
     if (-not (Test-Path $NodeModulesDir)) {
         Write-Warn "Fresh clone detected! 'node_modules' is missing in Frontend."
-        Write-Info "Running automatic 'npm install' in Frontend directory..."
+        Write-Info "Running automatic 'npm install --legacy-peer-deps' in Frontend directory..."
         Push-Location $FrontendDir
         try {
-            npm install
+            npm install --legacy-peer-deps
+            if ($LASTEXITCODE -ne 0) {
+                Write-Err "Frontend 'npm install --legacy-peer-deps' failed (exit code $LASTEXITCODE)."
+                return $false
+            }
             Write-Success "Frontend dependencies successfully installed."
         } catch {
             Write-Err "Failed to run npm install: $_"
+            return $false
         } finally {
             Pop-Location
         }
@@ -93,9 +123,14 @@ function Ensure-Prerequisites {
         Push-Location $BackendDir
         try {
             dotnet build -c Debug --nologo -v q
+            if ($LASTEXITCODE -ne 0) {
+                Write-Err "Backend initial build failed (exit code $LASTEXITCODE). Startup aborted."
+                return $false
+            }
             Write-Success "Backend built successfully."
         } catch {
             Write-Err "Backend build failed: $_"
+            return $false
         } finally {
             Pop-Location
         }
@@ -604,27 +639,53 @@ function Invoke-CleanRebuild {
     Write-Header "CLEAN BUILD / REBUILD (.NET & FRONTEND)"
     Stop-PortProcesses
 
-    Write-Info "Cleaning .NET Backend artifacts..."
+    if (-not (Test-NoMergeConflicts)) {
+        return
+    }
+
+    $backendOk = $false
+    Write-Info "Cleaning & building .NET Backend..."
     Push-Location $BackendDir
     try {
         dotnet clean --nologo -v q
         dotnet build -c Debug --nologo
-        Write-Success "Backend rebuilt cleanly."
+        if ($LASTEXITCODE -eq 0) {
+            $backendOk = $true
+            Write-Success "Backend rebuilt cleanly."
+        } else {
+            Write-Err "Backend build FAILED (exit code $LASTEXITCODE). Do not ignore compiler errors above."
+        }
     } catch {
         Write-Err "Backend rebuild failed: $_"
     } finally {
         Pop-Location
     }
 
-    Write-Info "Validating Frontend TypeScript compilation..."
+    $frontendOk = $false
+    Write-Info "Validating Frontend TypeScript compilation & Vite bundle..."
     Push-Location $FrontendDir
     try {
-        npm run build --no-emit
-        Write-Success "Frontend build verification passed."
+        npx tsc --noEmit
+        if ($LASTEXITCODE -ne 0) {
+            Write-Err "Frontend TypeScript check FAILED (exit code $LASTEXITCODE)."
+        } else {
+            npm run build
+            if ($LASTEXITCODE -eq 0) {
+                $frontendOk = $true
+                Write-Success "Frontend build verification passed."
+            } else {
+                Write-Err "Frontend Vite build FAILED (exit code $LASTEXITCODE)."
+            }
+        }
     } catch {
-        Write-Warn "Frontend build check reported warnings or non-fatal notes."
+        Write-Err "Frontend build check failed: $_"
     } finally {
         Pop-Location
+    }
+
+    if (-not ($backendOk -and $frontendOk)) {
+        Write-Err "CLEAN REBUILD COMPLETED WITH ERRORS (BackendOK=$backendOk, FrontendOK=$frontendOk)."
+        if ($Action) { exit 1 }
     }
 }
 
@@ -719,24 +780,47 @@ function Show-MainMenu {
     }
 }
 
+function Show-SystemStatus {
+    Write-Header "RESQTRACK 4-PORT SYSTEM STATUS"
+    foreach ($port in $Ports) {
+        $label = switch ($port) {
+            1999 { "Backend Core API" }
+            1996 { "Admin Portal    " }
+            1997 { "Responder Portal" }
+            1998 { "Civilian Portal " }
+        }
+        $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($conn) {
+            Write-Success "[$port] $label : LISTENING (PID $($conn.OwningProcess))"
+        } else {
+            Write-Warn "[$port] $label : OFFLINE"
+        }
+    }
+}
+
 # --- CLI Dispatcher Entrypoint ---
 if ($Action) {
     switch ($Action.ToLowerInvariant()) {
-        "start"        { Start-AllEngines }
-        "-start"       { Start-AllEngines }
-        "dev"          { Start-AllEngines }
-        "-dev"         { Start-AllEngines }
-        "stop"         { Stop-PortProcesses }
-        "migrate"      { Manage-DatabaseMigrations }
-        "superadmin"   { Create-SuperadminAccount }
-        "refresh"      { Invoke-HardHotRefresh }
-        "rebuild"      { Invoke-CleanRebuild }
-        "docker"       { Invoke-DockerRebuild }
-        "install"      { 
+        "start"         { Start-AllEngines }
+        "-start"        { Start-AllEngines }
+        "dev"           { Start-AllEngines }
+        "-dev"          { Start-AllEngines }
+        "stop"          { Stop-PortProcesses }
+        "status"        { Show-SystemStatus }
+        "migrate"       { Manage-DatabaseMigrations }
+        "superadmin"    { Create-SuperadminAccount }
+        "refresh"       { Invoke-HardHotRefresh }
+        "rebuild"       { Invoke-CleanRebuild }
+        "docker"        { Invoke-DockerRebuild }
+        "docker-build"  { Invoke-DockerRebuild }
+        "docker-up"     { Push-Location $RootDir; try { docker compose up -d } finally { Pop-Location } }
+        "docker-down"   { Push-Location $RootDir; try { docker compose down } finally { Pop-Location } }
+        "docker-status" { Push-Location $RootDir; try { docker compose ps } finally { Pop-Location } }
+        "install"       { 
             $installScript = Join-Path $PSScriptRoot "install_requirements.ps1"
             & $installScript
         }
-        default        { Show-MainMenu }
+        default         { Show-MainMenu }
     }
 } else {
     Show-MainMenu

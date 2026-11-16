@@ -196,14 +196,14 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
       <DefaultFloatingModalCard
         isOpen={isOpen}
         onClose={onClose}
-        title="Official Emergency Dossier & Telemetry"
-        subtitle="Authoritative identity verification, biometric captures, and emergency credentials"
+        title="User Details"
+        subtitle="Identity profile, captures, and credentials"
         maxWidth="4xl"
       >
         {isLoading && (
           <div className="p-12 text-center text-slate-400 space-y-3">
             <Loader2 className="w-8 h-8 text-sky-400 animate-spin mx-auto" />
-            <p className="text-xs font-mono">Loading secure user governance credentials from dispatch grid…</p>
+            <p className="text-xs font-mono">Loading user details…</p>
           </div>
         )}
 
@@ -257,7 +257,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
               <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2 shadow-lg">
                 <div className="flex items-center justify-between text-slate-300 font-semibold text-xs">
                   <span className="flex items-center gap-1.5 font-mono text-[11px] text-sky-400 uppercase tracking-wider">
-                    <FileText className="w-3.5 h-3.5 text-sky-400" /> Official Government ID
+                    <FileText className="w-3.5 h-3.5 text-sky-400" /> Government ID
                   </span>
                   <span className="text-[10px] font-mono text-slate-400 bg-[#0a1a2b] px-2 py-0.5 rounded border border-[#1d3c5c]">
                     {user.governmentIdType || 'National ID / LTO'}
@@ -290,10 +290,10 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
               <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2 shadow-lg">
                 <div className="flex items-center justify-between text-slate-300 font-semibold text-xs">
                   <span className="flex items-center gap-1.5 font-mono text-[11px] text-emerald-400 uppercase tracking-wider">
-                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" /> Anti-Spoofing Biometric
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" /> Face Biometric
                   </span>
                   <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
-                    {user.faceVerified ? 'Passed Laplacian Liveness' : 'Pending Verification'}
+                    {user.faceVerified ? 'Verified' : 'Pending'}
                   </span>
                 </div>
                 <div className="h-48 rounded-lg overflow-hidden bg-[#0a1a2b] border border-[#1d3c5c] flex items-center justify-center relative group">
@@ -540,7 +540,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
                 Status: {user.isDeleted ? (
                   <span className="text-rose-400 font-bold">Soft-Deleted on {fmtDateTime(user.deletedAt)} by {user.deletedBy}</span>
                 ) : (
-                  <span className="text-emerald-400 font-semibold">Authoritative Database Record</span>
+                  <span className="text-emerald-400 font-semibold">Active Record</span>
                 )}
               </div>
             </div>
@@ -550,7 +550,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
         {/* Footer Actions */}
         <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-[#1d3c5c]">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-            Close Dossier
+            Close
           </Button>
           {user && onEdit && (
             <button
@@ -562,7 +562,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
               className="px-4 py-2 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-sky-600 hover:bg-sky-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.4)] transition-all cursor-pointer flex items-center gap-1.5"
             >
               <Sliders className="w-3.5 h-3.5" />
-              Edit Official Profile
+              Edit Profile
             </button>
           )}
         </div>

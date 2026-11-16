@@ -92,7 +92,6 @@ export const Login: React.FC = () => {
             R
           </div>
           <h2 className="text-xl font-bold text-white">ResQTrack Emergency Portal</h2>
-          <p className="text-xs text-slate-400 mt-1">Multi-Role Deterministic Triage Gateway</p>
         </div>
 
         {/* Presentation-Only Role Tabs */}
@@ -165,13 +164,13 @@ export const Login: React.FC = () => {
           </div>
 
           <Button type="submit" variant="primary" size="lg" isLoading={isLoading} className="mt-2">
-            Authenticate & Proceed
+            Sign In
           </Button>
         </form>
 
         {/* Quick Demo Credential Fillers */}
         <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800/80">
-          <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-2 font-bold">Quick Demo Accounts:</p>
+          <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-2 font-bold">Demo:</p>
           <div className="flex flex-wrap gap-1.5">
             <button type="button" onClick={() => applyPreset('admin')} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-rose-300 font-mono">
               LDRRMO Admin
@@ -192,9 +191,9 @@ export const Login: React.FC = () => {
         </div>
 
         <div className="text-center text-xs text-slate-400 border-t border-slate-800 pt-4">
-          Don't have an emergency account?{' '}
+          No account?{' '}
           <Link to="/register" className="text-sky-400 hover:text-sky-300 font-semibold underline">
-            Register with Biometrics
+            Register
           </Link>
         </div>
       </div>

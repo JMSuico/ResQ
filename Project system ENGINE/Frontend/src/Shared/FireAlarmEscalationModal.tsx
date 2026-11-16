@@ -16,13 +16,13 @@ export interface FireAlarmEscalationModalProps {
 }
 
 const ALARM_LEVELS = [
-  { level: '1st Alarm', desc: 'Initial Response (2 Engines)' },
-  { level: '2nd Alarm', desc: 'Reinforced (4 Engines + Ladder)' },
-  { level: '3rd Alarm', desc: 'District Mutual Aid (6+ Engines)' },
-  { level: '4th Alarm', desc: 'Regional Response Units' },
-  { level: '5th Alarm', desc: 'City-Wide Mobilization' },
-  { level: 'Task Force Alpha', desc: 'Major Conflagration Response' },
-  { level: 'General Alarm', desc: 'Total Disaster Mobilization' },
+  { level: '1st Alarm' },
+  { level: '2nd Alarm' },
+  { level: '3rd Alarm' },
+  { level: '4th Alarm' },
+  { level: '5th Alarm' },
+  { level: 'Task Force Alpha' },
+  { level: 'General Alarm' },
 ];
 
 export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
@@ -74,8 +74,8 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
     <DefaultFloatingModalCard
       isOpen={isOpen}
       onClose={onClose}
-      title="BFP Fire Alarm Escalation & Status Record"
-      subtitle={reportId ? `Incident Reference: ${reportId.slice(0, 8)}...` : 'Structural Fire Incident Command'}
+      title="Fire Alarm Escalation"
+      subtitle={reportId ? `Incident: ${reportId.slice(0, 8)}...` : 'Fire Command'}
       size="xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -90,7 +90,7 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
         <div>
           <label className="block text-xs font-semibold text-slate-300 mb-2 flex items-center gap-1.5">
             <Flame className="w-4 h-4 text-amber-500" />
-            <span>Official Bureau of Fire Protection Alarm Escalation Level</span>
+            <span>Alarm Level</span>
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {ALARM_LEVELS.map(al => {
@@ -106,11 +106,10 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
                       : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-0.5">
+                  <div className="flex items-center justify-between">
                     <span className="font-semibold text-xs text-slate-100">{al.level}</span>
                     {isSelected && <Check className="w-3.5 h-3.5 text-amber-400" />}
                   </div>
-                  <span className="text-[11px] text-slate-400 leading-tight block">{al.desc}</span>
                 </button>
               );
             })}
@@ -168,7 +167,7 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
         {/* Field Command Info */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Incident Ground Commander</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">Ground Commander</label>
             <input
               type="text"
               required
@@ -178,7 +177,7 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Responding Fire Apparatus</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">Responding Apparatus</label>
             <input
               type="text"
               required
@@ -191,12 +190,12 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
 
         {/* Remarks */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1">Tactical Field Remarks</label>
+          <label className="block text-xs font-semibold text-slate-300 mb-1">Remarks</label>
           <textarea
             rows={2}
             value={remarks}
             onChange={e => setRemarks(e.target.value)}
-            placeholder="e.g. Exposure protection established on North flank. Requesting additional tanker for relay pumping."
+            placeholder="Scene notes..."
             className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-amber-500 resize-none"
           />
         </div>
@@ -213,7 +212,7 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
             isLoading={isSubmitting}
             icon={<Flame className="w-4 h-4" />}
           >
-            Broadcast Alarm Escalation
+            Escalate Alarm
           </Button>
         </div>
       </form>

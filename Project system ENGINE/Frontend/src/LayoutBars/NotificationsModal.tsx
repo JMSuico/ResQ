@@ -195,16 +195,16 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
       <header className="alerts__head flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-white/10 select-none">
         <div className="flex items-center gap-2">
           <Bell className="w-4 h-4 text-rose-500 flex-shrink-0" aria-hidden="true" />
-          <h2 className="alerts__title text-xs font-bold font-mono tracking-wider text-white uppercase">
+          <h2 className="alerts__title text-xs font-bold font-mono tracking-wider text-white">
             Emergency Alerts
           </h2>
           {unreadAlertsCount > 0 ? (
             <span className="alerts__count px-1.5 py-0.5 text-[10px] font-mono font-bold bg-rose-600/30 text-rose-300 border border-rose-500/40 rounded">
-              {unreadAlertsCount} NEW
+              {unreadAlertsCount} New
             </span>
           ) : (
             <span className="alerts__count is-off text-[10px] font-mono text-slate-500">
-              ALL CLEAR
+              All Clear
             </span>
           )}
         </div>
@@ -218,7 +218,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
               title="Mark all notifications as read"
             >
               <CheckCheck className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
-              <span>Mark read</span>
+              <span>Mark All Read</span>
             </button>
           )}
 
@@ -237,13 +237,13 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
         {isLoading && alerts.length === 0 ? (
           <li className="p-6 text-center text-xs text-slate-400 font-mono flex flex-col items-center gap-2">
             <Clock className="w-5 h-5 text-slate-500 animate-spin" aria-hidden="true" />
-            <span>Synchronizing live alert feed...</span>
+            <span>Loading alerts...</span>
           </li>
         ) : alerts.length === 0 ? (
           <li className="p-8 text-center text-slate-400 flex flex-col items-center justify-center">
             <Info className="w-8 h-8 text-slate-600 mb-2 flex-shrink-0" aria-hidden="true" />
-            <p className="text-xs font-semibold text-slate-300">No Pending Emergency Alerts</p>
-            <p className="text-[11px] text-slate-500 font-mono mt-0.5">Municipal dispatch channel is all clear</p>
+            <p className="text-xs font-semibold text-slate-300">All Clear</p>
+            <p className="text-[11px] text-slate-500 font-mono mt-0.5">No pending emergency alerts.</p>
           </li>
         ) : (
           alerts.map((report) => {

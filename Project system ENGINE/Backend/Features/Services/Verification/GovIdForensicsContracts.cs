@@ -281,7 +281,7 @@ public class SharedGovIdForensicsEvaluator(
 
         var payloadWithoutModel = new Dictionary<string, object>
         {
-            ["max_tokens"] = 576,
+            ["max_tokens"] = 1024,
             ["temperature"] = 0.0,
             ["system"] = new object[]
             {
@@ -373,29 +373,15 @@ public class SharedGovIdForensicsEvaluator(
         "3. Category: Set detectedIdType to canonical key (drivers, philsys, passport, prc, umid, postal, voters, senior_citizen, pwd, sss, tin, philhealth, pagibig, gsis, owwa, solo_parent, barangay, fire, police, rhu, unknown) and detectedIdLabel. Set matchesSelectedIdType=false if the ID differs from the selected category.\n" +
         "4. Visible-only OCR: Transcribe ONLY characters literally visible in pixels. Set any unseen, absent, cropped, or illegible field to null. NEVER guess, compute, or fabricate names, dates, sexes, weights, heights, addresses, phone numbers, or ID numbers.\n" +
         "5. Blank/unreadable: If blank, solid color, too blurry, or lacking readable ID text, set unreadable=true and errorCode=\"UNREADABLE_OR_BLANK_IMAGE\".\n" +
-        "6. Output ONLY valid JSON (no markdown fences, no prose) with shape:\n" +
-        "{\"unreadable\": false, \"isGenuineId\": true, \"authenticityVerdict\": \"GENUINE_PHYSICAL_ID\", \"authenticityReason\": <string or null>, " +
-        "\"detectedIdType\": \"<canonical key>\", \"detectedIdLabel\": \"<human label>\", \"matchesSelectedIdType\": true, " +
-        "\"frontSlotDetectedSide\": \"FRONT\", \"backSlotDetectedSide\": \"BACK\", \"areSidesIdentical\": false, " +
-        "\"errorCode\": null, \"confidence\": <0.0-1.0>, \"IdType\": \"<visible ID type code>\", " +
-        "\"fields\": {\"IdNumber\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"LicenseNumber\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"FirstName\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"MiddleName\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"Surname\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"Suffix\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"FullName\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"DateOfBirth\": {\"value\": <YYYY-MM-DD or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"ExpirationDate\": {\"value\": <YYYY-MM-DD or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"Sex\": {\"value\": <Male|Female or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"Street\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"Barangay\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"CityOrMunicipality\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"Province\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"Address\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"Weight\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"Height\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}, " +
-        "\"PhoneNumber\": {\"value\": <string or null>, \"confidence\": <0.0-1.0>}}}";
+        "6. Output ONLY one minified single-line JSON object (no newlines, no pretty indentation, no markdown fences, no prose; keep authenticityReason concise <= 12 words; use flat scalar strings/numbers inside \"fields\" and omit any key in \"fields\" whose value is unseen or null):\n" +
+        "{\"unreadable\":false,\"isGenuineId\":true,\"authenticityVerdict\":\"GENUINE_PHYSICAL_ID\",\"authenticityReason\":null," +
+        "\"detectedIdType\":\"<canonical key>\",\"detectedIdLabel\":\"<human label>\",\"matchesSelectedIdType\":true," +
+        "\"frontSlotDetectedSide\":\"FRONT\",\"backSlotDetectedSide\":\"BACK\",\"areSidesIdentical\":false," +
+        "\"errorCode\":null,\"confidence\":0.95,\"IdType\":\"<visible ID type code>\"," +
+        "\"fields\":{\"IdNumber\":\"...\",\"LicenseNumber\":\"...\",\"FirstName\":\"...\",\"MiddleName\":\"...\"," +
+        "\"Surname\":\"...\",\"Suffix\":\"...\",\"FullName\":\"...\",\"DateOfBirth\":\"YYYY-MM-DD\"," +
+        "\"ExpirationDate\":\"YYYY-MM-DD\",\"Sex\":\"Male|Female\",\"Street\":\"...\",\"Barangay\":\"...\"," +
+        "\"CityOrMunicipality\":\"...\",\"Province\":\"...\",\"Address\":\"...\",\"Weight\":\"...\",\"Height\":\"...\",\"PhoneNumber\":\"...\"}}";
 
     internal static GovIdForensicsResult ParseForensicOcrResponse(
         string rawText,
@@ -974,27 +960,145 @@ public class SharedGovIdForensicsEvaluator(
 
     internal static string CleanJsonFences(string input)
     {
-        string trimmed = input.Trim();
-        if (trimmed.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
-            trimmed = trimmed[7..];
-        else if (trimmed.StartsWith("```", StringComparison.OrdinalIgnoreCase))
-            trimmed = trimmed[3..];
-
-        if (trimmed.EndsWith("```", StringComparison.OrdinalIgnoreCase))
-            trimmed = trimmed[..^3];
-
-        trimmed = trimmed.Trim();
-        if (!trimmed.StartsWith('{'))
+        if (string.IsNullOrWhiteSpace(input))
         {
-            int start = trimmed.IndexOf('{');
-            int end = trimmed.LastIndexOf('}');
-            if (start >= 0 && end > start)
+            return string.Empty;
+        }
+
+        string? fencedInner = TryExtractMarkdownFenceInner(input);
+        if (!string.IsNullOrWhiteSpace(fencedInner) &&
+            TryFindValidJsonObject(fencedInner, out string? fencedObject))
+        {
+            return fencedObject!;
+        }
+
+        if (TryFindValidJsonObject(input, out string? rawObject))
+        {
+            return rawObject!;
+        }
+
+        return (fencedInner ?? input).Trim();
+    }
+
+    private static string? TryExtractMarkdownFenceInner(string input)
+    {
+        int fenceStart = input.IndexOf("```", StringComparison.Ordinal);
+        if (fenceStart < 0)
+        {
+            return null;
+        }
+
+        int contentStart = fenceStart + 3;
+        int fenceEnd = input.IndexOf("```", contentStart, StringComparison.Ordinal);
+        string inner = fenceEnd >= 0
+            ? input[contentStart..fenceEnd]
+            : input[contentStart..];
+
+        string trimmedStart = inner.TrimStart();
+        if (trimmedStart.StartsWith("json", StringComparison.OrdinalIgnoreCase))
+        {
+            if (trimmedStart.Length == 4 || char.IsWhiteSpace(trimmedStart[4]) || trimmedStart[4] == '{')
             {
-                trimmed = trimmed[start..(end + 1)];
+                trimmedStart = trimmedStart[4..];
+            }
+        }
+        else
+        {
+            int newlineIdx = trimmedStart.IndexOfAny(['\r', '\n']);
+            if (newlineIdx >= 0 && trimmedStart[..newlineIdx].IndexOf('{') < 0)
+            {
+                trimmedStart = trimmedStart[(newlineIdx + 1)..];
             }
         }
 
-        return trimmed;
+        return trimmedStart.Trim();
+    }
+
+    private static bool TryFindValidJsonObject(string text, out string? jsonObject)
+    {
+        int scanFrom = 0;
+        while (scanFrom < text.Length)
+        {
+            int start = text.IndexOf('{', scanFrom);
+            if (start < 0)
+            {
+                break;
+            }
+
+            int depth = 0;
+            bool inString = false;
+            bool escaped = false;
+            bool closed = false;
+
+            for (int i = start; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (inString)
+                {
+                    if (escaped)
+                    {
+                        escaped = false;
+                    }
+                    else if (c == '\\')
+                    {
+                        escaped = true;
+                    }
+                    else if (c == '"')
+                    {
+                        inString = false;
+                    }
+
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    inString = true;
+                }
+                else if (c == '{')
+                {
+                    depth++;
+                }
+                else if (c == '}')
+                {
+                    depth--;
+                    if (depth == 0)
+                    {
+                        string candidate = text[start..(i + 1)];
+                        if (TryIsValidJsonObject(candidate))
+                        {
+                            jsonObject = candidate;
+                            return true;
+                        }
+
+                        scanFrom = i + 1;
+                        closed = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!closed)
+            {
+                scanFrom = start + 1;
+            }
+        }
+
+        jsonObject = null;
+        return false;
+    }
+
+    private static bool TryIsValidJsonObject(string candidate)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(candidate);
+            return doc.RootElement.ValueKind == JsonValueKind.Object;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     internal static (string MimeType, string Base64Data) ParseDataUrl(string? dataUrl)
@@ -1345,7 +1449,7 @@ public class ClaudeFaceToGovIdMatchStrategy(
 
         var payloadWithoutModel = new Dictionary<string, object>
         {
-            ["max_tokens"] = 512,
+            ["max_tokens"] = 768,
             ["temperature"] = 0.0,
             ["system"] = BuildBiometricMatchSystemPrompt(),
             ["messages"] = new object[]

@@ -209,10 +209,10 @@ export const RespondersRosterPage: FC = () => {
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase flex items-center gap-2.5">
             <Radio className="w-5 h-5 text-sky-400 animate-pulse" />
-            Agency Fleet Roster
+            Responders Roster
           </h1>
           <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Real-time deployment and operational readiness across Philippine emergency response units
+            Unit readiness across agencies
           </p>
         </div>
 
@@ -225,7 +225,7 @@ export const RespondersRosterPage: FC = () => {
             title="Refresh Roster"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            SYNC
+            Sync
           </Button>
           <Button
             variant="outline"
@@ -234,7 +234,7 @@ export const RespondersRosterPage: FC = () => {
             className="text-xs font-mono font-bold flex items-center gap-1.5 border-sky-500/60 text-sky-300 hover:bg-sky-950/60"
           >
             <Eye className="w-3.5 h-3.5" />
-            VIEW COMPLETE FLEET ({roster.length})
+            View Fleet ({roster.length})
           </Button>
         </div>
       </div>
@@ -516,9 +516,9 @@ export const RespondersRosterPage: FC = () => {
               <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] font-mono text-emerald-400">
                 <span className="flex items-center gap-1.5">
                   <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                  Telemetry Locked
+                  GPS Live
                 </span>
-                <span className="text-slate-400">C2 Linked</span>
+                <span className="text-slate-400">Synced</span>
               </div>
             </div>
           ))}
@@ -573,8 +573,8 @@ export const RespondersRosterPage: FC = () => {
         <DefaultFloatingModalCard
           isOpen={isViewAllModalOpen}
           onClose={() => setIsViewAllModalOpen(false)}
-          title={`All Emergency Responders Fleet (${roster.length} Units)`}
-          subtitle="Complete multi-agency on-duty, off-duty, and dispatched responder roster"
+          title={`Responder Fleet (${roster.length})`}
+          subtitle="All units by agency and duty status"
           className="max-w-3xl max-h-[80vh] flex flex-col"
         >
           <div className="flex-1 overflow-y-auto space-y-2 pr-1">

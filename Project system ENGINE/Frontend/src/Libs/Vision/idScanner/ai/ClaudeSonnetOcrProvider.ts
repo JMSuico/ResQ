@@ -918,7 +918,7 @@ export class ClaudeSonnetOcrProvider implements IAiOcrProvider {
   private readonly endpointUrl: string;
   private readonly timeoutMs: number;
 
-  public constructor(endpointUrl?: string, timeoutMs: number = 25_000) {
+  public constructor(endpointUrl?: string, timeoutMs: number = 30_000) {
     this.endpointUrl = endpointUrl ?? resolveOcrEndpoint('/api/identity/ocr/extract');
     this.timeoutMs = timeoutMs;
   }
