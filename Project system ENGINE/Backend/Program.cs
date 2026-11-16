@@ -194,82 +194,8 @@ using (var scope = app.Services.CreateScope())
     try
     {
         await db.Database.EnsureCreatedAsync();
-        try
-        {
-            if (db.Database.IsSqlServer())
-            {
-                await db.Database.ExecuteSqlRawAsync(@"
-                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AuditLogs' AND COLUMN_NAME='PreviousHash')
-                    BEGIN
-                        ALTER TABLE [AuditLogs] ALTER COLUMN [PreviousHash] NVARCHAR(128) NOT NULL;
-                        ALTER TABLE [AuditLogs] ALTER COLUMN [CurrentHash] NVARCHAR(128) NOT NULL;
-                    END
-                    IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Reports' AND COLUMN_NAME='BeaconCount')
-                    BEGIN
-                        ALTER TABLE [Reports] ADD [CurrentLatitude] FLOAT NULL;
-                        ALTER TABLE [Reports] ADD [CurrentLongitude] FLOAT NULL;
-                        ALTER TABLE [Reports] ADD [LastBeaconAt] DATETIME2 NULL;
-                        ALTER TABLE [Reports] ADD [BeaconCount] INT NOT NULL DEFAULT 0;
-                    END
-                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'IdBackCapturePath')
-                        ALTER TABLE [Users] ADD [IdBackCapturePath] NVARCHAR(500) NULL;
-                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'Weight')
-                        ALTER TABLE [Users] ADD [Weight] NVARCHAR(20) NULL;
-                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'Height')
-                        ALTER TABLE [Users] ADD [Height] NVARCHAR(20) NULL;
-                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'DisplayName')
-                        ALTER TABLE [Users] ADD [DisplayName] NVARCHAR(100) NOT NULL CONSTRAINT DF_Users_DisplayName DEFAULT '';
-                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'IdentityVerificationStatus')
-                        ALTER TABLE [Users] ADD [IdentityVerificationStatus] NVARCHAR(40) NOT NULL CONSTRAINT DF_Users_IdentityVerifStatus DEFAULT 'PendingReview';
-                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FacialVerificationStatus')
-                        ALTER TABLE [Users] ADD [FacialVerificationStatus] NVARCHAR(40) NOT NULL CONSTRAINT DF_Users_FacialVerifStatus DEFAULT 'PendingReview';
-                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'IdentityVerificationProvider')
-                        ALTER TABLE [Users] ADD [IdentityVerificationProvider] NVARCHAR(60) NOT NULL CONSTRAINT DF_Users_IdentityVerifProvider DEFAULT 'ManualIdentityVerificationProvider';
-                    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'FacialVerificationProvider')
-                        ALTER TABLE [Users] ADD [FacialVerificationProvider] NVARCHAR(60) NOT NULL CONSTRAINT DF_Users_FacialVerifProvider DEFAULT 'ManualFacialReviewProvider';
-                    IF EXISTS (
-                        SELECT 1 FROM sys.indexes
-                        WHERE name = 'IX_Users_Email'
-                          AND object_id = OBJECT_ID('Users')
-                          AND filter_definition IS NULL
-                    )
-                    BEGIN
-                        DROP INDEX [IX_Users_Email] ON [Users];
-                        CREATE UNIQUE INDEX [IX_Users_Email] ON [Users]([Email]) WHERE [IsDeleted] = 0;
-                    END
-                    IF OBJECT_ID('BiometricEnrollments') IS NOT NULL
-                    BEGIN
-                        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BiometricEnrollments') AND name = 'GeometricSignatureJson')
-                            ALTER TABLE BiometricEnrollments ADD GeometricSignatureJson NVARCHAR(MAX) NULL;
-                        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BiometricEnrollments') AND name = 'PoseFramesJson')
-                            ALTER TABLE BiometricEnrollments ADD PoseFramesJson NVARCHAR(MAX) NULL;
-
-                        UPDATE be
-                        SET [EnrollmentStatus] = 'REVOKED',
-                            [RevokedAtUtc] = COALESCE(be.[RevokedAtUtc], GETUTCDATE())
-                        FROM [BiometricEnrollments] be
-                        INNER JOIN [Users] u ON u.[Id] = be.[UserId]
-                        WHERE u.[IsDeleted] = 1
-                          AND (be.[RevokedAtUtc] IS NULL OR be.[EnrollmentStatus] <> 'REVOKED');
-                    END");
-            }
-            else
-            {
-                await db.Database.ExecuteSqlRawAsync(@"
-                    ALTER TABLE ""Reports"" ADD COLUMN IF NOT EXISTS ""CurrentLatitude"" double precision;
-                    ALTER TABLE ""Reports"" ADD COLUMN IF NOT EXISTS ""CurrentLongitude"" double precision;
-                    ALTER TABLE ""Reports"" ADD COLUMN IF NOT EXISTS ""LastBeaconAt"" timestamp with time zone;
-                    ALTER TABLE ""Reports"" ADD COLUMN IF NOT EXISTS ""BeaconCount"" integer NOT NULL DEFAULT 0;
-                    ALTER TABLE ""BiometricEnrollments"" ADD COLUMN IF NOT EXISTS ""GeometricSignatureJson"" text;
-                    ALTER TABLE ""BiometricEnrollments"" ADD COLUMN IF NOT EXISTS ""PoseFramesJson"" text;
-                ");
-            }
-        }
-        catch (Exception ddlEx)
-        {
-            var ddlLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-            ddlLogger.LogWarning(ddlEx, "Startup schema reconciliation encountered a non-fatal issue.");
-        }
+        var ddlLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        await StartupSchemaReconciler.ReconcileAsync(db, ddlLogger);
         await DatabaseSeeder.SeedAsync(db, app.Environment);
     }
     catch (Exception ex)
