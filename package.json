@@ -4,9 +4,14 @@
   "private": true,
   "description": "ResQTrack Incident AI System Detection Fullstack Environment",
   "scripts": {
-    "dev": "powershell -ExecutionPolicy Bypass -File ./CommandStart/startdev-all.ps1",
-    "start": "powershell -ExecutionPolicy Bypass -File ./CommandStart/startdev-all.ps1",
-    "stop": "powershell -ExecutionPolicy Bypass -File ./CommandStart/stopdev-all.ps1",
-    "status": "powershell -ExecutionPolicy Bypass -File ./CommandStart/manage.ps1 -Action status"
+    "dev": "powershell -ExecutionPolicy Bypass -File ./CommandStart/manage.ps1 -Action start",
+    "start": "powershell -ExecutionPolicy Bypass -File ./CommandStart/manage.ps1 -Action start",
+    "stop": "powershell -ExecutionPolicy Bypass -File ./CommandStart/manage.ps1 -Action stop",
+    "status": "powershell -ExecutionPolicy Bypass -File ./CommandStart/manage.ps1 -Action status",
+    "install:all": "powershell -ExecutionPolicy Bypass -File ./CommandStart/install_requirements.ps1",
+    "docker:up": "docker compose up -d",
+    "docker:build": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:ps": "docker compose ps"
   }
 }

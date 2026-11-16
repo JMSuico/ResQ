@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
-import { Shield, Activity, Radio, PhoneCall } from 'lucide-react';
+import { Shield, Activity, PhoneCall } from 'lucide-react';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { Footer } from './Footer';
@@ -84,24 +84,21 @@ export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) =>
     switch (unit) {
       case 'FIRE':
         return {
-          label: 'BFP FIRE TACTICAL GROUND',
-          channel: 'CH-02 TACTICAL',
+          label: 'BFP Fire',
           accent: 'text-orange-400',
           bg: 'bg-orange-950/30 border-orange-800/40'
         };
       case 'PNP':
       case 'SECURITY':
         return {
-          label: 'PNP POLICE FORCE PATROL',
-          channel: 'CH-03 PATROL',
+          label: 'PNP Police',
           accent: 'text-sky-400',
           bg: 'bg-sky-950/30 border-sky-800/40'
         };
       case 'RHU':
       default:
         return {
-          label: 'RHU EMS MEDIC TRAUMA DISPATCH',
-          channel: 'CH-01 EMS NET',
+          label: 'RHU Medic',
           accent: 'text-[#ff5c74]',
           bg: 'bg-rose-950/30 border-rose-800/40'
         };
@@ -120,33 +117,28 @@ export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) =>
 
           <main className="dash__main flex-1 w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-6 lg:px-10 bg-slate-950/95 transition-all flex flex-col justify-between">
             <div className="w-full flex-1 min-h-0 flex flex-col max-w-[1720px] mx-auto">
-              {/* Tactical Responder HUD Telemetry Bar */}
+              {/* Responder Unit Status Bar */}
               <div
                 className={`mb-4 px-3 py-2 rounded-lg border flex flex-wrap items-center justify-between gap-2 text-xs font-mono select-none ${branch.bg}`}
                 role="status"
-                aria-label="Responder Branch Dispatch Telemetry"
+                aria-label="Responder Unit Status"
               >
                 <div className="flex items-center gap-2">
                   <Shield className={`w-3.5 h-3.5 ${branch.accent} flex-shrink-0`} aria-hidden="true" />
-                  <span className="font-bold tracking-wider text-slate-200">{branch.label}</span>
+                  <span className="font-bold tracking-wide text-slate-200">{branch.label}</span>
                   <span className="text-slate-600" aria-hidden="true">&bull;</span>
                   <span className="text-slate-400">{user.name} ({user.id})</span>
                 </div>
 
                 <div className="flex items-center gap-3 text-[11px] text-slate-400">
-                  <div className="flex items-center gap-1">
-                    <Radio className="w-3 h-3 text-[#ff5c74] flex-shrink-0" aria-hidden="true" />
-                    <span className="text-rose-200 font-semibold">{branch.channel}</span>
-                  </div>
-
                   <div className="flex items-center gap-1 hidden sm:flex">
                     <Activity className="w-3 h-3 text-[#ff5c74] flex-shrink-0" aria-hidden="true" />
-                    <span>GPS 100% HARDWARE LOCK</span>
+                    <span>GPS Locked</span>
                   </div>
 
                   <div className="flex items-center gap-1 hidden md:flex">
                     <PhoneCall className="w-3 h-3 text-rose-400 flex-shrink-0" aria-hidden="true" />
-                    <span>HOTLINE 911</span>
+                    <span>Hotline 911</span>
                   </div>
                 </div>
               </div>

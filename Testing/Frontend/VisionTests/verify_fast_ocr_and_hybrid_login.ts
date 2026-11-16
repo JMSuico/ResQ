@@ -916,6 +916,76 @@ const testBiometricLoginModalAndAuthContracts = (): void => {
   );
 };
 
+const testBiometricLoginModalLockoutAndRetryGuards = (): void => {
+  console.log('\n--- 5. Testing BiometricLoginModal Terminal Auth Guard & Bounded Auto-Retry ---');
+
+  const modalSource = readFileSync(
+    resolve(
+      FRONTEND_SRC_DIR,
+      'LANDING_PAGE/Features/Pages/LoginPage/BiometricLoginModal.tsx'
+    ),
+    'utf8'
+  );
+
+  const executeStart = modalSource.indexOf('const executeBiometricLogin');
+  const executeEnd = modalSource.indexOf('const processFrame', executeStart);
+  const executeSlice =
+    executeStart >= 0 && executeEnd > executeStart
+      ? modalSource.slice(executeStart, executeEnd)
+      : '';
+
+  const catchStart = executeSlice.indexOf('} catch (err: unknown)');
+  const catchSlice = catchStart >= 0 ? executeSlice.slice(catchStart) : '';
+
+  const processFrameStart = modalSource.indexOf('const processFrame = useCallback');
+  const processFrameEnd = modalSource.indexOf('stopCameraRef.current = stopCamera', processFrameStart);
+  const processFrameSlice =
+    processFrameStart >= 0 && processFrameEnd > processFrameStart
+      ? modalSource.slice(processFrameStart, processFrameEnd)
+      : '';
+
+  const hasTerminalGuardHelper = /\bisTerminalAuthFailure\b/.test(modalSource);
+  const hasExplicitTerminalChecks =
+    /\blocked\b/i.test(executeSlice) &&
+    /\bpending\b/i.test(executeSlice) &&
+    /\bsuspended\b/i.test(executeSlice) &&
+    /not\s+found/i.test(executeSlice);
+
+  assert(
+    hasTerminalGuardHelper || hasExplicitTerminalChecks,
+    'BiometricLoginModal.tsx contains terminal-auth-failure guard (isTerminalAuthFailure or explicit locked/pending/suspended/not found checks)'
+  );
+
+  const catchMentionsTerminalOrPauseGuard =
+    /\bisTerminalAuthFailure\b/.test(catchSlice) ||
+    /\bautoScanPausedRef\b/.test(catchSlice) ||
+    (/\blocked\b/i.test(catchSlice) && /\bpending\b/i.test(catchSlice));
+  const catchUnconditionallySchedulesRetry =
+    /retryTimeoutRef\.current\s*=\s*window\.setTimeout/.test(catchSlice) &&
+    !catchMentionsTerminalOrPauseGuard;
+
+  assert(
+    catchMentionsTerminalOrPauseGuard && !catchUnconditionallySchedulesRetry,
+    'BiometricLoginModal.tsx executeBiometricLogin catch block gates auto-retry so terminal auth failures NEVER schedule retryTimeoutRef or loop automatically'
+  );
+
+  const hasPauseOrRetryRefs =
+    /\bautoScanPausedRef\b/.test(modalSource) &&
+    /\bautoRetryCountRef\b/.test(modalSource);
+
+  assert(
+    hasPauseOrRetryRefs,
+    'BiometricLoginModal.tsx declares dedicated autoScanPausedRef and autoRetryCountRef for bounded auto-scan retries'
+  );
+
+  const processFrameChecksPauseRef = /\bautoScanPausedRef\.current\b/.test(processFrameSlice);
+
+  assert(
+    processFrameChecksPauseRef,
+    'BiometricLoginModal.tsx processFrame stops automatic captures when autoScanPausedRef.current is true'
+  );
+};
+
 const main = async (): Promise<void> => {
   console.log('====================================================================');
   console.log('FAST OCR & HYBRID BIOMETRIC LOGIN TDD VERIFICATION SUITE');
@@ -925,6 +995,7 @@ const main = async (): Promise<void> => {
   testFastBackgroundPreflight384();
   testLowLightSkinTrackingAndOvalAlignment();
   testBiometricLoginModalAndAuthContracts();
+  testBiometricLoginModalLockoutAndRetryGuards();
 
   console.log('\n====================================================================');
   if (failedCount > 0) {

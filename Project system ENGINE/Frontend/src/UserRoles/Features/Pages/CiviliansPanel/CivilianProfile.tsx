@@ -227,14 +227,8 @@ export const CivilianProfile: React.FC = () => {
       {/* 1. Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-600/20 text-emerald-400 text-xs font-mono font-bold border border-emerald-600/40 mb-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>AUTHENTICATED RESIDENT PASSPORT</span>
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Citizen Identity & Medical Passport</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Biometric verification credentials, next-of-kin notification contacts, and field triage medical profile
-          </p>
+          <h1 className="text-2xl font-black text-white tracking-tight">Profile</h1>
+          <p className="text-xs text-slate-400 mt-0.5">Identity & Medical Info</p>
         </div>
 
         <button
@@ -243,7 +237,7 @@ export const CivilianProfile: React.FC = () => {
           className="self-start sm:self-auto px-4 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sky-400 hover:text-white text-xs font-mono font-bold flex items-center gap-1.5 transition-colors"
         >
           <Edit2 className="w-3.5 h-3.5" />
-          <span>{isEditing ? 'Cancel Edit' : 'Edit Emergency Details'}</span>
+          <span>{isEditing ? 'Cancel' : 'Edit Profile'}</span>
         </button>
       </div>
 
@@ -278,7 +272,7 @@ export const CivilianProfile: React.FC = () => {
                 title="Upload Photo"
               >
                 <Camera className="w-5 h-5 mb-0.5 text-emerald-400" />
-                <span>PHOTO</span>
+                <span>Photo</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -294,11 +288,11 @@ export const CivilianProfile: React.FC = () => {
                 {session?.faceVerified ? (
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-600/50 text-[10px] font-mono font-bold flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    <span>BIOMETRICALLY VERIFIED</span>
+                    <span>Verified</span>
                   </span>
                 ) : (
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-600/50 text-[10px] font-mono font-bold">
-                    PENDING FACIAL SCAN
+                    Pending Scan
                   </span>
                 )}
               </div>
@@ -322,7 +316,7 @@ export const CivilianProfile: React.FC = () => {
                     onClick={handleResetAvatar}
                     className="text-[11px] font-mono text-slate-400 hover:text-rose-400 underline transition-colors cursor-pointer"
                   >
-                    Reset to Default Photo
+                    Reset Photo
                   </button>
                 )}
               </div>
@@ -330,8 +324,8 @@ export const CivilianProfile: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono font-bold text-slate-300">
-              ROLE: <strong className="text-emerald-400">CIVILIAN</strong>
+            <span className="px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono font-bold text-emerald-400">
+              Civilian
             </span>
           </div>
         </div>
@@ -339,17 +333,17 @@ export const CivilianProfile: React.FC = () => {
         {/* Identity & Barangay Registry Telemetry */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs font-mono">
           <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-            <span className="text-slate-500 block text-[10px] uppercase font-bold">MUNICIPAL STATUS</span>
+            <span className="text-slate-500 block text-[10px] font-bold">Status</span>
             <span className="text-emerald-400 font-extrabold text-sm mt-0.5 block">{session?.status || 'Active Resident'}</span>
           </div>
 
           <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-            <span className="text-slate-500 block text-[10px] uppercase font-bold">RESIDENT / CITIZEN ID</span>
+            <span className="text-slate-500 block text-[10px] font-bold">Resident ID</span>
             <span className="text-white font-extrabold text-sm mt-0.5 block">{session?.employeeOrResidentId || 'KTN-RES-9281'}</span>
           </div>
 
           <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-            <span className="text-slate-500 block text-[10px] uppercase font-bold">REGISTERED BARANGAY</span>
+            <span className="text-slate-500 block text-[10px] font-bold">Barangay</span>
             {isEditing ? (
               <select
                 value={profile.barangay}
@@ -373,19 +367,16 @@ export const CivilianProfile: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
             <div className="flex items-center gap-2.5">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-white">
-                Emergency Medical Triage Profile (Trauma Readiness)
+              <h2 className="text-sm font-bold text-white">
+                Medical Profile
               </h2>
             </div>
-            <span className="text-[10px] font-mono text-rose-400 bg-rose-950/60 px-2.5 py-0.5 rounded border border-rose-600/30">
-              MEDIC FIRST RESPONDER HUD
-            </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Blood Type */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-mono font-bold text-slate-300">BLOOD TYPE</label>
+              <label className="text-xs font-mono font-bold text-slate-300">Blood Type</label>
               {isEditing ? (
                 <select
                   value={profile.bloodType}
@@ -399,14 +390,13 @@ export const CivilianProfile: React.FC = () => {
               ) : (
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
                   <span className="text-sm font-mono font-black text-rose-400">{profile.bloodType}</span>
-                  <span className="text-[10px] font-mono text-slate-500">Rh Factor Verified</span>
                 </div>
               )}
             </div>
 
             {/* Allergies */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-mono font-bold text-slate-300">KNOWN DRUG / FOOD ALLERGIES</label>
+              <label className="text-xs font-mono font-bold text-slate-300">Allergies</label>
               {isEditing ? (
                 <input
                   type="text"
@@ -424,7 +414,7 @@ export const CivilianProfile: React.FC = () => {
 
             {/* Chronic Conditions */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-mono font-bold text-slate-300">CHRONIC CONDITIONS / IMPLANTS</label>
+              <label className="text-xs font-mono font-bold text-slate-300">Medical Conditions</label>
               {isEditing ? (
                 <input
                   type="text"
@@ -447,19 +437,16 @@ export const CivilianProfile: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
             <div className="flex items-center gap-2.5">
               <span className="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-white">
-                Next-of-Kin Emergency Notification Contacts
+              <h2 className="text-sm font-bold text-white">
+                Emergency Contact
               </h2>
             </div>
-            <span className="text-[10px] font-mono text-sky-400 bg-sky-950/60 px-2.5 py-0.5 rounded border border-sky-600/30">
-              DISPATCH NOTIFICATION
-            </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Primary Contact */}
             <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-3">
-              <span className="text-[11px] font-mono font-bold text-sky-400 uppercase">Primary Emergency Contact</span>
+              <span className="text-[11px] font-mono font-bold text-sky-400">Primary Contact</span>
               {isEditing ? (
                 <div className="flex flex-col gap-2">
                   <input
@@ -504,7 +491,7 @@ export const CivilianProfile: React.FC = () => {
 
             {/* Secondary Contact */}
             <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-3">
-              <span className="text-[11px] font-mono font-bold text-slate-400 uppercase">Secondary Emergency Contact</span>
+              <span className="text-[11px] font-mono font-bold text-slate-400">Secondary Contact</span>
               {isEditing ? (
                 <div className="flex flex-col gap-2">
                   <input
@@ -560,12 +547,8 @@ export const CivilianProfile: React.FC = () => {
       </form>
 
       {/* 6. Citizen Safety Guarantee */}
-      <div className="p-4 bg-emerald-950/30 rounded-xl border border-emerald-800/40 text-xs text-emerald-200">
-        <p className="font-bold">Citizen Safety & Data Privacy Guarantee</p>
-        <p className="mt-1 text-slate-300 leading-relaxed">
-          Your identity and facial biometric captures are encrypted and stored in secure municipal vaults.
-          Emergency medical profiles and next-of-kin contacts are strictly provided to certified RHU trauma medics and LDRRMO dispatchers during live accident response.
-        </p>
+      <div className="px-4 py-3 bg-emerald-950/30 rounded-xl border border-emerald-800/40 text-xs text-slate-300">
+        Identity and medical details are encrypted and shared only with authorized responders during an emergency.
       </div>
     </div>
   );

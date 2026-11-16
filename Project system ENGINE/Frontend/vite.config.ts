@@ -21,7 +21,8 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
-    port: 1997,
+    port: Number.parseInt(process.env.PORT || '1997', 10) || 1997,
+    allowedHosts: true,
     watch: {
       usePolling: true,
       interval: 800

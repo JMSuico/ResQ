@@ -359,10 +359,10 @@ export const UserManagementPage: React.FC = () => {
           <div className="space-y-1">
             <h1 className="text-xl md:text-2xl font-black text-white tracking-wide font-display flex items-center gap-2">
               <Shield className="w-6 h-6 text-[#e8114c]" />
-              LDRRMO User Governance & Identity Registry
+              User Management
             </h1>
             <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
-              Role-based identity provisioning, security credentials, and multi-agency responder access verification.
+              Identity accounts and access control
             </p>
           </div>
 
@@ -374,7 +374,7 @@ export const UserManagementPage: React.FC = () => {
               onClick={loadUsers}
               icon={<RefreshCw className="w-3.5 h-3.5" />}
             >
-              Sync Registry
+              Sync
             </Button>
 
             <button
@@ -383,7 +383,7 @@ export const UserManagementPage: React.FC = () => {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold font-mono tracking-wider uppercase bg-[#e8114c] hover:bg-[#ff2b4a] text-white shadow-[0_0_18px_rgba(232,17,76,0.45)] transition-all cursor-pointer border border-[#ff5c74]/50 active:scale-95"
             >
               <UserPlus className="w-4 h-4" />
-              + Enroll Official
+              + Add User
             </button>
           </div>
         </div>
@@ -393,9 +393,9 @@ export const UserManagementPage: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
         <div className="p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-[#1d3c5c] shadow-lg flex items-center justify-between relative overflow-hidden">
           <div className="space-y-0.5">
-            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest block">Total Registered</span>
+            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest block">Total Users</span>
             <div className="text-xl font-black text-white font-mono">{stats.total}</div>
-            <div className="text-[10px] text-slate-500 font-mono">100% on DB telemetry</div>
+            <div className="text-[10px] text-slate-500 font-mono">All accounts</div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-300 shadow-inner">
             <Users className="w-5 h-5 text-slate-300" />
@@ -404,9 +404,9 @@ export const UserManagementPage: React.FC = () => {
 
         <div className="p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-emerald-900/60 shadow-lg flex items-center justify-between relative overflow-hidden">
           <div className="space-y-0.5">
-            <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-widest block">Verified Active</span>
+            <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-widest block">Verified</span>
             <div className="text-xl font-black text-emerald-300 font-mono">{stats.verified}</div>
-            <div className="text-[10px] text-emerald-500/80 font-mono">Ready for dispatch</div>
+            <div className="text-[10px] text-emerald-500/80 font-mono">Active access</div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-950/70 border border-emerald-700/80 text-emerald-300 flex items-center justify-center shadow-[0_0_12px_rgba(16,185,129,0.3)]">
             <UserCheck className="w-5 h-5 text-emerald-300" />
@@ -415,9 +415,9 @@ export const UserManagementPage: React.FC = () => {
 
         <div className="p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-amber-900/60 shadow-lg flex items-center justify-between relative overflow-hidden">
           <div className="space-y-0.5">
-            <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-widest block">Pending Review</span>
+            <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-widest block">Pending</span>
             <div className="text-xl font-black text-amber-300 font-mono">{stats.pending}</div>
-            <div className="text-[10px] text-amber-500/80 font-mono">ID / Face validation</div>
+            <div className="text-[10px] text-amber-500/80 font-mono">Awaiting review</div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-950/70 border border-amber-700/80 text-amber-300 flex items-center justify-center shadow-[0_0_12px_rgba(245,158,11,0.3)]">
             <Clock className="w-5 h-5 text-amber-300" />
@@ -426,7 +426,7 @@ export const UserManagementPage: React.FC = () => {
 
         <div className="p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-sky-900/60 shadow-lg flex items-center justify-between relative overflow-hidden">
           <div className="space-y-0.5">
-            <span className="text-[10px] font-mono font-bold text-sky-400 uppercase tracking-widest block">First Responders</span>
+            <span className="text-[10px] font-mono font-bold text-sky-400 uppercase tracking-widest block">Responders</span>
             <div className="text-xl font-black text-sky-300 font-mono">{stats.responders}</div>
             <div className="text-[10px] text-sky-400/80 font-mono">
               RHU:{stats.rhuCount} · BFP:{stats.fireCount} · PNP:{stats.pnpCount}
@@ -578,11 +578,11 @@ export const UserManagementPage: React.FC = () => {
         <div className="px-4 py-2.5 bg-[#06111d] border-b border-[#1d3c5c] flex items-center justify-between text-[11px] font-mono text-slate-400">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
-            <span className="font-bold uppercase tracking-wider text-slate-300">Active Roster Telemetry</span>
-            <span className="text-slate-500">({filteredUsers.length} matched records)</span>
+            <span className="font-bold uppercase tracking-wider text-slate-300">Accounts</span>
+            <span className="text-slate-500">({filteredUsers.length} records)</span>
           </div>
           <div className="text-[10px] text-slate-500 hidden sm:block">
-            Universal Triage Protocol · Multi-Port RBAC Enforced
+            Role-Based Access Control
           </div>
         </div>
 
@@ -590,12 +590,12 @@ export const UserManagementPage: React.FC = () => {
           <table className="w-full text-left text-xs border-collapse">
             <thead className="bg-[#0a1a2b] text-slate-400 font-mono text-[10px] uppercase tracking-wider border-b-2 border-[#1d3c5c] select-none">
               <tr>
-                <th className="py-3 px-4 font-bold">Official / Resident Identity</th>
+                <th className="py-3 px-4 font-bold">User</th>
                 <th className="py-3 px-4 font-bold">Role & Agency</th>
-                <th className="py-3 px-4 font-bold">Sector / Station / Barangay</th>
-                <th className="py-3 px-4 font-bold">Authorization Status</th>
-                <th className="py-3 px-4 font-bold">Registered Date</th>
-                <th className="py-3 px-4 font-bold text-right">Tactical Actions</th>
+                <th className="py-3 px-4 font-bold">Unit / Sector</th>
+                <th className="py-3 px-4 font-bold">Status</th>
+                <th className="py-3 px-4 font-bold">Registered</th>
+                <th className="py-3 px-4 font-bold text-right">Actions</th>
               </tr>
             </thead>
 
@@ -690,7 +690,7 @@ export const UserManagementPage: React.FC = () => {
                             type="button"
                             onClick={() => setViewUserId(u.id)}
                             className="p-1.5 rounded-lg bg-[#0e243a] hover:bg-sky-950 text-slate-300 hover:text-sky-300 border border-[#1d3c5c] hover:border-sky-500/60 transition-all cursor-pointer shadow-sm"
-                            title="Inspect Dossier & Captures"
+                            title="View User Details"
                             aria-label={`Inspect ${u.fullName}`}
                           >
                             <Eye className="w-3.5 h-3.5" />

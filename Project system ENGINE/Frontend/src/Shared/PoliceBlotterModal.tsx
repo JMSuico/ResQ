@@ -90,8 +90,8 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
     <DefaultFloatingModalCard
       isOpen={isOpen}
       onClose={onClose}
-      title="Philippine National Police Blotter Extract"
-      subtitle={reportId ? `Linked Incident Case: ${reportId.slice(0, 8)}...` : 'Official Station Investigation Record'}
+      title="Police Blotter Entry"
+      subtitle={reportId ? `Incident: ${reportId.slice(0, 8)}...` : 'Station Investigation Record'}
       size="2xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -106,7 +106,7 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
         <div>
           <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
             <Shield className="w-3.5 h-3.5 text-blue-400" />
-            <span>Official Incident Classification</span>
+            <span>Classification</span>
           </label>
           <select
             value={classification}
@@ -123,7 +123,7 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-950/70 border border-blue-950/80 rounded-lg">
           <div className="space-y-2">
             <span className="text-[11px] font-semibold text-blue-400 uppercase tracking-wider block">
-              Complainant / Reporting Party
+              Complainant
             </span>
             <input
               type="text"
@@ -144,14 +144,14 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
               type="text"
               value={complainantAddress}
               onChange={e => setComplainantAddress(e.target.value)}
-              placeholder="Residential Barangay / Address"
+              placeholder="Address"
               className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
 
           <div className="space-y-2">
             <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-              Suspect / Perpetrator Information
+              Suspect Info
             </span>
             <input
               type="text"
@@ -164,14 +164,14 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
               type="text"
               value={suspectDescription}
               onChange={e => setSuspectDescription(e.target.value)}
-              placeholder="Physical Description / Clothes / Vehicle"
+              placeholder="Description / Vehicle"
               className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
             />
             <input
               type="text"
               value={witnesses}
               onChange={e => setWitnesses(e.target.value)}
-              placeholder="Identified Witnesses (Optional)"
+              placeholder="Witnesses (Optional)"
               className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -180,7 +180,7 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
         {/* Location & Narrative */}
         <div className="space-y-2">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Place of Occurrence</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">Location</label>
             <input
               type="text"
               required
@@ -190,13 +190,13 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Sworn Narrative of Incident</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">Incident Narrative</label>
             <textarea
               rows={4}
               required
               value={narrativeStatement}
               onChange={e => setNarrativeStatement(e.target.value)}
-              placeholder="Full statement of facts as narrated by the reporting party. State circumstances of time, location, involved vehicles, and damage..."
+              placeholder="Describe the incident details..."
               className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500 resize-none"
             />
           </div>
@@ -239,9 +239,7 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
         {/* Cryptographic Seal Notice */}
         <div className="flex items-center gap-2 p-2.5 bg-slate-950/90 border border-slate-800 rounded text-[11px] text-slate-400">
           <Lock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-          <span>
-            This record will be cryptographically sealed with a SHA-256 integrity hash and logged in the immutable station blotter book.
-          </span>
+          <span>Audit hash sealed on submit.</span>
         </div>
 
         {/* Actions */}
@@ -256,7 +254,7 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
             isLoading={isSubmitting}
             icon={<BadgeCheck className="w-4 h-4" />}
           >
-            Seal & File Police Blotter
+            File Blotter
           </Button>
         </div>
       </form>

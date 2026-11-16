@@ -47,8 +47,8 @@ export const DeleteUserConfirmModal: React.FC<DeleteUserConfirmModalProps> = ({
     <DefaultFloatingModalCard
       isOpen={isOpen}
       onClose={onClose}
-      title="Revoke & Soft-Delete Official Account"
-      subtitle="Administrative credential revocation with audit trail preservation"
+      title="Revoke Account"
+      subtitle="Soft-delete user access"
       maxWidth="md"
     >
       <div className="space-y-4 text-xs text-slate-200">
@@ -59,17 +59,17 @@ export const DeleteUserConfirmModal: React.FC<DeleteUserConfirmModalProps> = ({
           </div>
         )}
 
-        {/* Tactical Emergency Hazard Banner */}
+        {/* Hazard Notice */}
         <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-800/80 flex items-start gap-3 shadow-[0_0_15px_rgba(244,63,94,0.2)]">
           <div className="w-10 h-10 rounded-xl bg-rose-900/60 border border-rose-700/80 flex items-center justify-center flex-shrink-0 text-rose-300 shadow-inner">
             <ShieldAlert className="w-5 h-5 text-rose-400" />
           </div>
           <div className="space-y-1">
             <h4 className="font-bold text-rose-300 text-xs font-mono uppercase tracking-wider">
-              NDRRMC / LDRRMO Audit Safeguard Policy
+              Access Revocation
             </h4>
             <p className="text-slate-300 text-[11px] leading-relaxed">
-              This action revokes all active logon sessions and suspends credential authorization. Dispatched incident logs, telemetry entries, and historical blur variance checks are retained for administrative and legal compliance.
+              This revokes active sessions. Incident logs and audit trails are preserved.
             </p>
           </div>
         </div>
@@ -119,7 +119,7 @@ export const DeleteUserConfirmModal: React.FC<DeleteUserConfirmModalProps> = ({
               </>
             ) : (
               <>
-                <Trash2 className="w-3.5 h-3.5" /> Confirm Soft-Delete
+                <Trash2 className="w-3.5 h-3.5" /> Confirm Revocation
               </>
             )}
           </button>

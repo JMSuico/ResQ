@@ -3,14 +3,15 @@
 // DO NOT expose raw user passwords in governance views.
 
 import React, { useState, useEffect } from 'react';
-import { getUsers, updateUserStatus } from '@/Endpoints/adminGovernanceApi';
+import { FileText, User } from 'lucide-react';
+import { getUsers, updateUserStatus, UserSummary } from '@/Endpoints/adminGovernanceApi';
 import { Button } from '@/Shared/Button';
 import { SearchBar } from '@/Shared/FormPrimitives';
 import { ImageLightboxModal } from '@/Shared/ImageLightboxModal';
 import { formatIsoTimestamp } from '@/Libs/Assets/formatters';
 
 export const UserGovernance: React.FC = () => {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserSummary[]>([]);
   const [search, setSearch] = useState('');
   const [selectedRole, setSelectedRole] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
@@ -58,8 +59,8 @@ export const UserGovernance: React.FC = () => {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-white">User Accounts & Biometric Governance</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Verification approval, identity inspection, and account suspension</p>
+          <h2 className="text-xl font-bold text-white">User Governance</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Account verification</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -148,16 +149,20 @@ export const UserGovernance: React.FC = () => {
                       <td className="p-3.5">
                         <div className="flex items-center gap-1.5">
                           <button
+                            type="button"
                             onClick={() => openCapture(u.id, 'id', u.fullName)}
-                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-slate-300 border border-slate-700"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-slate-300 border border-slate-700 cursor-pointer"
                           >
-                            🪪 ID PNG
+                            <FileText className="w-3 h-3" />
+                            View ID
                           </button>
                           <button
+                            type="button"
                             onClick={() => openCapture(u.id, 'face', u.fullName)}
-                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-sky-300 border border-slate-700"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-sky-300 border border-slate-700 cursor-pointer"
                           >
-                            👤 Face PNG
+                            <User className="w-3 h-3" />
+                            View Face
                           </button>
                         </div>
                       </td>

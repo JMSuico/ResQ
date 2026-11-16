@@ -144,8 +144,8 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
   isOpen,
   onClose,
   onCapture,
-  title = 'Live Emergency Incident Camera',
-  instructionText = 'Anti-spoofing camera stream active. Take a single live photo of the incident scene. Retakes and file uploads are disabled to preserve tamper-proof evidence.'
+  title = 'Incident Camera',
+  instructionText = 'Take a live photo of the scene.'
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -296,7 +296,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
 
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 16px "Montserrat", sans-serif';
-    ctx.fillText('RESQTRACK RESCUE TELEMETRY // TAMPER-PROOF VERIFIED EVIDENCE', 24, CANVAS_HEIGHT - 58);
+    ctx.fillText('RESQTRACK EVIDENCE', 24, CANVAS_HEIGHT - 58);
 
     ctx.fillStyle = '#38bdf8';
     ctx.font = '13px "JetBrains Mono", monospace';
@@ -371,11 +371,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
           {/* Tactical HUD Header */}
           <div className="absolute top-2 left-2 px-2.5 py-1 bg-black/80 backdrop-blur-sm rounded text-[10px] font-mono text-emerald-400 flex items-center gap-2 border border-emerald-500/30">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span>LIVE GPS: {coords.latitude.toFixed(4)}° N, {coords.longitude.toFixed(4)}° E (±{Math.round(coords.accuracy)}m)</span>
-          </div>
-
-          <div className="absolute top-2 right-2 px-2.5 py-1 bg-black/80 backdrop-blur-sm rounded text-[10px] font-mono text-rose-400 border border-rose-500/30">
-            <span>ANTI-SPOOF // SINGLE-SNAP</span>
+            <span>GPS: {coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}</span>
           </div>
         </div>
 
@@ -397,20 +393,20 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
               <div>
                 <p className="font-semibold">
                   {isBlurry
-                    ? `Blurry / Low-Clarity Photo (Score: ${blurrinessScore} · Dynamic Target: ${activeThreshold})`
-                    : `High-Clarity Validated Photo (Score: ${blurrinessScore} · Dynamic Target: ${activeThreshold})`}
+                    ? `Low Clarity (${blurrinessScore} / ${activeThreshold})`
+                    : `Clear Photo (${blurrinessScore} / ${activeThreshold})`}
                 </p>
                 <p className="text-[11px] opacity-80">
                   {isBlurry
-                    ? `Flagged for manual review. Adaptive adjustments: [${thresholdReasoning}]. GPS coordinates remain locked.`
-                    : `Crisp imagery validated against camera capabilities: [${thresholdReasoning}]. Auto-prioritized.`}
+                    ? 'Flagged for manual review. GPS locked.'
+                    : 'Validated. GPS locked.'}
                 </p>
               </div>
             </div>
             <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
               isBlurry ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'
             }`}>
-              {isBlurry ? 'Manual Review' : 'Verified Crisp'}
+              {isBlurry ? 'Manual Review' : 'Clear'}
             </span>
           </div>
         )}
@@ -421,7 +417,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
         {/* Action Controls - Zero Retake & Zero File Upload */}
         <div className="flex items-center justify-between pt-3 border-t border-slate-800">
           <Button variant="ghost" size="sm" onClick={handleDiscardAndClose}>
-            Cancel & Discard
+            Cancel
           </Button>
 
           <div className="flex items-center gap-3">
@@ -432,7 +428,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
                 onClick={handleCaptureFrame}
                 icon={<Camera className="w-5 h-5" />}
               >
-                Snap Live Evidence (Single Shot)
+                Snap Photo
               </Button>
             ) : (
               <Button
@@ -441,7 +437,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
                 onClick={handleConfirmAndSend}
                 icon={<Check className="w-5 h-5" />}
               >
-                Accept & Attach Evidence
+                Accept Evidence
               </Button>
             )}
           </div>

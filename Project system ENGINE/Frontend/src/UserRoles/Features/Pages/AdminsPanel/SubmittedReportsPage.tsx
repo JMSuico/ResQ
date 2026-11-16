@@ -628,17 +628,12 @@ export const SubmittedReportsPage: FC = () => {
       {/* Page Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900/80 border border-slate-700/80 backdrop-blur-md">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] font-mono font-bold tracking-widest px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">
-              LDRRMO EXECUTIVE COMMAND // MUNICIPAL DISPATCH C2
-            </span>
-          </div>
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase flex items-center gap-2.5">
             <FileCheck className="w-6 h-6 text-emerald-400" />
-            Submitted Field Incident Reports
+            Submitted Reports
           </h1>
           <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Operational dossiers, multi-casualty PCR vitals & evidence packages submitted by field responders
+            Field reports and evidence dossiers
           </p>
         </div>
 
@@ -672,38 +667,38 @@ export const SubmittedReportsPage: FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
         <div className="tactical-card p-4 border-l-4 border-l-sky-500 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Total Submitted Reports</p>
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Total Reports</p>
             <FileText className="w-4 h-4 text-sky-400" />
           </div>
           <h3 className="text-2xl font-black text-white mt-1.5">{totalSubmitted}</h3>
-          <span className="text-[10px] text-sky-400 font-mono">Lifetime Field Logs</span>
+          <span className="text-[10px] text-sky-400 font-mono">All submitted</span>
         </div>
 
         <div className="tactical-card p-4 border-l-4 border-l-amber-500 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Pending Verification</p>
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Pending Review</p>
             <Clock className="w-4 h-4 text-amber-400" />
           </div>
           <h3 className="text-2xl font-black text-amber-400 mt-1.5">{pendingReview}</h3>
-          <span className="text-[10px] text-amber-400 font-mono">Awaiting Admin Review</span>
+          <span className="text-[10px] text-amber-400 font-mono">Awaiting review</span>
         </div>
 
         <div className="tactical-card p-4 border-l-4 border-l-rose-500 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Verified & Actioned</p>
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Verified</p>
             <Activity className="w-4 h-4 text-rose-400" />
           </div>
           <h3 className="text-2xl font-black text-rose-400 mt-1.5">{verifiedCount}</h3>
-          <span className="text-[10px] text-rose-300 font-mono">5m Auto-Close Active</span>
+          <span className="text-[10px] text-rose-300 font-mono">5m auto-close</span>
         </div>
 
         <div className="tactical-card p-4 border-l-4 border-l-emerald-500 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Closed / Resolved</p>
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Closed</p>
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
           <h3 className="text-2xl font-black text-emerald-400 mt-1.5">{closedCount}</h3>
-          <span className="text-[10px] text-emerald-400 font-mono">100% Solved Missions</span>
+          <span className="text-[10px] text-emerald-400 font-mono">Resolved</span>
         </div>
       </div>
 
@@ -1115,8 +1110,8 @@ export const SubmittedReportsPage: FC = () => {
         <DefaultFloatingModalCard
           isOpen={isDetailModalOpen}
           onClose={() => setIsDetailModalOpen(false)}
-          title={`Submitted Dossier: ${selectedReport.referenceCode}`}
-          subtitle={`${selectedReport.title} — Submitted by ${selectedReport.responderName} (${selectedReport.responderUnit})`}
+          title={`Report ${selectedReport.referenceCode}`}
+          subtitle={`${selectedReport.title} — ${selectedReport.responderName} (${selectedReport.responderUnit})`}
           className="max-w-4xl max-h-[90vh] overflow-y-auto"
         >
           <div className="space-y-6 text-xs text-slate-200">
@@ -1158,11 +1153,8 @@ export const SubmittedReportsPage: FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
                   <Camera className="w-4 h-4 text-sky-400" />
-                  Field Evidence Gallery ({selectedReport.evidencePhotos.length} Items)
+                  Evidence Photos ({selectedReport.evidencePhotos.length})
                 </h4>
-                <span className="text-[10px] font-mono text-slate-500">
-                  Exact timestamps with seconds (YYYY-MM-DD hh:mm:ss A)
-                </span>
               </div>
 
               {selectedReport.evidencePhotos.length === 0 ? (
@@ -1196,7 +1188,7 @@ export const SubmittedReportsPage: FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
                   <HeartPulse className="w-4 h-4 text-rose-400" />
-                  Multi-Casualty Patient Care Records ({selectedReport.casualties.length} Civilians)
+                  Patient Care Records ({selectedReport.casualties.length})
                 </h4>
               </div>
 
@@ -1295,7 +1287,7 @@ export const SubmittedReportsPage: FC = () => {
                     className="text-xs font-mono font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5"
                   >
                     <Check className="w-3.5 h-3.5" />
-                    VERIFY REPORT (START 5M TIMER)
+                    VERIFY REPORT
                   </Button>
                 )}
                 {!selectedReport.isClosed && (
@@ -1333,7 +1325,7 @@ export const SubmittedReportsPage: FC = () => {
           imageUrl={lightboxImageUrl}
           images={lightboxImages}
           initialIndex={lightboxIndex}
-          title="Evidence Package Inspection"
+          title="Evidence Photos"
         />
       )}
     </div>

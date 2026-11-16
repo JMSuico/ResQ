@@ -19,7 +19,7 @@ public class ClaudeMessagesClient(
     private const string DefaultFallbackModel = "claude-sonnet-5-5";
     private const string DefaultEndpoint = "https://api.anthropic.com/v1/messages";
     private const string DefaultAnthropicVersion = "2023-06-01";
-    private const double DefaultAttemptTimeoutSeconds = 18.0;
+    private const double DefaultAttemptTimeoutSeconds = 22.0;
 
     private static readonly Lazy<HttpClient> FallbackHttpClient = new(() => new HttpClient());
 

@@ -20,7 +20,6 @@ import {
   CreditCard,
   Shield,
   ShieldAlert,
-  ShieldCheck,
   Flame,
   HeartPulse,
   Siren,
@@ -33,7 +32,6 @@ import {
   Camera,
   RefreshCw,
   Check,
-  CheckCircle2,
   Upload,
   MapPin,
   Phone,
@@ -1089,8 +1087,7 @@ export const RegisterPage: React.FC = () => {
           style={{ position: 'relative', margin: '0 auto 16px', left: 'auto', top: 'auto' }}
         >
           <h1 className="brand__mark">RESQTRACK</h1>
-          <p className="brand__lead">Smart Emergency Response</p>
-          <p className="brand__sub">ResQTrack Identity Verification &amp; Emergency Induction</p>
+          <p className="brand__lead">Account Registration</p>
         </header>
 
         <section
@@ -1138,12 +1135,10 @@ export const RegisterPage: React.FC = () => {
             <div className="flex items-center justify-between font-mono text-[9px] tracking-wider text-rose-300/80 border-b border-rose-500/20 pb-2 mb-2">
               <span className="flex items-center gap-1.5 font-bold">
                 <span className="inline-block w-2 h-2 rounded-full bg-[#ff5c74] animate-pulse shadow-[0_0_8px_#ff5c74]" />
-                INDUCTION SYSTEM // 5-PHASE AI-VERIFIED &amp; STANDBY WORKFLOW
+                5-PHASE REGISTRATION
               </span>
               <span className="text-slate-400 tracking-widest hidden sm:inline">
-                {isAiAutoApproveReady
-                  ? 'STRATEGY: AI AUTO-APPROVE READY'
-                  : 'STRATEGY: HYBRID AI / MANUAL GOVERNANCE'}
+                {isAiAutoApproveReady ? 'AI AUTO-APPROVE' : 'MANUAL REVIEW'}
               </span>
             </div>
 
@@ -1204,16 +1199,11 @@ export const RegisterPage: React.FC = () => {
                 <div className="text-center mb-5">
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/30 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-2">
                     <Shield className="w-3.5 h-3.5 text-[#ff5c74]" />
-                    PHASE 01 OF 05 // ROLE SELECTION
+                    PHASE 1/5 // ROLE
                   </div>
                   <h3 className="font-mono text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-                    Select Operational Role Classification
+                    Select Role <span className="text-[#ff5c74]">*</span>
                   </h3>
-                  <p className="font-sans text-xs text-slate-300/80 mt-1 max-w-lg mx-auto">
-                    Choose your authorized registration role. Privileged LDRRMO Administrator
-                    accounts cannot be self-assigned and are provisioned strictly via command
-                    governance.
-                  </p>
                 </div>
 
                 {/* Sliding Role Selector Segmented Bar */}
@@ -1289,29 +1279,22 @@ export const RegisterPage: React.FC = () => {
                         </div>
                       </div>
 
-                      <h4 className="font-mono text-sm font-bold text-white uppercase tracking-wider">
+                      <h4 className="font-mono text-sm font-bold text-white uppercase tracking-wider mb-2">
                         Responders
                       </h4>
-                      <p className="font-mono text-[10px] text-rose-300/90 font-medium mb-2">
-                        Emergency Response Personnel
-                      </p>
-                      <p className="font-sans text-[11.5px] text-slate-300 leading-relaxed mb-3">
-                        Authorized municipal tactical personnel responding to emergency incidents,
-                        casualty triages, structural fires, and law enforcement operations.
-                      </p>
 
                       <div className="space-y-1.5 pt-2 border-t border-rose-500/20 font-mono text-[10px]">
                         <div className="flex items-center gap-2 text-slate-300">
                           <HeartPulse className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                          <span>RHU Medical (Triage &amp; Paramedic)</span>
+                          <span>RHU &middot; Medical</span>
                         </div>
                         <div className="flex items-center gap-2 text-slate-300">
                           <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                          <span>BFP Fire (Suppression &amp; Rescue)</span>
+                          <span>BFP &middot; Fire</span>
                         </div>
                         <div className="flex items-center gap-2 text-slate-300">
                           <Siren className="w-3.5 h-3.5 text-[#ff5c74] shrink-0" />
-                          <span>PNP Police (Patrol &amp; Law Enforcement)</span>
+                          <span>PNP &middot; Police</span>
                         </div>
                       </div>
                     </div>
@@ -1325,7 +1308,7 @@ export const RegisterPage: React.FC = () => {
                           className="block font-mono text-[10px] uppercase tracking-wider text-rose-200 font-bold mb-1.5"
                           htmlFor="phase1-agency-unit"
                         >
-                          Select Responder Agency Unit <span className="text-[#ff5c74]">*</span>
+                          Unit <span className="text-[#ff5c74]">*</span>
                         </label>
                         <div className="grid grid-cols-3 gap-1.5">
                           {(['FIRE', 'RHU', 'PNP'] as const).map((u) => (
@@ -1384,33 +1367,12 @@ export const RegisterPage: React.FC = () => {
                         Civilians
                       </h4>
                       <p className="font-mono text-[10px] text-rose-300/90 font-medium mb-2">
-                        Community Resident / Citizen SOS
+                        Community Resident
                       </p>
-                      <p className="font-sans text-[11.5px] text-rose-100/90 leading-relaxed mb-3">
-                        Designed for local residents and citizens of Katipunan, Zamboanga del Norte
-                        to submit emergency distress broadcasts, incident reports, and receive
-                        hazard alerts.
-                      </p>
-
-                      <div className="space-y-1.5 pt-2 border-t border-rose-500/20 font-mono text-[10px]">
-                        <div className="flex items-center gap-2 text-rose-200">
-                          <ShieldCheck className="w-3.5 h-3.5 text-[#ff5c74] shrink-0" />
-                          <span>One-Click Citizen SOS Distress Dispatch</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-rose-200">
-                          <Camera className="w-3.5 h-3.5 text-[#ff5c74] shrink-0" />
-                          <span>Live Emergency Incident Reporting</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-rose-200">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-[#ff5c74] shrink-0" />
-                          <span>Community Resident Clearance</span>
-                        </div>
-                      </div>
                     </div>
 
                     <div className="mt-4 pt-2.5 border-t border-rose-500/20 font-mono text-[9px] text-rose-300/80 flex items-center justify-between">
-                      <span>Req: Gov ID Verification + Personal Info + Facial Match</span>
-                      <span className="text-[#ff5c74] font-bold">CITIZEN TIER</span>
+                      <span>Req: Gov ID &middot; Profile &middot; Face Match</span>
                     </div>
                   </div>
                 </div>
@@ -1424,8 +1386,7 @@ export const RegisterPage: React.FC = () => {
                     onClick={() => handleNavigatePhase(1)}
                   >
                     <span className="btn__label">
-                      Continue to Phase 2: ID &amp; Personal Info (
-                      {selectedRole === 'Responder' ? `Responder - ${agencyUnit}` : 'Civilian'})
+                      Continue ({selectedRole === 'Responder' ? `Responder · ${agencyUnit}` : 'Civilian'})
                     </span>
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
@@ -1443,11 +1404,11 @@ export const RegisterPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <Shield className="w-4 h-4 text-[#ff5c74] shrink-0" />
                     <span>
-                      PHASE 02 OF 05 // GOVERNMENT ID &amp; IDENTITY &mdash; Active Role:{' '}
+                      Active Role:{' '}
                       <strong>
                         {selectedRole === 'Responder'
                           ? `Responder (${agencyUnit})`
-                          : 'Civilian Resident'}
+                          : 'Civilian'}
                       </strong>
                     </span>
                   </div>
@@ -1456,22 +1417,17 @@ export const RegisterPage: React.FC = () => {
                     onClick={() => handleNavigatePhase(0)}
                     className="underline text-[10px] hover:text-white cursor-pointer ml-2"
                   >
-                    Change Role
+                    Change
                   </button>
                 </div>
 
                 <div className="text-center mb-4">
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/30 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-1.5">
                     <CreditCard className="w-3.5 h-3.5 text-[#ff5c74]" />
-                    PHASE 02 OF 05 // GOVERNMENT ID &amp; PERSONAL IDENTITY
+                    PHASE 2/5 // GOV ID &amp; PROFILE
                   </div>
-                  <h3 className="font-mono text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-                    Government ID Verification &amp; Identity Profile
-                  </h3>
                   <p className="font-sans text-xs text-slate-300/80 mt-1 max-w-xl mx-auto">
-                    Select your Government ID type and upload clear Front and Back photographs (PNG,
-                    JPG, or WebP, max 5 MB each). Background verification unlocks and pre-fills your
-                    personal details below.
+                    Upload Front &amp; Back ID photos (PNG/JPG/WebP, max 5 MB).
                   </p>
                 </div>
 
@@ -1486,9 +1442,8 @@ export const RegisterPage: React.FC = () => {
                       className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
                       htmlFor="id-type"
                     >
-                      Government ID Document Type <span className="req text-[#ff5c74]">*</span>
+                      Government ID Type <span className="req text-[#ff5c74]">*</span>
                     </label>
-                    <span className="font-mono text-[8.5px] text-rose-400/80">[GOV.ID.TYPE]</span>
                   </div>
                   <div
                     className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -1543,12 +1498,10 @@ export const RegisterPage: React.FC = () => {
                     <div className="space-y-1">
                       <div className="font-mono text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
                         <Lock className="w-3.5 h-3.5 text-[#ff5c74] shrink-0" />
-                        <span>Front &amp; Back ID Upload Locked</span>
+                        <span>ID Upload Locked</span>
                       </div>
                       <p className="font-sans text-xs text-slate-300/90 leading-relaxed m-0">
-                        Please choose a Government ID document type above before uploading Front
-                        and Back ID images. Background verification and personal information inputs
-                        remain locked until a valid ID type is selected.
+                        Select an ID type above to enable upload.
                       </p>
                     </div>
                   </div>
@@ -1556,7 +1509,7 @@ export const RegisterPage: React.FC = () => {
                   <section id="id-upload-section" aria-label="Government ID Upload">
                     <div className="flex items-center justify-between mb-3">
                       <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
-                        Upload Front &amp; Back ID Images <span className="text-[#ff5c74]">*</span>
+                        Front &amp; Back ID <span className="text-[#ff5c74]">*</span>
                       </span>
                       {(idFrontShot || idBackShot) && (
                         <button
@@ -1566,7 +1519,7 @@ export const RegisterPage: React.FC = () => {
                           className="font-mono text-[10px] text-rose-300 hover:text-white px-2.5 py-1 rounded border border-rose-500/30 bg-rose-950/40 hover:bg-rose-900/60 cursor-pointer flex items-center gap-1"
                         >
                           <RefreshCw className="w-3 h-3" />
-                          <span>Remove Both ID Images</span>
+                          <span>Clear Both</span>
                         </button>
                       )}
                     </div>
@@ -1590,7 +1543,7 @@ export const RegisterPage: React.FC = () => {
                         />
                         <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
                           <span className="font-bold uppercase tracking-wider text-slate-200">
-                            1. Front ID Image
+                            Front ID <span className="text-[#ff5c74]">*</span>
                           </span>
                           <span className={frontSlotBadge.className}>{frontSlotBadge.text}</span>
                         </div>
@@ -1666,10 +1619,10 @@ export const RegisterPage: React.FC = () => {
                               <Upload className="w-5 h-5" />
                             </div>
                             <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
-                              Upload Front ID Image
+                              Front ID <span className="text-[#ff5c74]">*</span>
                             </span>
                             <span className="font-sans text-[11px] text-slate-400 mt-1">
-                              Drag &amp; drop or click to select PNG, JPG, or WebP (max 5 MB)
+                              Drop or click (PNG/JPG/WebP, &lt;= 5 MB)
                             </span>
                           </div>
                         )}
@@ -1693,7 +1646,7 @@ export const RegisterPage: React.FC = () => {
                         />
                         <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
                           <span className="font-bold uppercase tracking-wider text-slate-200">
-                            2. Back ID Image
+                            Back ID <span className="text-[#ff5c74]">*</span>
                           </span>
                           <span className={backSlotBadge.className}>{backSlotBadge.text}</span>
                         </div>
@@ -1769,10 +1722,10 @@ export const RegisterPage: React.FC = () => {
                               <Upload className="w-5 h-5" />
                             </div>
                             <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
-                              Upload Back ID Image
+                              Back ID <span className="text-[#ff5c74]">*</span>
                             </span>
                             <span className="font-sans text-[11px] text-slate-400 mt-1">
-                              Drag &amp; drop or click to select PNG, JPG, or WebP (max 5 MB)
+                              Drop or click (PNG/JPG/WebP, &lt;= 5 MB)
                             </span>
                           </div>
                         )}
@@ -1814,8 +1767,8 @@ export const RegisterPage: React.FC = () => {
                   >
                     <div className="p-3.5 rounded-xl bg-black/55 border border-rose-500/25 mb-4 font-mono text-[10.5px] text-slate-200">
                       {idVerification.status === 'VERIFIED_GENUINE'
-                        ? 'Visibly printed details from your verified Government ID have been auto-filled below. Unseen fields remain blank for manual completion.'
-                        : 'AI Verification is temporarily unavailable. Enter your personal and residential details manually below for administrative review.'}
+                        ? 'Visible ID fields auto-filled. Complete required (*) fields.'
+                        : 'AI unavailable — enter details for manual review.'}
                     </div>
 
                     <div className="form-grid">
@@ -1826,12 +1779,9 @@ export const RegisterPage: React.FC = () => {
                             className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
                             htmlFor="license-number"
                           >
-                            ID / Document Serial Number{' '}
+                            ID / Document Number{' '}
                             <span className="text-slate-400 text-[9px]">(Optional)</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">
-                            [DOC.NUMBER]
-                          </span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -1849,7 +1799,7 @@ export const RegisterPage: React.FC = () => {
                             type="text"
                             value={licenseNumber}
                             onChange={(e) => setLicenseNumber(e.target.value)}
-                            placeholder="ID / License Number"
+                            placeholder="ID / Document number"
                           />
                         </div>
                       </div>
@@ -1863,9 +1813,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             First Name <span className="req">*</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">
-                            [FIRST.NAME]
-                          </span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -1883,7 +1830,7 @@ export const RegisterPage: React.FC = () => {
                             type="text"
                             value={firstName}
                             onChange={(e) => setFirstName(e.target.value)}
-                            placeholder="Enter first name"
+                            placeholder="First name"
                             autoComplete="given-name"
                           />
                         </div>
@@ -1908,9 +1855,6 @@ export const RegisterPage: React.FC = () => {
                             Middle Name{' '}
                             <span className="text-slate-400 text-[9px]">(Optional)</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">
-                            [MIDDLE.NAME]
-                          </span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -1928,7 +1872,7 @@ export const RegisterPage: React.FC = () => {
                             type="text"
                             value={middleName}
                             onChange={(e) => setMiddleName(e.target.value)}
-                            placeholder="Enter middle name (if applicable)"
+                            placeholder="Middle name"
                             autoComplete="additional-name"
                           />
                         </div>
@@ -1943,7 +1887,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             Last Name / Surname <span className="req">*</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">[SURNAME]</span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -1961,7 +1904,7 @@ export const RegisterPage: React.FC = () => {
                             type="text"
                             value={lastName}
                             onChange={(e) => setLastName(e.target.value)}
-                            placeholder="Enter surname"
+                            placeholder="Surname"
                             autoComplete="family-name"
                           />
                         </div>
@@ -1985,7 +1928,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             Suffix <span className="text-slate-400 text-[9px]">(Optional)</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">[SUFFIX]</span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2003,7 +1945,7 @@ export const RegisterPage: React.FC = () => {
                             type="text"
                             value={suffix}
                             onChange={(e) => setSuffix(e.target.value)}
-                            placeholder="e.g. Jr., III"
+                            placeholder="Jr., III"
                           />
                         </div>
                       </div>
@@ -2017,7 +1959,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             Sex <span className="req">*</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">[SEX]</span>
                         </div>
                         <div
                           className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2035,7 +1976,7 @@ export const RegisterPage: React.FC = () => {
                             value={sex}
                             onChange={(e) => setSex(e.target.value)}
                           >
-                            <option value="">-- Select Sex --</option>
+                            <option value="">Select Sex</option>
                             <option value="Male">Male</option>
                             <option value="Female">Female</option>
                             <option value="Other">Other</option>
@@ -2062,7 +2003,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             Date of Birth <span className="req">*</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">[DOB]</span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2107,7 +2047,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             Age (18&ndash;100) <span className="req">*</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">[AGE]</span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2127,7 +2066,7 @@ export const RegisterPage: React.FC = () => {
                             max={100}
                             value={age}
                             onChange={(e) => setAge(e.target.value)}
-                            placeholder="18 - 100"
+                            placeholder="18-100"
                           />
                         </div>
                         {errors.age && (
@@ -2150,9 +2089,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             Contact Number <span className="req">*</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">
-                            [MOBILE.TEL]
-                          </span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2170,7 +2106,7 @@ export const RegisterPage: React.FC = () => {
                             type="tel"
                             value={phoneNumber}
                             onChange={(e) => setPhoneNumber(e.target.value)}
-                            placeholder="Enter active mobile number"
+                            placeholder="09XX XXX XXXX"
                             autoComplete="tel"
                           />
                         </div>
@@ -2194,9 +2130,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             Province <span className="req">*</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">
-                            [ADDR.PROVINCE]
-                          </span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2233,9 +2166,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             City / Municipality <span className="req">*</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">
-                            [ADDR.CITY]
-                          </span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2272,9 +2202,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             Barangay <span className="req">*</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">
-                            [ADDR.BRGY]
-                          </span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2292,7 +2219,7 @@ export const RegisterPage: React.FC = () => {
                             type="text"
                             value={barangay}
                             onChange={(e) => setBarangay(e.target.value)}
-                            placeholder="e.g. Barangay Uno (Poblacion)"
+                            placeholder="Barangay"
                           />
                         </div>
                         {errors.barangay && (
@@ -2313,11 +2240,8 @@ export const RegisterPage: React.FC = () => {
                             className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
                             htmlFor="street-purok"
                           >
-                            Street / Purok / House No. <span className="req">*</span>
+                            Street / Purok <span className="req">*</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">
-                            [ADDR.STREET]
-                          </span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2335,7 +2259,7 @@ export const RegisterPage: React.FC = () => {
                             type="text"
                             value={streetOrPurok}
                             onChange={(e) => setStreetOrPurok(e.target.value)}
-                            placeholder="e.g. Purok 2, National Highway"
+                            placeholder="Purok / Street"
                           />
                         </div>
                         {errors.streetOrPurok && (
@@ -2358,9 +2282,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             Weight <span className="text-slate-400 text-[9px]">(Optional)</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">
-                            [WEIGHT.KG]
-                          </span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2377,7 +2298,7 @@ export const RegisterPage: React.FC = () => {
                             type="text"
                             value={weight}
                             onChange={(e) => setWeight(e.target.value)}
-                            placeholder="e.g. 65 kg"
+                            placeholder="65 kg"
                           />
                         </div>
                       </div>
@@ -2390,9 +2311,6 @@ export const RegisterPage: React.FC = () => {
                           >
                             Height <span className="text-slate-400 text-[9px]">(Optional)</span>
                           </label>
-                          <span className="font-mono text-[8.5px] text-rose-400/80">
-                            [HEIGHT.M]
-                          </span>
                         </div>
                         <div
                           className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2409,7 +2327,7 @@ export const RegisterPage: React.FC = () => {
                             type="text"
                             value={height}
                             onChange={(e) => setHeight(e.target.value)}
-                            placeholder="e.g. 1.70 m"
+                            placeholder="1.70 m"
                           />
                         </div>
                       </div>
@@ -2425,9 +2343,6 @@ export const RegisterPage: React.FC = () => {
                               >
                                 Agency Unit <span className="req">*</span>
                               </label>
-                              <span className="font-mono text-[8.5px] text-rose-400/80">
-                                [AGENCY.UNIT]
-                              </span>
                             </div>
                             <div
                               className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2446,9 +2361,9 @@ export const RegisterPage: React.FC = () => {
                                   handleAgencyUnitChange(e.target.value as 'RHU' | 'FIRE' | 'PNP')
                                 }
                               >
-                                <option value="RHU">RHU Medical (Rural Health Unit)</option>
-                                <option value="FIRE">BFP Fire (Bureau of Fire Protection)</option>
-                                <option value="PNP">PNP Police (Philippine National Police)</option>
+                                <option value="RHU">RHU Medical</option>
+                                <option value="FIRE">BFP Fire</option>
+                                <option value="PNP">PNP Police</option>
                               </select>
                               <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
                             </div>
@@ -2462,9 +2377,6 @@ export const RegisterPage: React.FC = () => {
                               >
                                 Badge / Employee ID <span className="req">*</span>
                               </label>
-                              <span className="font-mono text-[8.5px] text-rose-400/80">
-                                [BADGE.TAG]
-                              </span>
                             </div>
                             <div
                               className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2481,7 +2393,7 @@ export const RegisterPage: React.FC = () => {
                                 type="text"
                                 value={employeeId}
                                 onChange={(e) => setEmployeeId(e.target.value)}
-                                placeholder="e.g. BFP-ZN-2026-089"
+                                placeholder="BFP-ZN-2026-089"
                               />
                             </div>
                             {errors.employeeId && (
@@ -2505,11 +2417,8 @@ export const RegisterPage: React.FC = () => {
                                 className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
                                 htmlFor="rank-title"
                               >
-                                Official Rank / Position Title <span className="req">*</span>
+                                Rank / Position <span className="req">*</span>
                               </label>
-                              <span className="font-mono text-[8.5px] text-rose-400/80">
-                                [RANK.POS]
-                              </span>
                             </div>
                             <div
                               className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2526,7 +2435,7 @@ export const RegisterPage: React.FC = () => {
                                 type="text"
                                 value={rankOrTitle}
                                 onChange={(e) => setRankOrTitle(e.target.value)}
-                                placeholder="e.g. Senior Inspector, Police Corporal, Medical Responder"
+                                placeholder="Rank or title"
                               />
                             </div>
                             {errors.rankOrTitle && (
@@ -2566,7 +2475,7 @@ export const RegisterPage: React.FC = () => {
                     disabled={!isPhase2ReadyForNext}
                     onClick={() => handleNavigatePhase(2)}
                   >
-                    <span className="btn__label">Continue to Phase 3: Facial Record</span>
+                    <span className="btn__label">Continue</span>
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
                 </div>
@@ -2581,10 +2490,10 @@ export const RegisterPage: React.FC = () => {
                 <div className="text-center mb-4">
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/30 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-1.5">
                     <Camera className="w-3.5 h-3.5 text-[#ff5c74]" />
-                    PHASE 03 OF 05 // FACIAL RECORD CAPTURE
+                    PHASE 3/5 // FACIAL RECORD
                   </div>
                   <h3 className="font-mono text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-                    Facial Biometric Capture &amp; ID Portrait Verification
+                    Face Scan &amp; ID Match
                   </h3>
                 </div>
 
@@ -2680,7 +2589,7 @@ export const RegisterPage: React.FC = () => {
                     id="btn-phase3-next"
                     onClick={() => handleNavigatePhase(3)}
                   >
-                    <span className="btn__label">Continue to Phase 4: Account Credentials</span>
+                    <span className="btn__label">Continue</span>
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
                 </div>
@@ -2695,16 +2604,11 @@ export const RegisterPage: React.FC = () => {
                 <div className="text-center mb-4">
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/30 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-1.5">
                     <Lock className="w-3.5 h-3.5 text-[#ff5c74]" />
-                    PHASE 04 OF 05 // ACCOUNT CREDENTIALS
+                    PHASE 4/5 // CREDENTIALS
                   </div>
                   <h3 className="font-mono text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-                    Display Name, Login Email &amp; Master Password
+                    Display Name, Login Email &amp; Password
                   </h3>
-                  <p className="font-sans text-xs text-slate-300/80 mt-1 max-w-lg mx-auto">
-                    Your <strong>Email Address</strong> is your sole login identifier. Your{' '}
-                    <strong>Display Name / Username</strong> is used strictly for account
-                    presentation in dashboards and headers.
-                  </p>
                 </div>
 
                 <div className="form-grid">
@@ -2715,11 +2619,8 @@ export const RegisterPage: React.FC = () => {
                         className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
                         htmlFor="display-name"
                       >
-                        Username / Display Name <span className="req">*</span>
+                        Display Name <span className="req">*</span>
                       </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/90">
-                        [DISPLAY.ONLY]
-                      </span>
                     </div>
                     <div
                       className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2737,13 +2638,10 @@ export const RegisterPage: React.FC = () => {
                         type="text"
                         value={displayName}
                         onChange={(e) => setDisplayName(e.target.value)}
-                        placeholder="e.g. ElenaMarquez_7109 (Shown in UI header)"
+                        placeholder="UI display only"
                         autoComplete="nickname"
                       />
                     </div>
-                    <p className="font-mono text-[9px] text-slate-400 mt-1">
-                      Used for dashboard display only. Cannot be used to sign in.
-                    </p>
                     {errors.displayName && (
                       <p
                         className="field__error font-mono text-[10px]"
@@ -2762,11 +2660,8 @@ export const RegisterPage: React.FC = () => {
                         className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
                         htmlFor="email"
                       >
-                        Email Address (Login Identifier) <span className="req">*</span>
+                        Login Email <span className="req">*</span>
                       </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/90">
-                        [SOLE.LOGIN.ID]
-                      </span>
                     </div>
                     <div
                       className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2784,13 +2679,10 @@ export const RegisterPage: React.FC = () => {
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        placeholder="name@example.com"
+                        placeholder="Login identifier"
                         autoComplete="email"
                       />
                     </div>
-                    <p className="font-mono text-[9px] text-slate-400 mt-1">
-                      Must be unique. You will always sign in using this email address.
-                    </p>
                     {errors.email && (
                       <p
                         className="field__error font-mono text-[10px]"
@@ -2811,9 +2703,6 @@ export const RegisterPage: React.FC = () => {
                       >
                         Password (Min 12 Chars) <span className="req">*</span>
                       </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/80">
-                        [PBKDF2.SHA512]
-                      </span>
                     </div>
                     <div
                       className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2854,7 +2743,7 @@ export const RegisterPage: React.FC = () => {
                         id="strength"
                         data-tone={strengthTone}
                       >
-                        Length: {password.length} chars &bull; Strength: {strengthLabel}
+                        {password.length} chars &middot; {strengthLabel}
                       </p>
                     )}
                     {errors.password && (
@@ -2877,9 +2766,6 @@ export const RegisterPage: React.FC = () => {
                       >
                         Confirm Password <span className="req">*</span>
                       </label>
-                      <span className="font-mono text-[8.5px] text-rose-400/80">
-                        [CONFIRM.MATCH]
-                      </span>
                     </div>
                     <div
                       className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
@@ -2926,7 +2812,7 @@ export const RegisterPage: React.FC = () => {
                       onChange={(e) => setShowPassword(e.target.checked)}
                       className="accent-[#ff5c74] cursor-pointer"
                     />
-                    <span>Show Password &amp; Confirm Password characters</span>
+                    <span>Show password</span>
                   </label>
                 </div>
 
@@ -2938,7 +2824,7 @@ export const RegisterPage: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-[11px] text-rose-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
                       <Shield className="w-3.5 h-3.5 text-[#ff5c74]" />
-                      <span>Required Legal Certifications &amp; Consents</span>
+                      <span>Legal Certifications</span>
                     </span>
                     <button
                       type="button"
@@ -2989,9 +2875,8 @@ export const RegisterPage: React.FC = () => {
                       className="mt-0.5 w-4 h-4 rounded accent-[#ff5c74] cursor-pointer shrink-0"
                     />
                     <span className="font-mono text-[11px] leading-relaxed text-rose-100">
-                      <strong className="text-white">[AFFIDAVIT]</strong> I certify under penalty of
-                      perjury that all personal information and uploaded government ID documents are
-                      genuine and accurate.
+                      <strong className="text-white">[AFFIDAVIT]</strong> Information and IDs are
+                      genuine.
                     </span>
                   </label>
 
@@ -3022,9 +2907,8 @@ export const RegisterPage: React.FC = () => {
                       className="mt-0.5 w-4 h-4 rounded accent-[#ff5c74] cursor-pointer shrink-0"
                     />
                     <span className="font-mono text-[11px] leading-relaxed text-rose-100">
-                      <strong className="text-white">[PROTOCOL]</strong> I agree to the ResQTrack
-                      emergency dispatch, GPS incident tracking, and identity verification protocols
-                      under RA 10173.
+                      <strong className="text-white">[PROTOCOL]</strong> Agree to emergency dispatch
+                      &amp; RA 10173 privacy terms.
                     </span>
                   </label>
 
@@ -3055,7 +2939,7 @@ export const RegisterPage: React.FC = () => {
                     id="btn-phase4-next"
                     onClick={() => handleNavigatePhase(4)}
                   >
-                    <span className="btn__label">Continue to Phase 5: Review &amp; Submit</span>
+                    <span className="btn__label">Review &amp; Submit</span>
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
                 </div>
@@ -3070,16 +2954,11 @@ export const RegisterPage: React.FC = () => {
                 <div className="text-center mb-4">
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/40 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-1.5">
                     <FileCheck className="w-3.5 h-3.5 text-[#ff5c74]" />
-                    PHASE 05 OF 05 // REVIEW &amp; REGISTRATION SUBMISSION
+                    PHASE 5/5 // REVIEW
                   </div>
                   <h3 className="font-mono text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-                    Review Your Registration Dossier Before Submission
+                    Review Summary
                   </h3>
-                  <p className="font-sans text-xs text-slate-300/80 mt-1 max-w-xl mx-auto">
-                    Verify that all information below is accurate. You may click any{' '}
-                    <strong>Edit</strong> button to return to an earlier phase and modify your
-                    entries without losing progress.
-                  </p>
                 </div>
 
                 <div className="space-y-4 font-mono text-xs">
@@ -3087,7 +2966,7 @@ export const RegisterPage: React.FC = () => {
                   <div className="p-4 rounded-xl bg-black/50 border border-rose-500/30">
                     <div className="flex items-center justify-between border-b border-rose-500/20 pb-2 mb-3">
                       <span className="font-bold uppercase tracking-wider text-rose-300">
-                        1. Selected Role &amp; Account Credentials
+                        1. Role &amp; Account
                       </span>
                       <div className="flex items-center gap-2">
                         <button
@@ -3106,33 +2985,33 @@ export const RegisterPage: React.FC = () => {
                           className="px-2.5 py-1 rounded border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 text-[10px] cursor-pointer flex items-center gap-1"
                         >
                           <Edit3 className="w-3 h-3" />
-                          <span>Edit Credentials</span>
+                          <span>Edit Auth</span>
                         </button>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
                       <div>
-                        <span className="text-slate-400">Selected Role:</span>{' '}
+                        <span className="text-slate-400">Role:</span>{' '}
                         <strong className="text-white" id="review-role">
                           {selectedRole === 'Responder'
                             ? `Responder (${agencyUnit})`
-                            : 'Civilian Resident'}
+                            : 'Civilian'}
                         </strong>
                       </div>
                       <div>
-                        <span className="text-slate-400">Display Name (UI Only):</span>{' '}
+                        <span className="text-slate-400">Display Name:</span>{' '}
                         <strong className="text-rose-200" id="review-display-name">
                           {displayName}
                         </strong>
                       </div>
                       <div>
-                        <span className="text-slate-400">Login Email Identifier:</span>{' '}
+                        <span className="text-slate-400">Login Email:</span>{' '}
                         <strong className="text-rose-200" id="review-email">
                           {email}
                         </strong>
                       </div>
                       <div>
-                        <span className="text-slate-400">Verification Mode:</span>{' '}
+                        <span className="text-slate-400">Mode:</span>{' '}
                         <span
                           id="review-verification-mode"
                           className={`px-2 py-0.5 rounded border text-[9.5px] font-bold ${
@@ -3142,8 +3021,8 @@ export const RegisterPage: React.FC = () => {
                           }`}
                         >
                           {isAiAutoApproveReady
-                            ? 'AI Instant Auto-Approve Ready'
-                            : 'Pending Manual Governance Review'}
+                            ? 'AI Auto-Approve'
+                            : 'Manual Review'}
                         </span>
                       </div>
                     </div>
@@ -3153,7 +3032,7 @@ export const RegisterPage: React.FC = () => {
                   <div className="p-4 rounded-xl bg-black/50 border border-rose-500/30">
                     <div className="flex items-center justify-between border-b border-rose-500/20 pb-2 mb-3">
                       <span className="font-bold uppercase tracking-wider text-rose-300">
-                        2. Government ID &amp; Personal Identity
+                        2. Gov ID &amp; Profile
                       </span>
                       <button
                         type="button"
@@ -3162,13 +3041,13 @@ export const RegisterPage: React.FC = () => {
                         className="px-2.5 py-1 rounded border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 text-[10px] cursor-pointer flex items-center gap-1"
                       >
                         <Edit3 className="w-3 h-3" />
-                        <span>Edit ID &amp; Info</span>
+                        <span>Edit ID</span>
                       </button>
                     </div>
 
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                       <div>
-                        <span className="text-slate-400">Selected Government ID:</span>{' '}
+                        <span className="text-slate-400">ID Type:</span>{' '}
                         <strong className="text-white" id="review-id-type">
                           {selectedIdLabel || 'Not Selected'}
                         </strong>
@@ -3185,8 +3064,8 @@ export const RegisterPage: React.FC = () => {
                           }`}
                         >
                           {idVerification.idVerificationToken
-                            ? 'ID STATUS: AI_VERIFIED_TOKEN'
-                            : 'ID STATUS: PENDING_REVIEW'}
+                            ? 'ID: AI_VERIFIED'
+                            : 'ID: PENDING_REVIEW'}
                         </span>
                       </div>
                     </div>
@@ -3194,7 +3073,7 @@ export const RegisterPage: React.FC = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                       <div className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-center">
                         <div className="text-[9.5px] text-slate-300 font-bold uppercase mb-1">
-                          Front ID Image
+                          Front ID
                         </div>
                         {idFrontShot && (
                           <img
@@ -3207,7 +3086,7 @@ export const RegisterPage: React.FC = () => {
                       </div>
                       <div className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-center">
                         <div className="text-[9.5px] text-slate-300 font-bold uppercase mb-1">
-                          Back ID Image
+                          Back ID
                         </div>
                         {idBackShot && (
                           <img
@@ -3222,7 +3101,7 @@ export const RegisterPage: React.FC = () => {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px] pt-3 border-t border-rose-500/20">
                       <div>
-                        <span className="text-slate-400">Full Name:</span>{' '}
+                        <span className="text-slate-400">Name:</span>{' '}
                         <strong className="text-white" id="review-fullname">
                           {fullname}
                         </strong>
@@ -3234,7 +3113,7 @@ export const RegisterPage: React.FC = () => {
                         </strong>
                       </div>
                       <div>
-                        <span className="text-slate-400">Contact Number:</span>{' '}
+                        <span className="text-slate-400">Contact:</span>{' '}
                         <strong className="text-white" id="review-phone">
                           {phoneNumber}
                         </strong>
@@ -3248,7 +3127,7 @@ export const RegisterPage: React.FC = () => {
                         </div>
                       )}
                       <div className="sm:col-span-2">
-                        <span className="text-slate-400">Residential Address:</span>{' '}
+                        <span className="text-slate-400">Address:</span>{' '}
                         <strong className="text-white" id="review-address">
                           {fullAddressPreview}
                         </strong>
@@ -3260,7 +3139,7 @@ export const RegisterPage: React.FC = () => {
                   <div className="p-4 rounded-xl bg-black/50 border border-rose-500/30">
                     <div className="flex items-center justify-between border-b border-rose-500/20 pb-2 mb-3">
                       <span className="font-bold uppercase tracking-wider text-rose-300">
-                        3. Facial Biometric Record
+                        3. Facial Record
                       </span>
                       <button
                         type="button"
@@ -3269,16 +3148,16 @@ export const RegisterPage: React.FC = () => {
                         className="px-2.5 py-1 rounded border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 text-[10px] cursor-pointer flex items-center gap-1"
                       >
                         <Edit3 className="w-3 h-3" />
-                        <span>Edit Facial Record</span>
+                        <span>Edit Face</span>
                       </button>
                     </div>
 
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                       <div className="text-slate-300">
-                        Facial Record {faceMeta ? `(${faceMeta.width}x${faceMeta.height})` : ''}
+                        Capture {faceMeta ? `(${faceMeta.width}x${faceMeta.height})` : ''}
                         {faceToIdSimilarity !== null && (
                           <span className="ml-2 text-emerald-300">
-                            (ID Match: {Math.round(faceToIdSimilarity * 100)}%)
+                            (Match: {Math.round(faceToIdSimilarity * 100)}%)
                           </span>
                         )}
                       </div>
@@ -3290,8 +3169,8 @@ export const RegisterPage: React.FC = () => {
                         }`}
                       >
                         {facialVerificationToken && isFaceMatchedToId
-                          ? 'FACIAL STATUS: AI_MATCHED_TOKEN'
-                          : 'FACIAL STATUS: PENDING_REVIEW'}
+                          ? 'FACIAL: AI_MATCHED'
+                          : 'FACIAL: PENDING_REVIEW'}
                       </span>
                     </div>
 
@@ -3304,7 +3183,7 @@ export const RegisterPage: React.FC = () => {
                     <div className="grid grid-cols-1 gap-3 max-w-xs">
                       <div className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-center">
                         <div className="text-[9.5px] text-slate-300 font-bold uppercase mb-1">
-                          Facial Record {faceMeta ? `(${faceMeta.width}x${faceMeta.height})` : ''}
+                          Facial Capture {faceMeta ? `(${faceMeta.width}x${faceMeta.height})` : ''}
                         </div>
                         {faceShot && (
                           <img
@@ -3326,12 +3205,12 @@ export const RegisterPage: React.FC = () => {
                           <Cpu className="w-3.5 h-3.5 text-[#ff5c74]" />
                           <span>
                             {facialRequiresPendingManualReview
-                              ? 'Biometric Profile Staged // Pending Governance Review'
-                              : 'Biometric Profile Trained // Claude AI Geometry & 4-Pose Cache Ready'}
+                              ? 'Biometric Staged · Pending Review'
+                              : 'Biometric Ready · 4-Pose Cached'}
                           </span>
                         </span>
                         <span className="text-rose-300 font-bold">
-                          128-D Vector Ready for 1:1 Login (&amp; 1:N)
+                          128-D Vector Ready for 1:1 Login
                         </span>
                       </div>
                     )}
@@ -3360,12 +3239,12 @@ export const RegisterPage: React.FC = () => {
                   >
                     <span className="btn__label">
                       {isLoading
-                        ? 'Submitting registration...'
+                        ? 'Submitting…'
                         : isSuccess
                         ? 'Registration Complete'
                         : isAiAutoApproveReady
-                        ? 'Submit & Auto-Activate Verified Account'
-                        : 'Submit Registration for Governance Review'}
+                        ? 'Submit & Auto-Activate'
+                        : 'Submit for Review'}
                     </span>
                     {isSuccess ? (
                       <Check className="w-4 h-4 ml-1" />

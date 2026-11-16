@@ -280,7 +280,7 @@ export const StrategicMapPage: FC = () => {
           <div className="h-4 w-[1px] bg-slate-700" />
           <h1 className="text-base sm:text-lg font-black tracking-wide text-white uppercase flex items-center gap-2">
             <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
-            Strategic Command Geospatial Map
+            Strategic Map
           </h1>
         </div>
 
@@ -315,7 +315,7 @@ export const StrategicMapPage: FC = () => {
         <div className="lg:col-span-2 xl:col-span-3 rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950/90 shadow-2xl relative flex flex-col flex-1 h-full min-h-[580px]">
           <div className="absolute top-3 left-3 z-10 flex items-center gap-2 bg-slate-950/85 px-3 py-1.5 rounded-lg border border-slate-700/80 text-[11px] font-mono text-slate-300 backdrop-blur-md">
             <Crosshair className="w-3.5 h-3.5 text-rose-400" />
-            <span className="text-rose-400 font-bold">{markers.length}</span> Coordinates Plotted
+            <span className="text-rose-400 font-bold">{markers.length}</span> Active
             <span className="text-slate-600">|</span>
             <span className="text-amber-400 font-bold">{unallocatedQueue.length}</span> Unallocated
           </div>
@@ -326,7 +326,7 @@ export const StrategicMapPage: FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <span className="font-mono text-[10px] text-rose-400 font-bold flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3 text-rose-400" />
-                  INCIDENT BEACON TELEMETRY
+                  Incident Details
                 </span>
                 <button
                   type="button"
@@ -352,13 +352,13 @@ export const StrategicMapPage: FC = () => {
               </div>
               {selectedIncident.requiresManualVerification && (
                 <div className="mt-1.5 p-1.5 rounded bg-amber-950/60 border border-amber-700/60 text-[10px] text-amber-300 font-mono">
-                  Laplacian Blur Warning — Verification Required
+                  Low clarity — review needed
                 </div>
               )}
               {/* Closest Unit Ranking */}
               <div className="mt-2 pt-2 border-t border-slate-800">
                 <p className="text-[10px] font-mono font-bold text-sky-400 uppercase mb-1">
-                  Nearest Dynamic Haversine Dispatch:
+                  Nearest Units:
                 </p>
                 <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
                   {rankedUnitsForSelectedIncident.slice(0, 3).map((rUnit) => (
@@ -419,7 +419,7 @@ export const StrategicMapPage: FC = () => {
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-mono font-bold tracking-wider text-rose-300 uppercase flex items-center gap-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-                1. Live Incidents
+                Live Incidents
               </span>
               <div className="flex items-center gap-1">
                 {unallocatedQueue.length > 0 && (
@@ -495,7 +495,7 @@ export const StrategicMapPage: FC = () => {
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-mono font-bold tracking-wider text-amber-300 uppercase flex items-center gap-1.5">
                 <Phone className="w-3.5 h-3.5 text-amber-400" />
-                2. Emergency Dispatch Queue
+                Dispatch Queue
               </span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300 font-mono font-bold">
                 {criticalQueue.length} Priority
@@ -537,7 +537,7 @@ export const StrategicMapPage: FC = () => {
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-mono font-bold tracking-wider text-sky-300 uppercase flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5 text-sky-400" />
-                3. Active Units
+                Active Units
               </span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-950 border border-sky-800 text-sky-300 font-mono font-bold">
                 {activeResponders.length} Deployed
@@ -582,7 +582,7 @@ export const StrategicMapPage: FC = () => {
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-mono font-bold tracking-wider text-purple-300 uppercase flex items-center gap-1.5">
                 <Activity className="w-3.5 h-3.5 text-purple-400" />
-                4. Triage Severity & Velocity
+                Severity Breakdown
               </span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-950 border border-purple-800 text-purple-300 font-mono font-bold">
                 {dynamicResolutionRate} Resolved

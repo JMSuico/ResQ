@@ -3,12 +3,12 @@
 // DO NOT mutate commander assignment without recording audit logs.
 
 import React, { useState, useEffect } from 'react';
-import { getDutyRoster, updateUnitDutyStatus } from '@/Endpoints/responderOpsApi';
+import { getDutyRoster, updateUnitDutyStatus, DutyUnit } from '@/Endpoints/responderOpsApi';
 import { Button } from '@/Shared/Button';
 import { formatIsoTimestamp } from '@/Libs/Assets/formatters';
 
 export const RespondersRoster: React.FC = () => {
-  const [roster, setRoster] = useState<any[]>([]);
+  const [roster, setRoster] = useState<DutyUnit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadRoster = async () => {
@@ -39,8 +39,8 @@ export const RespondersRoster: React.FC = () => {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-xl font-bold text-white">Multi-Agency Responders Roster</h2>
-        <p className="text-xs text-slate-400 mt-0.5">Real-time status management for RHU Medical, BFP Fire, PNP Police, and LDRRMO</p>
+        <h2 className="text-xl font-bold text-white">Responders Roster</h2>
+        <p className="text-xs text-slate-400 mt-0.5">Unit readiness across agencies</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -57,7 +57,7 @@ export const RespondersRoster: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <span className={`px-2.5 py-1 rounded text-xs font-mono font-bold border ${agencyColor}`}>
-                    {unit.agency} // {unit.unitCode}
+                    {unit.agency} · {unit.unitCode}
                   </span>
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-950 text-emerald-400 border border-slate-800">
                     {unit.status}

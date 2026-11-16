@@ -293,11 +293,11 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
   };
 
   const tabs = [
-    { key: 'personal', step: '01', label: 'Personal & Vitals', icon: User },
-    { key: 'address', step: '02', label: 'Residence Sector', icon: MapPin },
-    { key: 'role', step: '03', label: 'Role & Agency', icon: Shield },
-    { key: 'credentials', step: '04', label: 'Emergency Badges', icon: FileText },
-    { key: 'account', step: '05', label: 'Security & Auth', icon: Lock },
+    { key: 'personal', label: 'Personal', icon: User },
+    { key: 'address', label: 'Address', icon: MapPin },
+    { key: 'role', label: 'Role', icon: Shield },
+    { key: 'credentials', label: 'Credentials', icon: FileText },
+    { key: 'account', label: 'Account', icon: Lock },
   ] as const;
 
   return (
@@ -307,8 +307,8 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
         handleReset();
         onClose();
       }}
-      title="Enroll Emergency Official or Resident"
-      subtitle="Provision authenticated identity with Philippine emergency credentials & agency allocations"
+      title="Add User"
+      subtitle="Create account and assign role"
       maxWidth="2xl"
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-xs text-slate-200">
@@ -335,7 +335,6 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                     : 'text-slate-400 hover:text-slate-200 hover:bg-[#0e243a]/80'
                 }`}
               >
-                <span className="text-[10px] text-slate-500 font-bold">{tab.step}</span>
                 <TabIcon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
               </button>
@@ -1032,7 +1031,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                   if (idx < tabs.length - STEP_OFFSET) setActiveTab(tabs[idx + STEP_OFFSET].key);
                 }}
               >
-                Proceed Step <ChevronRight className="w-3.5 h-3.5 inline ml-1" />
+                Next <ChevronRight className="w-3.5 h-3.5 inline ml-1" />
               </Button>
             ) : (
               <button
@@ -1043,12 +1042,12 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Provisioning…
+                    Creating…
                   </>
                 ) : (
                   <>
                     <Check className="w-3.5 h-3.5" />
-                    Finalize & Register
+                    Create User
                   </>
                 )}
               </button>

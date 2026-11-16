@@ -90,7 +90,7 @@ type MapLayerFilter = 'ALL' | 'MY_REPORTS' | 'SHELTERS' | 'STATIONS';
 
 export const CivilianLiveMapPage: React.FC = () => {
   const { session } = useSession();
-  const { coords, isHardwareGeolocated, signalQuality, refreshGps } = useGpsLocation();
+  const { coords, isHardwareGeolocated, refreshGps } = useGpsLocation();
   const [fixtures, setFixtures] = useState<IncidentFixture[]>([]);
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [activeLayer, setActiveLayer] = useState<MapLayerFilter>('ALL');
@@ -208,7 +208,7 @@ export const CivilianLiveMapPage: React.FC = () => {
           id: `my-report-${r.id}`,
           lat: Number(r.latitude),
           lng: Number(r.longitude),
-          title: `Your SOS: ${r.title} [${(r.status || 'Reported').toUpperCase()}]`,
+          title: `Your SOS: ${r.title}`,
           status: r.status || 'Reported',
           type: 'incident' as const,
           category: r.category,
@@ -279,18 +279,9 @@ export const CivilianLiveMapPage: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 w-full pb-12">
-      {/* 1. Header with Live Telemetry Badges */}
+      {/* 1. Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-        <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-600/20 text-emerald-400 text-xs font-mono font-bold border border-emerald-600/40 mb-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>KATIPUNAN SPATIAL SITUATION HUD</span>
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Civilian Tactical Live Map</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Real-time evacuation shelters, response station ETAs, and verified citizen SOS dispatches
-          </p>
-        </div>
+        <h1 className="text-2xl font-black text-white tracking-tight">Live Map</h1>
 
         <div className="flex items-center gap-2.5">
           <Link to="/civilian/report">
@@ -300,7 +291,7 @@ export const CivilianLiveMapPage: React.FC = () => {
           </Link>
           <Link to="/civilian/dashboard">
             <Button variant="outline" size="sm" className="font-bold min-h-[38px]">
-              Hub Overview
+              Dashboard
             </Button>
           </Link>
         </div>
@@ -311,15 +302,12 @@ export const CivilianLiveMapPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <span className={`w-2.5 h-2.5 rounded-full ${isHardwareGeolocated ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-            <span className="text-slate-400">Hardware GPS:</span>
-            <span className="text-emerald-400 font-extrabold">
-              {coords.latitude.toFixed(6)}° N, {coords.longitude.toFixed(6)}° E
+            <span className="text-slate-400">GPS:</span>
+            <span className="text-emerald-400 font-bold">
+              {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)}
             </span>
+            <span className="text-slate-400">(±{Math.round(coords.accuracy)}m)</span>
           </div>
-          <span className="text-slate-600">|</span>
-          <span className="text-slate-300">
-            Acc: <strong>±{Math.round(coords.accuracy)}m</strong> ({signalQuality.toUpperCase()})
-          </span>
           <button
             type="button"
             onClick={handleForceResync}
@@ -349,7 +337,7 @@ export const CivilianLiveMapPage: React.FC = () => {
             >
               {layer === 'ALL' && `All (${markers.length})`}
               {layer === 'MY_REPORTS' && `My Reports (${myReports.length})`}
-              {layer === 'SHELTERS' && `Safe Shelters (${fixtures.length})`}
+              {layer === 'SHELTERS' && `Shelters (${fixtures.length})`}
               {layer === 'STATIONS' && 'Stations (4)'}
             </button>
           ))}
@@ -361,10 +349,9 @@ export const CivilianLiveMapPage: React.FC = () => {
         <div className="flex items-center justify-between text-xs font-mono text-slate-400 px-1">
           <span className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <strong className="text-slate-200">Satellite Command Spatial Engine</strong>
-            <span>• Katipunan Municipal Sector</span>
+            <strong className="text-slate-200">Live Incident Map</strong>
           </span>
-          <span>{markers.length} Active Spatial Entities</span>
+          <span>{markers.length} Active</span>
         </div>
 
         <div className="h-[577px] w-full rounded-xl overflow-hidden border border-slate-800 relative">
@@ -387,7 +374,7 @@ export const CivilianLiveMapPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
                 <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                  My Active SOS Submissions ({myReports.length})
+                  My Reports ({myReports.length})
                 </h2>
               </div>
               <Link
@@ -402,13 +389,10 @@ export const CivilianLiveMapPage: React.FC = () => {
             {myReports.length === 0 ? (
               <div className="p-8 text-center flex flex-col items-center justify-center gap-2 bg-slate-950/60 rounded-xl border border-slate-800/80">
                 <Radio className="w-8 h-8 text-slate-600 mb-1" />
-                <span className="text-xs font-bold text-slate-300">No Active Emergency Reports</span>
-                <p className="text-[11px] text-slate-500 max-w-xs">
-                  Reports you file via 1-Tap SOS or the detailed accident form will appear here with live dispatch updates.
-                </p>
+                <span className="text-xs font-bold text-slate-300">No Active Reports</span>
                 <Link to="/civilian/report" className="mt-2">
                   <Button variant="danger" size="sm" className="font-bold text-xs">
-                    + File Report Now
+                    + File Report
                   </Button>
                 </Link>
               </div>
@@ -421,8 +405,8 @@ export const CivilianLiveMapPage: React.FC = () => {
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-mono font-black text-sky-400">#{r.referenceCode}</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase border bg-sky-950/80 text-sky-300 border-sky-600/40">
-                        {r.status || 'REPORTED'}
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold border bg-sky-950/80 text-sky-300 border-sky-600/40">
+                        {r.status || 'Reported'}
                       </span>
                     </div>
                     <span className="text-xs font-bold text-white line-clamp-1">{r.title}</span>
@@ -440,11 +424,6 @@ export const CivilianLiveMapPage: React.FC = () => {
               </div>
             )}
           </div>
-
-          <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400 flex items-center justify-between">
-            <span>Reporter Matching: Active Session User & Local Storage</span>
-            <span className="text-emerald-400 font-bold">Synchronized</span>
-          </div>
         </div>
 
         {/* Right Column: Nearest Emergency Stations Proximity Matrix */}
@@ -454,10 +433,9 @@ export const CivilianLiveMapPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse" />
                 <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                  Municipal Emergency Stations
+                  Emergency Stations
                 </h2>
               </div>
-              <span className="text-[10px] font-mono text-slate-400">35 km/h transit velocity</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -511,10 +489,10 @@ export const CivilianLiveMapPage: React.FC = () => {
           <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-slate-500" />
-              <span>Katipunan Poblacion Emergency Corridor</span>
+              <span>Emergency Hotlines</span>
             </span>
             <Link to="/civilian/hotlines" className="text-sky-400 hover:text-sky-300 font-bold underline">
-              View All Numbers
+              View All
             </Link>
           </div>
         </div>

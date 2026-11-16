@@ -273,41 +273,57 @@ export const AlertsCenter: FC = () => {
     return telemetryLatencyMs > EMPTY_COUNT ? `${telemetryLatencyMs}ms Push` : '< 2ms Push';
   }, [telemetryLatencyMs]);
 
-  const dispatchedUnitsCount = useMemo(() => {
-    const categories = new Set<string>();
+  const CATEGORY_SHORT_LABELS: Record<string, string> = {
+    VehicularAccident: 'Traffic',
+    CrimeOrSecurity: 'Security',
+    StructuralFire: 'Fire',
+    MedicalEmergency: 'Medical',
+    FloodOrLandslide: 'Flood',
+    NaturalDisaster: 'Disaster',
+    OtherEmergency: 'Other',
+  };
+
+  const { dispatchedUnitsCount, dispatchedUnitsSummary } = useMemo(() => {
+    const shortLabels = new Set<string>();
     alerts.forEach((a) => {
-      if (a.category) categories.add(a.category);
+      if (a.category) {
+        shortLabels.add(CATEGORY_SHORT_LABELS[a.category] || a.category);
+      }
     });
-    const count = categories.size > EMPTY_COUNT ? categories.size : 1;
-    return `${count} Corps (${Array.from(categories).slice(0, 3).join('/') || 'RHU/Fire/PNP'})`;
+    const count = shortLabels.size > EMPTY_COUNT ? shortLabels.size : 1;
+    const summary = Array.from(shortLabels).slice(0, 3).join(' · ') || 'RHU · Fire · PNP';
+    return {
+      dispatchedUnitsCount: `${count} ${count === 1 ? 'Unit' : 'Units'}`,
+      dispatchedUnitsSummary: summary,
+    };
   }, [alerts]);
 
   return (
     <div className="flex flex-col gap-6 w-full">
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 p-3.5 rounded-xl bg-slate-900/95 border border-rose-500/80 text-white text-xs font-mono shadow-2xl flex items-center gap-2 animate-fade-in backdrop-blur-md">
+        <div className="fixed top-20 right-6 z-50 p-3.5 rounded-xl bg-slate-900/75 border border-rose-500/60 text-white text-xs font-mono shadow-2xl flex items-center gap-2 animate-fade-in backdrop-blur-xl ring-1 ring-white/10">
           <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/80 border border-slate-700/80 backdrop-blur-md">
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/55 border border-white/10 backdrop-blur-xl shadow-[0_12px_32px_-8px_rgba(2,6,23,0.6),inset_0_1px_0_rgba(255,255,255,0.08)]">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase flex items-center gap-2">
             <Bell className="w-5 h-5 text-rose-500 animate-pulse" />
             Emergency Broadcasts
           </h1>
           <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Civil defense alert distribution, multi-platform media feeds & instant push broadcasting
+            Live alerts and push dispatch
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-950/80 border border-slate-800 text-[11px] font-mono text-emerald-400">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-950/60 border border-white/10 backdrop-blur-md text-[11px] font-mono text-emerald-400">
             <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-            <span>{isRefreshing ? 'STREAM UPDATING…' : 'LIVE STREAM ACTIVE'}</span>
+            <span>{isRefreshing ? 'Updating…' : 'Live'}</span>
           </div>
 
           <Button
@@ -317,56 +333,60 @@ export const AlertsCenter: FC = () => {
             className="text-xs font-mono font-bold flex items-center gap-1.5 shadow-[0_0_15px_rgba(225,29,72,0.4)]"
             icon={<Megaphone className="w-3.5 h-3.5" />}
           >
-            + ISSUE EMERGENCY BROADCAST
+            + New Broadcast
           </Button>
         </div>
       </div>
 
       {/* 5 KPI Status Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-        <div className="tactical-card p-3.5 border-l-4 border-l-rose-500">
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">1. Active Alerts</p>
-            <Bell className="w-4 h-4 text-rose-400" />
+        <div className="tactical-card p-3.5 border-l-4 border-l-rose-500 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold truncate">Active Alerts</p>
+            <Bell className="w-4 h-4 text-rose-400 flex-shrink-0" />
           </div>
-          <h3 className="text-2xl font-extrabold text-white mt-1">{activeAlertsCount} Live</h3>
-          <span className="text-[10px] text-rose-400 font-mono">Unread Citizen Feeds</span>
+          <h3 className="text-2xl font-extrabold text-white mt-1 truncate">{activeAlertsCount} Live</h3>
+          <span className="text-[10px] text-rose-400 font-mono block truncate">Unread</span>
         </div>
 
-        <div className="tactical-card p-3.5 border-l-4 border-l-amber-500">
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">2. Severe Warnings</p>
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
+        <div className="tactical-card p-3.5 border-l-4 border-l-amber-500 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold truncate">Severe Warnings</p>
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
           </div>
-          <h3 className="text-2xl font-extrabold text-amber-400 mt-1">{severeCount} Critical</h3>
-          <span className="text-[10px] text-amber-400 font-mono">High Impact Threat</span>
+          <h3 className="text-2xl font-extrabold text-amber-400 mt-1 truncate">{severeCount} Critical</h3>
+          <span className="text-[10px] text-amber-400 font-mono block truncate">High priority</span>
         </div>
 
-        <div className="tactical-card p-3.5 border-l-4 border-l-emerald-500">
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">3. Citizen Reach</p>
-            <Users className="w-4 h-4 text-emerald-400" />
+        <div className="tactical-card p-3.5 border-l-4 border-l-emerald-500 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold truncate">Citizen Reach</p>
+            <Users className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           </div>
-          <h3 className="text-2xl font-extrabold text-emerald-400 mt-1">{citizenReachRate}</h3>
-          <span className="text-[10px] text-emerald-400 font-mono">Mobile Ingestion</span>
+          <h3 className="text-2xl font-extrabold text-emerald-400 mt-1 truncate">{citizenReachRate}</h3>
+          <span className="text-[10px] text-emerald-400 font-mono block truncate">Acknowledged</span>
         </div>
 
-        <div className="tactical-card p-3.5 border-l-4 border-l-sky-500">
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">4. Delivery Latency</p>
-            <Clock className="w-4 h-4 text-sky-400" />
+        <div className="tactical-card p-3.5 border-l-4 border-l-sky-500 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold truncate">Delivery Latency</p>
+            <Clock className="w-4 h-4 text-sky-400 flex-shrink-0" />
           </div>
-          <h3 className="text-2xl font-extrabold text-sky-400 mt-1">{deliveryLatency}</h3>
-          <span className="text-[10px] text-slate-400 font-mono">Real-Time WebSockets</span>
+          <h3 className="text-2xl font-extrabold text-sky-400 mt-1 truncate">{deliveryLatency}</h3>
+          <span className="text-[10px] text-slate-400 font-mono block truncate">Push roundtrip</span>
         </div>
 
-        <div className="tactical-card p-3.5 border-l-4 border-l-purple-500">
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">5. Dispatched Units</p>
-            <Shield className="w-4 h-4 text-purple-400" />
+        <div className="tactical-card p-3.5 border-l-4 border-l-purple-500 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold truncate">Dispatched Units</p>
+            <Shield className="w-4 h-4 text-purple-400 flex-shrink-0" />
           </div>
-          <h3 className="text-2xl font-extrabold text-purple-400 mt-1">{dispatchedUnitsCount}</h3>
-          <span className="text-[10px] text-slate-400 font-mono">Simultaneous Broadcast</span>
+          <h3 className="text-2xl font-extrabold text-purple-400 mt-1 truncate" title={`${dispatchedUnitsCount} · ${dispatchedUnitsSummary}`}>
+            {dispatchedUnitsCount}
+          </h3>
+          <span className="text-[10px] text-slate-400 font-mono block truncate" title={dispatchedUnitsSummary}>
+            {dispatchedUnitsSummary}
+          </span>
         </div>
       </div>
 
@@ -456,7 +476,7 @@ export const AlertsCenter: FC = () => {
                         {a.title || 'Emergency Advisory'}
                       </span>
                       <span className="text-[11px] text-slate-400 truncate max-w-[240px] block mt-0.5">
-                        {a.message || 'Immediate public precaution issued for municipal residents.'}
+                        {a.message || 'Public advisory issued.'}
                       </span>
                     </td>
 
@@ -566,7 +586,7 @@ export const AlertsCenter: FC = () => {
               </div>
 
               <p className="text-xs text-slate-300 line-clamp-3 leading-relaxed">
-                {a.message || 'Emergency caution issued for all municipal residents.'}
+                {a.message || 'Public advisory issued.'}
               </p>
 
               {a.imageUrl && (
@@ -654,8 +674,8 @@ export const AlertsCenter: FC = () => {
         <DefaultFloatingModalCard
           isOpen={isBroadcastModalOpen}
           onClose={() => setIsBroadcastModalOpen(false)}
-          title="Compose Emergency Broadcast Alert"
-          subtitle="Direct push transmission with multimedia attachments and cross-platform verification"
+          title="New Broadcast"
+          subtitle="Send an alert with optional media and resource link"
           className="max-w-2xl"
         >
           <form onSubmit={handleSendBroadcast} className="space-y-4">

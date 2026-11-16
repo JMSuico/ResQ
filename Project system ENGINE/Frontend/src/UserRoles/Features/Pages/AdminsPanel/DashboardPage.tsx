@@ -141,9 +141,9 @@ export const DashboardPage: React.FC = () => {
         setCriticalCount((prev) => prev + 1);
 
         if (newInc.requiresManualVerification) {
-          showToast('⚠️ New incident reported with low-clarity photo — flagged for manual review.');
+          showToast('New incident reported with low-clarity photo — flagged for manual review.');
         } else {
-          showToast('🚨 Live road accident reported — dispatched to response queue.');
+          showToast('Live road accident reported — dispatched to response queue.');
         }
       }
     };
@@ -286,7 +286,7 @@ export const DashboardPage: React.FC = () => {
                   <header className="incident__head">
                     <span className="incident__id">{inc.id}</span>
                     <span className="incident__age">
-                      {inc.requiresManualVerification ? '⚠️ Review Needed' : 'Active'}
+                      {inc.requiresManualVerification ? 'Review Needed' : 'Active'}
                     </span>
                   </header>
                   <h2 className="incident__title">{inc.type}</h2>
@@ -328,7 +328,7 @@ export const DashboardPage: React.FC = () => {
             <div className="coords__sys">
               <Zap className="coords__bolt" aria-hidden="true" />
               <span className="coords__sys-text">
-                {isHardwareGeolocated ? `GPS_Lock_±${Math.round(coords.accuracy)}m` : 'Sys_link_ok'}
+                {isHardwareGeolocated ? `GPS: ±${Math.round(coords.accuracy)}m` : 'GPS: Standby'}
               </span>
             </div>
           </div>

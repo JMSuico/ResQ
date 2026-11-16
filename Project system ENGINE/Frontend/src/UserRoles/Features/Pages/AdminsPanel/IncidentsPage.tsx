@@ -476,10 +476,10 @@ export const IncidentsPage: FC = () => {
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase flex items-center gap-2.5">
             <Radio className="w-5 h-5 text-rose-500 animate-pulse" />
-            Incident Operations & Triage Dispatch
+            Incident Operations
           </h1>
           <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Mission-critical multi-agency incident intake, device verification & tactical unit allocation
+            Triage and unit dispatch
           </p>
         </div>
 
@@ -493,7 +493,7 @@ export const IncidentsPage: FC = () => {
             title="Inspect active responder dispatch requests awaiting authorization"
           >
             <Send className="w-3.5 h-3.5 text-rose-400" />
-            <span>REQUESTS TO DISPATCH</span>
+            <span>Dispatch Requests</span>
             {pendingDispatchRequestsCount > 0 ? (
               <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black animate-pulse">
                 {pendingDispatchRequestsCount}
@@ -508,12 +508,12 @@ export const IncidentsPage: FC = () => {
           {/* Task 19: Auto-Dispatch Toggle */}
           <div className="flex items-center gap-3 p-2 rounded-xl bg-slate-950/80 border border-slate-700/80">
           <Sparkles className="w-4 h-4 text-emerald-400" />
-          <span className="text-xs font-mono font-bold text-slate-300">AUTO-DISPATCH AI</span>
+          <span className="text-xs font-mono font-bold text-slate-300">Auto-Dispatch</span>
           <button
             type="button"
             onClick={() => {
               setIsAutoDispatchEnabled(!isAutoDispatchEnabled);
-              showToast(`Auto-Dispatch AI ${!isAutoDispatchEnabled ? 'Enabled' : 'Disabled'}.`);
+              showToast(`Auto-Dispatch ${!isAutoDispatchEnabled ? 'Enabled' : 'Disabled'}.`);
             }}
             className={`w-11 h-6 rounded-full transition-colors relative p-0.5 flex items-center cursor-pointer ${
               isAutoDispatchEnabled ? 'bg-emerald-500' : 'bg-slate-700'
@@ -534,43 +534,43 @@ export const IncidentsPage: FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         <div className="tactical-card p-3.5 border-l-4 border-l-sky-500 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">1. Active Responders</p>
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Active Responders</p>
             <Users className="w-4 h-4 text-sky-400" />
           </div>
           <h3 className="text-2xl font-extrabold text-sky-400 mt-1">{activeRespondersCount} Units</h3>
-          <span className="text-[10px] text-slate-400 font-mono">On-Duty Telemetry</span>
+          <span className="text-[10px] text-slate-400 font-mono">On Duty</span>
         </div>
 
         <div className="tactical-card p-3.5 border-l-4 border-l-emerald-500 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">2. Incidents Ingested</p>
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Incidents Ingested</p>
             <Activity className="w-4 h-4 text-emerald-400" />
           </div>
           <h3 className="text-2xl font-extrabold text-white mt-1">{countToday} Active</h3>
-          <span className="text-[10px] text-emerald-400 font-mono">Live DB Ingestion</span>
+          <span className="text-[10px] text-emerald-400 font-mono">Live feed</span>
         </div>
 
         <div className="tactical-card p-3.5 border-l-4 border-l-amber-500 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">3. Unassigned Triage</p>
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Unassigned Triage</p>
             <Clock className="w-4 h-4 text-amber-400" />
           </div>
           <h3 className="text-2xl font-extrabold text-amber-400 mt-1">{unassignedCount} Pending</h3>
-          <span className="text-[10px] text-slate-400 font-mono">Awaiting Dispatch</span>
+          <span className="text-[10px] text-slate-400 font-mono">Awaiting dispatch</span>
         </div>
 
         <div className="tactical-card p-3.5 border-l-4 border-l-rose-500 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">4. Critical Priority</p>
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Critical Priority</p>
             <ShieldAlert className="w-4 h-4 text-rose-400" />
           </div>
           <h3 className="text-2xl font-extrabold text-rose-400 mt-1">{criticalCount} SOS</h3>
-          <span className="text-[10px] text-rose-400 font-mono">Immediate Action</span>
+          <span className="text-[10px] text-rose-400 font-mono">Immediate action</span>
         </div>
 
         <div className="tactical-card p-3.5 border-l-4 border-l-purple-500 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">5. Avg Velocity</p>
+            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Avg Velocity</p>
             <TrendingUp className="w-4 h-4 text-purple-400" />
           </div>
           <h3 className="text-2xl font-extrabold text-purple-400 mt-1">{avgVelocity}</h3>
@@ -646,10 +646,10 @@ export const IncidentsPage: FC = () => {
             <table className="w-full text-left text-xs text-slate-300 min-w-[1050px]">
               <thead className="bg-slate-900/95 font-mono text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-700/80">
                 <tr>
-                  <th className="py-3 px-3">Capture Media</th>
+                  <th className="py-3 px-3">Media</th>
                   <th className="py-3 px-3">ID & Title</th>
-                  <th className="py-3 px-3">AI Incident & TIVA</th>
-                  <th className="py-3 px-3">Device & Geolocation</th>
+                  <th className="py-3 px-3">Category & Score</th>
+                  <th className="py-3 px-3">Device & Location</th>
                   <th className="py-3 px-3">Severity</th>
                   <th className="py-3 px-3">Status</th>
                   <th className="py-3 px-3 text-right">Actions</th>
@@ -710,9 +710,9 @@ export const IncidentsPage: FC = () => {
                                   ? 'bg-amber-950 text-amber-300 border border-amber-700'
                                   : 'bg-sky-950 text-sky-300 border border-sky-700'
                               }`}
-                              title="Triage Ingestion Velocity Algorithm (TIVA) Priority Index"
+                              title="Triage Priority Score"
                             >
-                              TIVA: {tivaScore}
+                              Score: {tivaScore}
                             </span>
                           </div>
                         </div>
@@ -876,7 +876,7 @@ export const IncidentsPage: FC = () => {
                     </span>
                     <div className="flex items-center gap-2 text-[9px] font-mono text-slate-500">
                       <span>IP: {inc.deviceIp || inc.ipAddress || '192.168.1.104'}</span>
-                      <span className="text-amber-400 font-bold">TIVA: {tivaScore}</span>
+                      <span className="text-amber-400 font-bold">Score: {tivaScore}</span>
                     </div>
                   </div>
                 </div>
@@ -969,10 +969,10 @@ export const IncidentsPage: FC = () => {
         <DefaultFloatingModalCard
           isOpen={!!activeDispatchIncident}
           onClose={() => setActiveDispatchIncident(null)}
-          title={`Dispatch Responders -- ${activeDispatchIncident.title || 'Incident'}`}
-          subtitle={`Select tactical rescue unit for deployment (Auto-Dispatch AI: ${
+          title="Dispatch Responders"
+          subtitle={`${activeDispatchIncident.title || 'Incident'} · Auto-Dispatch: ${
             isAutoDispatchEnabled ? 'ON' : 'OFF'
-          })`}
+          }`}
           className="max-w-2xl"
         >
           <div className="space-y-4">
@@ -1075,8 +1075,8 @@ export const IncidentsPage: FC = () => {
         <DefaultFloatingModalCard
           isOpen={isDispatchRequestsModalOpen}
           onClose={() => setIsDispatchRequestsModalOpen(false)}
-          title={`Responder Dispatch Requests Queue (${pendingDispatchRequestsCount} Pending)`}
-          subtitle="Field responders requesting mission dispatch authorization or administrative deployment approval"
+          title={`Dispatch Requests (${pendingDispatchRequestsCount})`}
+          subtitle="Field unit dispatch requests"
           className="max-w-4xl max-h-[90vh] overflow-y-auto"
         >
           <div className="space-y-4 text-xs text-slate-200">

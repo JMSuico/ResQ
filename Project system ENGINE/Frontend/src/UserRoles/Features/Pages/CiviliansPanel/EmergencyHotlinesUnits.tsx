@@ -139,14 +139,7 @@ export const EmergencyHotlinesUnits: React.FC = () => {
       {/* 1. Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-600/20 text-emerald-400 text-xs font-mono font-bold border border-emerald-600/40 mb-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span>24/7 CIVIL DEFENSE TELECOMMUNICATIONS DIRECTORY</span>
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Municipal Emergency Hotlines & Stations</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Official direct emergency contacts, station physical addresses, and 1-tap dial triggers for Katipunan, Zamboanga del Norte
-          </p>
+          <h1 className="text-2xl font-black text-white tracking-tight">Emergency Hotlines & Stations</h1>
         </div>
       </div>
 
@@ -200,10 +193,6 @@ export const EmergencyHotlinesUnits: React.FC = () => {
                   >
                     {meta.short}
                   </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 bg-slate-950 border border-emerald-800/40 font-bold flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    24/7 ACTIVE
-                  </span>
                 </div>
 
                 <h2 className="text-base font-bold text-white leading-snug">{meta.name}</h2>
@@ -219,7 +208,6 @@ export const EmergencyHotlinesUnits: React.FC = () => {
               <div className="mt-6 pt-4 border-t border-slate-800/80 flex flex-col gap-3">
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <span className="text-[10px] font-mono text-slate-500 uppercase block">DIRECT HOTLINE DESK</span>
                     <span className="text-base font-mono font-black text-sky-400">{meta.hotline}</span>
                   </div>
 
@@ -229,7 +217,7 @@ export const EmergencyHotlinesUnits: React.FC = () => {
                     aria-label={`Dial ${meta.name} hotline`}
                   >
                     <PhoneCall className="w-3.5 h-3.5" />
-                    <span>Instant Call</span>
+                    <span>Call {dialNumber}</span>
                   </a>
                 </div>
 

@@ -19,12 +19,12 @@ export interface AdminEscalateModalProps {
   onEscalate: (payload: { severity: string; justification: string; triggerSiren: boolean }) => Promise<void> | void;
 }
 
-const SEVERITY_LEVELS: { key: string; label: string; color: string; desc: string }[] = [
-  { key: 'LOW', label: 'Level 1 - Alpha (Low)', color: 'text-slate-300 border-slate-700 bg-slate-900', desc: 'Routine municipal incident, localized impact.' },
-  { key: 'MODERATE', label: 'Level 2 - Bravo (Moderate)', color: 'text-sky-400 border-sky-800 bg-sky-950/40', desc: 'Multi-unit deployment needed; non-critical casualties.' },
-  { key: 'HIGH', label: 'Level 3 - Charlie (High)', color: 'text-amber-400 border-amber-800 bg-amber-950/40', desc: 'Severe structural or vehicular risk, rapid expansion.' },
-  { key: 'CRITICAL', label: 'Level 4 - Delta (Critical)', color: 'text-rose-400 border-rose-800 bg-rose-950/40', desc: 'Life-threatening mass casualty incident; inter-agency dispatch.' },
-  { key: 'DISASTER', label: 'Level 5 - Echo (Disaster)', color: 'text-red-500 border-red-700 bg-red-950/50', desc: 'Municipal state of emergency; all reserves deployed.' }
+const SEVERITY_LEVELS: { key: string; label: string; color: string }[] = [
+  { key: 'LOW', label: 'Level 1 - Low', color: 'text-slate-300 border-slate-700 bg-slate-900' },
+  { key: 'MODERATE', label: 'Level 2 - Moderate', color: 'text-sky-400 border-sky-800 bg-sky-950/40' },
+  { key: 'HIGH', label: 'Level 3 - High', color: 'text-amber-400 border-amber-800 bg-amber-950/40' },
+  { key: 'CRITICAL', label: 'Level 4 - Critical', color: 'text-rose-400 border-rose-800 bg-rose-950/40' },
+  { key: 'DISASTER', label: 'Level 5 - Disaster', color: 'text-red-500 border-red-700 bg-red-950/50' }
 ];
 
 export const AdminEscalateModal: FC<AdminEscalateModalProps> = ({
@@ -71,13 +71,13 @@ export const AdminEscalateModal: FC<AdminEscalateModalProps> = ({
         <div className="flex items-center gap-2 p-3 rounded-lg bg-rose-950/30 border border-rose-800/50 text-rose-300 text-xs font-mono">
           <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
           <span>
-            Current Status: <strong>{currentSeverity.toUpperCase()}</strong>. Escalating forces real-time sirens to all field units.
+            Current: <strong>{currentSeverity.toUpperCase()}</strong>
           </span>
         </div>
 
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-mono font-bold tracking-wide text-slate-400 uppercase">
-            Target Severity Tier
+            Severity Tier
           </label>
           <div className="grid grid-cols-1 gap-2">
             {SEVERITY_LEVELS.map((lvl) => {
@@ -87,17 +87,14 @@ export const AdminEscalateModal: FC<AdminEscalateModalProps> = ({
                   type="button"
                   key={lvl.key}
                   onClick={() => setSelectedSeverity(lvl.key)}
-                  className={`flex items-start justify-between p-3 rounded-lg border text-left transition-all cursor-pointer ${
+                  className={`flex items-center justify-between p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
                     isSelected
                       ? 'border-rose-500 bg-rose-950/40 ring-1 ring-rose-500/50'
                       : 'border-slate-800 bg-slate-950/80 hover:border-slate-700'
                   }`}
                 >
-                  <div className="flex flex-col">
-                    <span className={`text-xs font-mono font-bold ${lvl.color}`}>{lvl.label}</span>
-                    <span className="text-[11px] text-slate-400 mt-0.5">{lvl.desc}</span>
-                  </div>
-                  {isSelected && <Activity className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />}
+                  <span className={`text-xs font-mono font-bold ${lvl.color}`}>{lvl.label}</span>
+                  {isSelected && <Activity className="w-4 h-4 text-rose-400 flex-shrink-0" />}
                 </button>
               );
             })}
@@ -106,7 +103,7 @@ export const AdminEscalateModal: FC<AdminEscalateModalProps> = ({
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="escalation-justification" className="text-xs font-mono font-bold tracking-wide text-slate-400 uppercase">
-            Escalation Justification & Tactical Notes
+            Justification
           </label>
           <textarea
             id="escalation-justification"
@@ -114,7 +111,7 @@ export const AdminEscalateModal: FC<AdminEscalateModalProps> = ({
             onChange={(e) => setJustification(e.target.value)}
             rows={3}
             required
-            placeholder="Document why escalation is required (e.g., secondary collision confirmed, structural collapse detected, hazmat release)..."
+            placeholder="Reason for escalation..."
             className="w-full p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-xs font-mono placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-rose-500"
           />
         </div>
@@ -128,7 +125,7 @@ export const AdminEscalateModal: FC<AdminEscalateModalProps> = ({
           />
           <Radio className="w-4 h-4 text-rose-400" />
           <span className="text-xs font-mono text-slate-300">
-            Transmit audio-visual siren broadcast across connected responder terminals
+            Broadcast siren alert to responders
           </span>
         </label>
 
@@ -200,17 +197,10 @@ export const AdminBroadcastModal: FC<AdminBroadcastModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="Municipal Emergency Broadcast"
-      subtitle="Dispatch municipality-wide siren alert to all citizen and responder portals"
+      subtitle="Send alert to all portals"
       maxWidth="lg"
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-slate-100">
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-sky-950/30 border border-sky-800/50 text-sky-300 text-xs font-mono">
-          <Radio className="w-4 h-4 text-sky-400 flex-shrink-0 animate-pulse" />
-          <span>
-            Authorized Katipunan LDRRMO Broadcast Console. All transmissions are logged to the immutable ledger.
-          </span>
-        </div>
-
         <div className="flex flex-col gap-1.5">
           <label htmlFor="broadcast-title" className="text-xs font-mono font-bold tracking-wide text-slate-400 uppercase">
             Alert Headline
@@ -221,7 +211,7 @@ export const AdminBroadcastModal: FC<AdminBroadcastModalProps> = ({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
-            placeholder="e.g. FLASH FLOOD WARNING: LOW-LYING BARANGAY EVACUATION"
+            placeholder="Alert headline..."
             className="w-full p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-xs font-mono placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
         </div>
@@ -345,7 +335,7 @@ export const AdminAuditDetailModal: FC<AdminAuditDetailModalProps> = ({
           </div>
           <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/60">
             <CheckCircle2 className="w-3 h-3" />
-            Cryptographically Verified
+            Verified
           </span>
         </div>
 
@@ -389,7 +379,7 @@ export const AdminAuditDetailModal: FC<AdminAuditDetailModalProps> = ({
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold transition-colors cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
-            <span>Close Telemetry</span>
+            <span>Close</span>
           </button>
         </div>
       </div>

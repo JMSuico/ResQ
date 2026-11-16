@@ -28,8 +28,11 @@ import {
   Users,
   Eye,
   Radio,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Button, RadioButton } from '@/Shared';
+import { usePagination } from '@/Hooks';
 import { useSession } from '@/Hooks/useSession';
 import {
   getSystemSettings,
@@ -90,6 +93,26 @@ export const SettingsPage: FC = () => {
   // Relational Audit Trail State (GET /api/settings/audit)
   const [auditLogs, setAuditLogs] = useState<CryptographicAuditItem[]>([]);
   const [isLoadingAudit, setIsLoadingAudit] = useState<boolean>(false);
+
+  const {
+    currentPage: auditPage,
+    pageSize: auditPageSize,
+    totalPages: auditTotalPages,
+    totalItems: auditTotalItems,
+    paginatedItems: paginatedAuditLogs,
+    startIndex: auditStartIndex,
+    endIndex: auditEndIndex,
+    canNextPage: auditCanNext,
+    canPrevPage: auditCanPrev,
+    nextPage: auditNextPage,
+    prevPage: auditPrevPage,
+    setPageSize: setAuditPageSize,
+    pageSizeOptions: auditPageSizeOptions,
+  } = usePagination(auditLogs, {
+    initialPage: 1,
+    initialPageSize: 10,
+    pageSizeOptions: [10, 25, 50, 100],
+  });
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -255,7 +278,7 @@ export const SettingsPage: FC = () => {
       }
 
       window.dispatchEvent(new CustomEvent('resqtrack:profile_updated', { detail: updatedUser }));
-      showToast('Personal profile and credentials saved successfully.');
+      showToast('Settings saved.');
     } catch (err: unknown) {
       console.warn('[SettingsPage] Backend profile persistence warning:', err);
       const existingUser = localStorage.getItem('resqtrack_user');
@@ -265,7 +288,7 @@ export const SettingsPage: FC = () => {
         ...payload,
       };
       localStorage.setItem('resqtrack_user', JSON.stringify(updatedUser));
-      showToast('Profile updated locally.');
+      showToast('Settings saved.');
     } finally {
       setIsSaving(false);
     }
@@ -300,13 +323,13 @@ export const SettingsPage: FC = () => {
 
       localStorage.setItem('resqtrack_platform_settings', JSON.stringify(payload));
       window.dispatchEvent(new CustomEvent('resqtrack:settings_updated', { detail: payload }));
-      showToast('Platform settings synchronized via PUT /api/settings/{key}. Active across all portals.');
+      showToast('Settings saved.');
       await loadAuditTrail();
     } catch (err: unknown) {
       // Fallback
       localStorage.setItem('resqtrack_platform_settings', JSON.stringify(payload));
       window.dispatchEvent(new CustomEvent('resqtrack:settings_updated', { detail: payload }));
-      showToast('Settings saved to active session.');
+      showToast('Settings saved.');
     } finally {
       setIsSaving(false);
     }
@@ -323,39 +346,39 @@ export const SettingsPage: FC = () => {
       )}
 
       {/* Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/80 border border-slate-700/80 backdrop-blur-md">
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/55 border border-white/10 backdrop-blur-xl shadow-[0_12px_32px_-8px_rgba(2,6,23,0.6),inset_0_1px_0_rgba(255,255,255,0.08)]">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase flex items-center gap-2">
             <Settings className="w-6 h-6 text-rose-500 animate-pulse" />
-            System & Command Settings
+            System Settings
           </h1>
           <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Configure administrative security credentials, multi-portal parameters & cryptographic audit telemetry
+            Configuration and audit log
           </p>
         </div>
 
-        {/* Tab Selectors for Profile, Platform Settings, and Cryptographic Audit */}
-        <div className="inline-flex items-center gap-3 bg-slate-950 p-1.5 rounded-xl border border-slate-700 shadow-inner flex-wrap">
+        {/* Tab Selectors for Profile, Platform Settings, and Audit */}
+        <div className="inline-flex items-center gap-3 bg-slate-950/60 p-1.5 rounded-xl border border-white/10 backdrop-blur-md shadow-inner flex-wrap">
           <RadioButton
             id="tab-profile-radio"
             name="settings-view-radio"
             checked={activeTab === 'profile'}
             onChange={() => setActiveTab('profile')}
-            label={<span className="text-xs font-mono font-bold text-slate-200">PROFILE CREDENTIALS</span>}
+            label={<span className="text-xs font-mono font-bold text-slate-200">Profile</span>}
           />
           <RadioButton
             id="tab-platform-radio"
             name="settings-view-radio"
             checked={activeTab === 'platform'}
             onChange={() => setActiveTab('platform')}
-            label={<span className="text-xs font-mono font-bold text-slate-200">PLATFORM SETTINGS</span>}
+            label={<span className="text-xs font-mono font-bold text-slate-200">Platform</span>}
           />
           <RadioButton
             id="tab-audit-radio"
             name="settings-view-radio"
             checked={activeTab === 'audit'}
             onChange={() => setActiveTab('audit')}
-            label={<span className="text-xs font-mono font-bold text-slate-200">CRYPTOGRAPHIC AUDIT</span>}
+            label={<span className="text-xs font-mono font-bold text-slate-200">Audit</span>}
           />
         </div>
       </div>
@@ -363,23 +386,23 @@ export const SettingsPage: FC = () => {
       {/* TAB 1: Profile Management */}
       {activeTab === 'profile' && (
         <form onSubmit={handleSaveProfile} className="tactical-card p-6 space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div className="flex items-center justify-between border-b border-white/10 pb-4">
             <div>
               <h2 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
                 <User className="w-4 h-4 text-rose-400" />
-                Administrator Identity & Access Profile
+                Admin Profile
               </h2>
               <p className="text-xs text-slate-400 font-mono">
-                Official credentials associated with Port 1996 executive clearance
+                Port 1996 clearance
               </p>
             </div>
             <Button variant="primary" size="sm" type="submit" icon={<Save className="w-3.5 h-3.5" />}>
-              SAVE CHANGES
+              Save Changes
             </Button>
           </div>
 
           {/* Profile Photo / Avatar with Lucide fallback */}
-          <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl bg-slate-950 border border-slate-800">
+          <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl bg-slate-950/50 border border-white/10 backdrop-blur-md">
             <div className="relative w-20 h-20 rounded-2xl overflow-hidden border-2 border-rose-500/70 shadow-lg bg-slate-900 flex items-center justify-center flex-shrink-0">
               {avatarUrl ? (
                 <img src={avatarUrl} alt="Administrator Avatar" className="w-full h-full object-cover" />
@@ -392,13 +415,13 @@ export const SettingsPage: FC = () => {
             </div>
 
             <div className="space-y-1.5 flex-1">
-              <h3 className="text-sm font-bold text-white">Profile Photo & Identity Avatar</h3>
+              <h3 className="text-sm font-bold text-white">Profile Photo</h3>
               <p className="text-xs text-slate-400">
-                Upload official biometric badge photo (PNG or JPG, max 2MB). If unprovided, standard static C2 avatar is maintained.
+                PNG or JPG, max 2MB.
               </p>
               <div className="flex items-center gap-3 pt-1">
-                <label className="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs font-mono font-bold text-white transition-all inline-block">
-                  UPLOAD NEW PHOTO
+                <label className="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800/70 hover:bg-slate-700/80 border border-white/15 text-xs font-mono font-bold text-white transition-all inline-block">
+                  Upload Photo
                   <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
                 </label>
                 {avatarUrl && (
@@ -484,10 +507,10 @@ export const SettingsPage: FC = () => {
             <div>
               <h2 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-rose-400" />
-                Cross-Portal Operational Platform Engine
+                Platform Settings
               </h2>
               <p className="text-xs text-slate-400 font-mono">
-                System variables actively persisted to PUT /api/settings/{'{key}'} across all portals
+                Shared parameters across all portals
               </p>
             </div>
             <Button
@@ -497,7 +520,7 @@ export const SettingsPage: FC = () => {
               disabled={isSaving}
               icon={isSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             >
-              {isSaving ? 'SYNCHRONIZING…' : 'APPLY TO ALL PORTALS'}
+              {isSaving ? 'Saving…' : 'Save Settings'}
             </Button>
           </div>
 
@@ -507,14 +530,14 @@ export const SettingsPage: FC = () => {
               <div className="flex items-center justify-between">
                 <label className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
                   <Radio className="w-3.5 h-3.5 text-rose-400" />
-                  1. Emergency Broadcast Radius
+                  Emergency Broadcast Radius
                 </label>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-950 text-rose-300 font-bold">
                   {broadcastRadius}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                Filters emergency sirens and mobile advisory pushes sent to civilian resident feeds.
+                Filters alert pushes sent to resident feeds.
               </p>
               <select
                 value={broadcastRadius}
@@ -533,14 +556,14 @@ export const SettingsPage: FC = () => {
               <div className="flex items-center justify-between">
                 <label className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
                   <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
-                  2. Anti-Spoofing Blur Threshold
+                  Blur Threshold
                 </label>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 font-bold">
-                  {laplacianThreshold}.0 Var Base
+                  {laplacianThreshold}.0 Min
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                Minimum variance required by the live camera kernel to accept civilian SOS photo proofs.
+                Minimum sharpness required for live camera photo uploads.
               </p>
               <input
                 type="range"
@@ -563,10 +586,10 @@ export const SettingsPage: FC = () => {
               <div>
                 <h4 className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
                   <Activity className="w-3.5 h-3.5 text-sky-400" />
-                  3. Auto-Dispatch AI Mode
+                  Auto-Dispatch Mode
                 </h4>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Automatically allocates nearest available RHU, Fire, or Police unit upon report verification.
+                  Assigns the nearest available unit upon report verification.
                 </p>
               </div>
               <button
@@ -589,10 +612,10 @@ export const SettingsPage: FC = () => {
               <div>
                 <h4 className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
                   <Volume2 className="w-3.5 h-3.5 text-rose-400" />
-                  4. Emergency Siren Audio Chime
+                  Alert Audio Chime
                 </h4>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Plays audible audio alert across responder and civilian portals upon incoming critical dispatches.
+                  Plays an audio alert when critical dispatches arrive.
                 </p>
               </div>
               <button
@@ -615,14 +638,14 @@ export const SettingsPage: FC = () => {
               <div className="flex items-center justify-between">
                 <label className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-sky-400" />
-                  5. Live Polling Rate
+                  Polling Rate
                 </label>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-950 text-sky-300 font-bold">
                   {refreshIntervalSec} Seconds
                 </span>
               </div>
               <p className="text-[11px] text-slate-400">
-                Governs useValueRefreshAuto polling interval for background WebSocket and API reconciliation.
+                Refresh interval for background data updates.
               </p>
               <select
                 value={refreshIntervalSec}
@@ -630,7 +653,7 @@ export const SettingsPage: FC = () => {
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
               >
                 <option value={3}>High Velocity (Every 3s)</option>
-                <option value={6}>Standard Tactical (Every 6s)</option>
+                <option value={6}>Standard (Every 6s)</option>
                 <option value={12}>Battery Saver (Every 12s)</option>
               </select>
             </div>
@@ -640,10 +663,10 @@ export const SettingsPage: FC = () => {
               <div>
                 <h4 className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
                   <Eye className="w-3.5 h-3.5 text-sky-400" />
-                  6. Tactical High-Contrast HUD
+                  High-Contrast HUD
                 </h4>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Applies high-visibility HUD borders and luminance boost for bright daylight or night field operations.
+                  Increases border and text contrast for field visibility.
                 </p>
               </div>
               <button
@@ -667,14 +690,14 @@ export const SettingsPage: FC = () => {
       {/* TAB 3: Cryptographic Audit Trail (GET /api/settings/audit) */}
       {activeTab === 'audit' && (
         <div className="tactical-card p-6 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
             <div>
               <h2 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
                 <Terminal className="w-4 h-4 text-emerald-400" />
-                Immutable Cryptographic Audit Trail & Governance Log
+                Audit Log
               </h2>
               <p className="text-xs text-slate-400 font-mono mt-0.5">
-                Real-time cryptographic audit telemetry loaded from GET /api/settings/audit with SHA-256 HMAC integrity
+                {auditTotalItems} recorded entries
               </p>
             </div>
             <Button
@@ -684,68 +707,70 @@ export const SettingsPage: FC = () => {
               disabled={isLoadingAudit}
               icon={<RefreshCw className={`w-3.5 h-3.5 ${isLoadingAudit ? 'animate-spin' : ''}`} />}
             >
-              REFRESH AUDIT
+              Refresh
             </Button>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300 min-w-[700px]">
-              <thead className="bg-slate-900/90 font-mono text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-700">
+          <div className="overflow-x-auto rounded-xl border border-white/10 bg-slate-950/45 backdrop-blur-md">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-900/75 font-mono text-[10px] uppercase tracking-wider text-slate-400 border-b border-white/10">
                 <tr>
-                  <th className="py-2.5 px-3">Timestamp (UTC/PHST)</th>
-                  <th className="py-2.5 px-3">Operator Identity</th>
-                  <th className="py-2.5 px-3">Action Type</th>
-                  <th className="py-2.5 px-3">Cryptographic Details & Verification</th>
-                  <th className="py-2.5 px-3 text-right">Integrity Status</th>
+                  <th className="py-2.5 px-2.5">Timestamp</th>
+                  <th className="py-2.5 px-2.5">Operator</th>
+                  <th className="py-2.5 px-2.5">Action</th>
+                  <th className="py-2.5 px-2.5">Details & Audit Hash</th>
+                  <th className="py-2.5 px-2.5 text-right">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/80 font-mono">
+              <tbody className="divide-y divide-white/5 font-mono">
                 {isLoadingAudit ? (
                   <tr>
                     <td colSpan={5} className="py-8 text-center text-slate-400">
                       <RefreshCw className="w-5 h-5 text-sky-400 animate-spin mx-auto mb-2" />
-                      Loading cryptographic telemetry records from security grid…
+                      Loading audit records…
                     </td>
                   </tr>
                 ) : auditLogs.length === EMPTY_COUNT ? (
                   <tr>
                     <td colSpan={5} className="py-8 text-center text-slate-500">
-                      No cryptographic audit records recorded in the current partition.
+                      No audit records.
                     </td>
                   </tr>
                 ) : (
-                  auditLogs.map((log) => {
-                    const actorDisplay = log.userEmail || (log.actorUserId ? `Officer ${log.actorUserId.slice(0, 8)}` : 'LDRRMO Command');
+                  paginatedAuditLogs.map((log) => {
+                    const actorDisplay = log.userEmail || (log.actorUserId ? `Officer ${log.actorUserId.slice(0, 8)}` : 'LDRRMO Admin');
                     const uidDisplay = log.actorUserId || log.userId || 'SEC-LDRRMO-01';
-                    const targetDisplay = log.targetEntity ? `[${log.targetEntity}] ` : '';
-                    const payloadDisplay = log.payload || log.details || 'System State Verification';
+                    const targetDisplay = log.targetEntity ? `${log.targetEntity} · ` : '';
+                    const payloadDisplay = log.payload || log.details || 'State verified';
 
                     return (
-                      <tr key={log.id} className="hover:bg-slate-900/50 transition-colors">
-                        <td className="py-3 px-3 text-[11px] text-slate-400 whitespace-nowrap">
-                          {log.timestamp ? new Date(log.timestamp).toLocaleString('en-PH') : 'Live Sync'}
+                      <tr key={log.id} className="hover:bg-white/[0.04] transition-colors">
+                        <td className="py-3 px-2.5 text-[11px] text-slate-400 whitespace-nowrap">
+                          {log.timestamp ? new Date(log.timestamp).toLocaleString('en-PH') : 'Live'}
                         </td>
-                        <td className="py-3 px-3">
-                          <span className="text-white font-bold block">{actorDisplay}</span>
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            {log.targetEntity ? `Target: ${log.targetEntity}` : `UID: ${uidDisplay}`}
+                        <td className="py-3 px-2.5">
+                          <span className="text-white font-bold block truncate max-w-[190px]">{actorDisplay}</span>
+                          <span className="text-[10px] text-slate-500 font-mono truncate block max-w-[190px]">
+                            {log.targetEntity ? log.targetEntity : uidDisplay}
                           </span>
                         </td>
-                        <td className="py-3 px-3">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-sky-950 text-sky-300 border border-sky-800">
+                        <td className="py-3 px-2.5 whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-sky-950/70 text-sky-300 border border-sky-500/30">
                             {log.action}
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-[11px] text-slate-300">
-                          <div>{targetDisplay}{payloadDisplay}</div>
+                        <td className="py-3 px-2.5 text-[11px] text-slate-300">
+                          <div className="truncate max-w-[180px] xl:max-w-[230px]" title={`${targetDisplay}${payloadDisplay}`}>
+                            {targetDisplay}{payloadDisplay}
+                          </div>
                           {log.currentHash && (
-                            <div className="text-[9px] font-mono text-emerald-400/90 mt-0.5 truncate max-w-sm">
-                              HASH: {log.currentHash}
+                            <div className="text-[9px] font-mono text-emerald-400/90 mt-0.5 truncate max-w-[180px] xl:max-w-[230px]" title={log.currentHash}>
+                              {log.currentHash}
                             </div>
                           )}
                         </td>
-                        <td className="py-3 px-3 text-right whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-950 text-emerald-300 border border-emerald-800">
+                        <td className="py-3 px-2.5 text-right whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-950/70 text-emerald-300 border border-emerald-500/30">
                             <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                             VERIFIED
                           </span>
@@ -756,6 +781,56 @@ export const SettingsPage: FC = () => {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Audit Pagination Footer (usePagination Hook) */}
+          <div
+            id="audit-pagination-controls"
+            className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/10 text-xs font-mono text-slate-400"
+          >
+            <div className="flex items-center gap-2">
+              <span>Show</span>
+              <select
+                aria-label="Audit rows per page"
+                value={auditPageSize}
+                onChange={(e) => setAuditPageSize(Number(e.target.value))}
+                className="bg-slate-900/80 border border-white/15 text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-rose-500"
+              >
+                {auditPageSizeOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+              <span>
+                {auditTotalItems === 0 ? 0 : auditStartIndex + 1}-{auditEndIndex} of {auditTotalItems}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={auditPrevPage}
+                disabled={!auditCanPrev}
+                className="px-2.5 py-1 text-xs"
+                icon={<ChevronLeft className="w-3 h-3" />}
+              >
+                Prev
+              </Button>
+              <span className="px-2 font-bold text-white">
+                Page {auditPage} / {auditTotalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={auditNextPage}
+                disabled={!auditCanNext}
+                className="px-2.5 py-1 text-xs"
+              >
+                Next <ChevronRight className="w-3 h-3 inline ml-1" />
+              </Button>
+            </div>
           </div>
         </div>
       )}

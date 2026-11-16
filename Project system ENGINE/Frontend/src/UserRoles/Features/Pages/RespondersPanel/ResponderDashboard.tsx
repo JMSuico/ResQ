@@ -45,7 +45,6 @@ import {
   EyeOff,
   CheckCircle2,
   XCircle,
-  LogOut,
   Filter,
   Crosshair,
   Send,
@@ -871,7 +870,7 @@ export const ResponderDashboard: React.FC = () => {
         id: 'self-gps',
         lat: coords.latitude,
         lng: coords.longitude,
-        title: `${responderFullName} [${fieldStatus}]`,
+        title: `${responderFullName} · ${fieldStatus}`,
         type: 'gps',
         severity: 'active'
       }
@@ -882,7 +881,7 @@ export const ResponderDashboard: React.FC = () => {
         id: ptr.id,
         lat: ptr.latitude,
         lng: ptr.longitude,
-        title: `${ptr.isMedicAllowed ? '[MEDIC]' : '[VIEW-ONLY]'} ${ptr.title}`,
+        title: `${ptr.isMedicAllowed ? 'Medic' : 'View-Only'} · ${ptr.title}`,
         type: 'incident',
         category: `${ptr.category} • IP: ${ptr.ipAddress}`,
         agency: ptr.agency,
@@ -901,7 +900,7 @@ export const ResponderDashboard: React.FC = () => {
         id: f.id,
         lat: f.latitude,
         lng: f.longitude,
-        title: `[FIXTURE] ${f.title}`,
+        title: `Fixture · ${f.title}`,
         type: 'fixture',
         category: f.category,
         agency: f.assignedUnitType,
@@ -923,7 +922,7 @@ export const ResponderDashboard: React.FC = () => {
       text: 'text-emerald-400',
       glow: 'shadow-[0_0_15px_rgba(16,185,129,0.35)]',
       dot: 'bg-emerald-400',
-      badgeText: 'AVAILABLE FOR DISPATCH'
+      badgeText: 'Available'
     },
     'EN ROUTE': {
       bg: 'bg-amber-950/80',
@@ -931,7 +930,7 @@ export const ResponderDashboard: React.FC = () => {
       text: 'text-amber-400',
       glow: 'shadow-[0_0_15px_rgba(245,158,11,0.35)]',
       dot: 'bg-amber-400 animate-ping',
-      badgeText: 'EN ROUTE'
+      badgeText: 'En Route'
     },
     'ON SCENE': {
       bg: 'bg-rose-950/90',
@@ -939,7 +938,7 @@ export const ResponderDashboard: React.FC = () => {
       text: 'text-rose-400',
       glow: 'shadow-[0_0_20px_rgba(239,68,68,0.45)]',
       dot: 'bg-rose-500 animate-pulse',
-      badgeText: 'ON SCENE'
+      badgeText: 'On Scene'
     },
     RETURNING: {
       bg: 'bg-sky-950/80',
@@ -947,7 +946,7 @@ export const ResponderDashboard: React.FC = () => {
       text: 'text-sky-400',
       glow: 'shadow-[0_0_15px_rgba(14,165,233,0.35)]',
       dot: 'bg-sky-400',
-      badgeText: 'RETURNING'
+      badgeText: 'Returning'
     }
   };
 
@@ -994,20 +993,20 @@ export const ResponderDashboard: React.FC = () => {
                 {responderFullName}
               </h1>
 
-              {/* 3. Sector & Hardware Link Subtitle */}
-              <p className="text-xs font-mono text-slate-200 mt-0.5 flex flex-wrap items-center gap-1.5">
-                <span>SECTOR: {responderSector} . HARDWARE LINK OK</span>
+              {/* 3. Sector Subtitle */}
+              <p className="text-xs font-mono text-slate-300 mt-0.5 flex flex-wrap items-center gap-1.5">
+                <span>{responderSector}</span>
               </p>
 
-              {/* 4. Live Availability Function Badge & Position Rank Badge */}
+              {/* 4. Live Availability & Position Rank */}
               <div className="flex flex-wrap items-center gap-2.5 mt-2.5">
-                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-slate-950/90 border border-slate-700 text-xs font-mono font-extrabold tracking-wider shadow-sm">
+                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/90 border border-slate-700 text-xs font-mono font-bold shadow-sm">
                   <span className={`w-2.5 h-2.5 rounded-full ${currentStatusConfig.dot}`} />
                   <span className={currentStatusConfig.text}>{currentStatusConfig.badgeText}</span>
                 </span>
 
-                <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-900/90 border border-slate-700/80 text-xs font-mono font-bold text-sky-300">
-                  [{responderRank}]
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-900/90 border border-slate-700/80 text-xs font-mono font-semibold text-sky-300">
+                  {responderRank}
                 </span>
               </div>
             </div>
@@ -1015,15 +1014,13 @@ export const ResponderDashboard: React.FC = () => {
 
           {/* Real-time GPS Telemetry & Agency Operational Action */}
           <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
-            <div className="px-3.5 py-2 bg-slate-950/90 rounded-lg border border-slate-700/80 flex flex-col items-end">
-              <span className="text-[10px] font-mono font-bold text-slate-400 tracking-wider">
-                HARDWARE GPS COORDINATES
+            <div className="px-3.5 py-2 bg-slate-950/90 rounded-lg border border-slate-700/80 flex items-center gap-2 font-mono text-xs">
+              <Crosshair className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
+              <span className="text-sky-300 font-bold">
+                GPS: {coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}
               </span>
-              <span className="text-sm font-mono font-extrabold text-sky-400">
-                {formatGpsCoord(coords.latitude, coords.longitude)}
-              </span>
-              <span className="text-[10px] font-mono text-emerald-400">
-                ACCURACY: ±{coords.accuracy ? coords.accuracy.toFixed(1) : '3.2'}M • LOCK SECURE
+              <span className="text-emerald-400">
+                (±{coords.accuracy ? coords.accuracy.toFixed(1) : '3.2'}m)
               </span>
             </div>
 
@@ -1074,19 +1071,19 @@ export const ResponderDashboard: React.FC = () => {
 
         {/* TASK 2: Tactile Field Readiness State Selector Buttons */}
         <div className="mt-5 pt-4 border-t border-slate-700/60">
-          <div className="text-[11px] font-mono font-bold text-slate-300 uppercase tracking-wider mb-2.5 flex items-center justify-between">
-            <span>FIELD READINESS STATE SELECTOR (TAP TO TOGGLE STATUS):</span>
+          <div className="text-[11px] font-mono font-bold text-slate-300 tracking-wider mb-2.5 flex items-center justify-between">
+            <span>Unit Status</span>
             {isUpdatingStatus && (
-              <span className="text-sky-400 animate-pulse font-mono">TRANSMITTING TELEMETRY...</span>
+              <span className="text-sky-400 animate-pulse font-mono">Updating...</span>
             )}
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-            {/* 1. AVAILABLE */}
+            {/* Available */}
             <button
               type="button"
               onClick={() => requestStatusChange('AVAILABLE')}
-              className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg font-mono font-extrabold text-xs uppercase tracking-wider transition-all duration-150 border-2 active:scale-95 cursor-pointer ${
+              className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg font-mono font-extrabold text-xs tracking-wide transition-all duration-150 border-2 active:scale-95 cursor-pointer ${
                 fieldStatus === 'AVAILABLE'
                   ? 'bg-emerald-500 text-slate-950 border-white shadow-[0_0_18px_rgba(16,185,129,0.7)] scale-[1.02]'
                   : 'bg-slate-900/90 text-emerald-400 border-emerald-600/40 hover:bg-emerald-950/40 hover:border-emerald-500'
@@ -1097,14 +1094,14 @@ export const ResponderDashboard: React.FC = () => {
                   fieldStatus === 'AVAILABLE' ? 'bg-slate-950' : 'bg-emerald-400'
                 }`}
               />
-              <span>1. AVAILABLE</span>
+              <span>Available</span>
             </button>
 
-            {/* 2. EN ROUTE */}
+            {/* En Route */}
             <button
               type="button"
               onClick={() => requestStatusChange('EN ROUTE')}
-              className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg font-mono font-extrabold text-xs uppercase tracking-wider transition-all duration-150 border-2 active:scale-95 cursor-pointer ${
+              className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg font-mono font-extrabold text-xs tracking-wide transition-all duration-150 border-2 active:scale-95 cursor-pointer ${
                 fieldStatus === 'EN ROUTE'
                   ? 'bg-amber-400 text-slate-950 border-white shadow-[0_0_18px_rgba(245,158,11,0.7)] scale-[1.02]'
                   : 'bg-slate-900/90 text-amber-400 border-amber-600/40 hover:bg-amber-950/40 hover:border-amber-500'
@@ -1115,14 +1112,14 @@ export const ResponderDashboard: React.FC = () => {
                   fieldStatus === 'EN ROUTE' ? 'bg-slate-950 animate-ping' : 'bg-amber-400'
                 }`}
               />
-              <span>2. EN ROUTE</span>
+              <span>En Route</span>
             </button>
 
-            {/* 3. ON SCENE */}
+            {/* On Scene */}
             <button
               type="button"
               onClick={() => requestStatusChange('ON SCENE')}
-              className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg font-mono font-extrabold text-xs uppercase tracking-wider transition-all duration-150 border-2 active:scale-95 cursor-pointer ${
+              className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg font-mono font-extrabold text-xs tracking-wide transition-all duration-150 border-2 active:scale-95 cursor-pointer ${
                 fieldStatus === 'ON SCENE'
                   ? 'bg-rose-600 text-white border-white shadow-[0_0_20px_rgba(225,29,72,0.8)] scale-[1.02]'
                   : 'bg-slate-900/90 text-rose-400 border-rose-600/40 hover:bg-rose-950/40 hover:border-rose-500'
@@ -1133,14 +1130,14 @@ export const ResponderDashboard: React.FC = () => {
                   fieldStatus === 'ON SCENE' ? 'bg-white animate-pulse' : 'bg-rose-400'
                 }`}
               />
-              <span>3. ON SCENE</span>
+              <span>On Scene</span>
             </button>
 
-            {/* 4. RETURNING */}
+            {/* Returning */}
             <button
               type="button"
               onClick={() => requestStatusChange('RETURNING')}
-              className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg font-mono font-extrabold text-xs uppercase tracking-wider transition-all duration-150 border-2 active:scale-95 cursor-pointer ${
+              className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg font-mono font-extrabold text-xs tracking-wide transition-all duration-150 border-2 active:scale-95 cursor-pointer ${
                 fieldStatus === 'RETURNING'
                   ? 'bg-sky-400 text-slate-950 border-white shadow-[0_0_18px_rgba(56,189,248,0.7)] scale-[1.02]'
                   : 'bg-slate-900/90 text-sky-400 border-sky-600/40 hover:bg-sky-950/40 hover:border-sky-500'
@@ -1151,7 +1148,7 @@ export const ResponderDashboard: React.FC = () => {
                   fieldStatus === 'RETURNING' ? 'bg-slate-950' : 'bg-sky-400'
                 }`}
               />
-              <span>4. RETURNING</span>
+              <span>Returning</span>
             </button>
           </div>
         </div>
@@ -1161,11 +1158,11 @@ export const ResponderDashboard: React.FC = () => {
           TASK 3: RESPONDER STATUS & STATS DISPLAY VALUES (N=0 SAFE FORMULAS)
          ===================================================================== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Block 1: ACTIVE DISPATCHES */}
+        {/* Block 1: Active Dispatches */}
         <div className="tactical-card p-4 bg-slate-900/90 border border-slate-700/80 rounded-xl hover:border-sky-500/60 transition-colors relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider">
-              ACTIVE DISPATCHES
+            <span className="text-[11px] font-mono font-bold text-slate-400 tracking-wider">
+              Active Dispatches
             </span>
             <Activity className="w-4 h-4 text-sky-400 animate-pulse" />
           </div>
@@ -1174,23 +1171,16 @@ export const ResponderDashboard: React.FC = () => {
               {activeDispatchesCount}
             </span>
             <span className="text-xs font-mono text-sky-400 font-bold">
-              {activeDispatchesCount} DISPATCHED
+              Active
             </span>
-          </div>
-          <div className="mt-2.5 flex items-center justify-between text-[10px] font-mono text-slate-300 border-t border-slate-800 pt-2">
-            <span className="font-bold text-sky-300">PRIORITY ACTION QUEUE</span>
-            <span className="text-slate-400">LIVE FEED</span>
           </div>
         </div>
 
-        {/* Block 2: RESOLVED MISSIONS */}
+        {/* Block 2: Resolved Missions */}
         <div className="tactical-card p-4 bg-slate-900/90 border border-slate-700/80 rounded-xl hover:border-emerald-500/60 transition-colors relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider">
-              RESOLVED MISSIONS
-            </span>
-            <span className="px-2 py-0.5 rounded bg-emerald-950/90 border border-emerald-500/50 text-[10px] font-mono font-black text-emerald-400">
-              SECURE
+            <span className="text-[11px] font-mono font-bold text-slate-400 tracking-wider">
+              Resolved Missions
             </span>
           </div>
           <div className="flex items-baseline gap-2 mt-2">
@@ -1198,49 +1188,33 @@ export const ResponderDashboard: React.FC = () => {
               {resolvedCount}
             </span>
             <span className="text-xs font-mono text-emerald-300 font-bold">
-              OF {totalDispatchesCount} DISPATCHES
+              of {totalDispatchesCount} ({resolutionRatePercent}%)
             </span>
-          </div>
-          <div className="mt-2.5 flex items-center justify-between text-[10px] font-mono text-slate-300 border-t border-slate-800 pt-2">
-            <span>RESOLUTION RATE {resolutionRatePercent}%</span>
-            <span className="text-emerald-400 font-bold">{resolutionRatePercent}%</span>
           </div>
         </div>
 
-        {/* Block 3: LIFE-THREAT ALERTS / CRITICAL INCIDENTS */}
+        {/* Block 3: Critical Incidents */}
         <div className="tactical-card p-4 bg-slate-900/90 border border-slate-700/80 rounded-xl hover:border-rose-500/60 transition-colors relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono font-bold text-rose-400 uppercase tracking-wider">
-              LIFE-THREAT ALERTS
-            </span>
-            <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-600/40 text-[10px] font-mono font-bold text-emerald-400">
-              100% READY
+            <span className="text-[11px] font-mono font-bold text-rose-400 tracking-wider">
+              Critical Alerts
             </span>
           </div>
-          <div className="flex items-baseline justify-between gap-2 mt-2">
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black font-mono text-rose-500 tracking-tight">
-                {lifeThreatCount}
-              </span>
-              <span className="text-xs font-mono text-rose-300 font-bold">
-                CRITICAL INCIDENTS
-              </span>
-            </div>
-            <span className="text-[11px] font-mono font-extrabold text-white bg-rose-950/80 border border-rose-700/60 px-2 py-0.5 rounded">
-              TOTAL: {lifeThreatCount}
+          <div className="flex items-baseline gap-2 mt-2">
+            <span className="text-3xl font-black font-mono text-rose-500 tracking-tight">
+              {lifeThreatCount}
             </span>
-          </div>
-          <div className="mt-2.5 flex items-center justify-between text-[10px] font-mono text-slate-300 border-t border-slate-800 pt-2">
-            <span className="font-bold text-rose-400">IMMEDIATE TRIAGE</span>
-            <span className="text-emerald-400 font-bold">100% READY</span>
+            <span className="text-xs font-mono text-rose-300 font-bold">
+              Urgent
+            </span>
           </div>
         </div>
 
-        {/* Block 4: ASSIGNED UNITS */}
+        {/* Block 4: Assigned Units */}
         <div className="tactical-card p-4 bg-slate-900/90 border border-slate-700/80 rounded-xl hover:border-sky-500/60 transition-colors relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider">
-              ASSIGNED UNITS
+            <span className="text-[11px] font-mono font-bold text-slate-400 tracking-wider">
+              Assigned Units
             </span>
             <Users className="w-4 h-4 text-emerald-400" />
           </div>
@@ -1249,12 +1223,8 @@ export const ResponderDashboard: React.FC = () => {
               {onlineUnitsCount}
             </span>
             <span className="text-xs font-mono text-emerald-300 font-bold">
-              {onlineUnitsCount} ONLINE UNITS
+              Online
             </span>
-          </div>
-          <div className="mt-2.5 flex items-center justify-between text-[10px] font-mono text-slate-300 border-t border-slate-800 pt-2">
-            <span className="font-bold text-slate-200">MUNICIPAL RESPONSE FORCE</span>
-            <span className="text-emerald-400 font-bold">ONLINE</span>
           </div>
         </div>
       </div>
@@ -1266,16 +1236,13 @@ export const ResponderDashboard: React.FC = () => {
         {/* Radar Map Controls & Telemetry Header */}
         <div className="p-3.5 bg-slate-950 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2.5">
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-900 border border-slate-700 font-mono text-xs font-bold text-sky-400">
+            <span className="flex items-center gap-1.5 font-mono text-xs font-bold text-sky-400">
               <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping" />
-              <span>SATELLITE COMMAND RADAR HUD</span>
-            </span>
-            <span className="hidden xl:inline font-mono text-[11px] text-slate-400">
-              16 CATEGORIES (7 MEDIC-ALLOWED • 9 NON-MEDIC VIEW-ONLY)
+              <span>Incident Map</span>
             </span>
           </div>
 
-          {/* Task 5 & 7.1 Controls: SORT / ALL, SORT / FOR MEDICS, Pale Pointer Toggle, EXPAND MAP */}
+          {/* Task 5 & 7.1 Controls */}
           <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
             <button
               type="button"
@@ -1287,7 +1254,7 @@ export const ResponderDashboard: React.FC = () => {
               }`}
             >
               <Filter className="w-3.5 h-3.5" />
-              <span>SORT / ALL ({allRadarPointers.length})</span>
+              <span>All ({allRadarPointers.length})</span>
             </button>
 
             <button
@@ -1301,7 +1268,7 @@ export const ResponderDashboard: React.FC = () => {
             >
               <HeartPulse className="w-3.5 h-3.5" />
               <span>
-                SORT / FOR MEDICS ({allRadarPointers.filter((p) => p.isMedicAllowed).length})
+                Medic Scope ({allRadarPointers.filter((p) => p.isMedicAllowed).length})
               </span>
             </button>
 
@@ -1313,10 +1280,10 @@ export const ResponderDashboard: React.FC = () => {
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 font-bold'
                   : 'bg-slate-900 text-slate-400 border-slate-700 hover:bg-slate-800'
               }`}
-              title="Dim non-medic pointers to pale/low-opacity mode"
+              title="Dim non-medic pointers"
             >
               {palePointerEnabled ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              <span>PALE POINTERS: {palePointerEnabled ? 'ON' : 'OFF'}</span>
+              <span>Dim Others: {palePointerEnabled ? 'On' : 'Off'}</span>
             </button>
 
             <button
@@ -1325,7 +1292,7 @@ export const ResponderDashboard: React.FC = () => {
               className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400 font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-950/60"
             >
               <Maximize2 className="w-3.5 h-3.5" />
-              <span>EXPAND MAP</span>
+              <span>Expand Map</span>
             </button>
           </div>
         </div>
@@ -1351,15 +1318,7 @@ export const ResponderDashboard: React.FC = () => {
                 className="h-full w-full"
               />
 
-              {/* HUD Reticle Overlay Accents */}
-              <div className="absolute top-3 left-3 z-[400] pointer-events-none px-3 py-1.5 rounded bg-slate-950/85 border border-slate-700 backdrop-blur font-mono text-[11px] text-slate-300 flex items-center gap-2">
-                <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
-                <span>
-                  RADAR: <strong className="text-emerald-400">16-CATEGORY TELEMETRY LOCKED</strong>
-                </span>
-              </div>
-
-              {/* Prominent Click-to-Expand Tactical Badge */}
+              {/* Expand Map Trigger */}
               <button
                 type="button"
                 onClick={(e) => {
@@ -1367,25 +1326,24 @@ export const ResponderDashboard: React.FC = () => {
                   setIsExpandMapOpen((prev) => !prev);
                 }}
                 className="absolute top-3 right-3 z-[400] px-3 py-1.5 rounded-lg bg-emerald-600/95 hover:bg-emerald-500 text-white border border-emerald-400 font-mono text-xs font-bold flex items-center gap-1.5 shadow-xl shadow-black/70 transition-all hover:scale-105 cursor-pointer backdrop-blur-md"
-                title="Click to Expand Full Tactical Map"
+                title="Expand Map"
               >
                 <Maximize2 className="w-3.5 h-3.5" />
-                <span>CLICK TO EXPAND MAP</span>
+                <span>Expand</span>
               </button>
 
               <div className="absolute bottom-3 right-3 z-[400] pointer-events-none px-3 py-1.5 rounded bg-slate-950/85 border border-slate-700 backdrop-blur font-mono text-[11px] text-sky-400">
-                FOCUS: {formatGpsCoord(effectiveMapCenterLat, effectiveMapCenterLng)}
+                {formatGpsCoord(effectiveMapCenterLat, effectiveMapCenterLng)}
               </div>
             </div>
           </div>
 
-          {/* Interactive Tactical Radar Pointer Selector Deck (Click any pointer to open Centered Summary Modal) */}
+          {/* Interactive Tactical Radar Pointer Selector Deck */}
           <div className="lg:col-span-4 h-[440px] bg-slate-950/90 flex flex-col">
             <div className="px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/70">
-              <span className="font-mono text-[11px] font-extrabold text-slate-200 uppercase tracking-wider">
-                TACTICAL RADAR POINTERS ({visibleRadarPointers.length})
+              <span className="font-mono text-[11px] font-extrabold text-slate-200 tracking-wider">
+                Map Pointers ({visibleRadarPointers.length})
               </span>
-              <span className="font-mono text-[10px] text-sky-400">TAP PIN FOR SUMMARY</span>
             </div>
 
             <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
@@ -1449,17 +1407,14 @@ export const ResponderDashboard: React.FC = () => {
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-800">
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
-              <h2 className="text-base font-black font-sans text-white tracking-wide uppercase flex items-center gap-2">
+              <h2 className="text-base font-black font-sans text-white tracking-wide flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-rose-400" />
-                <span>PRIORITY INCIDENT DISPATCH QUEUE</span>
+                <span>Dispatch Queue</span>
               </h2>
-              <span className="px-2.5 py-0.5 rounded bg-rose-950 text-rose-400 border border-rose-800 font-mono text-[11px] font-extrabold">
-                {activeDispatchesCount} PENDING ACTION
+              <span className="px-2.5 py-0.5 rounded-full bg-rose-950 text-rose-400 border border-rose-800 font-mono text-[11px] font-bold">
+                {activeDispatchesCount} Active
               </span>
             </div>
-            <p className="text-xs text-slate-400 font-mono mt-1">
-              Live mission assignments allocated to your unit frequency . Real-time tactical queue
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
@@ -1489,7 +1444,7 @@ export const ResponderDashboard: React.FC = () => {
 
         {paginatedItems.length === 0 ? (
           <div className="p-8 text-center bg-slate-950/60 rounded-lg border border-slate-800 font-mono text-xs text-slate-400">
-            NO OUTSTANDING INCIDENTS FOUND MATCHING SEARCH / FILTER. ALL SECTORS NOMINAL.
+            No incidents match the current filter.
           </div>
         ) : viewMode === 'card' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -1694,26 +1649,20 @@ export const ResponderDashboard: React.FC = () => {
         <DefaultFloatingModalCard
           isOpen={pendingStatusTarget !== null}
           onClose={() => setPendingStatusTarget(null)}
-          title="DO YOU WANT TO CHANGE STATUS?"
-          subtitle={`Confirm tactical readiness transition from ${fieldStatus} to ${pendingStatusTarget}`}
+          title="Confirm Status Change"
+          subtitle={`Switch from ${fieldStatus} to ${pendingStatusTarget}`}
           size="md"
         >
           <div className="flex flex-col gap-4 text-slate-200">
-            <div className="p-4 rounded-xl bg-amber-950/50 border-2 border-amber-500/70 flex items-start gap-3">
-              <AlertTriangle className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
-              <div className="text-xs font-mono">
-                <p className="font-black text-amber-300 text-sm tracking-wide">
-                  CAUTION: THIS CHANGE WILL BE SEEN IN THE ADMIN.
-                </p>
-                <p className="text-slate-300 mt-1">
-                  Confirming this action immediately updates your unit telemetry on the LDRRMO Command Center
-                  Board and dispatches a live status alert.
-                </p>
-              </div>
+            <div className="p-4 rounded-xl bg-amber-950/50 border border-amber-500/70 flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />
+              <p className="text-xs font-mono text-amber-200">
+                Update broadcasts to dispatch.
+              </p>
             </div>
 
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between font-mono text-xs">
-              <span className="text-slate-400">TARGET READINESS STATE:</span>
+              <span className="text-slate-400">New Status</span>
               <span className="px-2.5 py-1 rounded bg-sky-950 border border-sky-500 text-sky-300 font-black">
                 {pendingStatusTarget}
               </span>
@@ -1726,23 +1675,15 @@ export const ResponderDashboard: React.FC = () => {
                 onClick={confirmStatusChange}
                 icon={<CheckCircle2 className="w-4 h-4" />}
               >
-                YES
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => setPendingStatusTarget(null)}
-                icon={<XCircle className="w-4 h-4" />}
-              >
-                NO
+                Confirm
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setPendingStatusTarget(null)}
-                icon={<LogOut className="w-4 h-4" />}
+                icon={<XCircle className="w-4 h-4" />}
               >
-                EXIT
+                Cancel
               </Button>
             </div>
           </div>
@@ -1756,7 +1697,7 @@ export const ResponderDashboard: React.FC = () => {
         <DefaultFloatingModalCard
           isOpen={selectedIncident !== null}
           onClose={() => setSelectedIncident(null)}
-          title={`INCIDENT DISPATCH DETAILS // ${selectedIncident.referenceCode}`}
+          title={`Incident ${selectedIncident.referenceCode}`}
           subtitle={`${selectedIncident.category} • ${formatIsoTimestamp(selectedIncident.createdAt)}`}
           maxWidth="max-w-2xl"
         >
@@ -1902,7 +1843,7 @@ export const ResponderDashboard: React.FC = () => {
           onClose={() => setIsPcrModalOpen(false)}
           reportId={selectedIncident?.id}
           onSuccess={(pcr) => {
-            showStatusFeedback(`PATIENT CARE RECORD [${pcr.pcrReference}] SAVED`);
+            showStatusFeedback(`Patient care record ${pcr.pcrReference} saved`);
             loadData();
           }}
         />
@@ -1914,7 +1855,7 @@ export const ResponderDashboard: React.FC = () => {
           onClose={() => setIsAlarmModalOpen(false)}
           reportId={selectedIncident?.id}
           onSuccess={(alarm) => {
-            showStatusFeedback(`BFP ALARM LEVEL UPDATED TO ${alarm.alarmLevel.toUpperCase()}`);
+            showStatusFeedback(`Fire alarm level updated to ${alarm.alarmLevel}`);
             loadData();
           }}
         />
@@ -1927,7 +1868,7 @@ export const ResponderDashboard: React.FC = () => {
           reportId={selectedIncident?.id}
           defaultLocation={selectedIncident?.locationLabel || 'Katipunan Location'}
           onSuccess={(blotter) => {
-            showStatusFeedback(`POLICE BLOTTER ENTRY [${blotter.blotterNumber}] SEALED WITH SHA-256`);
+            showStatusFeedback(`Police blotter ${blotter.blotterNumber} sealed`);
             loadData();
           }}
         />

@@ -1,7 +1,11 @@
 bin/
 obj/
+publish/
+server-data/uploads/
 .vs/
 .vscode/
 .idea/
 *.user
 *.suo
+*.Local.json
+.env

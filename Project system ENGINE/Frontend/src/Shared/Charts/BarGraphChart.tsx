@@ -164,7 +164,7 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
   }
 
   return (
-    <div className="relative flex flex-col gap-2 p-4 bg-slate-900 border border-slate-800 rounded-xl select-none">
+    <div className="relative flex flex-col gap-2 p-4 bg-slate-900/55 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_12px_32px_-8px_rgba(2,6,23,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] select-none">
       {/* Header with live category telemetry */}
       <div className="flex items-center justify-between min-h-[22px]">
         {title && (

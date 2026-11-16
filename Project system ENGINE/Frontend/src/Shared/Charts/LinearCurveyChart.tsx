@@ -18,13 +18,15 @@ export interface LinearCurveyChartProps {
   height?: number;
 }
 
-const DEFAULT_WIDTH = 500;
-const DEFAULT_HEIGHT = 180;
-const CHART_PADDING = 32;
-const MIN_SCALE_MAX = 10;
+const DEFAULT_WIDTH = 540;
+const DEFAULT_HEIGHT = 200;
+const LEFT_PADDING = 40;
+const RIGHT_PADDING = 20;
+const TOP_PADDING = 22;
+const BOTTOM_PADDING = 30;
 const SURGE_CRITICAL_RATIO = 0.75;
 const SURGE_ELEVATED_RATIO = 0.45;
-const TOOLTIP_BOUND_MARGIN = 85;
+const TOOLTIP_BOUND_MARGIN = 90;
 const TOP_BOUND_MARGIN = 65;
 
 interface SurgeStatus {
@@ -37,31 +39,31 @@ interface SurgeStatus {
 const computeSurgeStatus = (value: number, max: number): SurgeStatus => {
   if (value === 0) {
     return {
-      text: 'ZERO INCIDENTS',
-      badgeClass: 'bg-slate-800/90 text-slate-300 border-slate-700/80',
+      text: 'Zero',
+      badgeClass: 'bg-slate-800/70 text-slate-300 border-white/10',
       dotClass: 'bg-slate-400',
       textColor: 'text-slate-400'
     };
   }
   if (value >= max * SURGE_CRITICAL_RATIO) {
     return {
-      text: 'CRITICAL SURGE',
-      badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-500/50 shadow-[0_0_8px_rgba(244,63,94,0.3)]',
+      text: 'Critical',
+      badgeClass: 'bg-rose-950/75 text-rose-300 border-rose-500/45 shadow-[0_0_8px_rgba(244,63,94,0.3)]',
       dotClass: 'bg-rose-500 animate-ping',
       textColor: 'text-rose-400'
     };
   }
   if (value >= max * SURGE_ELEVATED_RATIO) {
     return {
-      text: 'ELEVATED ACTIVITY',
-      badgeClass: 'bg-amber-950/90 text-amber-300 border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.25)]',
+      text: 'Elevated',
+      badgeClass: 'bg-amber-950/75 text-amber-300 border-amber-500/45 shadow-[0_0_8px_rgba(245,158,11,0.25)]',
       dotClass: 'bg-amber-400',
       textColor: 'text-amber-400'
     };
   }
   return {
-    text: 'NOMINAL CADENCE',
-    badgeClass: 'bg-emerald-950/90 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.25)]',
+    text: 'Nominal',
+    badgeClass: 'bg-emerald-950/75 text-emerald-300 border-emerald-500/45 shadow-[0_0_8px_rgba(16,185,129,0.25)]',
     dotClass: 'bg-emerald-400',
     textColor: 'text-emerald-400'
   };
@@ -69,7 +71,7 @@ const computeSurgeStatus = (value: number, max: number): SurgeStatus => {
 
 export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
   data,
-  title = '24-Hour Incident Volume',
+  title = 'Incident Volume',
   color = '#0284c7',
   height = DEFAULT_HEIGHT
 }) => {
@@ -85,14 +87,20 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
   ];
 
   const totalVolume = safeData.reduce((acc, d) => acc + d.value, 0);
-  const maxValue = Math.max(...safeData.map((d) => d.value), MIN_SCALE_MAX);
-  const width = DEFAULT_WIDTH;
-  const padding = CHART_PADDING;
+  const rawPeak = Math.max(...safeData.map((d) => d.value), 0);
+  const yAxisStep = rawPeak <= 4 ? 1 : rawPeak <= 8 ? 2 : Math.ceil((rawPeak * 1.2) / 4);
+  const maxValue = yAxisStep * 4;
+  const yTicks = [0, yAxisStep, yAxisStep * 2, yAxisStep * 3, maxValue];
 
-  // Compute SVG curve points
+  const width = DEFAULT_WIDTH;
+  const plotWidth = width - LEFT_PADDING - RIGHT_PADDING;
+  const plotHeight = height - TOP_PADDING - BOTTOM_PADDING;
+  const baselineY = height - BOTTOM_PADDING;
+
+  // Compute SVG curve points bounded cleanly inside padded Y/X plot area
   const points = safeData.map((d, i) => {
-    const x = safeData.length > 1 ? padding + (i / (safeData.length - 1)) * (width - padding * 2) : width / 2;
-    const y = height - padding - (d.value / maxValue) * (height - padding * 2);
+    const x = safeData.length > 1 ? LEFT_PADDING + (i / (safeData.length - 1)) * plotWidth : LEFT_PADDING + plotWidth / 2;
+    const y = baselineY - (d.value / maxValue) * plotHeight;
     return { x, y };
   });
 
@@ -103,7 +111,7 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
     return `${acc} C ${cpX} ${prev.y}, ${cpX} ${p.y}, ${p.x} ${p.y}`;
   }, '');
 
-  const areaD = `${pathD} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`;
+  const areaD = `${pathD} L ${points[points.length - 1].x} ${baselineY} L ${points[0].x} ${baselineY} Z`;
 
   // Zero-jitter point calculation: only update index if nearest point changed
   const updateNearestPoint = useCallback(
@@ -166,7 +174,12 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
   }
 
   return (
-    <div className="relative flex flex-col gap-2 p-4 bg-slate-900 border border-slate-800 rounded-xl select-none">
+    <div
+      className="relative flex flex-col gap-2 p-4 bg-slate-900/55 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_12px_32px_-8px_rgba(2,6,23,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] select-none"
+      data-x-labels={safeData.map((d) => d.label).join('|')}
+      data-y-ticks={yTicks.join(',')}
+      data-y-max={String(maxValue)}
+    >
       {/* Header with live coordinate telemetry */}
       <div className="flex items-center justify-between min-h-[22px]">
         {title && (
@@ -179,7 +192,7 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
           <div className="flex items-center gap-2 text-[11px] font-mono transition-opacity duration-200">
             <span className="text-slate-400">{activeData.label}:</span>
             <span className={`font-bold ${activeSurge.textColor}`}>
-              {activeData.value} Incidents ({percentageOfTotal}%)
+              {activeData.value} ({percentageOfTotal}%)
             </span>
           </div>
         )}
@@ -205,6 +218,34 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
             </filter>
           </defs>
 
+          {/* Dynamic Y-axis Horizontal Gridlines & Numeric Ticks */}
+          {yTicks.map((tickVal) => {
+            const tickY = baselineY - (tickVal / maxValue) * plotHeight;
+            return (
+              <g key={`y-${tickVal}`} className="pointer-events-none">
+                <line
+                  x1={LEFT_PADDING}
+                  y1={tickY}
+                  x2={width - RIGHT_PADDING}
+                  y2={tickY}
+                  stroke="rgba(148, 163, 184, 0.16)"
+                  strokeDasharray={tickVal === 0 ? undefined : '3 3'}
+                  strokeWidth="1"
+                />
+                <text
+                  x={LEFT_PADDING - 8}
+                  y={tickY + 3}
+                  textAnchor="end"
+                  fill="#94a3b8"
+                  fontSize="9.5"
+                  fontFamily="monospace"
+                >
+                  {tickVal}
+                </text>
+              </g>
+            );
+          })}
+
           {/* Area Fill */}
           <path d={areaD} fill="url(#linearCurveGradient)" className="transition-all duration-300" />
 
@@ -223,9 +264,9 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
             <g className="transition-all duration-150 ease-out pointer-events-none">
               <line
                 x1={activePoint.x}
-                y1={padding - 12}
+                y1={TOP_PADDING}
                 x2={activePoint.x}
-                y2={height - padding}
+                y2={baselineY}
                 stroke="#ff5c74"
                 strokeDasharray="3 3"
                 strokeWidth="1.5"
@@ -241,7 +282,6 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
 
             return (
               <g key={i} className="pointer-events-none">
-                {/* Outer animated pulse beacon ring for active point */}
                 {isActive && (
                   <>
                     <circle
@@ -265,7 +305,6 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
                   </>
                 )}
 
-                {/* Point Circle (Enlarges from r=4 to r=7 when active) */}
                 <circle
                   cx={p.x}
                   cy={p.y}
@@ -279,13 +318,13 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
                   }}
                 />
 
-                {/* X-axis Timestamp / Label */}
+                {/* X-axis Dynamic Bucket Label */}
                 <text
                   x={p.x}
-                  y={height - 10}
+                  y={height - 8}
                   textAnchor="middle"
-                  fill={isActive ? '#f1f5f9' : '#64748b'}
-                  fontSize="10"
+                  fill={isActive ? '#f1f5f9' : '#94a3b8'}
+                  fontSize="9.5"
                   fontFamily="monospace"
                   fontWeight={isActive ? 'bold' : 'normal'}
                   className="transition-colors duration-150"
@@ -307,7 +346,7 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
           />
         </svg>
 
-        {/* Floating Tactical HUD Tooltip */}
+        {/* Floating Glass HUD Tooltip */}
         {activePoint && activeData && activeSurge && (
           <div
             className="absolute pointer-events-none z-30 transition-all duration-150 ease-out"
@@ -316,29 +355,24 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
               ...tooltipLeftStyle
             }}
           >
-            <div className="bg-slate-950/95 border border-slate-700/90 rounded-xl p-2.5 shadow-2xl backdrop-blur-md min-w-[180px] text-xs font-mono flex flex-col gap-1.5 ring-1 ring-white/10">
-              {/* X-axis coordinate / label */}
-              <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 pb-1">
-                <span className="text-[10px] text-slate-400 uppercase tracking-wider">Temporal Coord</span>
+            <div className="bg-slate-950/85 border border-white/15 rounded-xl p-2.5 shadow-2xl backdrop-blur-xl min-w-[165px] text-xs font-mono flex flex-col gap-1.5 ring-1 ring-white/10">
+              <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-1">
+                <span className="text-[10px] text-slate-400 uppercase">Window</span>
                 <span className="text-white font-bold">{activeData.label}</span>
               </div>
 
-              {/* Y-axis coordinate / value */}
               <div className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Telemetry:</span>
+                <span className="text-slate-400">Count:</span>
                 <span className="text-white font-extrabold text-sm flex items-center gap-1">
                   <span className={activeSurge.textColor}>{activeData.value}</span>
-                  <span className="text-[10px] text-slate-400 font-normal">incidents</span>
                 </span>
               </div>
 
-              {/* Share of total */}
               <div className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Period Share:</span>
+                <span className="text-slate-400">Share:</span>
                 <span className="text-slate-200 font-semibold text-xs">{percentageOfTotal}%</span>
               </div>
 
-              {/* Velocity / Surge Status Badge */}
               <div
                 className={`mt-0.5 inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors duration-150 ${activeSurge.badgeClass}`}
               >
@@ -347,9 +381,8 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
               </div>
             </div>
 
-            {/* Caret arrow indicator pointing to active point */}
             <div
-              className={`w-2.5 h-2.5 bg-slate-950 border-slate-700/90 transform rotate-45 shadow-md ${
+              className={`w-2.5 h-2.5 bg-slate-950/90 border-white/15 transform rotate-45 shadow-md ${
                 isNearTop
                   ? 'border-l border-t -mt-[5px] mx-auto'
                   : 'border-r border-b -mt-[5px] mx-auto'

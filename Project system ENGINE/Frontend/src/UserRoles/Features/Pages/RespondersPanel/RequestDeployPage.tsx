@@ -57,8 +57,7 @@ import {
 type FilterTabKey =
   | 'ALL'
   | 'MEDIC_REQUESTS'
-  | 'ADMIN_ORDERS'
-  | 'DEPLOYED_ACTIVE';
+  | 'ADMIN_ORDERS';
 
 type SortOptionKey = 'NEWEST' | 'OLDEST' | 'SEVERITY_HIGH' | 'STATUS';
 
@@ -286,9 +285,6 @@ export const RequestDeployPage: FC = () => {
       if (activeTab === 'ADMIN_ORDERS') {
         return req.direction === 'ADMIN_ORDER' || req.status === 'TO BE DEPLOYED';
       }
-      if (activeTab === 'DEPLOYED_ACTIVE') {
-        return req.status === 'DEPLOY' || req.status === 'RESPONDED';
-      }
       return true;
     });
 
@@ -453,22 +449,11 @@ export const RequestDeployPage: FC = () => {
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-emerald-400">
             <Ambulance className="w-4 h-4" />
-            <span>RHU EMERGENCY MEDICAL SERVICES</span>
+            <span>RHU EMS</span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
-            <span>REQUEST &amp; DEPLOY</span>
-            <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-              LIVE DISPATCH SYNC
-            </span>
+          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white">
+            Request &amp; Deploy
           </h1>
-          <p className="text-xs text-slate-400 max-w-2xl">
-            Dual-channel tactical dispatch queue: initiate Medic field deployment requests (
-            <span className="text-amber-300 font-mono">PENDING</span> &rarr;{' '}
-            <span className="text-emerald-300 font-mono">DEPLOY</span>) or respond to LDRRMO Admin
-            deployment orders (<span className="text-sky-300 font-mono">TO BE DEPLOYED</span>{' '}
-            &rarr; <span className="text-emerald-300 font-mono">ACCEPT</span> /{' '}
-            <span className="text-rose-300 font-mono">DECLINE</span>).
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
@@ -499,17 +484,14 @@ export const RequestDeployPage: FC = () => {
         </div>
       </div>
 
-      {/* Dual-Workflow Status Banner Cards */}
+      {/* Status Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-slate-900/75 border border-amber-500/30 rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p className="text-[11px] font-mono uppercase tracking-wider text-amber-300/90">
-              Medic Requests (Pending)
+            <p className="text-[11px] font-mono tracking-wider text-amber-300/90">
+              Pending Requests
             </p>
             <p className="text-2xl font-extrabold text-white mt-1">{kpiCounts.medicPending}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Awaiting Admin approval &rarr; DEPLOY
-            </p>
           </div>
           <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400">
             <Clock className="w-6 h-6" />
@@ -518,14 +500,11 @@ export const RequestDeployPage: FC = () => {
 
         <div className="bg-slate-900/75 border border-sky-500/40 rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p className="text-[11px] font-mono uppercase tracking-wider text-sky-300">
-              Admin Deploy Orders
+            <p className="text-[11px] font-mono tracking-wider text-sky-300">
+              Deploy Orders
             </p>
             <p className="text-2xl font-extrabold text-white mt-1">
               {kpiCounts.adminToBeDeployed}
-            </p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              State: TO BE DEPLOYED (Accept/Decline)
             </p>
           </div>
           <div className="p-3 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-400">
@@ -535,13 +514,10 @@ export const RequestDeployPage: FC = () => {
 
         <div className="bg-slate-900/75 border border-emerald-500/40 rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p className="text-[11px] font-mono uppercase tracking-wider text-emerald-300">
+            <p className="text-[11px] font-mono tracking-wider text-emerald-300">
               Active Deployments
             </p>
             <p className="text-2xl font-extrabold text-white mt-1">{kpiCounts.activeDeploy}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Cleared &amp; actively deployed units
-            </p>
           </div>
           <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
             <CheckCircle2 className="w-6 h-6" />
@@ -550,13 +526,10 @@ export const RequestDeployPage: FC = () => {
 
         <div className="bg-slate-900/75 border border-rose-500/30 rounded-xl p-4 flex items-center justify-between">
           <div>
-            <p className="text-[11px] font-mono uppercase tracking-wider text-rose-300">
-              Declined Orders
+            <p className="text-[11px] font-mono tracking-wider text-rose-300">
+              Declined
             </p>
             <p className="text-2xl font-extrabold text-white mt-1">{kpiCounts.declinedCount}</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Reassigned / declined by unit
-            </p>
           </div>
           <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400">
             <XCircle className="w-6 h-6" />
@@ -570,16 +543,9 @@ export const RequestDeployPage: FC = () => {
           <div className="flex flex-wrap items-center gap-1.5">
             {(
               [
-                { key: 'ALL', label: `ALL REQUESTS (${requests.length})` },
-                {
-                  key: 'MEDIC_REQUESTS',
-                  label: 'MEDIC REQUESTS (PENDING / DEPLOY)',
-                },
-                {
-                  key: 'ADMIN_ORDERS',
-                  label: 'ADMIN DEPLOY ORDERS (TO BE DEPLOYED)',
-                },
-                { key: 'DEPLOYED_ACTIVE', label: 'DEPLOYED ACTIVE' },
+                { key: 'ALL', label: `All (${requests.length})` },
+                { key: 'MEDIC_REQUESTS', label: 'My Requests' },
+                { key: 'ADMIN_ORDERS', label: 'Deploy Orders' },
               ] as Array<{ key: FilterTabKey; label: string }>
             ).map((tab) => (
               <button

@@ -233,22 +233,22 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
     <DefaultFloatingModalCard
       isOpen={isOpen}
       onClose={onClose}
-      title="Patient Care Record (PCR) & Multi-Casualty Trauma Vitals"
+      title="Patient Care Record (PCR)"
       subtitle={
         reportId
-          ? `Linked Incident: ${reportId} • Recording ${casualties.length} Injured Person(s)`
-          : `Pre-Hospital Multi-Casualty Triage Record (${casualties.length} Person(s))`
+          ? `Incident: ${reportId}`
+          : `Casualties: ${casualties.length}`
       }
       size="2xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Multi-Casualty Switcher & "ADD NEW PCR VITAL" Bar */}
+        {/* Multi-Casualty Switcher & "+ Add Casualty" Bar */}
         <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-bold text-sky-300">
               <Users className="w-4 h-4 text-sky-400" />
               <span>
-                INJURED PERSONS / CASUALTIES IN THIS INCIDENT ({casualties.length})
+                Casualties ({casualties.length})
               </span>
             </div>
             <Button
@@ -258,7 +258,7 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
               onClick={handleAddNewPcrVital}
               icon={<UserPlus className="w-3.5 h-3.5" />}
             >
-              ADD NEW PCR VITAL
+              + Add Casualty
             </Button>
           </div>
 
@@ -391,10 +391,10 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
           <div className="flex items-center justify-between gap-2 mb-2">
             <div className="flex items-center gap-2 text-rose-400 text-xs font-semibold uppercase tracking-wider">
               <Activity className="w-3.5 h-3.5" />
-              <span>Pre-Hospital Vitals Telemetry (Casualty #{activeCasualtyIndex + 1})</span>
+              <span>Vitals (Person #{activeCasualtyIndex + 1})</span>
             </div>
             <span className="text-[10px] font-mono text-slate-400">
-              Timestamp: {currentCasualty.recordedAt}
+              {currentCasualty.recordedAt}
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -453,7 +453,7 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
         {/* Interventions Checkchips */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-            Administered Medical Interventions
+            Interventions Administered
           </label>
           <div className="flex flex-wrap gap-1.5">
             {COMMON_INTERVENTIONS.map((item) => {
@@ -489,19 +489,19 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
               type="text"
               value={currentCasualty.chiefComplaint}
               onChange={(e) => updateCurrentCasualty({ chiefComplaint: e.target.value })}
-              placeholder="e.g. Multiple lacerations, blunt chest trauma following motorcycle collision"
+              placeholder="e.g. Lacerations, chest trauma"
               className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500"
             />
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Clinical Field Narrative
+              Field Narrative
             </label>
             <textarea
               rows={2}
               value={currentCasualty.narrative}
               onChange={(e) => updateCurrentCasualty({ narrative: e.target.value })}
-              placeholder="Detailed pre-hospital timeline, patient status change during transit..."
+              placeholder="Pre-hospital timeline and patient status..."
               className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500 resize-none"
             />
           </div>
@@ -516,7 +516,7 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
             onClick={handleAddNewPcrVital}
             icon={<UserPlus className="w-4 h-4" />}
           >
-            ADD NEW PCR VITAL (+1 Person)
+            + Add Casualty
           </Button>
           <div className="flex items-center gap-2">
             <Button type="button" variant="outline" size="sm" onClick={onClose}>
@@ -529,7 +529,7 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
               isLoading={isSubmitting}
               icon={<HeartPulse className="w-4 h-4" />}
             >
-              Store PCR Record ({casualties.length} {casualties.length === 1 ? 'Person' : 'Persons'})
+              Save PCR Record
             </Button>
           </div>
         </div>

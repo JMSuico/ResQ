@@ -835,7 +835,7 @@ export const MyReportsPage: React.FC = () => {
         // Local report fallback
       });
 
-      showToast(`5-MIN CLOSING TIMER STARTED FOR ${logItem.referenceCode} (05:00)`);
+      showToast(`5m timer started for ${logItem.referenceCode}`);
     },
     [showToast]
   );
@@ -865,7 +865,7 @@ export const MyReportsPage: React.FC = () => {
         return updated;
       });
 
-      showToast(`TIMER SET TO 00:05 FOR ${logItem.referenceCode} — WATCH AUTO-CLOSE!`);
+      showToast(`Timer set to 00:05 for ${logItem.referenceCode}`);
     },
     [showToast]
   );
@@ -1032,7 +1032,7 @@ export const MyReportsPage: React.FC = () => {
           return updated;
         });
         setCameraTargetLogId(null);
-        showToast(`EVIDENCE PHOTO APPENDED (${exactStamp})`);
+        showToast(`Photo added (${exactStamp})`);
       } else {
         setCapturedPhotos((prev) => [...prev, newPhoto].slice(0, MAX_EVIDENCE_PHOTOS));
         setIsCreateModalOpen(true);
@@ -1128,7 +1128,7 @@ export const MyReportsPage: React.FC = () => {
       });
 
       window.dispatchEvent(new CustomEvent('resqtrack:report', { detail: newEntry }));
-      showToast(`INCIDENT LOG ${finalRefCode} SAVED TO RHU TELEMETRY`);
+      showToast(`Report ${finalRefCode} saved`);
       setIsCreateModalOpen(false);
       setNewTitle('');
       setNewNote('');
@@ -1148,29 +1148,27 @@ export const MyReportsPage: React.FC = () => {
         </div>
       )}
 
-      {/* =====================================================================
-          TASK 1: HEADER — Eyebrow: RHU EMERGENCY MEDICAL SERVICES | Title: INCIDENT LOGS
-         ===================================================================== */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800/90 pb-5">
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse" />
-            <span className="text-xs font-mono font-black tracking-widest text-sky-400 uppercase">
-              RHU EMERGENCY MEDICAL SERVICES
+            <span className="text-xs font-mono font-bold text-sky-400">
+              RHU EMS
             </span>
-            <span className="text-slate-600 font-mono">|</span>
-            <span className="text-xs font-mono text-slate-300 font-bold">
-              MEDIC: {session?.fullName || 'Dr. Maria Clara Santos MD'}
+            <span className="text-slate-600 font-mono">·</span>
+            <span className="text-xs font-mono text-slate-300 font-semibold">
+              {session?.fullName || 'Dr. Maria Clara Santos MD'}
             </span>
             <span className="px-2 py-0.5 rounded bg-sky-950/90 border border-sky-500/40 text-[10px] font-mono font-bold text-sky-300">
-              UNIT: {session?.unit || 'RHU'}
+              {session?.unit || 'RHU'}
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight font-mono">
-            INCIDENT LOGS
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            Incident Logs
           </h1>
           <p className="text-xs text-slate-400 font-mono mt-1">
-            Lifetime submitted casualty dispatches, multi-patient PCR vitals, 40-photo timestamped evidence &amp; 5-minute auto-close verification engine
+            Submitted reports and evidence records
           </p>
         </div>
 
@@ -1181,94 +1179,70 @@ export const MyReportsPage: React.FC = () => {
               setCameraTargetLogId(null);
               setIsCameraOpen(true);
             }}
-            className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-rose-950/60 active:scale-95 transition-all cursor-pointer"
+            className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono text-xs font-black tracking-wide flex items-center gap-2 shadow-lg shadow-rose-950/60 active:scale-95 transition-all cursor-pointer"
           >
             <Camera className="w-4 h-4" />
-            <span>SUBMIT FIELD INCIDENT LOG</span>
+            <span>+ New Report</span>
           </button>
         </div>
       </div>
 
-      {/* =====================================================================
-          TASK 2: 4 EXACT KPI TELEMETRY CARDS (N=0 SAFE FORMULAS)
-         ===================================================================== */}
+      {/* 4 KPI Telemetry Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: TOTAL LOGGED */}
         <div className="tactical-card p-4 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:border-sky-500/60 transition-all shadow-lg">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono font-black text-slate-300 uppercase tracking-wider">
-              TOTAL LOGGED
+            <span className="text-xs font-mono font-bold text-slate-300">
+              Total Logged
             </span>
             <ClipboardList className="w-4 h-4 text-sky-400" />
           </div>
           <div className="flex items-baseline gap-2.5 mt-2.5">
             <span className="text-3xl font-black font-mono text-white">{totalLogged}</span>
-            <span className="text-xs font-mono text-sky-400 font-black uppercase">REPORTS</span>
-          </div>
-          <div className="mt-2.5 text-[10px] font-mono font-bold text-slate-400 border-t border-slate-800 pt-2 flex items-center justify-between">
-            <span>LIFETIME LOGS</span>
-            <span className="text-sky-300">REPORTS</span>
+            <span className="text-xs font-mono text-sky-400 font-semibold">Reports</span>
           </div>
         </div>
 
-        {/* Card 2: ACTIVE IN ACTION */}
         <div className="tactical-card p-4 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:border-amber-500/60 transition-all shadow-lg">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono font-black text-slate-300 uppercase tracking-wider">
-              ACTIVE IN ACTION
+            <span className="text-xs font-mono font-bold text-slate-300">
+              Active
             </span>
             <Activity className="w-4 h-4 text-amber-400 animate-pulse" />
           </div>
           <div className="flex items-baseline gap-2.5 mt-2.5">
             <span className="text-3xl font-black font-mono text-amber-400">{activeInAction}</span>
-            <span className="text-xs font-mono text-amber-300 font-black uppercase">ACTIVE</span>
-          </div>
-          <div className="mt-2.5 text-[10px] font-mono font-bold text-slate-400 border-t border-slate-800 pt-2 flex items-center justify-between">
-            <span>ACTIVE</span>
-            <span className="text-amber-300">ONGOING OPERATIONS</span>
+            <span className="text-xs font-mono text-amber-300 font-semibold">Ongoing</span>
           </div>
         </div>
 
-        {/* Card 3: VERIFIED ACTIONED */}
         <div className="tactical-card p-4 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:border-cyan-500/60 transition-all shadow-lg">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono font-black text-slate-300 uppercase tracking-wider">
-              VERIFIED ACTIONED
+            <span className="text-xs font-mono font-bold text-slate-300">
+              Verified
             </span>
             <ShieldCheck className="w-4 h-4 text-cyan-400" />
           </div>
           <div className="flex items-baseline gap-2.5 mt-2.5">
             <span className="text-3xl font-black font-mono text-cyan-400">{verifiedActioned}</span>
-            <span className="text-xs font-mono text-cyan-300 font-black uppercase">VERIFIED</span>
-          </div>
-          <div className="mt-2.5 text-[10px] font-mono font-bold text-slate-400 border-t border-slate-800 pt-2 flex items-center justify-between">
-            <span>VERIFIED</span>
-            <span className="text-cyan-300">VALIDATED EVIDENCE</span>
+            <span className="text-xs font-mono text-cyan-300 font-semibold">Actioned</span>
           </div>
         </div>
 
-        {/* Card 4: RESOLVED MISSIONS */}
         <div className="tactical-card p-4 rounded-xl bg-slate-900/90 border border-slate-700/80 hover:border-emerald-500/60 transition-all shadow-lg">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono font-black text-slate-300 uppercase tracking-wider">
-              RESOLVED MISSIONS
+            <span className="text-xs font-mono font-bold text-slate-300">
+              Resolved
             </span>
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="flex items-baseline gap-2.5 mt-2.5">
             <span className="text-3xl font-black font-mono text-emerald-400">{resolvedMissions}</span>
-            <span className="text-xs font-mono text-emerald-300 font-black uppercase">CLOSED</span>
-          </div>
-          <div className="mt-2.5 text-[10px] font-mono font-bold text-slate-400 border-t border-slate-800 pt-2 flex items-center justify-between">
-            <span>CLOSED</span>
-            <span className="text-emerald-300">SUCCESSFUL RESOLUTION</span>
+            <span className="text-xs font-mono text-emerald-300 font-semibold">Closed</span>
           </div>
         </div>
       </div>
 
-      {/* =====================================================================
-          TASK 4: FILTER TABS, SEARCHBAR (WITH USEDEBOUNCE), SORT & TABLECARDTOGGLE
-         ===================================================================== */}
+      {/* Filter Tabs, SearchBar, Sort & TableCardToggle */}
       <div className="tactical-card p-4 bg-slate-900/90 border border-slate-800 rounded-xl flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
           <button
@@ -1283,7 +1257,7 @@ export const MyReportsPage: React.FC = () => {
                 : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
             }`}
           >
-            ALL LOGS ({totalLogged})
+            All ({totalLogged})
           </button>
 
           <button
@@ -1298,7 +1272,7 @@ export const MyReportsPage: React.FC = () => {
                 : 'bg-slate-950 text-amber-400 border-slate-800 hover:border-amber-500/40'
             }`}
           >
-            ACTIVE IN ACTION ({activeInAction})
+            Active ({activeInAction})
           </button>
 
           <button
@@ -1314,7 +1288,7 @@ export const MyReportsPage: React.FC = () => {
             }`}
           >
             <Clock className="w-3.5 h-3.5" />
-            <span>VERIFIED (5M TIMER) ({verifiedActiveTimerCount})</span>
+            <span>Verified ({verifiedActiveTimerCount})</span>
           </button>
 
           <button
@@ -1329,7 +1303,7 @@ export const MyReportsPage: React.FC = () => {
                 : 'bg-slate-950 text-emerald-400 border-slate-800 hover:border-emerald-500/40'
             }`}
           >
-            CLOSED / SOLVED ({resolvedMissions})
+            Resolved ({resolvedMissions})
           </button>
         </div>
 
@@ -1342,17 +1316,17 @@ export const MyReportsPage: React.FC = () => {
               aria-label="Sort incident logs"
               className="bg-transparent text-xs font-mono text-slate-200 focus:outline-none cursor-pointer"
             >
-              <option value="NEWEST" className="bg-slate-950">SORT: NEWEST FIRST</option>
-              <option value="OLDEST" className="bg-slate-950">SORT: OLDEST FIRST</option>
-              <option value="SEVERITY" className="bg-slate-950">SORT: SEVERITY PRIORITY</option>
-              <option value="TIMER_URGENCY" className="bg-slate-950">SORT: 5M TIMER URGENCY</option>
+              <option value="NEWEST" className="bg-slate-950">Sort: Newest</option>
+              <option value="OLDEST" className="bg-slate-950">Sort: Oldest</option>
+              <option value="SEVERITY" className="bg-slate-950">Sort: Severity</option>
+              <option value="TIMER_URGENCY" className="bg-slate-950">Sort: Timer</option>
             </select>
           </div>
 
           <SearchBar
             value={searchQuery}
             onChange={setSearchQuery}
-            placeholder="Search ref, patient, street, notes..."
+            placeholder="Search ref, patient, location..."
             className="w-full sm:w-64"
           />
 
@@ -1360,19 +1334,17 @@ export const MyReportsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* =====================================================================
-          TASK 3: INCIDENT LOGS FEED WITH 5-MINUTE VERIFICATION TIMER & AUTO-CLOSE
-         ===================================================================== */}
+      {/* Incident Logs Feed */}
       {loading ? (
         <div className="tactical-card p-12 text-center text-sky-400 font-mono text-sm animate-pulse bg-slate-900/60 border border-slate-800 rounded-xl">
-          SYNCHRONIZING RHU INCIDENT LOGS &amp; 5-MINUTE VERIFICATION TIMERS...
+          Loading reports...
         </div>
       ) : paginatedItems.length === 0 ? (
         <div className="tactical-card p-12 text-center bg-slate-900/60 border border-slate-800 rounded-xl">
           <ClipboardList className="w-9 h-9 mx-auto mb-2.5 text-slate-500" />
-          <h3 className="text-base font-bold text-white font-mono">NO INCIDENT LOGS MATCH CURRENT FILTER</h3>
+          <h3 className="text-base font-bold text-white font-mono">No matching reports</h3>
           <p className="text-xs text-slate-400 font-mono mt-1">
-            Submit a report from &quot;CASUALTY FIELD DISPATCHES&quot; or click &quot;SUBMIT FIELD INCIDENT LOG&quot; above.
+            Submit a dispatch or create a new report.
           </p>
         </div>
       ) : viewMode === 'card' ? (
@@ -1403,7 +1375,7 @@ export const MyReportsPage: React.FC = () => {
                         {log.referenceCode}
                       </span>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${sev.bg} ${sev.text} ${sev.border}`}>
-                        {log.severity.toUpperCase()}
+                        {log.severity}
                       </span>
                       <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-[10px] font-mono text-slate-300">
                         {log.unitCode}
@@ -1411,19 +1383,19 @@ export const MyReportsPage: React.FC = () => {
                     </div>
 
                     {effectivelyClosed ? (
-                      <span className="px-2.5 py-1 rounded-md bg-emerald-950/90 border border-emerald-500/60 text-emerald-300 text-[10px] font-mono font-black flex items-center gap-1">
+                      <span className="px-2.5 py-1 rounded-md bg-emerald-950/90 border border-emerald-500/60 text-emerald-300 text-[10px] font-mono font-bold flex items-center gap-1">
                         <Lock className="w-3 h-3" />
-                        <span>CLOSED / SOLVED CASE</span>
+                        <span>Closed</span>
                       </span>
                     ) : log.isVerified ? (
-                      <span className="px-2.5 py-1 rounded-md bg-cyan-950/90 border border-cyan-400 text-cyan-300 text-[10px] font-mono font-black flex items-center gap-1 animate-pulse">
+                      <span className="px-2.5 py-1 rounded-md bg-cyan-950/90 border border-cyan-400 text-cyan-300 text-[10px] font-mono font-bold flex items-center gap-1 animate-pulse">
                         <Clock className="w-3 h-3" />
-                        <span>VERIFIED — 5M CLOSING TIMER ({formatMmSs(remainingSec)})</span>
+                        <span>{formatMmSs(remainingSec)}</span>
                       </span>
                     ) : (
-                      <span className="px-2.5 py-1 rounded-md bg-amber-950/90 border border-amber-500/50 text-amber-300 text-[10px] font-mono font-black flex items-center gap-1">
+                      <span className="px-2.5 py-1 rounded-md bg-amber-950/90 border border-amber-500/50 text-amber-300 text-[10px] font-mono font-bold flex items-center gap-1">
                         <Activity className="w-3 h-3" />
-                        <span>ACTIVE / ONGOING OPERATIONS ({log.status.toUpperCase()})</span>
+                        <span>{log.status}</span>
                       </span>
                     )}
                   </div>
@@ -1436,15 +1408,15 @@ export const MyReportsPage: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-2 mt-3 font-mono text-[10px]">
                     <span className="px-2 py-0.5 rounded bg-rose-950/60 border border-rose-500/40 text-rose-300 font-bold inline-flex items-center gap-1">
                       <HeartPulse className="w-3 h-3" />
-                      <span>{log.casualties.length} CASUALTY PCR VITALS</span>
+                      <span>{log.casualties.length} PCR</span>
                     </span>
                     <span className="px-2 py-0.5 rounded bg-sky-950/60 border border-sky-500/40 text-sky-300 font-bold inline-flex items-center gap-1">
                       <ImageIcon className="w-3 h-3" />
-                      <span>{log.evidencePhotos.length}/{MAX_EVIDENCE_PHOTOS} EVIDENCE PHOTOS</span>
+                      <span>{log.evidencePhotos.length}/{MAX_EVIDENCE_PHOTOS} Photos</span>
                     </span>
                     <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 inline-flex items-center gap-1">
                       <Globe className="w-3 h-3 text-slate-500" />
-                      <span>IP: {log.ipAddress.split(' ')[0]}</span>
+                      <span>{log.ipAddress.split(' ')[0]}</span>
                     </span>
                   </div>
 
@@ -1453,9 +1425,9 @@ export const MyReportsPage: React.FC = () => {
                     {effectivelyClosed ? (
                       <div className="flex flex-col gap-1.5">
                         <div className="flex items-center justify-between text-[11px] font-mono">
-                          <span className="text-emerald-400 font-black flex items-center gap-1.5">
+                          <span className="text-emerald-400 font-bold flex items-center gap-1.5">
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>CASE CLOSED (100% SOLVED — POINTER FADED)</span>
+                            <span>Closed</span>
                           </span>
                           <span className="text-emerald-300 font-bold">00:00 (100%)</span>
                         </div>
@@ -1466,9 +1438,9 @@ export const MyReportsPage: React.FC = () => {
                     ) : log.isVerified ? (
                       <div className="flex flex-col gap-1.5">
                         <div className="flex items-center justify-between text-[11px] font-mono">
-                          <span className="text-cyan-300 font-black flex items-center gap-1.5">
+                          <span className="text-cyan-300 font-bold flex items-center gap-1.5">
                             <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-                            <span>VERIFIED — CLOSING IN {formatMmSs(remainingSec)}</span>
+                            <span>Closing in {formatMmSs(remainingSec)}</span>
                           </span>
                           <span className="text-cyan-400 font-bold">{progressPct}%</span>
                         </div>
@@ -1478,31 +1450,28 @@ export const MyReportsPage: React.FC = () => {
                             style={{ width: `${progressPct}%` }}
                           />
                         </div>
-                        <div className="flex items-center justify-between pt-1">
-                          <span className="text-[10px] font-mono text-slate-400">
-                            Auto-transitions to CLOSED at 00:00
-                          </span>
+                        <div className="flex items-center justify-end pt-1">
                           <button
                             type="button"
                             onClick={(e) => handleSimulateFinalSeconds(log, e)}
                             className="px-2 py-0.5 rounded bg-slate-800 hover:bg-cyan-950 text-cyan-300 border border-cyan-500/40 text-[10px] font-mono font-bold cursor-pointer"
                           >
-                            DEMO: JUMP TO 00:05
+                            Skip to 00:05
                           </button>
                         </div>
                       </div>
                     ) : (
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="text-[11px] font-mono text-amber-300 font-bold">
-                          Awaiting Admin / AI Verification to start 5m close timer
+                          Pending verification
                         </span>
                         <button
                           type="button"
                           onClick={(e) => handleStartFiveMinTimer(log, e)}
-                          className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-mono text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 shadow cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-mono text-[10px] font-black inline-flex items-center gap-1 shadow cursor-pointer"
                         >
                           <Play className="w-3 h-3 fill-current" />
-                          <span>VERIFY &amp; START 5M TIMER</span>
+                          <span>Start Timer</span>
                         </button>
                       </div>
                     )}
@@ -1526,7 +1495,7 @@ export const MyReportsPage: React.FC = () => {
                         className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 text-[10px] font-bold hover:bg-slate-700 inline-flex items-center gap-1 cursor-pointer"
                       >
                         <ImageIcon className="w-3 h-3 text-sky-400" />
-                        <span>View Photo</span>
+                        <span>Photo</span>
                       </button>
                     )}
                     <span className="text-sky-300 font-bold">{formatRelativeTime(log.createdAt)}</span>
@@ -1540,14 +1509,14 @@ export const MyReportsPage: React.FC = () => {
         /* TABLE VIEW */
         <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/90 shadow-2xl">
           <table className="w-full text-left text-xs font-mono">
-            <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+            <thead className="bg-slate-950 text-slate-400 text-[11px] border-b border-slate-800">
               <tr>
-                <th className="p-3.5">Ref Code</th>
+                <th className="p-3.5">Ref</th>
                 <th className="p-3.5">Severity</th>
-                <th className="p-3.5">Incident &amp; Casualties</th>
-                <th className="p-3.5">GPS &amp; IP Telemetry</th>
+                <th className="p-3.5">Incident</th>
+                <th className="p-3.5">Location / IP</th>
                 <th className="p-3.5">Evidence</th>
-                <th className="p-3.5">Lifecycle &amp; 5M Timer</th>
+                <th className="p-3.5">Status</th>
                 <th className="p-3.5 text-right">Actions</th>
               </tr>
             </thead>
@@ -1574,28 +1543,28 @@ export const MyReportsPage: React.FC = () => {
                     <td className="p-3.5">
                       <div className="text-white font-sans font-bold line-clamp-1">{log.title}</div>
                       <div className="text-[10px] text-rose-300 mt-0.5">
-                        {log.casualties.length} Casualty PCR Record(s) · Unit {log.unitCode}
+                        {log.casualties.length} PCR · {log.unitCode}
                       </div>
                     </td>
                     <td className="p-3.5 text-slate-300 whitespace-nowrap">
                       <div className="text-emerald-400 font-bold">{formatGpsCoord(log.latitude, log.longitude)}</div>
-                      <div className="text-[10px] text-slate-500">IP: {log.ipAddress}</div>
+                      <div className="text-[10px] text-slate-500">{log.ipAddress.split(' ')[0]}</div>
                     </td>
                     <td className="p-3.5 whitespace-nowrap">
                       <span className="px-2 py-0.5 rounded bg-sky-950/70 border border-sky-500/40 text-sky-300 text-[10px] font-bold">
-                        {log.evidencePhotos.length}/{MAX_EVIDENCE_PHOTOS} Photos
+                        {log.evidencePhotos.length}/{MAX_EVIDENCE_PHOTOS}
                       </span>
                     </td>
-                    <td className="p-3.5 min-w-[210px]">
+                    <td className="p-3.5 min-w-[180px]">
                       {effectivelyClosed ? (
                         <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/50 text-emerald-300 text-[10px] font-bold inline-flex items-center gap-1">
                           <CheckCircle2 className="w-3 h-3" />
-                          <span>CLOSED / SOLVED (100%)</span>
+                          <span>Closed</span>
                         </span>
                       ) : log.isVerified ? (
                         <div className="flex flex-col gap-1">
                           <span className="text-cyan-300 font-bold text-[10px]">
-                            VERIFIED — {formatMmSs(remainingSec)} ({progressPct}%)
+                            {formatMmSs(remainingSec)} ({progressPct}%)
                           </span>
                           <div className="w-36 h-1.5 rounded-full bg-slate-900 overflow-hidden border border-cyan-500/40">
                             <div
@@ -1606,7 +1575,7 @@ export const MyReportsPage: React.FC = () => {
                         </div>
                       ) : (
                         <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-500/40 text-amber-300 text-[10px] font-bold">
-                          ACTIVE ({log.status})
+                          {log.status}
                         </span>
                       )}
                     </td>
@@ -1617,7 +1586,7 @@ export const MyReportsPage: React.FC = () => {
                           onClick={(e) => handleStartFiveMinTimer(log, e)}
                           className="px-2.5 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-[10px] cursor-pointer"
                         >
-                          VERIFY &amp; START 5M TIMER
+                          Start Timer
                         </button>
                       ) : !effectivelyClosed && log.isVerified ? (
                         <button
@@ -1625,10 +1594,10 @@ export const MyReportsPage: React.FC = () => {
                           onClick={(e) => handleSimulateFinalSeconds(log, e)}
                           className="px-2 py-1 rounded bg-slate-800 hover:bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-bold text-[10px] cursor-pointer"
                         >
-                          JUMP 00:05
+                          Skip 00:05
                         </button>
                       ) : (
-                        <span className="text-[10px] text-emerald-400 font-bold">ARCHIVED</span>
+                        <span className="text-[10px] text-emerald-400 font-bold">Closed</span>
                       )}
                     </td>
                   </tr>
@@ -1639,15 +1608,13 @@ export const MyReportsPage: React.FC = () => {
         </div>
       )}
 
-      {/* =====================================================================
-          TASK 4: PAGINATION BAR (USING @/Hooks/usePagination)
-         ===================================================================== */}
+      {/* Pagination Bar */}
       <div className="tactical-card p-3.5 bg-slate-900/90 border border-slate-800 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-xs">
         <div className="flex items-center gap-3 text-slate-400">
           <span>
-            SHOWING <strong className="text-white">{totalItems === 0 ? 0 : startIndex + 1}</strong>–
-            <strong className="text-white">{endIndex}</strong> OF{' '}
-            <strong className="text-sky-400">{totalItems}</strong> INCIDENT LOGS
+            <strong className="text-white">{totalItems === 0 ? 0 : startIndex + 1}</strong>–
+            <strong className="text-white">{endIndex}</strong> of{' '}
+            <strong className="text-sky-400">{totalItems}</strong>
           </span>
           <select
             value={pageSize}
@@ -1657,7 +1624,7 @@ export const MyReportsPage: React.FC = () => {
           >
             {pageSizeOptions.map((sz) => (
               <option key={sz} value={sz}>
-                {sz} / PAGE
+                {sz} / page
               </option>
             ))}
           </select>
@@ -1671,10 +1638,10 @@ export const MyReportsPage: React.FC = () => {
             className="px-2.5 py-1 rounded bg-slate-950 border border-slate-800 text-slate-300 disabled:opacity-40 hover:border-sky-500/50 inline-flex items-center gap-1 cursor-pointer"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
-            <span>PREV</span>
+            <span>Prev</span>
           </button>
           <span className="px-3 py-1 rounded bg-slate-950 border border-slate-800 text-sky-400 font-bold">
-            PAGE {currentPage} / {totalPages}
+            {currentPage} / {totalPages}
           </span>
           <button
             type="button"
@@ -1682,16 +1649,13 @@ export const MyReportsPage: React.FC = () => {
             onClick={nextPage}
             className="px-2.5 py-1 rounded bg-slate-950 border border-slate-800 text-slate-300 disabled:opacity-40 hover:border-sky-500/50 inline-flex items-center gap-1 cursor-pointer"
           >
-            <span>NEXT</span>
+            <span>Next</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* =====================================================================
-          TASK 4: DEFAULTFLOATINGMODALCARD — FULL SUBMITTED REPORT, MULTI-CASUALTY PCR VITALS,
-          UP TO 40 TIMESTAMPED PHOTOS (YYYY-MM-DD hh:mm:ss A), IP, GPS & 5M TIMER STATUS
-         ===================================================================== */}
+      {/* Incident Log Details Modal */}
       {selectedLog && (() => {
         const modalRemainingSec = selectedLog.isVerified
           ? computeRemainingSeconds(selectedLog.verifiedAt, nowMs)
@@ -1709,8 +1673,8 @@ export const MyReportsPage: React.FC = () => {
           <DefaultFloatingModalCard
             isOpen={selectedLog !== null}
             onClose={() => setSelectedLogId(null)}
-            title={`RHU INCIDENT LOG // ${selectedLog.referenceCode}`}
-            subtitle={`Submitted by ${selectedLog.responderName} · Unit ${selectedLog.unitCode}`}
+            title={`${selectedLog.referenceCode} — Incident Log`}
+            subtitle={`${selectedLog.responderName} · ${selectedLog.unitCode}`}
             maxWidth="max-w-4xl"
           >
             <div className="flex flex-col gap-5 text-slate-200 text-xs font-mono">
@@ -1720,7 +1684,7 @@ export const MyReportsPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <span className="text-sky-400 font-black text-sm">{selectedLog.referenceCode}</span>
                     <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/50 text-rose-300 text-[10px] font-bold">
-                      {selectedLog.severity.toUpperCase()}
+                      {selectedLog.severity}
                     </span>
                     <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 text-[10px]">
                       {selectedLog.category}
@@ -1730,29 +1694,29 @@ export const MyReportsPage: React.FC = () => {
                 </div>
 
                 {modalClosed ? (
-                  <span className="px-3 py-1.5 rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-500 font-black inline-flex items-center gap-1.5">
+                  <span className="px-3 py-1.5 rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-500 font-bold inline-flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>CLOSED / SOLVED CASE</span>
+                    <span>Closed</span>
                   </span>
                 ) : selectedLog.isVerified ? (
-                  <span className="px-3 py-1.5 rounded-lg bg-cyan-950 text-cyan-300 border border-cyan-400 font-black inline-flex items-center gap-1.5">
+                  <span className="px-3 py-1.5 rounded-lg bg-cyan-950 text-cyan-300 border border-cyan-400 font-bold inline-flex items-center gap-1.5">
                     <Clock className="w-4 h-4 animate-spin" />
-                    <span>VERIFIED — CLOSING IN {formatMmSs(modalRemainingSec)}</span>
+                    <span>Closing in {formatMmSs(modalRemainingSec)}</span>
                   </span>
                 ) : (
-                  <span className="px-3 py-1.5 rounded-lg bg-amber-950 text-amber-300 border border-amber-500 font-black inline-flex items-center gap-1.5">
+                  <span className="px-3 py-1.5 rounded-lg bg-amber-950 text-amber-300 border border-amber-500 font-bold inline-flex items-center gap-1.5">
                     <Activity className="w-4 h-4" />
-                    <span>ACTIVE / ONGOING ({selectedLog.status})</span>
+                    <span>{selectedLog.status}</span>
                   </span>
                 )}
               </div>
 
-              {/* 5-Minute Verification Countdown Engine Box */}
+              {/* 5-Minute Verification Countdown Box */}
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                  <span className="text-[11px] font-black text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-sky-400 flex items-center gap-1.5">
                     <Clock className="w-4 h-4" />
-                    <span>5-MINUTE VERIFICATION &amp; AUTO-CLOSE ENGINE</span>
+                    <span>Verification Timer</span>
                   </span>
                   {!modalClosed && !selectedLog.isVerified && (
                     <button
@@ -1761,7 +1725,7 @@ export const MyReportsPage: React.FC = () => {
                       className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs inline-flex items-center gap-1.5 cursor-pointer"
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>VERIFY &amp; START 5M TIMER</span>
+                      <span>Start Timer</span>
                     </button>
                   )}
                   {!modalClosed && selectedLog.isVerified && (
@@ -1770,22 +1734,21 @@ export const MyReportsPage: React.FC = () => {
                       onClick={(e) => handleSimulateFinalSeconds(selectedLog, e)}
                       className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-cyan-950 text-cyan-300 border border-cyan-500/50 font-bold text-[11px] cursor-pointer"
                     >
-                      FAST-FORWARD TO 00:05
+                      Skip to 00:05
                     </button>
                   )}
                 </div>
 
                 {modalClosed ? (
                   <div className="text-emerald-300 font-bold text-xs flex items-center justify-between">
-                    <span>CASE CLOSED (100% SOLVED — POINTER FADED)</span>
-                    <span>CLOSED AT: {formatEvidenceTimestampExact(selectedLog.closedAt)}</span>
+                    <span>Closed</span>
+                    <span>{formatEvidenceTimestampExact(selectedLog.closedAt)}</span>
                   </div>
                 ) : selectedLog.isVerified ? (
                   <div>
                     <div className="flex items-center justify-between text-xs text-cyan-300 font-bold mb-1.5">
                       <span>
-                        VERIFIED BY: {selectedLog.verifiedBy || 'LDRRMO Command'} AT{' '}
-                        {formatEvidenceTimestampExact(selectedLog.verifiedAt)}
+                        {selectedLog.verifiedBy || 'Command'} · {formatEvidenceTimestampExact(selectedLog.verifiedAt)}
                       </span>
                       <span className="text-sm font-black">
                         {formatMmSs(modalRemainingSec)} ({modalProgressPct}%)
@@ -1800,15 +1763,15 @@ export const MyReportsPage: React.FC = () => {
                   </div>
                 ) : (
                   <p className="text-slate-400 text-xs">
-                    Report is currently in <strong className="text-amber-300">ACTIVE / ONGOING OPERATIONS</strong>. Once verified by Admin or System AI (or via the button above), a 5-minute countdown (`05:00` → `00:00`) runs before automatically closing the case and incrementing <strong className="text-emerald-300">RESOLVED MISSIONS</strong>.
+                    Pending verification. Auto-closes at 00:00 once timer starts.
                   </p>
                 )}
               </div>
 
-              {/* Telemetry Metadata Grid: GPS, IP Address, Timestamp & Unit */}
+              {/* Telemetry Metadata Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                  <span className="text-slate-500 block text-[10px] mb-0.5">GPS COORDINATES &amp; SECTOR</span>
+                  <span className="text-slate-500 block text-[10px] mb-0.5">Location</span>
                   <span className="text-emerald-400 font-bold flex items-center gap-1">
                     <Crosshair className="w-3.5 h-3.5" />
                     <span>{formatGpsCoord(selectedLog.latitude, selectedLog.longitude)}</span>
@@ -1817,44 +1780,44 @@ export const MyReportsPage: React.FC = () => {
                 </div>
 
                 <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                  <span className="text-slate-500 block text-[10px] mb-0.5">TERMINAL IP TELEMETRY</span>
+                  <span className="text-slate-500 block text-[10px] mb-0.5">IP Address</span>
                   <span className="text-sky-300 font-bold flex items-center gap-1">
                     <Globe className="w-3.5 h-3.5" />
-                    <span>{selectedLog.ipAddress}</span>
+                    <span>{selectedLog.ipAddress.split(' ')[0]}</span>
                   </span>
                   <span className="text-slate-400 text-[10px] block mt-0.5">
-                    Hardware Geotag: {selectedLog.isHardwareGeolocated ? 'VERIFIED' : 'SIMULATED'}
+                    {selectedLog.isHardwareGeolocated ? 'Hardware GPS' : 'Fallback GPS'}
                   </span>
                 </div>
 
                 <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-                  <span className="text-slate-500 block text-[10px] mb-0.5">LOGGED TIMESTAMP</span>
+                  <span className="text-slate-500 block text-[10px] mb-0.5">Logged At</span>
                   <span className="text-white font-bold">
                     {formatEvidenceTimestampExact(selectedLog.createdAt)}
                   </span>
                   <span className="text-slate-400 text-[10px] block mt-0.5">
-                    Medic: {selectedLog.responderName}
+                    {selectedLog.responderName}
                   </span>
                 </div>
               </div>
 
-              {/* Clinical Narrative / Field Notes */}
+              {/* Field Notes */}
               <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800">
-                <span className="text-slate-400 font-bold block text-[10px] mb-1 uppercase flex items-center gap-1">
+                <span className="text-slate-400 font-bold block text-[10px] mb-1 flex items-center gap-1">
                   <FileText className="w-3.5 h-3.5 text-sky-400" />
-                  <span>CLINICAL SITUATION NARRATIVE &amp; FIELD OBSERVATIONS</span>
+                  <span>Field Notes</span>
                 </span>
                 <p className="text-slate-200 leading-relaxed font-sans text-xs">
-                  {selectedLog.note || 'No additional narrative notes provided.'}
+                  {selectedLog.note || 'No notes provided.'}
                 </p>
               </div>
 
               {/* Multi-Casualty PCR Vitals List */}
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-black text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
                     <HeartPulse className="w-4 h-4" />
-                    <span>MULTI-CASUALTY PCR VITALS LIST ({selectedLog.casualties.length} PATIENT RECORDS)</span>
+                    <span>PCR Vitals ({selectedLog.casualties.length})</span>
                   </span>
                 </div>
 
@@ -1867,7 +1830,7 @@ export const MyReportsPage: React.FC = () => {
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
                         <div className="flex items-center gap-2">
                           <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-500/40 font-black text-[10px]">
-                            PATIENT #{idx + 1}
+                            #{idx + 1}
                           </span>
                           <span className="text-white font-bold text-xs">{cas.patientName}</span>
                           <span className="text-slate-400 text-[11px]">
@@ -1875,42 +1838,42 @@ export const MyReportsPage: React.FC = () => {
                           </span>
                         </div>
                         <span className="px-2 py-0.5 rounded bg-rose-950/90 border border-rose-500/50 text-rose-300 text-[10px] font-bold">
-                          {cas.triageTag || 'RED — IMMEDIATE'}
+                          {cas.triageTag || 'RED'}
                         </span>
                       </div>
 
                       <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-[11px]">
                         <div className="p-2 rounded bg-slate-950 border border-slate-800">
-                          <span className="text-slate-500 block text-[9px]">BLOOD PRESSURE</span>
+                          <span className="text-slate-500 block text-[9px]">BP</span>
                           <span className="text-white font-bold">
-                            {cas.bloodPressureSystolic}/{cas.bloodPressureDiastolic} mmHg
+                            {cas.bloodPressureSystolic}/{cas.bloodPressureDiastolic}
                           </span>
                         </div>
                         <div className="p-2 rounded bg-slate-950 border border-slate-800">
-                          <span className="text-slate-500 block text-[9px]">HEART RATE</span>
-                          <span className="text-rose-400 font-bold">{cas.heartRateBpm} BPM</span>
+                          <span className="text-slate-500 block text-[9px]">HR</span>
+                          <span className="text-rose-400 font-bold">{cas.heartRateBpm} bpm</span>
                         </div>
                         <div className="p-2 rounded bg-slate-950 border border-slate-800">
-                          <span className="text-slate-500 block text-[9px]">RESP. RATE</span>
-                          <span className="text-sky-300 font-bold">{cas.respiratoryRate} /min</span>
+                          <span className="text-slate-500 block text-[9px]">RR</span>
+                          <span className="text-sky-300 font-bold">{cas.respiratoryRate}/min</span>
                         </div>
                         <div className="p-2 rounded bg-slate-950 border border-slate-800">
-                          <span className="text-slate-500 block text-[9px]">SpO2 SATURATION</span>
+                          <span className="text-slate-500 block text-[9px]">SpO2</span>
                           <span className="text-emerald-400 font-bold">{cas.spO2Percent}%</span>
                         </div>
                         <div className="p-2 rounded bg-slate-950 border border-slate-800">
-                          <span className="text-slate-500 block text-[9px]">TEMP</span>
+                          <span className="text-slate-500 block text-[9px]">Temp</span>
                           <span className="text-amber-300 font-bold">{cas.temperatureCelsius}°C</span>
                         </div>
                         <div className="p-2 rounded bg-slate-950 border border-slate-800">
-                          <span className="text-slate-500 block text-[9px]">CONSCIOUSNESS</span>
+                          <span className="text-slate-500 block text-[9px]">AVPU</span>
                           <span className="text-cyan-300 font-bold">{cas.levelOfConsciousness}</span>
                         </div>
                       </div>
 
                       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] pt-1">
                         <span className="text-slate-300">
-                          <strong className="text-slate-400">Chief Complaint:</strong> {cas.chiefComplaint}
+                          <strong className="text-slate-400">Complaint:</strong> {cas.chiefComplaint}
                         </span>
                         {cas.interventions && cas.interventions.length > 0 && (
                           <div className="flex flex-wrap gap-1">
@@ -1930,13 +1893,13 @@ export const MyReportsPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Up to 40 Timestamped Evidence Photos (YYYY-MM-DD hh:mm:ss A) */}
+              {/* Evidence Gallery */}
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                  <span className="text-xs font-black text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-sky-400 flex items-center gap-1.5">
                     <Layers className="w-4 h-4" />
                     <span>
-                      TIMESTAMPED EVIDENCE GALLERY ({selectedLog.evidencePhotos.length} / {MAX_EVIDENCE_PHOTOS} MAX PHOTOS)
+                      Evidence ({selectedLog.evidencePhotos.length}/{MAX_EVIDENCE_PHOTOS})
                     </span>
                   </span>
 
@@ -1950,14 +1913,14 @@ export const MyReportsPage: React.FC = () => {
                       className="px-3 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-slate-950 font-black text-[10px] inline-flex items-center gap-1 cursor-pointer"
                     >
                       <Camera className="w-3.5 h-3.5" />
-                      <span>CAPTURE EVIDENCE PHOTO ({selectedLog.evidencePhotos.length}/{MAX_EVIDENCE_PHOTOS})</span>
+                      <span>Capture ({selectedLog.evidencePhotos.length}/{MAX_EVIDENCE_PHOTOS})</span>
                     </button>
                   )}
                 </div>
 
                 {selectedLog.evidencePhotos.length === 0 ? (
                   <div className="p-6 rounded-lg bg-slate-900/60 border border-dashed border-slate-800 text-center text-slate-400">
-                    No timestamped photos attached yet. Click &quot;CAPTURE EVIDENCE PHOTO&quot; to attach up to 40 geotagged photos.
+                    No photos attached.
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-80 overflow-y-auto pr-1">
@@ -1991,7 +1954,7 @@ export const MyReportsPage: React.FC = () => {
 
               <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-800">
                 <Button variant="outline" size="sm" onClick={() => setSelectedLogId(null)}>
-                  Close Log Inspector
+                  Close
                 </Button>
               </div>
             </div>
@@ -1999,7 +1962,7 @@ export const MyReportsPage: React.FC = () => {
         );
       })()}
 
-      {/* Camera Capture Modal (Hardware WebRTC Anti-Spoofing) */}
+      {/* Camera Capture Modal */}
       <CameraCaptureModal
         isOpen={isCameraOpen}
         onClose={() => {
@@ -2007,7 +1970,7 @@ export const MyReportsPage: React.FC = () => {
           setCameraTargetLogId(null);
         }}
         onCapture={handleCameraCapture}
-        title="RHU Tactical Field Evidence Camera (YYYY-MM-DD hh:mm:ss A)"
+        title="Field Evidence Camera"
       />
 
       {/* Create New Field Incident Log Modal */}
@@ -2015,15 +1978,15 @@ export const MyReportsPage: React.FC = () => {
         <DefaultFloatingModalCard
           isOpen={isCreateModalOpen}
           onClose={() => setIsCreateModalOpen(false)}
-          title="SUBMIT RHU FIELD INCIDENT LOG & MULTI-CASUALTY PCR"
+          title="New Incident Report"
           maxWidth="max-w-2xl"
         >
           <form onSubmit={handleCreateLogSubmit} className="flex flex-col gap-4 text-xs font-mono">
-            {/* Captured Timestamped Evidence Photos Preview */}
+            {/* Captured Evidence Photos Preview */}
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sky-400 font-bold">
-                  TIMESTAMPED EVIDENCE PHOTOS ({capturedPhotos.length}/{MAX_EVIDENCE_PHOTOS})
+                  Evidence Photos ({capturedPhotos.length}/{MAX_EVIDENCE_PHOTOS})
                 </span>
                 {capturedPhotos.length < MAX_EVIDENCE_PHOTOS && (
                   <button
@@ -2035,7 +1998,7 @@ export const MyReportsPage: React.FC = () => {
                     className="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
                   >
                     <Camera className="w-3 h-3" />
-                    <span>+ ADD PHOTO</span>
+                    <span>+ Add Photo</span>
                   </button>
                 )}
               </div>
@@ -2053,12 +2016,12 @@ export const MyReportsPage: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-slate-300 font-bold">INCIDENT HEADLINE / DISPATCH TITLE *</label>
+              <label className="text-slate-300 font-bold">Title *</label>
               <input
                 type="text"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="e.g., Multi-Vehicle Trauma Collision at National Rd KM 24"
+                placeholder="Incident title"
                 required
                 className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-sky-500"
               />
@@ -2066,7 +2029,7 @@ export const MyReportsPage: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <label className="text-slate-300 font-bold">CATEGORY</label>
+                <label className="text-slate-300 font-bold">Category</label>
                 <select
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value)}
@@ -2080,7 +2043,7 @@ export const MyReportsPage: React.FC = () => {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-slate-300 font-bold">SEVERITY</label>
+                <label className="text-slate-300 font-bold">Severity</label>
                 <select
                   value={newSeverity}
                   onChange={(e) => setNewSeverity(e.target.value)}
@@ -2094,18 +2057,18 @@ export const MyReportsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Multi-Casualty PCR Vitals Quick Builder */}
+            {/* PCR Vitals Quick Builder */}
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-rose-400 font-bold">
-                  CASUALTY PCR VITALS ({newCasualties.length} PATIENT(S))
+                  PCR Vitals ({newCasualties.length})
                 </span>
                 <button
                   type="button"
                   onClick={handleAddCasualtyRow}
                   className="px-2.5 py-1 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-bold text-[10px] cursor-pointer"
                 >
-                  + ADD CASUALTY PATIENT
+                  + Add Patient
                 </button>
               </div>
               <div className="flex flex-col gap-2 max-h-40 overflow-y-auto">
@@ -2124,12 +2087,12 @@ export const MyReportsPage: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-slate-300 font-bold">CLINICAL NARRATIVE &amp; FIELD ACTIONS</label>
+              <label className="text-slate-300 font-bold">Field Notes</label>
               <textarea
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
                 rows={3}
-                placeholder="Details of patient stabilization, ambulance transport, and hospital endorsement..."
+                placeholder="Stabilization and transport notes..."
                 className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-sky-500"
               />
             </div>
@@ -2140,7 +2103,7 @@ export const MyReportsPage: React.FC = () => {
               </Button>
               <Button variant="danger" size="sm" type="submit" isLoading={isSubmitting}>
                 <Radio className="w-3.5 h-3.5 inline mr-1" />
-                <span>Submit Incident Log</span>
+                <span>Submit Report</span>
               </Button>
             </div>
           </form>
@@ -2152,7 +2115,7 @@ export const MyReportsPage: React.FC = () => {
         isOpen={lightboxImageUrl !== null}
         onClose={() => setLightboxImageUrl(null)}
         imageUrl={lightboxImageUrl}
-        title="RHU Timestamped Incident Evidence"
+        title="Incident Evidence"
       />
     </div>
   );
