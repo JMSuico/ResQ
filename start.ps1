@@ -23,7 +23,7 @@ if ($Dev -and -not $Action) {
 
 if (Test-Path $manageScript) {
     if ($Action) {
-        & $manageScript -Action $Action
+        & $manageScript -Action $Action -RemainingArgs $RemainingArgs
     } else {
         & $manageScript
     }

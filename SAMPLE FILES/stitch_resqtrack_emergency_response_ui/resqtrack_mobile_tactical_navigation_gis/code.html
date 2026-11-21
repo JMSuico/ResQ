@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#4A041A;color:#FFECED;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}.clay-card{background:linear-gradient(145deg,#52051D,#3E0316);box-shadow:0 8px 20px -4px rgba(25,0,7,0.7),inset 0 1px 1px rgba(255,178,186,0.18),inset 0 -2px 4px rgba(0,0,0,0.4);}.clay-dock{background:rgba(62,3,22,0.85);box-shadow:0 -8px 24px -4px rgba(20,0,5,0.7),inset 0 1px 1px rgba(255,178,186,0.25);}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-error": "#690005", "primary-container": "#670626", "on-error-container": "#ffdad6", "on-tertiary-container": "#704b1d", "on-secondary": "#522128", "on-tertiary": "#452B00", "primary-fixed": "#ffd9dc", "on-surface": "#FFECED", "background": "#30000d", "error-container": "#93000A", "outline-variant": "#534344", "inverse-on-surface": "#5d1428", "on-background": "#ffd9de", "primary": "#ffd9dc", "on-secondary-fixed-variant": "#6d363d", "on-secondary-container": "#FFD9DD", "surface-container-highest": "#7C0930", "tertiary": "#ffddbb", "on-primary-fixed-variant": "#6d363e", "inverse-surface": "#FFECED", "on-primary-container": "#FFD9DD", "secondary-container": "#6d363d", "on-primary": "#522028", "primary-fixed-dim": "#ffb2ba", "on-surface-variant": "#d7c2c3", "surface-variant": "#63192c", "tertiary-fixed": "#ffddbb", "outline": "#A18A8B", "secondary-fixed-dim": "#feb2b9", "surface-tint": "#ffb2ba", "surface-container-high": "#670626", "surface-container-low": "#3E0316", "surface": "#4A041A", "on-secondary-fixed": "#370c14", "on-tertiary-fixed-variant": "#623f13", "tertiary-fixed-dim": "#f1bd85", "tertiary-container": "#5F3F19", "on-primary-fixed": "#370b14", "surface-bright": "#5D0722", "inverse-primary": "#894d54", "surface-dim": "#380213", "surface-container": "#52051D", "surface-container-lowest": "#2B010E", "error": "#FFB4AB", "secondary": "#feb2b9", "on-tertiary-fixed": "#2b1700", "secondary-fixed": "#ffdadc" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "gutter-desktop": "1.5rem", "space-sm": "0.5rem", "margin": "1rem", "space-md": "1rem", "gutter": "1rem", "space-xl": "2rem", "space-lg": "1.5rem", "space-xs": "0.25rem", "margin-desktop": "2rem" }, "fontFamily": { "label-sm": ["Plus Jakarta Sans"], "label-md": ["Plus Jakarta Sans"], "headline-lg": ["Plus Jakarta Sans"], "body-lg": ["Plus Jakarta Sans"], "body-md": ["Plus Jakarta Sans"], "headline-md": ["Plus Jakarta Sans"], "title-md": ["Plus Jakarta Sans"], "title-lg": ["Plus Jakarta Sans"], "headline-sm": ["Plus Jakarta Sans"], "label-lg": ["Plus Jakarta Sans"] }, "fontSize": { "label-sm": ["11px", { "lineHeight": "15.4px", "fontWeight": "500" }], "label-md": ["12px", { "lineHeight": "16.8px", "fontWeight": "500" }], "headline-lg": ["32px", { "lineHeight": "38px", "fontWeight": "700" }], "body-lg": ["15px", { "lineHeight": "22.5px", "fontWeight": "400" }], "body-md": ["14px", { "lineHeight": "21px", "fontWeight": "400" }], "headline-md": ["26px", { "lineHeight": "32.5px", "fontWeight": "700" }], "title-md": ["16px", { "lineHeight": "23.2px", "fontWeight": "600" }], "title-lg": ["18px", { "lineHeight": "25.2px", "fontWeight": "600" }], "headline-sm": ["22px", { "lineHeight": "28.6px", "fontWeight": "600" }], "label-lg": ["13px", { "lineHeight": "18.2px", "fontWeight": "600" }] } } } };</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-md text-on-surface antialiased flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/85 backdrop-blur-xl shadow-[0_4px_16px_rgba(20,0,5,0.4)]"><div class="h-20 px-margin flex items-center justify-between gap-space-sm"><div class="flex flex-col gap-0.5 min-w-0"><div class="flex items-center gap-space-xs"><span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span><span class="font-label-sm text-label-sm text-secondary tracking-wider uppercase font-semibold truncate">ONLINE // GPS SYNC 0.4s</span></div><div class="flex items-center gap-space-xs"><h1 class="font-title-lg text-title-lg text-on-surface font-bold tracking-tight truncate">Navigation Gis</h1><span class="px-1.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-sm text-label-sm">RESQ-01</span></div></div><div class="flex items-center gap-space-xs shrink-0"><div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-container-lowest shadow-inner text-secondary font-label-sm text-label-sm"><span class="material-symbols-outlined text-[14px]">battery_charging_full</span><span class="font-semibold">94%</span><span class="opacity-40">|</span><span class="material-symbols-outlined text-[14px]">radio</span><span class="font-semibold">VHF-1</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-20 pb-28 px-margin bg-surface"><div class="flex flex-col w-full gap-space-md">
+<!-- SECTION 1: Tactical HUD Turn-by-Turn Card (Warm Ivory Claymorphic) -->
+<section class="relative w-full rounded-xl p-space-md transition-all duration-300" style="background-color: #F7F1EA; box-shadow: 0 14px 28px -6px rgba(25, 0, 7, 0.55), inset 0 2px 3px rgba(255, 255, 255, 0.9), inset 0 -3px 4px rgba(160, 130, 120, 0.35);">
+<div class="flex items-start justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm min-w-0">
+<!-- Turn Arrow Instrument Pill -->
+<div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-md" style="background: linear-gradient(135deg, #670626, #4A041A); box-shadow: 0 6px 12px rgba(74, 4, 26, 0.45), inset 0 1px 1px rgba(255, 178, 186, 0.4);">
+<span class="material-symbols-outlined text-primary text-[28px] transform rotate-45">turn_sharp_right</span>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-1.5">
+<span class="px-1.5 py-0.5 rounded-full bg-surface-container text-on-surface font-label-sm text-label-sm tracking-wider uppercase font-bold">NEXT MANEUVER</span>
+<span class="w-2 h-2 rounded-full bg-error animate-ping"></span>
+</div>
+<p class="font-title-lg text-title-lg font-bold truncate" style="color: #380213;">In 250m turn right</p>
+<p class="font-label-md text-label-md truncate font-semibold" style="color: #6d363d;">Rizal Ave / National Hwy (Route 1)</p>
+</div>
+</div>
+<!-- Tactical Voice Guidance Toggle -->
+<button class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 active:scale-90 transition-transform" id="voice-toggle-btn" style="background-color: #EFE7DE; box-shadow: 0 4px 8px rgba(70, 30, 40, 0.15), inset 0 1px 1px #FFFFFF, inset 0 -2px 2px rgba(160, 130, 120, 0.25);">
+<span class="material-symbols-outlined text-[20px]" style="color: #52051D;">volume_up</span>
+</button>
+</div>
+<!-- Telemetry Gauge Rail -->
+<div class="grid grid-cols-3 gap-space-xs mt-space-sm pt-space-xs border-t-0">
+<div class="flex flex-col items-center justify-center py-2 rounded-lg" style="background-color: rgba(229, 218, 206, 0.6); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);">
+<span class="font-label-sm text-label-sm tracking-wider uppercase font-semibold" style="color: #70333C;">TARGET DIST</span>
+<div class="flex items-baseline gap-0.5">
+<span class="font-headline-sm text-headline-sm font-bold tracking-tight" style="color: #380213;">1.2</span>
+<span class="font-label-sm text-label-sm font-bold" style="color: #70333C;">km</span>
+</div>
+</div>
+<div class="flex flex-col items-center justify-center py-2 rounded-lg" style="background-color: rgba(229, 218, 206, 0.6); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);">
+<span class="font-label-sm text-label-sm tracking-wider uppercase font-semibold" style="color: #70333C;">EST. TIME</span>
+<div class="flex items-baseline gap-0.5">
+<span class="font-headline-sm text-headline-sm font-bold tracking-tight text-primary-container">02:45</span>
+<span class="font-label-sm text-label-sm font-bold text-primary-container">s</span>
+</div>
+</div>
+<div class="flex flex-col items-center justify-center py-2 rounded-lg" style="background-color: rgba(229, 218, 206, 0.6); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);">
+<span class="font-label-sm text-label-sm tracking-wider uppercase font-semibold" style="color: #70333C;">SPEED</span>
+<div class="flex items-baseline gap-0.5">
+<span class="font-headline-sm text-headline-sm font-bold tracking-tight" style="color: #380213;">58</span>
+<span class="font-label-sm text-label-sm font-bold" style="color: #70333C;">km/h</span>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 2: Dynamic Tactical Map Canvas & Waypoint Overlay -->
+<section class="relative w-full rounded-xl overflow-hidden shadow-2xl" style="background-color: #380213; min-height: 310px; box-shadow: 0 12px 30px -4px rgba(25, 0, 7, 0.7), inset 0 1px 1px rgba(255, 178, 186, 0.15);">
+<!-- Static Map Baseline Layer -->
+<div class="absolute inset-0 w-full h-full bg-cover bg-center filter contrast-125 brightness-75 opacity-75" data-location="Katipunan, Zamboanga del Norte, Philippines" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuASOfZmt7HkBKeHNWf7pjWhWvHav--M0nlEKfUUApY0Zz3y4-SOLY8sWmhfZ1wK0BmRIsOlpMi0RSEKECjXXBYHQPPtFMnQem7DCYqIxfZTZNHsS2_koBhuc89KuVKwEjV49IuvdTxwY2iSlvWczvCiTwB1MKkKZ8MoaiqaIAnWfUeqa2UYzkEriQUhWP0QTaNWxGQ1nd0byx3VoCyrhcsAq0Fe1H0WX6LJnZJNcs0');">
+</div>
+<!-- Tactical SVG Vector HUD Layer (Route line, Grid lines, Pulsing Beacons) -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none" preserveaspectratio="none" viewbox="0 0 400 320" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<!-- Route Crimson Gradient -->
+<lineargradient id="routeGradient" x1="0%" x2="100%" y1="100%" y2="0%">
+<stop offset="0%" stop-color="#FFB2BA" stop-opacity="0.9"></stop>
+<stop offset="40%" stop-color="#FF5277" stop-opacity="0.95"></stop>
+<stop offset="100%" stop-color="#670626" stop-opacity="1"></stop>
+</lineargradient>
+<!-- Glow filter for route -->
+<filter height="140%" id="crimsonGlow" width="140%" x="-20%" y="-20%">
+<fegaussianblur result="blur" stddeviation="3"></fegaussianblur>
+<femerge>
+<femergenode in="blur"></femergenode>
+<femergenode in="SourceGraphic"></femergenode>
+</femerge>
+</filter>
+</defs>
+<!-- Soft Tactical Compass Radial Reticle -->
+<circle cx="180" cy="180" fill="none" opacity="0.25" r="140" stroke="#FFB2BA" stroke-dasharray="4,6" stroke-width="0.5"></circle>
+<circle cx="180" cy="180" fill="none" opacity="0.3" r="80" stroke="#FFB2BA" stroke-dasharray="3,3" stroke-width="0.5"></circle>
+<line opacity="0.15" stroke="#FFB2BA" stroke-width="0.5" x1="180" x2="180" y1="20" y2="300"></line>
+<line opacity="0.15" stroke="#FFB2BA" stroke-width="0.5" x1="20" x2="360" y1="180" y2="180"></line>
+<!-- High-Intensity Mission Route (MDRRMO Station to Poblacion Incident) -->
+<path d="M 65,270 L 115,225 L 180,185 L 255,145 L 290,95 L 340,75" fill="none" filter="url(#crimsonGlow)" stroke="url(#routeGradient)" stroke-linecap="round" stroke-linejoin="round" stroke-width="7"></path>
+<!-- Inner route guide dashes -->
+<path d="M 65,270 L 115,225 L 180,185 L 255,145 L 290,95 L 340,75" fill="none" opacity="0.9" stroke="#FFF4F5" stroke-dasharray="6,8" stroke-linecap="round" stroke-width="2"></path>
+</svg>
+<!-- UI Overlay Elements on Map -->
+<!-- Top-left Sector & Grid coordinate tag -->
+<div class="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-lowest/80 backdrop-blur-md shadow-md">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span class="font-label-sm text-label-sm text-secondary tracking-widest font-mono">SECTOR 04 // 8.5142°N, 123.2844°E</span>
+</div>
+<!-- Top-right Map Controls (Recenter, Layers) -->
+<div class="absolute top-3 right-3 flex flex-col gap-1.5">
+<button class="w-8 h-8 rounded-lg flex items-center justify-center bg-surface-container-lowest/85 backdrop-blur-md text-on-surface hover:text-secondary active:scale-95 transition-all shadow-md">
+<span class="material-symbols-outlined text-[18px]">layers</span>
+</button>
+<button class="w-8 h-8 rounded-lg flex items-center justify-center bg-surface-container-lowest/85 backdrop-blur-md text-on-surface hover:text-secondary active:scale-95 transition-all shadow-md">
+<span class="material-symbols-outlined text-[18px]">my_location</span>
+</button>
+</div>
+<!-- Origin: MDRRMO Station Marker -->
+<div class="absolute bottom-10 left-12 transform -translate-x-1/2 translate-y-1/2 flex flex-col items-center">
+<div class="px-2 py-0.5 rounded bg-surface-container-lowest/90 text-on-surface-variant font-label-sm text-label-sm mb-1 shadow font-bold">
+        MDRRMO
+      </div>
+<div class="w-5 h-5 rounded-full bg-surface-container-high flex items-center justify-center shadow-lg">
+<span class="w-2.5 h-2.5 rounded-full bg-on-surface"></span>
+</div>
+</div>
+<!-- Active Unit GPS Pin: RESQ-01 (Animated Radar Ripple) -->
+<div class="absolute top-[175px] left-[175px] transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-20">
+<div class="relative flex items-center justify-center">
+<span class="absolute w-10 h-10 rounded-full bg-secondary opacity-40 animate-ping"></span>
+<span class="absolute w-7 h-7 rounded-full bg-secondary/50 animate-pulse"></span>
+<div class="relative w-8 h-8 rounded-full flex items-center justify-center text-on-primary font-bold shadow-xl" style="background: linear-gradient(135deg, #ffd9dc, #ffb2ba); border: 2px solid #52051D;">
+<span class="material-symbols-outlined text-[18px] text-on-primary font-extrabold transform -rotate-45">navigation</span>
+</div>
+</div>
+<div class="mt-1 px-2 py-0.5 rounded-full bg-surface-container-lowest/95 backdrop-blur shadow-md flex items-center gap-1">
+<span class="font-label-sm text-label-sm font-bold text-secondary">RESQ-01</span>
+</div>
+</div>
+<!-- Intermediate Hazard Alert Flag (Oil Slick) -->
+<div class="absolute top-[138px] left-[250px] transform -translate-x-1/2 -translate-y-1/2 flex items-center gap-1 z-10">
+<div class="w-7 h-7 rounded-full bg-error-container text-on-error-container flex items-center justify-center shadow-lg animate-bounce">
+<span class="material-symbols-outlined text-[16px]">warning</span>
+</div>
+</div>
+<!-- Incident Destination Target Marker -->
+<div class="absolute top-[70px] left-[335px] transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10">
+<div class="relative flex items-center justify-center">
+<span class="absolute w-9 h-9 rounded-full bg-error opacity-30 animate-ping"></span>
+<div class="w-8 h-8 rounded-full bg-error-container text-on-error-container flex items-center justify-center shadow-lg">
+<span class="material-symbols-outlined text-[18px] text-error font-bold">crisis_alert</span>
+</div>
+</div>
+<div class="mt-1 px-1.5 py-0.5 rounded bg-error-container/90 text-on-error-container font-label-sm text-label-sm font-bold shadow">
+        POBLACION
+      </div>
+</div>
+<!-- Live Situational Warning Strip on Map Bottom -->
+<div class="absolute bottom-2 left-3 right-3 py-1.5 px-3 rounded-lg flex items-center justify-between backdrop-blur-md" style="background-color: rgba(43, 1, 14, 0.85); box-shadow: 0 4px 10px rgba(0,0,0,0.5);">
+<div class="flex items-center gap-2 min-w-0">
+<span class="material-symbols-outlined text-[16px] text-tertiary shrink-0 animate-pulse">crisis_alert</span>
+<p class="font-label-sm text-label-sm text-on-surface truncate">
+          Active Congestion at Rizal Junction <span class="text-tertiary font-bold">(+1m 15s)</span>
+</p>
+</div>
+<span class="font-label-sm text-label-sm font-bold text-secondary shrink-0 uppercase tracking-tight">AI GIS FEED</span>
+</div>
+</section>
+<!-- SECTION 3: Quick Incident Context Card (Floating Warm Ivory Claymorphic) -->
+<section class="relative w-full rounded-xl p-space-md flex flex-col gap-space-xs transition-all" style="background-color: #F7F1EA; box-shadow: 0 14px 28px -6px rgba(25, 0, 7, 0.55), inset 0 2px 3px rgba(255, 255, 255, 0.9), inset 0 -3px 4px rgba(160, 130, 120, 0.35);">
+<!-- Header with incident target info -->
+<div class="flex items-center justify-between pb-1">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded-full font-label-sm text-label-sm font-bold" style="background-color: #670626; color: #FFD9DD;">
+          CODE 3 RESPONSE
+        </span>
+<span class="font-label-sm text-label-sm font-semibold" style="color: #6d363d;">INC-8821-B</span>
+</div>
+<div class="flex items-center gap-1 font-label-sm text-label-sm font-bold" style="color: #52051D;">
+<span class="material-symbols-outlined text-[15px]">location_on</span>
+<span>Purok Rosal</span>
+</div>
+</div>
+<!-- Title and primary dispatch call -->
+<h2 class="font-title-lg text-title-lg font-bold leading-tight" style="color: #380213;">
+      Target: Purok Rosal Crash Site
+    </h2>
+<p class="font-body-md text-body-md font-medium" style="color: #522128;">
+      Two-vehicle impact involving light commercial truck &amp; passenger tricycle.
+    </p>
+<!-- Tactical Status Callouts: Road Status & Environmental Hazards -->
+<div class="flex flex-col gap-1.5 mt-1">
+<!-- Status Item 1: Road Condition -->
+<div class="flex items-start gap-2 p-2 rounded-lg" style="background-color: #ECE2D6;">
+<span class="material-symbols-outlined text-[18px] shrink-0 mt-0.5" style="color: #704b1d;">traffic</span>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-label-sm font-bold uppercase tracking-wider" style="color: #704b1d;">Road Status</span>
+<span class="font-body-md text-body-md font-medium leading-snug truncate" style="color: #380213;">
+            Northbound Lane Blocked — Barangay Tanod rerouting traffic via bypass
+          </span>
+</div>
+</div>
+<!-- Status Item 2: AI Hazard Alert -->
+<div class="flex items-start gap-2 p-2 rounded-lg" style="background-color: #F8D8DC;">
+<span class="material-symbols-outlined text-[18px] shrink-0 mt-0.5" style="color: #93000A;">oil_barrel</span>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-1">
+<span class="font-label-sm text-label-sm font-bold uppercase tracking-wider" style="color: #93000A;">Critical Hazard Alert</span>
+<span class="px-1 rounded bg-error-container text-on-error-container font-label-sm text-[10px] font-bold">AI FLAGGED</span>
+</div>
+<span class="font-body-md text-body-md font-medium leading-snug truncate" style="color: #690005;">
+            Lubricant oil spill across 35m stretch. Extreme surface slip risk.
+          </span>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 4: Mission Milestone Action Bar (Warm Ivory High-Relief Clay Buttons) -->
+<section class="flex flex-col gap-space-sm pt-space-xs">
+<!-- Primary High-Relief Milestone Button: ARRIVED ON SCENE -->
+<button class="relative w-full h-14 rounded-xl flex items-center justify-center gap-2.5 font-title-md text-title-md font-bold uppercase tracking-wide transition-all active:scale-[0.98]" id="btn-arrived" style="background: linear-gradient(180deg, #FFFFFF 0%, #F5ECE2 100%); color: #4A041A; box-shadow: 0 10px 22px -3px rgba(20, 0, 5, 0.7), inset 0 2px 3px #FFFFFF, inset 0 -3px 4px rgba(180, 140, 130, 0.45);">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 1; color: #670626;">fmd_good</span>
+<span>ARRIVED ON SCENE</span>
+<span class="w-2.5 h-2.5 rounded-full bg-secondary-container"></span>
+</button>
+<!-- Secondary Split Tactical Controls: Reroute Diversion + VHF PTT Mic -->
+<div class="grid grid-cols-2 gap-space-sm">
+<!-- Reroute Button -->
+<button class="h-12 rounded-xl flex items-center justify-center gap-2 font-label-lg text-label-lg font-bold transition-all active:scale-95" id="btn-reroute" style="background-color: #F7F1EA; color: #52051D; box-shadow: 0 6px 14px rgba(25, 0, 7, 0.4), inset 0 1.5px 2px #FFFFFF, inset 0 -2px 3px rgba(170, 130, 120, 0.35);">
+<span class="material-symbols-outlined text-[20px]" style="color: #70333C;">alt_route</span>
+<span class="truncate">Reroute via Diversion</span>
+</button>
+<!-- VHF PTT Mic Button with Tactile Press State -->
+<button class="h-12 rounded-xl flex items-center justify-center gap-2 font-label-lg text-label-lg font-bold transition-all active:scale-95 select-none" id="btn-ptt-mic" style="background-color: #F7F1EA; color: #52051D; box-shadow: 0 6px 14px rgba(25, 0, 7, 0.4), inset 0 1.5px 2px #FFFFFF, inset 0 -2px 3px rgba(170, 130, 120, 0.35);">
+<span class="material-symbols-outlined text-[20px]" id="mic-icon" style="color: #670626;">mic</span>
+<span id="ptt-text">PTT Ch. 1</span>
+<span class="w-2 h-2 rounded-full bg-outline hidden" id="tx-dot"></span>
+</button>
+</div>
+</section>
+</div>
+<script>
+  (function () {
+    // Interactive Push-To-Talk Button Behavior
+    const pttBtn = document.getElementById('btn-ptt-mic');
+    const micIcon = document.getElementById('mic-icon');
+    const pttText = document.getElementById('ptt-text');
+    const txDot = document.getElementById('tx-dot');
+    let isTransmitting = false;
+
+    if (pttBtn) {
+      const startTx = () => {
+        isTransmitting = true;
+        pttBtn.style.background = '#670626';
+        pttBtn.style.color = '#FFD9DD';
+        pttBtn.style.boxShadow = 'inset 0 3px 6px rgba(0,0,0,0.6)';
+        micIcon.style.color = '#FFB2BA';
+        pttText.textContent = 'TRANSMITTING...';
+        if (txDot) {
+          txDot.classList.remove('hidden');
+          txDot.classList.add('bg-error', 'animate-ping');
+        }
+      };
+
+      const stopTx = () => {
+        if (!isTransmitting) return;
+        isTransmitting = false;
+        pttBtn.style.background = '#F7F1EA';
+        pttBtn.style.color = '#52051D';
+        pttBtn.style.boxShadow = '0 6px 14px rgba(25, 0, 7, 0.4), inset 0 1.5px 2px #FFFFFF, inset 0 -2px 3px rgba(170, 130, 120, 0.35)';
+        micIcon.style.color = '#670626';
+        pttText.textContent = 'PTT Ch. 1';
+        if (txDot) {
+          txDot.classList.add('hidden');
+          txDot.classList.remove('bg-error', 'animate-ping');
+        }
+      };
+
+      pttBtn.addEventListener('mousedown', startTx);
+      window.addEventListener('mouseup', stopTx);
+      pttBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startTx(); }, { passive: false });
+      window.addEventListener('touchend', stopTx);
+    }
+
+    // Voice guidance icon toggle
+    const voiceBtn = document.getElementById('voice-toggle-btn');
+    if (voiceBtn) {
+      voiceBtn.addEventListener('click', () => {
+        const icon = voiceBtn.querySelector('span');
+        if (icon.textContent === 'volume_up') {
+          icon.textContent = 'volume_off';
+          icon.style.opacity = '0.5';
+        } else {
+          icon.textContent = 'volume_up';
+          icon.style.opacity = '1';
+        }
+      });
+    }
+
+    // Milestone Arrival Confirmation Microinteraction
+    const arrivedBtn = document.getElementById('btn-arrived');
+    if (arrivedBtn) {
+      arrivedBtn.addEventListener('click', () => {
+        arrivedBtn.style.background = 'linear-gradient(180deg, #670626, #4A041A)';
+        arrivedBtn.style.color = '#FFD9DD';
+        arrivedBtn.innerHTML = `
+          <span class="material-symbols-outlined text-[24px] text-secondary">check_circle</span>
+          <span>ON SCENE REGISTERED (08:42:15)</span>
+        `;
+      });
+    }
+  })();
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe clay-dock backdrop-blur-xl shadow-[0_-8px_20px_rgba(20,0,5,0.6)]" data-active-classes="text-primary scale-105"><div class="h-20 px-space-sm flex items-center justify-around"><a class="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center gap-1 text-on-surface-variant hover:text-on-surface transition-all active:scale-95" data-path="incidents" href="#"><span class="material-symbols-outlined text-[22px]">emergency</span><span class="font-label-sm text-label-sm tracking-tight">Incidents</span></a><a aria-current="page" class="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center gap-1 transition-all text-primary scale-105" data-path="navigation-gis" href="#"><span class="material-symbols-outlined text-[22px]">explore</span><span class="font-label-sm text-label-sm tracking-tight">Nav / GIS</span></a><a class="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center gap-1 text-on-surface-variant hover:text-on-surface transition-all active:scale-95" data-path="patient-triage" href="#"><span class="material-symbols-outlined text-[22px]">medical_services</span><span class="font-label-sm text-label-sm tracking-tight">Triage</span></a><a class="min-h-[44px] min-w-[44px] flex flex-col items-center justify-center gap-1 text-on-surface-variant hover:text-on-surface transition-all active:scale-95" data-path="status-comms" href="#"><span class="material-symbols-outlined text-[22px]">cell_tower</span><span class="font-label-sm text-label-sm tracking-tight">Comms</span></a></div></nav></body></html>

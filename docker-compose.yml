@@ -7,7 +7,7 @@
 # Services:
 #   1. resqtrack-cache       (:6379) - Redis 7 Alpine Caching & Session Store
 #   2. resqtrack-db-primary  (:5432) - PostgreSQL 16 Alpine Primary Relational DB
-#   3. resqtrack-db-replica  (:5433) - PostgreSQL 16 Alpine Standby Read Replica
+#   3. resqtrack-db-replica  (:5433) - PostgreSQL 16 Alpine Standby Read Replica (replica profile)
 #   4. resqtrack-backend     (:1999) - .NET 10 Web API Core Engine
 #   5. resqtrack-admin       (:1996) - LDRRMO Admin Executive Command Center
 #   6. resqtrack-responders  (:1997) - Emergency Responders (RHU / Fire / PNP)
@@ -69,7 +69,7 @@ services:
       - resqtrack-network
 
   # ----------------------------------------------------------------------------
-  # 3. Standby Read-Replica Relational Database (PostgreSQL 16 on Alpine Linux)
+  # 3. Standby Read-Replica Relational Database (Optional: `replica` profile)
   # ----------------------------------------------------------------------------
   resqtrack-db-replica:
     image: postgres:16-alpine
@@ -95,6 +95,8 @@ services:
       start_period: 10s
     networks:
       - resqtrack-network
+    profiles:
+      - replica
 
   # ----------------------------------------------------------------------------
   # 4. Backend Core Engine (.NET 10 Web API -- Multi-Stage Source Build)

@@ -5,8 +5,12 @@ using Backend.Features.Data.Enums;
 using Backend.Features.Data.Models;
 using Backend.Features.Repositories.Implementations;
 using Backend.Features.Services.Implementations;
+using Backend.Features.Services.IncidentVision;
+using Backend.Features.Services.Interfaces;
 using Backend.Features.Api.DTOs;
 using Backend.Features.Helpers.Infrastructure;
+using Microsoft.Extensions.Configuration;
+using ResQTrack.Backend.Features.Services.Biometrics;
 
 namespace Backend.Tests;
 
@@ -314,10 +318,9 @@ public class SecurityAndPersistenceTests
         Assert.False(successMismatch);
         Assert.Contains("mismatch", errorMismatch, StringComparison.OrdinalIgnoreCase);
 
-        // Verify audit log attempt recorded in DB
+        // Verify biometric mismatch never writes failed LoginAttempts that could trigger password lockout
         var failedAttempt = await db.LoginAttempts.FirstOrDefaultAsync(l => l.AccountIdentifier == user.Email && !l.Success);
-        Assert.NotNull(failedAttempt);
-        Assert.Contains("BIOMETRIC_MISMATCH", failedAttempt.FailureReason);
+        Assert.Null(failedAttempt);
     }
 
     [Fact]
@@ -362,7 +365,7 @@ public class SecurityAndPersistenceTests
     }
 
     [Fact]
-    public async Task AuthService_BiometricLogin_AccountLockout_BlocksAfterFiveBiometricFailures()
+    public async Task AuthService_BiometricLogin_NeverLocksOut_AfterRepeatedFailures_OrPriorEmailAttempts()
     {
         using var db = CreateInMemoryDbContext();
         var userRepo = new UserRepository(db);
@@ -373,8 +376,8 @@ public class SecurityAndPersistenceTests
         var (hash, salt) = ScryptPasswordHelper.HashPassword("CorrectPassword123!@#");
         var user = new User
         {
-            Email = "bio.lockout@resqtrack.gov.ph",
-            FullName = "BIO LOCKOUT USER",
+            Email = "bio.nolockout@resqtrack.gov.ph",
+            FullName = "BIO NO LOCKOUT USER",
             Role = UserRole.Civilian,
             Status = AccountStatus.Verified,
             PasswordHash = hash,
@@ -400,29 +403,32 @@ public class SecurityAndPersistenceTests
         });
         await db.SaveChangesAsync();
 
-        // 5 consecutive mismatch attempts along orthogonal dimension
+        // 6 consecutive biometric mismatch attempts must NOT lock out the account
         float[] mismatch = new float[128];
         mismatch[5] = 1.0f;
-        for (int i = 0; i < 5; i++)
+        for (int i = 0; i < 6; i++)
         {
-            var (failRes, _, _, _) = await authService.BiometricLoginAsync(
+            var (failRes, failErr, _, _) = await authService.BiometricLoginAsync(
                 new BiometricLoginRequest(user.Email, mismatch),
                 "127.0.0.1",
                 "TestAgent");
             Assert.False(failRes);
+            Assert.DoesNotContain("temporarily locked", failErr ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         }
 
-        // 6th attempt with a 100% PERFECT matching vector MUST STILL BE LOCKED OUT
+        // Next attempt with matching live face vector MUST succeed immediately without 15-minute lockout
         float[] perfectMatch = new float[128];
         perfectMatch[0] = 1.0f;
 
-        var (lockedRes, lockedErr, _, _) = await authService.BiometricLoginAsync(
+        var (okRes, okErr, rawToken, session) = await authService.BiometricLoginAsync(
             new BiometricLoginRequest(user.Email, perfectMatch),
             "127.0.0.1",
             "TestAgent");
 
-        Assert.False(lockedRes);
-        Assert.Contains("locked", lockedErr, StringComparison.OrdinalIgnoreCase);
+        Assert.True(okRes, $"Expected biometric login to succeed without lockout, got error: {okErr}");
+        Assert.Null(okErr);
+        Assert.False(string.IsNullOrWhiteSpace(rawToken));
+        Assert.NotNull(session);
     }
 
     [Fact]
@@ -537,8 +543,667 @@ public class SecurityAndPersistenceTests
         Assert.Equal("not_checked", pwdUnified.OfficialVerificationStatus);
     }
 
+    [Fact]
+    public async Task MultiLayerBiometricLoginStrategy_1ToN_DeduplicatesClonedGalleries_SoEarlierDistinctAccountMatches()
+    {
+        using var db = CreateInMemoryDbContext();
+        var (hash, salt) = ScryptPasswordHelper.HashPassword("StrongPass123!@#");
+
+        string tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC";
+        string suicoPoseJson = $"{{\"bestFrames\":{{\"CENTER\":\"{tinyPng}\"}},\"poseTag\":\"SUICO_DISTINCT_FRAME\"}}";
+
+        var suicoUser = new User
+        {
+            Email = "suico.real@gmail.com",
+            FullName = "JHONMARK SUICO",
+            Role = UserRole.Civilian,
+            Status = AccountStatus.Verified,
+            FaceVerified = true,
+            PasswordHash = hash,
+            PasswordSalt = salt
+        };
+        db.Users.Add(suicoUser);
+
+        float[] suicoVec = new float[128];
+        suicoVec[42] = 1.0f;
+        byte[] suicoBytes = new byte[128 * sizeof(float)];
+        Buffer.BlockCopy(suicoVec, 0, suicoBytes, 0, suicoBytes.Length);
+
+        db.BiometricEnrollments.Add(new BiometricEnrollment
+        {
+            UserId = suicoUser.Id,
+            EncryptedTemplateData = suicoBytes,
+            PoseFramesJson = suicoPoseJson,
+            TemplateFormat = "128D_FLOAT32_NORMALIZED",
+            ModelIdentifier = "ClaudeVision-128D-MultiPose-v2",
+            ModelVersion = "v1.0.0",
+            EnrollmentStatus = "ACTIVE",
+            EnrolledAtUtc = DateTime.UtcNow.AddDays(-2)
+        });
+
+        // Seed 20 newer cloned enrollments sharing an identical synthetic pose payload & vector
+        float[] cloneVec = new float[128];
+        cloneVec[0] = 1.0f;
+        byte[] cloneBytes = new byte[128 * sizeof(float)];
+        Buffer.BlockCopy(cloneVec, 0, cloneBytes, 0, cloneBytes.Length);
+
+        for (int i = 0; i < 20; i++)
+        {
+            var cloneUser = new User
+            {
+                Email = $"clone.{i}@katipunan.local",
+                FullName = $"Clone Test {i}",
+                Role = UserRole.Civilian,
+                Status = AccountStatus.Verified,
+                FaceVerified = true,
+                PasswordHash = hash,
+                PasswordSalt = salt
+            };
+            db.Users.Add(cloneUser);
+            db.BiometricEnrollments.Add(new BiometricEnrollment
+            {
+                UserId = cloneUser.Id,
+                EncryptedTemplateData = cloneBytes,
+                PoseFramesJson = $"{{\"capturedAtUtc\":\"2026-11-16T00:00:{i:D2}Z\",\"bestFrames\":{{\"CENTER\":\"{tinyPng}\"}},\"poseTag\":\"CLONE_ELENA\"}}",
+                TemplateFormat = "128D_FLOAT32_NORMALIZED",
+                ModelIdentifier = "ClaudeVision-128D-MultiPose-v2",
+                ModelVersion = "v1.0.0",
+                EnrollmentStatus = "ACTIVE",
+                EnrolledAtUtc = DateTime.UtcNow.AddMinutes(-i)
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        var stubClaude = new TargetPoseMatchingClaudeStub("SUICO_DISTINCT_FRAME");
+        var strategy = new MultiLayerBiometricLoginStrategy(db, claudeBiometricStrategy: stubClaude);
+
+        // Live vector closer to clone[0] than SUICO's distinct vec[42] — Claude 1:N must still evaluate SUICO via deduplication!
+        float[] noisyLiveVec = new float[128];
+        noisyLiveVec[0] = 0.85f;
+        noisyLiveVec[42] = 0.25f;
+
+        var evalResult = await strategy.ExecuteLayersAsync(new BiometricMultiLayerContext
+        {
+            Email = null,
+            LiveDescriptorVector = noisyLiveVec,
+            LiveCaptureBase64 = tinyPng,
+            LiveCaptureFramesBase64 = [tinyPng],
+            LivenessScore = 0.94,
+            PortalOrigin = "ResponderCivilian"
+        });
+
+        Assert.True(evalResult.IsValidated, $"Expected SUICO to match despite 20 newer clones; got failure: {evalResult.FailureReason}");
+        Assert.Equal(suicoUser.Id, evalResult.MatchedUserId);
+    }
+
+    [Fact]
+    public async Task MultiLayerBiometricLoginStrategy_IgnoresFrameCountsKey_MatchesDistinctCenterBase64()
+    {
+        using var db = CreateInMemoryDbContext();
+        var (hash, salt) = ScryptPasswordHelper.HashPassword("StrongPass123!@#");
+
+        string tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC";
+        string distinctTargetPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFElEQVR42mNk+M9QzwAEjDAGNzYAAIoaB/5t7s6NAAAAAElFTkSuQmCC";
+
+        float[] sharedVec = new float[128];
+        sharedVec[0] = 1.0f;
+        byte[] sharedBytes = new byte[128 * sizeof(float)];
+        Buffer.BlockCopy(sharedVec, 0, sharedBytes, 0, sharedBytes.Length);
+
+        var targetUser = new User
+        {
+            Email = "suico.target@gmail.com",
+            FullName = "SUICO TARGET",
+            Role = UserRole.Civilian,
+            Status = AccountStatus.Verified,
+            FaceVerified = true,
+            PasswordHash = hash,
+            PasswordSalt = salt
+        };
+        db.Users.Add(targetUser);
+        db.BiometricEnrollments.Add(new BiometricEnrollment
+        {
+            UserId = targetUser.Id,
+            EncryptedTemplateData = sharedBytes,
+            PoseFramesJson = $"{{\"frameCounts\":{{\"CENTER\":60,\"RIGHT\":60}},\"bestFrames\":{{\"CENTER\":\"{distinctTargetPng}\"}},\"marker\":\"TARGET_MARKER\"}}",
+            EnrollmentStatus = "ACTIVE",
+            EnrolledAtUtc = DateTime.UtcNow.AddDays(-1)
+        });
+
+        for (int i = 0; i < 16; i++)
+        {
+            var clone = new User
+            {
+                Email = $"clone.fc.{i}@katipunan.local",
+                FullName = $"Clone {i}",
+                Role = UserRole.Civilian,
+                Status = AccountStatus.Verified,
+                FaceVerified = true,
+                PasswordHash = hash,
+                PasswordSalt = salt
+            };
+            db.Users.Add(clone);
+            db.BiometricEnrollments.Add(new BiometricEnrollment
+            {
+                UserId = clone.Id,
+                EncryptedTemplateData = sharedBytes,
+                PoseFramesJson = $"{{\"frameCounts\":{{\"CENTER\":60,\"RIGHT\":60}},\"bestFrames\":{{\"CENTER\":\"{tinyPng}\"}},\"idx\":{i}}}",
+                EnrollmentStatus = "ACTIVE",
+                EnrolledAtUtc = DateTime.UtcNow.AddMinutes(-i)
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        var strategy = new MultiLayerBiometricLoginStrategy(db, claudeBiometricStrategy: new TargetPoseMatchingClaudeStub("TARGET_MARKER"));
+        var eval = await strategy.ExecuteLayersAsync(new BiometricMultiLayerContext
+        {
+            Email = null,
+            LiveDescriptorVector = sharedVec,
+            LiveCaptureBase64 = tinyPng,
+            LiveCaptureFramesBase64 = [tinyPng],
+            LivenessScore = 0.94,
+            PortalOrigin = "ResponderCivilian"
+        });
+
+        Assert.True(eval.IsValidated, $"Target user missed due to frameCounts collision: {eval.FailureReason}");
+        Assert.Equal(targetUser.Id, eval.MatchedUserId);
+    }
+
+    [Fact]
+    public async Task MultiLayerBiometricLoginStrategy_HybridClaudeUnavailable_FallsBackTo128DCosine()
+    {
+        using var db = CreateInMemoryDbContext();
+        var (hash, salt) = ScryptPasswordHelper.HashPassword("StrongPass123!@#");
+        string tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC";
+
+        float[] vec = new float[128];
+        vec[3] = 1.0f;
+        byte[] bytes = new byte[128 * sizeof(float)];
+        Buffer.BlockCopy(vec, 0, bytes, 0, bytes.Length);
+
+        var user = new User
+        {
+            Email = "cosine.fallback@resqtrack.gov.ph",
+            FullName = "Fallback User",
+            Role = UserRole.Civilian,
+            Status = AccountStatus.Verified,
+            FaceVerified = true,
+            PasswordHash = hash,
+            PasswordSalt = salt
+        };
+        db.Users.Add(user);
+        db.BiometricEnrollments.Add(new BiometricEnrollment
+        {
+            UserId = user.Id,
+            EncryptedTemplateData = bytes,
+            PoseFramesJson = $"{{\"bestFrames\":{{\"CENTER\":\"{tinyPng}\"}}}}",
+            EnrollmentStatus = "ACTIVE",
+            EnrolledAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var strategy = new MultiLayerBiometricLoginStrategy(db, claudeBiometricStrategy: new UnavailableClaudeStub());
+        var eval = await strategy.ExecuteLayersAsync(new BiometricMultiLayerContext
+        {
+            Email = user.Email,
+            LiveDescriptorVector = vec,
+            LiveCaptureBase64 = tinyPng,
+            LiveCaptureFramesBase64 = [tinyPng],
+            LivenessScore = 0.94,
+            PortalOrigin = "ResponderCivilian"
+        });
+
+        Assert.True(eval.IsValidated, $"Expected 128-D cosine fallback when Claude returns PROVIDER_UNAVAILABLE, got: {eval.FailureReason}");
+        Assert.Equal(user.Id, eval.MatchedUserId);
+    }
+
+    [Fact]
+    public async Task ReportService_CreateReport_CapturesContactAndEnforcesInitialReportedStatus_WithImage()
+    {
+        using var db = CreateInMemoryDbContext();
+        var (hash, salt) = ScryptPasswordHelper.HashPassword("StrongPass123!@#");
+        var reporter = new User
+        {
+            Email = "resident.red@resqtrack.gov.ph",
+            FullName = "Resident Red",
+            Role = UserRole.Civilian,
+            Status = AccountStatus.Verified,
+            PasswordHash = hash,
+            PasswordSalt = salt
+        };
+        db.Users.Add(reporter);
+        await db.SaveChangesAsync();
+
+        var reportRepo = new ReportRepository(db);
+        var userRepo = new UserRepository(db);
+        var auditRepo = new AuditLogRepository(db);
+        var reportService = new ReportService(reportRepo, userRepo, auditRepo);
+
+        string tempDir = Path.Combine(Path.GetTempPath(), "resq_red_reports_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC";
+            var created = await reportService.CreateReportAsync(
+                reporter.Id,
+                new CreateReportRequest(
+                    Title: "Highway Collision",
+                    Note: "Car crash near junction",
+                    Category: IncidentCategory.VehicularAccident,
+                    Severity: IncidentSeverity.High,
+                    Latitude: 8.5147,
+                    Longitude: 123.2842,
+                    GpsAccuracyMeters: 8.0,
+                    IsHardwareGeolocated: true,
+                    IsBlurry: false,
+                    RequiresManualVerification: false,
+                    LocationLabel: "Barangay Uno",
+                    ImageDataUrl: tinyPng,
+                    ReporterContactNumber: "09171112233"),
+                tempDir,
+                submittedIpAddress: "203.0.113.45");
+
+            Assert.Equal(ReportStatus.Reported, created.Status);
+            Assert.Null(created.VerifiedAt);
+            Assert.Equal("203.0.113.45", created.SubmittedIpAddress);
+            Assert.Equal("09171112233", created.ReporterContactNumber);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ReportService_OutOfRangeEnumCategoryZero_NormalizesToDefinedCategory()
+    {
+        using var db = CreateInMemoryDbContext();
+        var (hash, salt) = ScryptPasswordHelper.HashPassword("StrongPass123!@#");
+        var reporter = new User
+        {
+            Email = "enum.guard@resqtrack.gov.ph",
+            FullName = "Enum Guard Resident",
+            Role = UserRole.Civilian,
+            Status = AccountStatus.Verified,
+            PasswordHash = hash,
+            PasswordSalt = salt
+        };
+        db.Users.Add(reporter);
+        await db.SaveChangesAsync();
+
+        var reportRepo = new ReportRepository(db);
+        var userRepo = new UserRepository(db);
+        var auditRepo = new AuditLogRepository(db);
+        var reportService = new ReportService(reportRepo, userRepo, auditRepo);
+
+        string tempDir = Path.Combine(Path.GetTempPath(), "resq_enum_guard_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var created = await reportService.CreateReportAsync(
+                reporter.Id,
+                new CreateReportRequest(
+                    Title: "Out of Range Enum Test",
+                    Note: "Testing zero enum normalization",
+                    Category: (IncidentCategory)0,
+                    Severity: (IncidentSeverity)999,
+                    Latitude: 8.5147,
+                    Longitude: 123.2842,
+                    GpsAccuracyMeters: 5.0,
+                    IsHardwareGeolocated: true,
+                    IsBlurry: false,
+                    RequiresManualVerification: true,
+                    LocationLabel: "Barangay Uno, Katipunan",
+                    ImageDataUrl: null,
+                    ReporterContactNumber: "09171112233"),
+                tempDir);
+
+            Assert.True(Enum.IsDefined(created.Category));
+            Assert.Equal(IncidentCategory.VehicularAccident, created.Category);
+            Assert.True(Enum.IsDefined(created.Severity));
+            Assert.Equal(IncidentSeverity.Medium, created.Severity);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public void ClientNetworkHelper_RejectsSpoofedXssAndSqlInjectionHeaders_AcceptsValidIp()
+    {
+        var spoofedCtx = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        spoofedCtx.Request.Headers["X-Forwarded-For"] = "<script>alert(1)</script>, ' OR 1=1 --";
+        spoofedCtx.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("127.0.0.1");
+
+        string? resolvedFromSpoofed = ClientNetworkHelper.ResolveClientIpAddress(spoofedCtx);
+        Assert.Equal("127.0.0.1", resolvedFromSpoofed);
+
+        var validCtx = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        validCtx.Request.Headers["X-Forwarded-For"] = "203.0.113.77, 10.0.0.1";
+        validCtx.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("127.0.0.1");
+
+        string? resolvedFromValid = ClientNetworkHelper.ResolveClientIpAddress(validCtx);
+        Assert.Equal("203.0.113.77", resolvedFromValid);
+    }
+
+    [Fact]
+    public async Task CaptureStorageHelper_BlocksPathTraversalAndConfigFiles()
+    {
+        Assert.False(CaptureStorageHelper.IsPathWithinAllowedRoots("appsettings.json"));
+        Assert.False(CaptureStorageHelper.IsPathWithinAllowedRoots("appsettings.Development.json"));
+        Assert.False(CaptureStorageHelper.IsPathWithinAllowedRoots(".env"));
+        Assert.False(CaptureStorageHelper.IsPathWithinAllowedRoots("Program.cs"));
+        Assert.False(CaptureStorageHelper.IsPathWithinAllowedRoots("../../appsettings.json"));
+
+        string allowedUploadPath = Path.Combine(Directory.GetCurrentDirectory(), "server-data", "uploads", "captures", "test_capture.png.enc");
+        Assert.True(CaptureStorageHelper.IsPathWithinAllowedRoots(allowedUploadPath));
+
+        var (fallbackBytes, contentType) = await CaptureStorageHelper.ReadCaptureFileAsync("appsettings.json");
+        Assert.Equal("image/png", contentType);
+        Assert.True(CaptureStorageHelper.ValidatePngHeader(fallbackBytes));
+    }
+
+    [Fact]
+    public async Task IdentityAiService_GetBiometricTrainingStatus_NonExistentEmailReturnsNotReady()
+    {
+        using var db = CreateInMemoryDbContext();
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+        var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<IdentityAiService>.Instance;
+        var service = new IdentityAiService(new DummyHttpClientFactory(), config, logger, db: db);
+
+        var status = await service.GetBiometricTrainingStatusAsync("nonexistent.account@resqtrack.gov.ph");
+        Assert.False(status.Exists);
+        Assert.False(status.Found);
+        Assert.False(status.HasBiometricEnrollment);
+        Assert.False(status.IsReady);
+        Assert.False(status.Ready);
+        Assert.Equal("NONE", status.TrainingStatus);
+        Assert.Equal("NONE", status.BiometricTrainingStatus);
+    }
+
+    [Fact]
+    public async Task RoboflowServerlessAccidentDetectionStrategy_UsesBearerAuthorizationHeader_AndNeverQueryStringApiKey()
+    {
+        HttpRequestMessage? capturedRequest = null;
+        var handler = new DelegatingCallbackHandler(req =>
+        {
+            capturedRequest = req;
+            const string json = """
+                {
+                  "predictions": [
+                    { "class": "Accident", "confidence": 0.93 }
+                  ]
+                }
+                """;
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json")
+            };
+        });
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Roboflow:ApiKey"] = "rf_test_secret_header_only_key"
+            })
+            .Build();
+
+        var strategy = new RoboflowServerlessAccidentDetectionStrategy(
+            new System.Net.Http.HttpClient(handler),
+            config);
+
+        string tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC";
+        var result = await strategy.DetectAccidentAsync(new RoboflowAccidentDetectionInput(
+            ImageDataUrl: tinyPng,
+            TitleHint: "Highway collision",
+            CategoryHint: "VehicularAccident"));
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("https://serverless.roboflow.com/accident-and-non-accident-label-image-dataset/14", capturedRequest!.RequestUri?.ToString());
+        Assert.DoesNotContain("api_key", capturedRequest.RequestUri?.Query ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(capturedRequest.Headers.Authorization);
+        Assert.Equal("Bearer", capturedRequest.Headers.Authorization!.Scheme);
+        Assert.Equal("rf_test_secret_header_only_key", capturedRequest.Headers.Authorization.Parameter);
+
+        Assert.Equal("accident-and-non-accident-label-image-dataset/14", result.ModelId);
+        Assert.Equal("Accident", result.Prediction);
+        Assert.Equal(0.93, result.Confidence);
+        Assert.False(result.NeedsReview);
+        Assert.Equal("Authorization: Bearer (header)", result.AuthTransport);
+    }
+
+    [Fact]
+    public async Task DualStageIncidentSceneAiStrategy_CombinesRoboflowAndClaudeHaiku45_MapsPointerIcons_AndEnforcesPendingReview()
+    {
+        var roboflowStub = new StubRoboflowStrategy(new RoboflowAccidentDetectionResult(
+            ModelId: "accident-and-non-accident-label-image-dataset/14",
+            Prediction: "Accident",
+            Confidence: 0.91,
+            NeedsReview: false,
+            AuthTransport: "Authorization: Bearer (header)",
+            RawJson: "{\"predictions\":[{\"class\":\"Accident\",\"confidence\":0.91}]}"));
+
+        var claudeClientStub = new CapturingClaudeMessagesClient(
+            modelUsed: "claude-haiku-4-5-20251001",
+            rawResponseJson: """
+                {"isGenuineIncident":true,"detectedCategory":"StructuralFire","recommendedSeverity":"Critical","pointerIconType":"fire","situationDescription":"Active two-story commercial structure fire with dense black smoke plume.","visibleHazards":"Flames near overhead power lines, dense smoke across national highway","uncertaintyNotes":"Rear alley egress not visible from single camera frame; requires BFP dispatcher confirmation."}
+                """);
+
+        var claudeStrategy = new ClaudeHaikuIncidentVisionStrategy(claudeClientStub);
+        var dualStrategy = new DualStageIncidentSceneAiStrategy(roboflowStub, claudeStrategy);
+
+        string tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC";
+        var analysis = await dualStrategy.AnalyzeAsync(new AnalyzeIncidentImageRequest(
+            ImageDataUrl: tinyPng,
+            TitleHint: "Market Fire <script>ignore</script>",
+            NoteHint: "Heavy smoke near public market",
+            CategoryHint: "StructuralFire"));
+
+        Assert.Equal("claude-haiku-4-5-20251001", claudeClientStub.LastModelOverride);
+        Assert.Equal(
+            "<untrusted_user_query>Market Fire scriptignore/script</untrusted_user_query>",
+            ClaudeHaikuIncidentVisionStrategy.IsolateUntrustedUserHint("Market Fire <script>ignore</script>"));
+        Assert.Contains("untrusted_user_query", claudeClientStub.LastSerializedPayload ?? string.Empty);
+        Assert.Contains("Market Fire scriptignore/script", claudeClientStub.LastSerializedPayload ?? string.Empty);
+
+        Assert.Equal("accident-and-non-accident-label-image-dataset/14", analysis.RoboflowModelId);
+        Assert.Equal("Accident", analysis.RoboflowPrediction);
+        Assert.Equal(0.91, analysis.RoboflowConfidence);
+        Assert.Equal("Authorization: Bearer (header)", analysis.RoboflowAuthTransport);
+        Assert.Equal("claude-haiku-4-5-20251001", analysis.ClaudeModelUsed);
+        Assert.True(analysis.IsGenuineIncident);
+        Assert.Equal("StructuralFire", analysis.DetectedCategory);
+        Assert.Equal("Critical", analysis.RecommendedSeverity);
+        Assert.Equal("fire", analysis.PointerIconType);
+        Assert.Equal("PENDING_REVIEW", analysis.VerificationStatus);
+        Assert.Equal("FIRE (BFP)", analysis.RecommendedAgencyUnit);
+
+        Assert.Equal("car-crash", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("VehicularAccident"));
+        Assert.Equal("fire", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("StructuralFire"));
+        Assert.Equal("medical", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("MedicalEmergency"));
+        Assert.Equal("crime", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("CrimeOrSecurity"));
+        Assert.Equal("flood", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("NaturalDisaster"));
+        Assert.Equal("hazard", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("HazardFixture"));
+    }
+
+    [Fact]
+    public async Task ReportService_CreateReportAsync_PersistsRoboflowAndClaudeHaikuFields_WhileKeepingStatusReported()
+    {
+        using var db = CreateInMemoryDbContext();
+        var (hash, salt) = ScryptPasswordHelper.HashPassword("StrongPass123!@#");
+        var reporter = new User
+        {
+            Email = "vision.reporter@resqtrack.gov.ph",
+            FullName = "Vision Reporter",
+            Role = UserRole.Civilian,
+            Status = AccountStatus.Verified,
+            PasswordHash = hash,
+            PasswordSalt = salt
+        };
+        db.Users.Add(reporter);
+        await db.SaveChangesAsync();
+
+        var reportRepo = new ReportRepository(db);
+        var userRepo = new UserRepository(db);
+        var auditRepo = new AuditLogRepository(db);
+
+        var roboflowStub = new StubRoboflowStrategy(new RoboflowAccidentDetectionResult(
+            ModelId: "accident-and-non-accident-label-image-dataset/14",
+            Prediction: "Accident",
+            Confidence: 0.94,
+            NeedsReview: false,
+            AuthTransport: "Authorization: Bearer (header)",
+            RawJson: "{\"predictions\":[{\"class\":\"Accident\",\"confidence\":0.94}]}"));
+
+        var claudeClientStub = new CapturingClaudeMessagesClient(
+            modelUsed: "claude-haiku-4-5-20251001",
+            rawResponseJson: """
+                {"isGenuineIncident":true,"detectedCategory":"VehicularAccident","recommendedSeverity":"High","pointerIconType":"car-crash","situationDescription":"Multi-vehicle collision blocking north lane in Barangay Uno.","visibleHazards":"Shattered glass, spilled coolant, lane blockage","uncertaintyNotes":"Number of vehicle occupants unclear from exterior angle."}
+                """);
+
+        var dualStrategy = new DualStageIncidentSceneAiStrategy(
+            roboflowStub,
+            new ClaudeHaikuIncidentVisionStrategy(claudeClientStub));
+
+        var reportService = new ReportService(reportRepo, userRepo, auditRepo, dualStrategy);
+
+        string tempDir = Path.Combine(Path.GetTempPath(), "resq_vision_reports_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC";
+            var created = await reportService.CreateReportAsync(
+                reporter.Id,
+                new CreateReportRequest(
+                    Title: "Highway Collision",
+                    Note: "Two vehicles collided at junction",
+                    Category: IncidentCategory.VehicularAccident,
+                    Severity: IncidentSeverity.High,
+                    Latitude: 8.5147,
+                    Longitude: 123.2842,
+                    GpsAccuracyMeters: 6.5,
+                    IsHardwareGeolocated: true,
+                    IsBlurry: false,
+                    RequiresManualVerification: false,
+                    LocationLabel: "Barangay Uno, Katipunan",
+                    ImageDataUrl: tinyPng,
+                    ReporterContactNumber: "09171234567"),
+                tempDir,
+                submittedIpAddress: "203.0.113.88");
+
+            // Mandatory Governance Invariant: AI analysis NEVER auto-verifies a report
+            Assert.Equal(ReportStatus.Reported, created.Status);
+            Assert.Null(created.VerifiedAt);
+            Assert.True(created.RequiresManualVerification);
+
+            // Both Roboflow Stage 1 and Claude Haiku 4.5 Stage 2 metadata must persist
+            Assert.Equal("accident-and-non-accident-label-image-dataset/14", created.RoboflowModelId);
+            Assert.Equal("Accident", created.RoboflowPrediction);
+            Assert.Equal(0.94, created.RoboflowConfidence);
+            Assert.False(created.RoboflowNeedsReview);
+            Assert.Equal("claude-haiku-4-5-20251001", created.ClaudeModelUsed);
+            Assert.Equal("VehicularAccident", created.ClaudeIncidentCategory);
+            Assert.Contains("Multi-vehicle collision", created.ClaudeSituationSummary);
+            Assert.Contains("Shattered glass", created.ClaudeVisibleHazards);
+            Assert.Contains("occupants unclear", created.ClaudeUncertaintyNotes);
+            Assert.Equal("car-crash", created.PointerIconType);
+
+            var persistedEntity = await db.Reports.FirstOrDefaultAsync(r => r.Id == created.Id);
+            Assert.NotNull(persistedEntity);
+            Assert.Equal(ReportStatus.Reported, persistedEntity!.Status);
+            Assert.Null(persistedEntity.VerifiedAt);
+            Assert.True(persistedEntity.RequiresManualVerification);
+            Assert.Equal("car-crash", persistedEntity.PointerIconType);
+            Assert.False(string.IsNullOrWhiteSpace(persistedEntity.AiAnalysisJson));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
+
+    private sealed class UnavailableClaudeStub : IClaudeBiometricIdentityStrategy
+    {
+        public bool IsConfigured => true;
+
+        public Task<ClaudeBiometricIdentityResult> VerifyLiveAgainstCachedPosesAsync(
+            ClaudeBiometricIdentityInput input,
+            CancellationToken ct = default) =>
+            Task.FromResult(new ClaudeBiometricIdentityResult(
+                SamePerson: false,
+                IsLiveHuman: false,
+                Similarity: 0.0,
+                ModelUsed: "claude-sonnet-4-6",
+                Reason: "Simulated transient timeout",
+                ErrorCode: "PROVIDER_UNAVAILABLE"));
+    }
+
+    private sealed class TargetPoseMatchingClaudeStub(string targetMarker) : IClaudeBiometricIdentityStrategy
+    {
+        public bool IsConfigured => true;
+
+        public Task<ClaudeBiometricIdentityResult> VerifyLiveAgainstCachedPosesAsync(
+            ClaudeBiometricIdentityInput input,
+            CancellationToken ct = default)
+        {
+            bool isTarget = input.PoseFramesJson?.Contains(targetMarker, StringComparison.Ordinal) == true;
+            return Task.FromResult(new ClaudeBiometricIdentityResult(
+                SamePerson: isTarget,
+                IsLiveHuman: true,
+                Similarity: isTarget ? 0.95 : 0.12,
+                ModelUsed: "claude-sonnet-4-6",
+                Reason: isTarget ? "Matched target identity." : "Different person."));
+        }
+    }
+
     private sealed class DummyHttpClientFactory : System.Net.Http.IHttpClientFactory
     {
         public System.Net.Http.HttpClient CreateClient(string name) => new();
+    }
+
+    private sealed class DelegatingCallbackHandler(
+        Func<System.Net.Http.HttpRequestMessage, System.Net.Http.HttpResponseMessage> handler)
+        : System.Net.Http.HttpMessageHandler
+    {
+        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(
+            System.Net.Http.HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(handler(request));
+    }
+
+    private sealed class StubRoboflowStrategy(RoboflowAccidentDetectionResult fixedResult)
+        : IRoboflowAccidentDetectionStrategy
+    {
+        public Task<RoboflowAccidentDetectionResult> DetectAccidentAsync(
+            RoboflowAccidentDetectionInput input,
+            CancellationToken ct = default) =>
+            Task.FromResult(fixedResult);
+    }
+
+    private sealed class CapturingClaudeMessagesClient(string modelUsed, string rawResponseJson)
+        : IClaudeMessagesClient
+    {
+        public bool IsConfigured => true;
+        public string PrimaryModel => "claude-sonnet-4-6";
+        public string FallbackModel => "claude-sonnet-5-5";
+        public string? LastModelOverride { get; private set; }
+        public string? LastSerializedPayload { get; private set; }
+
+        public Task<ClaudeMessageAttemptResult> SendMessagesAsync(
+            IReadOnlyDictionary<string, object> payloadWithoutModel,
+            CancellationToken ct = default,
+            string? modelOverride = null)
+        {
+            LastModelOverride = modelOverride;
+            LastSerializedPayload = System.Text.Json.JsonSerializer.Serialize(payloadWithoutModel);
+            return Task.FromResult(new ClaudeMessageAttemptResult(
+                Success: true,
+                RawText: rawResponseJson,
+                ModelUsed: modelUsed,
+                ErrorCode: null,
+                ErrorMessage: null,
+                HttpStatusCode: 200,
+                UsedFallbackModel: false));
+        }
     }
 }

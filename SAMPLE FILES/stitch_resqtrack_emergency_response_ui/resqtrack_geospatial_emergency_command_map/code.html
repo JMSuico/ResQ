@@ -1,0 +1,502 @@
+<!DOCTYPE html><html class="dark" lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><meta content="web_dashboard" name="shell-type"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"outline-variant":"#524344","secondary-fixed-dim":"#feb2b9","on-secondary-fixed-variant":"#6d363d","tertiary-container":"#5F3F19","background":"#30000d","inverse-primary":"#A83B4D","surface-container-lowest":"#270009","on-tertiary-container":"#704b1d","surface-bright":"#5D0722","tertiary":"#ffddbb","on-surface-variant":"#E2BDC0","on-tertiary-fixed":"#2b1700","on-tertiary-fixed-variant":"#623f13","on-error-container":"#FFDAD6","surface":"#4A041A","inverse-surface":"#FFECED","outline":"#A18A8B","on-background":"#ffd9de","on-error":"#690005","on-primary-fixed":"#370b14","on-secondary-container":"#eba2a8","error-container":"#93000a","on-secondary":"#522128","surface-variant":"#63192c","secondary-container":"#70333C","on-surface":"#ffd9de","on-primary":"#522028","surface-dim":"#380213","on-tertiary":"#452B00","on-secondary-fixed":"#370c14","inverse-on-surface":"#5d1428","primary-container":"#ffb2ba","tertiary-fixed":"#ffddbb","surface-container-high":"#670626","surface-container":"#52051D","surface-container-low":"#400014","secondary-fixed":"#ffdadc","primary-fixed":"#ffd9dc","on-primary-container":"#FFD9DD","error":"#FFB4AB","secondary":"#feb2b9","surface-container-highest":"#63192c","surface-tint":"#ffb2ba","on-primary-fixed-variant":"#6d363e","primary-fixed-dim":"#ffb2ba","primary":"#ffd9dc","tertiary-fixed-dim":"#f1bd85"},borderRadius:{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},spacing:{"space-sm":"0.5rem","space-xs":"0.25rem","gutter":"1rem","margin":"1rem","gutter-desktop":"1.5rem","margin-desktop":"2rem","space-md":"1rem","space-xl":"2rem","space-lg":"1.5rem"},fontFamily:{"headline-md":["Plus Jakarta Sans"],"title-lg":["Plus Jakarta Sans"],"label-md":["Plus Jakarta Sans"],"body-md":["Plus Jakarta Sans"],"body-lg":["Plus Jakarta Sans"],"headline-sm":["Plus Jakarta Sans"],"label-lg":["Plus Jakarta Sans"],"title-md":["Plus Jakarta Sans"],"label-sm":["Plus Jakarta Sans"],"headline-lg":["Plus Jakarta Sans"]},fontSize:{"headline-md":["26px",{"lineHeight":"32.5px","fontWeight":"700"}],"title-lg":["18px",{"lineHeight":"25.2px","fontWeight":"600"}],"label-md":["12px",{"lineHeight":"16.8px","fontWeight":"500"}],"body-md":["14px",{"lineHeight":"21px","fontWeight":"400"}],"body-lg":["15px",{"lineHeight":"22.5px","fontWeight":"400"}],"headline-sm":["22px",{"lineHeight":"28.6px","fontWeight":"600"}],"label-lg":["13px",{"lineHeight":"18.2px","fontWeight":"600"}],"title-md":["16px",{"lineHeight":"23.2px","fontWeight":"600"}],"label-sm":["11px",{"lineHeight":"15.4px","fontWeight":"500"}],"headline-lg":["32px",{"lineHeight":"38px","fontWeight":"700"}]}}}}</script></head><body class="bg-background font-body-md text-on-background min-h-screen selection:bg-primary-container selection:text-on-primary-container"><aside class="fixed left-0 top-0 h-full w-64 bg-surface-container-low shadow-[0_10px_25px_-5px_rgba(25,0,7,0.6)] z-50 flex flex-col justify-between pt-space-md pb-space-lg"><div class="flex flex-col gap-space-md"><div class="px-space-md flex items-center gap-space-sm"><div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-primary shadow-[inset_0_1px_1px_rgba(255,178,186,0.25)]"><span class="material-symbols-outlined text-[24px]">local_fire_department</span></div><div class="flex flex-col"><span class="font-title-md text-title-md text-on-surface tracking-tight leading-none">ResQTrack</span><span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mt-1">MDRRMO Katipunan</span></div></div><div class="px-space-md"><div class="bg-surface-container-lowest px-space-sm py-1.5 rounded-lg flex items-center justify-between shadow-[inset_0_1px_1px_rgba(255,178,186,0.1)]"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-error animate-ping"></span><span class="w-2 h-2 rounded-full bg-error -ml-4"></span><span class="font-label-sm text-label-sm text-on-surface uppercase tracking-wider font-semibold">DEFCON 2</span></div><span class="font-label-sm text-label-sm text-secondary">MUNICIPAL OPS</span></div></div><nav class="flex flex-col gap-1 px-space-sm" data-active-classes="bg-secondary-container text-on-secondary-container shadow-[inset_0_1px_1px_rgba(255,178,186,0.2)] font-semibold"><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="dashboard" href="#"><span class="material-symbols-outlined text-[20px]">space_dashboard</span><span class="font-label-lg text-label-lg">Dashboard</span></a><a aria-current="page" class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg transition-colors bg-secondary-container text-on-secondary-container shadow-[inset_0_1px_1px_rgba(255,178,186,0.2)] font-semibold" data-path="gis-command-map" href="#"><span class="material-symbols-outlined text-[20px]">map</span><span class="font-label-lg text-label-lg">GIS Command Map</span></a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="incident-stream" href="#"><span class="material-symbols-outlined text-[20px]">emergency</span><span class="font-label-lg text-label-lg">Incident Stream</span></a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="fleet-tracking" href="#"><span class="material-symbols-outlined text-[20px]">airport_shuttle</span><span class="font-label-lg text-label-lg">Fleet Tracking</span></a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="computer-vision" href="#"><span class="material-symbols-outlined text-[20px]">videocam</span><span class="font-label-lg text-label-lg">Computer Vision</span></a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="dispatch-console" href="#"><span class="material-symbols-outlined text-[20px]">headset_mic</span><span class="font-label-lg text-label-lg">Dispatch Console</span></a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="weather-and-hazards" href="#"><span class="material-symbols-outlined text-[20px]">thunderstorm</span><span class="font-label-lg text-label-lg">Weather &amp; Hazards</span></a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="system-logs" href="#"><span class="material-symbols-outlined text-[20px]">terminal</span><span class="font-label-lg text-label-lg">System Logs</span></a></nav></div><div class="px-space-md flex flex-col gap-space-sm"><div class="bg-surface-container p-space-sm rounded-xl shadow-[inset_0_1px_1px_rgba(255,178,186,0.15)] flex flex-col gap-1"><div class="flex items-center justify-between text-on-surface-variant"><span class="font-label-sm text-label-sm uppercase font-semibold">ZDN Telemetry</span><span class="font-label-sm text-label-sm text-primary">99.8% Online</span></div><div class="w-full bg-surface-container-lowest h-1.5 rounded-full overflow-hidden"><div class="bg-primary h-full w-[99.8%]"></div></div><span class="font-label-sm text-label-sm text-on-surface-variant">Grid Lat 8.5143° N / Long 123.2778° E</span></div></div></aside><div class="pl-64"><header class="fixed top-0 left-64 right-0 h-16 bg-surface-container-low/90 backdrop-blur-xl shadow-[0_10px_25px_-5px_rgba(25,0,7,0.6)] z-40 flex items-center justify-between px-space-lg"><div class="flex items-center gap-space-lg"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-primary text-[20px]">hub</span><span class="font-title-md text-title-md text-on-surface">Katipunan Emergency Operations Center</span></div><div class="h-5 w-px bg-outline-variant"></div><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-primary"></span><span class="font-label-md text-label-md text-on-surface-variant">SATELLITE LINK ACTIVE</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center bg-surface-container-lowest rounded-lg px-space-sm py-1.5 gap-2 text-on-surface-variant shadow-[inset_0_1px_1px_rgba(255,178,186,0.08)]"><span class="material-symbols-outlined text-[18px]">schedule</span><span class="font-label-md text-label-md font-semibold text-on-surface">PST 03:42:19 UTC+8</span></div><button class="flex items-center gap-1.5 px-space-sm py-1.5 bg-error-container text-on-error-container rounded-lg font-label-md text-label-md hover:bg-error transition-colors"><span class="material-symbols-outlined text-[16px]">warning</span>BROADCAST ALERT</button><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="w-full pt-16 bg-background min-h-screen"><div class="flex flex-col w-full relative h-[calc(100vh-4rem)] overflow-hidden select-none bg-surface-container-lowest">
+<!-- Interactive Geospatial GIS Viewport Engine (DOMINANT FULL-BLEED CANVAS) -->
+<div class="absolute inset-0 w-full h-full overflow-hidden cursor-crosshair" id="gisCanvasContainer">
+<!-- Base Tactical GIS Topographic Grid & Map Render -->
+<div class="absolute inset-0 w-full h-full bg-cover bg-center filter contrast-125 brightness-90 saturate-75 opacity-40 transition-transform duration-700 ease-out transform scale-100" data-location="Katipunan, Zamboanga del Norte, Philippines" id="baseMapTile" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuC_e-cJHzKGCk-3wKXlOF6CzhBleNYoLG8u0ueRrRGFWsd4LGVCkmyuECIzA7qyAXaA38wPJY9Rt0HMtB9VTMk0_VeRmmByiBBk6inkhCaHUpCQ1DeqmWT_AKqu2Ybp-W9Mr0W2RYzvRpvYsB6qrnhU6TrNAvcR0WsuVNo-j6pWDbHiFj2qwwWH0H45haY-IPSWBrIMsywXIPdI3GiQjVptGubGl01x4MIIzyjDUis')"></div>
+<!-- Synthetic Tactical Vector Overlay (SVG GIS Coordinate Graticules & Corridors) -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none stroke-current" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<pattern height="120" id="tacticalGrid" patternUnits="userSpaceOnUse" width="120">
+<path class="stroke-outline-variant/30" d="M 120 0 L 0 0 0 120" fill="none" stroke-dasharray="2 6" stroke-width="0.75"></path>
+<circle class="fill-outline/40" cx="60" cy="60" r="1.5"></circle>
+</pattern>
+<!-- Pulse animations -->
+<radialGradient cx="50%" cy="50%" id="casualtyGlow" r="50%">
+<stop offset="0%" stop-color="#FFB4AB" stop-opacity="0.85"></stop>
+<stop offset="60%" stop-color="#93000A" stop-opacity="0.3"></stop>
+<stop offset="100%" stop-color="#30000D" stop-opacity="0"></stop>
+</radialGradient>
+<radialGradient cx="50%" cy="50%" id="hazardGlow" r="50%">
+<stop offset="0%" stop-color="#FFDDBB" stop-opacity="0.8"></stop>
+<stop offset="70%" stop-color="#5F3F19" stop-opacity="0.25"></stop>
+<stop offset="100%" stop-color="#30000D" stop-opacity="0"></stop>
+</radialGradient>
+</defs>
+<rect fill="url(#tacticalGrid)" height="100%" width="100%"></rect>
+<!-- Contour / Sector Boundaries (Barangays of Katipunan) -->
+<!-- Poblacion Sector -->
+<polygon class="stroke-primary/20" fill="none" points="560,180 840,240 880,520 620,580 480,360" stroke-dasharray="4 4" stroke-width="1.5"></polygon>
+<text class="fill-primary/40 font-label-sm text-label-sm tracking-widest uppercase font-mono" x="680" y="270">SECTOR 01: POBLACION</text>
+<!-- Daanglungsod Sector -->
+<polygon class="stroke-secondary/20" fill="none" points="340,320 540,340 460,620 220,540" stroke-dasharray="6 4" stroke-width="1.2"></polygon>
+<text class="fill-secondary/35 font-label-sm text-label-sm tracking-widest uppercase font-mono" x="310" y="440">SECTOR 04: DAANGLUNGSOD</text>
+<!-- Sitio Basak Spillway Hazard Zone -->
+<polygon class="stroke-tertiary/20" fill="none" points="780,510 1010,540 960,780 720,720" stroke-dasharray="3 3" stroke-width="1.2"></polygon>
+<text class="fill-tertiary/35 font-label-sm text-label-sm tracking-widest uppercase font-mono" x="810" y="660">SECTOR 07: SITIO BASAK SPILLWAY</text>
+<!-- National Highway Route 1 Arterial Trunkline -->
+<path class="stroke-outline/40" d="M 120 720 Q 380 540 640 430 T 1180 210" fill="none" stroke-linecap="round" stroke-width="7"></path>
+<path class="stroke-surface-container-highest" d="M 120 720 Q 380 540 640 430 T 1180 210" fill="none" stroke-linecap="round" stroke-width="4"></path>
+<!-- Greenwave Emergency Corridor Route (RESQ-01 Trajectory) -->
+<path class="stroke-primary" d="M 410 528 Q 520 480 635 432" fill="none" id="ambulanceVector" stroke-dasharray="8 6" stroke-linecap="round" stroke-width="3.5">
+<animate attributeName="stroke-dashoffset" dur="1.2s" from="40" repeatCount="indefinite" to="0"></animate>
+</path>
+<!-- Impact Radius Ring (Code Red #ACC-2025-089) -->
+<circle class="stroke-error/60" cx="640" cy="430" fill="none" r="75" stroke-dasharray="4 4" stroke-width="1"></circle>
+<circle class="stroke-error/30" cx="640" cy="430" fill="none" r="140" stroke-dasharray="2 4" stroke-width="1"></circle>
+<circle cx="640" cy="430" fill="url(#casualtyGlow)" r="85"></circle>
+<!-- Hazard Ring (Code Yellow #ACC-2025-088) -->
+<circle cx="340" cy="380" fill="url(#hazardGlow)" r="50"></circle>
+<circle class="stroke-tertiary/60" cx="340" cy="380" fill="none" r="50" stroke-dasharray="3 3" stroke-width="1.5"></circle>
+</svg>
+<!-- LIVE TACTICAL BEACONS & INTERACTION NODES -->
+<!-- Marker 1: CODE RED INCIDENT #ACC-2025-089 (Katipunan Central Elementary) -->
+<div class="absolute left-[640px] top-[430px] -translate-x-1/2 -translate-y-1/2 z-20 group cursor-pointer" onclick="selectIncident('089')">
+<!-- Pulsing Beacon Core -->
+<div class="relative flex items-center justify-center">
+<span class="absolute w-12 h-12 rounded-full bg-error/30 animate-ping"></span>
+<span class="absolute w-8 h-8 rounded-full bg-error/60 animate-pulse"></span>
+<div class="w-9 h-9 rounded-full bg-error-container text-on-error-container flex items-center justify-center shadow-[0_4px_12px_rgba(147,0,10,0.8)] border border-error">
+<span class="material-symbols-outlined text-[20px]">crisis_alert</span>
+</div>
+</div>
+<!-- Clay Floating Beacon Card Badge -->
+<div class="absolute left-10 -top-6 w-60 p-2.5 rounded-xl bg-surface-container/95 text-on-surface backdrop-blur-md shadow-[0_12px_24px_-4px_rgba(25,0,7,0.8),inset_0_1px_1px_rgba(255,178,186,0.3)] transition-transform duration-200 group-hover:scale-105 pointer-events-auto">
+<div class="flex items-center justify-between gap-1 mb-1">
+<span class="px-1.5 py-0.5 rounded-full bg-error text-on-error font-label-sm text-label-sm uppercase font-bold tracking-wider">CODE RED</span>
+<span class="font-label-sm text-label-sm text-primary font-mono font-semibold">AI Conf 94.8%</span>
+</div>
+<p class="font-title-md text-title-md leading-tight text-primary-fixed">#ACC-2025-089</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant truncate">MVI • Central Elem Junction</p>
+<div class="mt-1.5 flex items-center justify-between pt-1 border-t border-outline-variant/40 text-on-surface-variant">
+<span class="font-label-sm text-label-sm text-error flex items-center gap-1 font-semibold">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-ping"></span>2 Casualties
+          </span>
+<span class="font-label-sm text-label-sm text-primary font-mono">ETA 02:45</span>
+</div>
+</div>
+</div>
+<!-- Marker 2: CODE YELLOW INCIDENT #ACC-2025-088 (Daanglungsod S-Curve) -->
+<div class="absolute left-[340px] top-[380px] -translate-x-1/2 -translate-y-1/2 z-20 group cursor-pointer" onclick="selectIncident('088')">
+<div class="relative flex items-center justify-center">
+<span class="absolute w-8 h-8 rounded-full bg-tertiary-container/50 animate-ping"></span>
+<div class="w-8 h-8 rounded-full bg-tertiary-container text-tertiary flex items-center justify-center shadow-[0_4px_12px_rgba(95,63,25,0.7)] border border-tertiary/40">
+<span class="material-symbols-outlined text-[18px]">car_crash</span>
+</div>
+</div>
+<div class="absolute -top-12 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-lg bg-surface-container/95 text-on-surface whitespace-nowrap shadow-[0_8px_16px_rgba(25,0,7,0.7),inset_0_1px_1px_rgba(255,178,186,0.2)]">
+<div class="flex items-center gap-1.5 font-label-sm text-label-sm">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+<span class="font-semibold text-tertiary">#ACC-088</span>
+<span class="text-on-surface-variant font-mono">Agri-Truck Rollover</span>
+</div>
+</div>
+</div>
+<!-- Marker 3: Sitio Basak Spillway Alert Marker -->
+<div class="absolute left-[880px] top-[640px] -translate-x-1/2 -translate-y-1/2 z-15 group cursor-pointer">
+<div class="w-7 h-7 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center shadow-[0_2px_8px_rgba(25,0,7,0.6)]">
+<span class="material-symbols-outlined text-[16px]">compare_arrows</span>
+</div>
+<div class="absolute left-8 -top-3 px-2 py-1 rounded bg-surface-container-low/95 text-on-surface-variant text-label-sm font-label-sm whitespace-nowrap shadow">
+        Spillway Overflow: 14cm depth (Hazardous)
+      </div>
+</div>
+<!-- Active Fleet Beacon 1: RESQ-01 ALS Ambulance -->
+<div class="absolute left-[410px] top-[528px] -translate-x-1/2 -translate-y-1/2 z-25 group cursor-pointer">
+<div class="relative flex items-center justify-center">
+<div class="w-10 h-10 rounded-2xl bg-primary text-on-primary shadow-[0_8px_20px_rgba(255,178,186,0.4),inset_0_1px_2px_rgba(255,255,255,0.8)] flex items-center justify-center transform -rotate-12 transition-transform group-hover:scale-110">
+<span class="material-symbols-outlined text-[22px]">ambulance</span>
+</div>
+</div>
+<!-- Velocity Ticker Float -->
+<div class="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface text-[10px] font-mono tracking-tight whitespace-nowrap shadow flex items-center gap-1">
+<span class="text-primary font-bold">RESQ-01</span>
+<span>•</span>
+<span>58 km/h</span>
+</div>
+</div>
+<!-- Active Fleet Beacon 2: PNP Cruiser 104 -->
+<div class="absolute left-[720px] top-[370px] -translate-x-1/2 -translate-y-1/2 z-20 group cursor-pointer">
+<div class="w-8 h-8 rounded-xl bg-surface-bright text-on-surface flex items-center justify-center shadow-[0_6px_16px_rgba(25,0,7,0.6),inset_0_1px_1px_rgba(255,178,186,0.3)]">
+<span class="material-symbols-outlined text-[18px]">local_police</span>
+</div>
+<span class="absolute -top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-surface-container-lowest text-[10px] text-on-surface-variant font-mono whitespace-nowrap">PNP-104 (Cordon)</span>
+</div>
+<!-- Active Fleet Beacon 3: BFP Engine 01 -->
+<div class="absolute left-[790px] top-[480px] -translate-x-1/2 -translate-y-1/2 z-20 group cursor-pointer">
+<div class="w-8 h-8 rounded-xl bg-error-container text-on-error-container flex items-center justify-center shadow-[0_6px_16px_rgba(147,0,10,0.5),inset_0_1px_1px_rgba(255,178,186,0.2)]">
+<span class="material-symbols-outlined text-[18px]">fire_truck</span>
+</div>
+<span class="absolute -bottom-5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded bg-surface-container-lowest text-[10px] text-on-surface-variant font-mono whitespace-nowrap">BFP-01 (Staging)</span>
+</div>
+<!-- Active Fleet Beacon 4: QR-Medic Moto-02 -->
+<div class="absolute left-[510px] top-[320px] -translate-x-1/2 -translate-y-1/2 z-20 group cursor-pointer">
+<div class="w-7 h-7 rounded-lg bg-surface-container text-on-surface-variant flex items-center justify-center shadow">
+<span class="material-symbols-outlined text-[16px]">two_wheeler</span>
+</div>
+<span class="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[9px] text-on-surface-variant/80 font-mono whitespace-nowrap">MED-M02</span>
+</div>
+</div>
+<!-- FLOATING TOP TACTICAL HUD CONTROL BAR -->
+<div class="absolute top-4 left-4 right-4 z-40 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pointer-events-none"><!-- Left Tactical Filter Chips (Warm Cream Clay) -->
+<div class="flex items-center gap-1.5 overflow-x-auto p-1.5 rounded-2xl pointer-events-auto" style="background: rgb(247, 241, 234); color: rgb(43, 1, 14); box-shadow: rgba(25, 0, 7, 0.4) 0px 10px 25px -5px, rgba(255, 255, 255, 0.9) 0px 1px 2px inset, rgba(43, 1, 14, 0.05) 0px 4px 6px -2px; border: 1px solid rgba(255, 255, 255, 0.7);">
+<button class="px-3 py-1.5 rounded-xl font-label-md text-label-md font-bold flex items-center gap-1.5 transition-all" style="background: #4A041A; color: #FFF8F7; box-shadow: 0 4px 10px rgba(74,4,26,0.35), inset 0 1px 1px rgba(255,255,255,0.25);">
+<span class="material-symbols-outlined text-[16px]">radar</span>
+  All Beacons <span class="px-1.5 py-0.2 rounded-full text-[10px] font-bold" style="background: #F5EDE6; color: #4A041A;">12</span>
+</button>
+<button class="px-2.5 py-1.5 rounded-xl font-label-md text-label-md flex items-center gap-1.5 transition-all font-semibold" style="background: #FFF8F7; color: #93000A; box-shadow: inset 0 1px 1px rgba(255,255,255,0.8), 0 2px 5px rgba(43,1,14,0.06); border: 1px solid rgba(147,0,10,0.15);">
+<span class="w-2 h-2 rounded-full bg-error animate-ping"></span>
+<span>Code Red</span>
+<span class="font-mono font-bold" style="color: #670626;">1</span>
+</button>
+<button class="px-2.5 py-1.5 rounded-xl font-label-md text-label-md flex items-center gap-1.5 transition-all font-semibold" style="background: #FFF8F7; color: #704B1D; box-shadow: inset 0 1px 1px rgba(255,255,255,0.8), 0 2px 5px rgba(43,1,14,0.06); border: 1px solid rgba(112,75,29,0.15);">
+<span class="w-2 h-2 rounded-full" style="background: #D9822B;"></span>
+<span>Code Yellow</span>
+<span class="font-mono font-bold" style="color: #704B1D;">1</span>
+</button>
+<div class="h-4 w-px mx-1" style="background: rgba(43,1,14,0.15);"></div>
+<button class="px-2.5 py-1.5 rounded-xl font-label-md text-label-md flex items-center gap-1 transition-all font-semibold" style="background: #EFE6DC; color: #4A041A; box-shadow: inset 0 1px 2px rgba(255,255,255,0.6);">
+<span class="material-symbols-outlined text-[15px]" style="color: #670626;">ambulance</span>
+<span>Ambulances (2)</span>
+</button>
+<button class="px-2.5 py-1.5 rounded-xl font-label-md text-label-md flex items-center gap-1 transition-all font-semibold" style="background: #EFE6DC; color: #4A041A; box-shadow: inset 0 1px 2px rgba(255,255,255,0.6);">
+<span class="material-symbols-outlined text-[15px]" style="color: #670626;">local_police</span>
+<span>PNP (3)</span>
+</button>
+<button class="px-2.5 py-1.5 rounded-xl font-label-md text-label-md flex items-center gap-1 transition-all font-semibold" style="background: #EFE6DC; color: #4A041A; box-shadow: inset 0 1px 2px rgba(255,255,255,0.6);">
+<span class="material-symbols-outlined text-[15px]" style="color: #93000A;">fire_truck</span>
+<span>BFP (1)</span>
+</button>
+<div class="h-4 w-px mx-1" style="background: rgba(43,1,14,0.15);"></div>
+<button class="px-2.5 py-1.5 rounded-xl font-label-md text-label-md flex items-center gap-1 font-semibold" style="background: #FFF8F7; color: #704B1D; box-shadow: inset 0 1px 1px rgba(255,255,255,0.8), 0 2px 5px rgba(43,1,14,0.06); border: 1px solid rgba(112,75,29,0.15);">
+<span class="material-symbols-outlined text-[15px] animate-spin" style="color: #D9822B;">cyclone</span>
+<span>PAGASA Doppler: Active</span>
+</button>
+</div>
+<!-- Center/Right Search & Telemetry HUD Module (Warm Cream) -->
+<div class="flex items-center gap-2 pointer-events-auto">
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-[18px]" style="color: #7A1C32;">search</span>
+<input class="pl-9 pr-4 py-2 w-72 rounded-2xl font-body-md text-body-md focus:outline-none transition-all" style="background: #F7F1EA; color: #2B010E; box-shadow: 0 10px 25px -5px rgba(25,0,7,0.35), inset 0 1px 2px rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.7);" placeholder="Search Barangay, GPS Coord, or CAD Ticket #..." type="text">
+<span class="absolute right-2 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold" style="background: #EFE6DC; color: #670626;">⌘K</span>
+</div>
+<div class="hidden xl:flex items-center gap-2 px-3 py-2 rounded-2xl font-label-sm text-label-sm" style="background: #F7F1EA; color: #4A041A; box-shadow: 0 10px 25px -5px rgba(25,0,7,0.35), inset 0 1px 2px rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.7);">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full animate-pulse" style="background: #4A041A;"></span>
+<span class="font-mono font-bold" style="color: #2B010E;">GRID 8.5142° N, 123.2874° E</span>
+</div>
+<span style="color: rgba(43,1,14,0.25);">|</span>
+<span class="font-mono font-bold" style="color: #670626;">±0.8m RTK</span>
+<span style="color: rgba(43,1,14,0.25);">|</span>
+<span class="font-mono font-semibold" style="color: #7A1C32;">19 SATS LOCKED</span>
+</div>
+</div></div>
+<!-- FLOATING TACTILE CLAY LEFT-SIDE INCIDENT INSPECTOR DRAWER -->
+<div class="absolute left-4 top-20 bottom-16 w-[380px] z-30 flex flex-col justify-between p-4 rounded-3xl transition-all duration-300 pointer-events-auto overflow-y-auto" id="incidentInspector" style="background: rgb(247, 241, 234); color: rgb(43, 1, 14); box-shadow: rgba(25, 0, 7, 0.5) 0px 20px 45px -10px, rgba(255, 255, 255, 0.95) 0px 2px 3px inset, rgba(43, 1, 14, 0.08) 0px 8px 16px -4px; border: 1px solid rgba(255, 255, 255, 0.85);">
+<!-- Header: Active Targeted CAD Ticket -->
+<div class="flex flex-col gap-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="px-2.5 py-1 rounded-full font-label-sm text-label-sm font-bold tracking-wider" style="background: #93000A; color: #FFF8F7; box-shadow: 0 2px 6px rgba(147,0,10,0.3);">TARGET PRIORITY 1</span>
+<span class="font-mono text-label-sm font-bold" style="color: #670626;">Poblacion Junction</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-1 rounded-lg transition-colors" style="color: #670626;" title="Pin Target">
+<span class="material-symbols-outlined text-[18px]">push_pin</span>
+</button>
+<button class="p-1 rounded-lg transition-colors" onclick="toggleInspector()" style="color: #670626;" title="Minimize Drawer">
+<span class="material-symbols-outlined text-[18px]">expand_less</span>
+</button>
+</div>
+</div>
+<div class="flex flex-col">
+<div class="flex items-baseline gap-2">
+<h2 class="font-headline-sm text-headline-sm font-bold tracking-tight" style="color: #2B010E;">CAD #ACC-2025-089</h2>
+<span class="font-mono text-label-sm font-bold" style="color: #93000A;">T-04:12 ACTIVE</span>
+</div>
+<p class="font-body-md text-body-md font-medium mt-0.5" style="color: #5D1428;">Multi-Vehicle Collision • Katipunan Central Elementary</p>
+</div>
+<!-- Live Edge AI CCTV Optical Feed Snapshot -->
+<div class="relative w-full h-40 rounded-2xl overflow-hidden group" style="background: #270009; box-shadow: inset 0 2px 4px rgba(0,0,0,0.6), 0 4px 10px rgba(43,1,14,0.12);">
+<img class="w-full h-full object-cover" data-alt="High angle municipal intersection CCTV surveillance camera capture in Katipunan showing a multi-vehicle traffic accident at night with rain puddles reflecting emergency flashing crimson red and amber police lights, vehicles cordoned by yellow perimeter lines, deep cinematic burgundy tones and realistic tactical street scene" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDtgTo7ppAv4SZgWj-H-XOQXf9TjAid8bZ7tAIQ0J8hLmKg3ksqzztXYwGqOfEp160uEp2T5qRQyWImWMwhGV_O_iMPGTvcaQUY4s2fOmG9x0LlIaAzsL_EF-vf75w4prdQmZDS6EkzhEU7sGq-XTetOkvw_1AyexojuqiiTU2HcIjdAZ5bUfw8IriUSgtVXQZyAkONm6Z7pL9DcN-GV9BumFdN2meQXK8D8VJiBoU">
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent"></div>
+<div class="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold tracking-wider" style="background: #93000A; color: #FFF8F7;">
+<span class="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
+  CCTV-CAM-04 POBLACION LIVE
+</div>
+<div class="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-mono" style="background: rgba(39,0,9,0.85); color: #FFF8F7;">
+  30 FPS • 4K HEVC
+</div>
+<div class="absolute left-1/4 top-1/4 w-32 h-20 border border-error rounded shadow-[0_0_8px_rgba(255,180,171,0.6)] flex flex-col justify-between p-1 pointer-events-none">
+<span class="px-1 py-0.2 bg-error text-on-error text-[9px] font-mono font-semibold w-max rounded-xs">VEHICLE TRAUMA (94.8%)</span>
+<span class="text-[9px] text-error font-mono self-end">ID: OBJ-401</span>
+</div>
+<div class="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[11px] font-mono" style="color: #EBA2A8;">
+<span>LAT 8.5148° N</span>
+<span>LNG 123.2842° E</span>
+</div>
+</div>
+<!-- Triage & Casualty Status Block (Warm Ivory Clay Card) -->
+<div class="p-3 rounded-2xl flex flex-col gap-2" style="background: #FFF8F7; box-shadow: 0 4px 10px rgba(43,1,14,0.06), inset 0 1px 2px rgba(255,255,255,0.9); border: 1px solid rgba(43,1,14,0.06);">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-bold flex items-center gap-1.5" style="color: #2B010E;">
+<span class="material-symbols-outlined text-[16px]" style="color: #93000A;">medical_services</span>
+  Triage Assessment
+</span>
+<span class="px-2 py-0.5 rounded-full text-[11px] font-bold" style="background: #FFDAD6; color: #93000A;">2 PRIORITY RED</span>
+</div>
+<div class="grid grid-cols-2 gap-2 text-label-sm font-label-sm">
+<div class="p-2.5 rounded-xl flex flex-col" style="background: #F7F1EA; box-shadow: inset 0 1px 2px rgba(255,255,255,0.8), 0 2px 4px rgba(43,1,14,0.04); border: 1px solid rgba(43,1,14,0.05);">
+<span class="text-[10px] font-medium" style="color: #670626;">Casualty 01 (Driver)</span>
+<span class="font-bold mt-0.5" style="color: #2B010E;">Cranial Laceration</span>
+<span class="font-mono text-[10px] mt-1 font-semibold" style="color: #93000A;">GCS: 13 • Conscious</span>
+</div>
+<div class="p-2.5 rounded-xl flex flex-col" style="background: #F7F1EA; box-shadow: inset 0 1px 2px rgba(255,255,255,0.8), 0 2px 4px rgba(43,1,14,0.04); border: 1px solid rgba(43,1,14,0.05);">
+<span class="text-[10px] font-medium" style="color: #670626;">Casualty 02 (Passenger)</span>
+<span class="font-bold mt-0.5" style="color: #2B010E;">Right Tibia Fracture</span>
+<span class="font-mono text-[10px] mt-1 font-semibold" style="color: #704B1D;">BP: 110/75 • Stable</span>
+</div>
+</div>
+</div>
+<!-- Assigned Responders Progress (Warm Ivory Clay Card) -->
+<div class="p-3 rounded-2xl flex flex-col gap-2" style="background: #FFF8F7; box-shadow: 0 4px 10px rgba(43,1,14,0.06), inset 0 1px 2px rgba(255,255,255,0.9); border: 1px solid rgba(43,1,14,0.06);">
+<div class="flex items-center justify-between text-label-md font-label-md">
+<span class="font-bold flex items-center gap-1.5" style="color: #2B010E;">
+<span class="material-symbols-outlined text-[16px]" style="color: #670626;">navigation</span>
+  Primary Intercept
+</span>
+<span class="font-mono font-bold" style="color: #670626;">ETA 02:45 (1.4 km)</span>
+</div>
+<div class="w-full h-2 rounded-full overflow-hidden" style="background: #EFE6DC; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);">
+<div class="h-full w-[68%] rounded-full" style="background: #670626; box-shadow: 0 0 8px rgba(103,6,38,0.5);"></div>
+</div>
+<div class="flex items-center justify-between text-[11px] font-mono font-medium" style="color: #5D1428;">
+<span>Unit: MDRRMO RESQ-01</span>
+<span class="font-bold" style="color: #2B010E;">Speed: 58 km/h</span>
+</div>
+</div>
+</div>
+<!-- Claymorphic Rapid Command Actions -->
+<div class="flex flex-col gap-2 pt-3" style="border-top: 1px solid rgba(43,1,14,0.12);">
+<div class="grid grid-cols-2 gap-2">
+<button class="py-2.5 px-3 rounded-2xl font-label-md text-label-md font-bold flex items-center justify-center gap-1.5 transition-transform active:scale-95" style="background: #4A041A; color: #FFF8F7; box-shadow: 0 6px 14px rgba(74,4,26,0.35), inset 0 1px 1px rgba(255,255,255,0.25);">
+<span class="material-symbols-outlined text-[18px]">add_alert</span>
+  Dispatch Backup
+</button>
+<button class="py-2.5 px-3 rounded-2xl font-label-md text-label-md font-bold flex items-center justify-center gap-1.5 transition-transform active:scale-95" style="background: #FFF8F7; color: #4A041A; box-shadow: 0 6px 14px rgba(43,1,14,0.08), inset 0 1px 2px rgba(255,255,255,0.9); border: 1px solid rgba(74,4,26,0.15);">
+<span class="material-symbols-outlined text-[18px]" style="color: #670626;">alt_route</span>
+  Reroute Traffic
+</button>
+</div>
+<div class="grid grid-cols-2 gap-2">
+<button class="py-2 px-3 rounded-2xl font-label-sm text-label-sm font-bold flex items-center justify-center gap-1 transition-all" style="background: #EFE6DC; color: #4A041A; box-shadow: inset 0 1px 2px rgba(255,255,255,0.8), 0 2px 4px rgba(43,1,14,0.06); border: 1px solid rgba(43,1,14,0.06);">
+<span class="material-symbols-outlined text-[16px]" style="color: #704B1D;">campaign</span>
+  Tanod Net Alert
+</button>
+<button class="py-2 px-3 rounded-2xl font-label-sm text-label-sm font-bold flex items-center justify-center gap-1 transition-all" style="background: #EFE6DC; color: #4A041A; box-shadow: inset 0 1px 2px rgba(255,255,255,0.8), 0 2px 4px rgba(43,1,14,0.06); border: 1px solid rgba(43,1,14,0.06);">
+<span class="material-symbols-outlined text-[16px]" style="color: #670626;">record_voice_over</span>
+  VHF Ch 04 Audio
+</button>
+</div>
+</div>
+</div>
+<!-- FLOATING RIGHT TACTICAL FLEET & HOSPITAL TELEMETRY RIBBON -->
+<div class="absolute right-4 top-20 bottom-16 w-80 z-30 flex flex-col gap-3 pointer-events-none"><!-- Active Fleet Readiness Clay Card (Warm Cream) -->
+<div class="flex-1 p-3.5 rounded-3xl pointer-events-auto flex flex-col justify-between overflow-hidden" style="background: rgb(247, 241, 234); color: rgb(43, 1, 14); box-shadow: rgba(25, 0, 7, 0.5) 0px 20px 45px -10px, rgba(255, 255, 255, 0.95) 0px 2px 3px inset, rgba(43, 1, 14, 0.08) 0px 8px 16px -4px; border: 1px solid rgba(255, 255, 255, 0.85);">
+<div>
+<div class="flex items-center justify-between pb-2" style="border-bottom: 1px solid rgba(43,1,14,0.12);">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[20px]" style="color: #670626;">local_shipping</span>
+<span class="font-title-md text-title-md font-bold" style="color: #2B010E;">Tactical Units</span>
+</div>
+<span class="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold" style="background: #EFE6DC; color: #670626; border: 1px solid rgba(103,6,38,0.15);">4 EN ROUTE</span>
+</div>
+<!-- Fleet List -->
+<div class="flex flex-col gap-2.5 mt-3 overflow-y-auto max-h-[calc(100vh-28rem)] pr-1">
+<!-- Fleet Item 1: RESQ-01 -->
+<div class="p-2.5 rounded-2xl flex flex-col gap-1.5 cursor-pointer transition-all" style="background: #FFF8F7; box-shadow: 0 3px 8px rgba(43,1,14,0.06), inset 0 1px 2px rgba(255,255,255,0.9); border: 1px solid rgba(43,1,14,0.06);">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs" style="background: #4A041A; color: #FFF8F7;">
+  01
+</div>
+<div class="flex flex-col leading-none">
+<span class="font-label-md text-label-md font-bold" style="color: #2B010E;">MDRRMO RESQ-01</span>
+<span class="text-[10px] font-mono font-medium" style="color: #670626;">ALS Toyota HiAce</span>
+</div>
+</div>
+<span class="px-1.5 py-0.5 rounded text-[10px] font-bold" style="background: #FFDAD6; color: #93000A;">EN ROUTE</span>
+</div>
+<!-- Telemetry Gauges Ribbon -->
+<div class="grid grid-cols-4 gap-1 text-[10px] font-mono text-center pt-1" style="border-top: 1px solid rgba(43,1,14,0.08);">
+<div class="flex flex-col"><span style="color: #7A1C32;">FUEL</span><span class="font-bold" style="color: #2B010E;">84%</span></div>
+<div class="flex flex-col"><span style="color: #7A1C32;">BATT</span><span class="font-bold" style="color: #670626;">13.8V</span></div>
+<div class="flex flex-col"><span style="color: #7A1C32;">SPEED</span><span class="font-bold" style="color: #2B010E;">58km/h</span></div>
+<div class="flex flex-col"><span style="color: #7A1C32;">LATENCY</span><span class="font-bold" style="color: #670626;">14ms</span></div>
+</div>
+</div>
+<!-- Fleet Item 2: PNP Cruiser 104 -->
+<div class="p-2.5 rounded-2xl flex flex-col gap-1.5 cursor-pointer transition-all" style="background: #FFF8F7; box-shadow: 0 3px 8px rgba(43,1,14,0.06), inset 0 1px 2px rgba(255,255,255,0.9); border: 1px solid rgba(43,1,14,0.06);">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs" style="background: #670626; color: #FFF8F7;">
+  P4
+</div>
+<div class="flex flex-col leading-none">
+<span class="font-label-md text-label-md font-bold" style="color: #2B010E;">PNP KATIPUNAN 104</span>
+<span class="text-[10px] font-mono font-medium" style="color: #670626;">Isuzu D-Max Cordon</span>
+</div>
+</div>
+<span class="px-1.5 py-0.5 rounded text-[10px] font-bold" style="background: #EFE6DC; color: #4A041A;">ON SITE</span>
+</div>
+<div class="grid grid-cols-4 gap-1 text-[10px] font-mono text-center pt-1" style="border-top: 1px solid rgba(43,1,14,0.08);">
+<div class="flex flex-col"><span style="color: #7A1C32;">FUEL</span><span class="font-bold" style="color: #2B010E;">62%</span></div>
+<div class="flex flex-col"><span style="color: #7A1C32;">BATT</span><span class="font-bold" style="color: #2B010E;">12.6V</span></div>
+<div class="flex flex-col"><span style="color: #7A1C32;">SPEED</span><span class="font-bold" style="color: #2B010E;">0km/h</span></div>
+<div class="flex flex-col"><span style="color: #7A1C32;">LATENCY</span><span class="font-bold" style="color: #670626;">22ms</span></div>
+</div>
+</div>
+<!-- Fleet Item 3: BFP Engine 01 -->
+<div class="p-2.5 rounded-2xl flex flex-col gap-1.5 cursor-pointer transition-all" style="background: #FFF8F7; box-shadow: 0 3px 8px rgba(43,1,14,0.06), inset 0 1px 2px rgba(255,255,255,0.9); border: 1px solid rgba(43,1,14,0.06);">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs" style="background: #93000A; color: #FFF8F7;">
+  F1
+</div>
+<div class="flex flex-col leading-none">
+<span class="font-label-md text-label-md font-bold" style="color: #2B010E;">BFP KATIPUNAN E-01</span>
+<span class="text-[10px] font-mono font-medium" style="color: #670626;">Hino 3000L Pumper</span>
+</div>
+</div>
+<span class="px-1.5 py-0.5 rounded text-[10px] font-bold" style="background: #FFDDBB; color: #704B1D;">STAGING</span>
+</div>
+<div class="grid grid-cols-4 gap-1 text-[10px] font-mono text-center pt-1" style="border-top: 1px solid rgba(43,1,14,0.08);">
+<div class="flex flex-col"><span style="color: #7A1C32;">WATER</span><span class="font-bold" style="color: #670626;">100%</span></div>
+<div class="flex flex-col"><span style="color: #7A1C32;">PUMP</span><span class="font-bold" style="color: #2B010E;">IDLE</span></div>
+<div class="flex flex-col"><span style="color: #7A1C32;">SPEED</span><span class="font-bold" style="color: #2B010E;">0km/h</span></div>
+<div class="flex flex-col"><span style="color: #7A1C32;">LATENCY</span><span class="font-bold" style="color: #670626;">18ms</span></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Quick Action: Push-To-Talk Intercom (Tactile Crimson/Ivory Clay Button) -->
+<div class="pt-2 flex flex-col gap-2">
+<button class="w-full py-2.5 px-3 rounded-2xl font-label-md text-label-md font-bold flex items-center justify-center gap-2 active:scale-98 transition-transform" style="background: #4A041A; color: #FFF8F7; box-shadow: 0 8px 16px rgba(74,4,26,0.35), inset 0 1px 2px rgba(255,255,255,0.3);">
+<span class="material-symbols-outlined text-[18px]">mic</span>
+  PUSH TO TALK (NET 1)
+</button>
+</div>
+</div>
+<!-- Katipunan Medicare Trauma Bay Direct Hotline Card (Warm Cream) -->
+<div class="p-3 rounded-3xl pointer-events-auto flex items-center justify-between" style="background: rgb(247, 241, 234); color: rgb(43, 1, 14); box-shadow: rgba(25, 0, 7, 0.45) 0px 16px 35px -8px, rgba(255, 255, 255, 0.95) 0px 2px 3px inset; border: 1px solid rgba(255, 255, 255, 0.85);">
+<div class="flex items-center gap-2.5">
+<div class="w-10 h-10 rounded-2xl flex items-center justify-center shadow" style="background: #FFF8F7; color: #670626; border: 1px solid rgba(103,6,38,0.12);">
+<span class="material-symbols-outlined text-[20px]">local_hospital</span>
+</div>
+<div class="flex flex-col leading-tight">
+<span class="font-label-md text-label-md font-bold" style="color: #2B010E;">Medicare Hospital</span>
+<span class="text-[10px] font-mono font-bold" style="color: #670626;">Trauma Bay: 2 Beds Ready</span>
+</div>
+</div>
+<button class="w-9 h-9 rounded-xl flex items-center justify-center transition-colors shadow" style="background: #4A041A; color: #FFF8F7;">
+<span class="material-symbols-outlined text-[18px]">call</span>
+</button>
+</div></div>
+<!-- FLOATING BOTTOM MAP CONTROLS & TIMELINE SCRUBBER -->
+<div class="absolute bottom-4 left-4 right-4 z-40 flex flex-col sm:flex-row items-center justify-between gap-3 pointer-events-none"><!-- Left Bottom: Map Projection & Style Dials (Warm Cream) -->
+<div class="flex items-center gap-1.5 p-1.5 rounded-2xl pointer-events-auto" style="background: rgb(247, 241, 234); color: rgb(43, 1, 14); box-shadow: rgba(25, 0, 7, 0.4) 0px 10px 25px -5px, rgba(255, 255, 255, 0.9) 0px 1px 2px inset; border: 1px solid rgba(255, 255, 255, 0.7);">
+<button class="p-2 rounded-xl transition-colors" style="background: #4A041A; color: #FFF8F7; box-shadow: 0 2px 6px rgba(74,4,26,0.3);" onclick="setMapStyle('dark')" title="Tactical Dark Mode">
+<span class="material-symbols-outlined text-[18px]">dark_mode</span>
+</button>
+<button class="p-2 rounded-xl transition-colors" style="background: #FFF8F7; color: #5D1428;" onclick="setMapStyle('satellite')" title="Satellite Photogrammetry">
+<span class="material-symbols-outlined text-[18px]">satellite_alt</span>
+</button>
+<button class="p-2 rounded-xl transition-colors" style="background: #FFF8F7; color: #5D1428;" onclick="setMapStyle('contour')" title="Contour Topography">
+<span class="material-symbols-outlined text-[18px]">terrain</span>
+</button>
+<button class="p-2 rounded-xl transition-colors" style="background: #FFF8F7; color: #5D1428;" onclick="setMapStyle('heatmap')" title="Heatmap Density">
+<span class="material-symbols-outlined text-[18px]">local_fire_department</span>
+</button>
+<div class="h-4 w-px mx-1" style="background: rgba(43,1,14,0.15);"></div>
+<!-- Zoom and Compass Controls -->
+<button class="w-8 h-8 rounded-xl font-bold text-sm flex items-center justify-center transition-colors" style="background: #FFF8F7; color: #2B010E; box-shadow: inset 0 1px 1px rgba(255,255,255,0.8);" onclick="adjustZoom(1)" title="Zoom In">+</button>
+<button class="w-8 h-8 rounded-xl font-bold text-sm flex items-center justify-center transition-colors" style="background: #FFF8F7; color: #2B010E; box-shadow: inset 0 1px 1px rgba(255,255,255,0.8);" onclick="adjustZoom(-1)" title="Zoom Out">-</button>
+<button class="w-8 h-8 rounded-xl flex items-center justify-center transition-colors" style="background: #FFF8F7; color: #670626; box-shadow: inset 0 1px 1px rgba(255,255,255,0.8);" title="Reset North">
+<span class="material-symbols-outlined text-[16px]">explore</span>
+</button>
+</div>
+<!-- Center Bottom: Incident Playback Timeline Scrubber (Warm Cream) -->
+<div class="w-full max-w-lg p-2 rounded-2xl pointer-events-auto flex items-center gap-3" style="background: rgb(247, 241, 234); color: rgb(43, 1, 14); box-shadow: rgba(25, 0, 7, 0.4) 0px 10px 25px -5px, rgba(255, 255, 255, 0.9) 0px 1px 2px inset; border: 1px solid rgba(255, 255, 255, 0.7);">
+<button class="w-7 h-7 rounded-xl flex items-center justify-center shadow" id="playbackBtn" onclick="togglePlayback()" style="background: #4A041A; color: #FFF8F7;">
+<span class="material-symbols-outlined text-[16px]">pause</span>
+</button>
+<div class="flex flex-col flex-1">
+<div class="flex items-center justify-between text-[11px] font-mono mb-1">
+<span class="font-bold flex items-center gap-1" style="color: #2B010E;">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-ping"></span>
+  LIVE TIMELINE
+</span>
+<span class="font-bold" id="timelineTimestamp" style="color: #670626;">T - 04:12 / NOW</span>
+</div>
+<input class="w-full h-1.5 rounded-full cursor-pointer appearance-none" id="timelineSlider" max="100" min="0" oninput="updateTimeline(this.value)" type="range" value="85" style="background: #EFE6DC; accent-color: #670626;">
+</div>
+<span class="px-2 py-1 rounded-lg font-mono text-[10px] font-bold" style="background: #EFE6DC; color: #4A041A;">1.0x REC</span>
+</div>
+<!-- Right Bottom: Layer Stacking Status (Warm Cream) -->
+<div class="hidden lg:flex items-center gap-2 px-3 py-2 rounded-2xl pointer-events-auto text-[11px] font-mono" style="background: rgb(247, 241, 234); color: rgb(93, 20, 40); box-shadow: rgba(25, 0, 7, 0.4) 0px 10px 25px -5px, rgba(255, 255, 255, 0.9) 0px 1px 2px inset; border: 1px solid rgba(255, 255, 255, 0.7);">
+<span class="w-2 h-2 rounded-full" style="background: #670626;"></span>
+<span class="font-semibold" style="color: #2B010E;">CRS: EPSG:3857 (WGS84 Web Mercator)</span>
+</div></div>
+</div>
+<script>
+  let currentZoom = 1;
+  let isPlaying = true;
+
+  function adjustZoom(delta) {
+    const tile = document.getElementById('baseMapTile');
+    currentZoom = Math.min(Math.max(currentZoom + (delta * 0.15), 0.8), 1.6);
+    tile.style.transform = `scale(${currentZoom})`;
+  }
+
+  function toggleInspector() {
+    const inspector = document.getElementById('incidentInspector');
+    inspector.classList.toggle('-translate-x-[400px]');
+  }
+
+  function setMapStyle(style) {
+    const tile = document.getElementById('baseMapTile');
+    if (style === 'dark') {
+      tile.style.filter = 'contrast(125%) brightness(90%) saturate(75%)';
+    } else if (style === 'satellite') {
+      tile.style.filter = 'contrast(110%) brightness(100%) saturate(100%)';
+    } else if (style === 'contour') {
+      tile.style.filter = 'contrast(150%) brightness(80%) sepia(30%) hue-rotate(300deg)';
+    } else if (style === 'heatmap') {
+      tile.style.filter = 'contrast(130%) brightness(85%) hue-rotate(330deg) saturate(140%)';
+    }
+  }
+
+  function togglePlayback() {
+    const btn = document.getElementById('playbackBtn');
+    isPlaying = !isPlaying;
+    btn.innerHTML = `<span class="material-symbols-outlined text-[16px]">${isPlaying ? 'pause' : 'play_arrow'}</span>`;
+  }
+
+  function updateTimeline(val) {
+    const ts = document.getElementById('timelineTimestamp');
+    if (val > 90) {
+      ts.innerText = 'T - 00:00 / LIVE NOW';
+    } else {
+      const mins = Math.floor((100 - val) / 6);
+      const secs = (100 - val) % 6 * 10;
+      ts.innerText = `T - 0${mins}:${secs < 10 ? '0' : ''}${secs} HISTORICAL`;
+    }
+  }
+
+  function selectIncident(id) {
+    const inspector = document.getElementById('incidentInspector');
+    inspector.classList.remove('-translate-x-[400px]');
+  }
+</script></main></div>
+
+</body></html>
