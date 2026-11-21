@@ -14,6 +14,7 @@ using Backend.Features.Data;
 using Backend.Features.Data.Enums;
 using Backend.Features.Data.Models;
 using Backend.Features.Services.Verification;
+using Backend.Features.Services.Vision;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -24,7 +25,8 @@ public class MultiLayerBiometricLoginStrategy(
     AppDbContext db,
     IConfiguration? configuration = null,
     ILogger<MultiLayerBiometricLoginStrategy>? logger = null,
-    IClaudeBiometricIdentityStrategy? claudeBiometricStrategy = null) : IBiometricLoginValidationStrategy
+    IClaudeBiometricIdentityStrategy? claudeBiometricStrategy = null,
+    IRoboflowWorkflowStrategy? roboflowWorkflowStrategy = null) : IBiometricLoginValidationStrategy
 {
     public const double DefaultSimilarityThreshold = 0.82;
     public const double DefaultClaudeSimilarityThreshold = 0.78;
@@ -41,6 +43,9 @@ public class MultiLayerBiometricLoginStrategy(
         "ovalCenterAlignment",
         "ovalCenteringScore"
     ];
+
+    private readonly IRoboflowWorkflowStrategy _roboflowWorkflowStrategy =
+        roboflowWorkflowStrategy ?? new RoboflowServerlessWorkflowStrategy(null, configuration);
 
     public string StrategyName => "MultiLayerClaudeBiometricLoginStrategy";
 
@@ -114,16 +119,20 @@ public class MultiLayerBiometricLoginStrategy(
         double l2Norm = ComputeL2Norm(liveVector);
         bool vectorValid = liveVector is { Length: 128 } && l2Norm > 1e-4;
         bool claudeHybridReady = hasLiveCapture && claudeBiometricStrategy is { IsConfigured: true };
+        RoboflowWorkflowDetectionResult? rfFaceResult = hasLiveCapture
+            ? await TryDetectRoboflowFaceAsync(primaryLiveCapture, ct)
+            : null;
+        string roboflowSuffix = FormatRoboflowFaceDetailSuffix(rfFaceResult);
         double geometricScore = ParseGeometricAlignmentScore(context.LiveGeometricSignatureJson, vectorValid || claudeHybridReady);
         result.GeometricAlignmentScore = geometricScore;
 
         bool layer2Passed = (claudeHybridReady || vectorValid) && geometricScore >= 0.65;
         string layer2Detail = claudeHybridReady
             ? vectorValid
-                ? $"Hybrid Claude Vision + Geometry ready (live optical capture queued + 128-D normalized vector L2 norm: {l2Norm:F4}, geometric alignment: {geometricScore:F2})."
-                : $"Hybrid Claude Vision + Geometry ready (live optical capture queued for cached pose gallery, geometric alignment: {geometricScore:F2})."
+                ? $"Hybrid Claude Vision + Geometry ready (live optical capture queued + 128-D normalized vector L2 norm: {l2Norm:F4}, geometric alignment: {geometricScore:F2}).{roboflowSuffix}"
+                : $"Hybrid Claude Vision + Geometry ready (live optical capture queued for cached pose gallery, geometric alignment: {geometricScore:F2}).{roboflowSuffix}"
             : layer2Passed
-                ? $"128-D normalized facial vector verified (L2 norm: {l2Norm:F4}, geometric alignment: {geometricScore:F2})."
+                ? $"128-D normalized facial vector verified (L2 norm: {l2Norm:F4}, geometric alignment: {geometricScore:F2}).{roboflowSuffix}"
                 : $"Invalid 128-D facial vector dimensionality ({liveVector?.Length ?? 0}-D) or zero norm.";
 
         result.Layers.Add(new BiometricLoginLayerResultDto
@@ -322,12 +331,14 @@ public class MultiLayerBiometricLoginStrategy(
                 candidateEnrollments,
                 normalizedEmail != null,
                 threshold,
+                rfFaceResult,
                 ct)
             : ExecuteDeterministicVerification(
                 liveVector,
                 candidateEnrollments,
                 normalizedEmail != null,
-                threshold);
+                threshold,
+                roboflowSuffix);
 
         result.SimilarityThreshold = outcome.EffectiveThreshold;
         result.CosineSimilarity = outcome.FinalScore;
@@ -395,9 +406,11 @@ public class MultiLayerBiometricLoginStrategy(
         IReadOnlyList<BiometricEnrollment> candidateEnrollments,
         bool isOneToOne,
         double deterministicThreshold,
+        RoboflowWorkflowDetectionResult? rfFaceResult,
         CancellationToken ct)
     {
         double claudeThreshold = ResolveClaudeSimilarityThreshold();
+        string roboflowSuffix = FormatRoboflowFaceDetailSuffix(rfFaceResult);
         List<RankedCandidate> ranked = RankCandidates(context, liveVector, candidateEnrollments);
 
         if (isOneToOne)
@@ -407,7 +420,8 @@ public class MultiLayerBiometricLoginStrategy(
                 new ClaudeBiometricIdentityInput(
                     LiveCaptureBase64: primaryLiveCapture,
                     PoseFramesJson: target.Enrollment.PoseFramesJson,
-                    LiveCaptureFramesBase64: context.LiveCaptureFramesBase64),
+                    LiveCaptureFramesBase64: context.LiveCaptureFramesBase64,
+                    RoboflowFaceContext: rfFaceResult),
                 ct);
 
             if (claudeResult.SamePerson && claudeResult.IsLiveHuman && claudeResult.Similarity >= claudeThreshold)
@@ -419,7 +433,7 @@ public class MultiLayerBiometricLoginStrategy(
                     FinalScore: hybridScore,
                     EffectiveThreshold: claudeThreshold,
                     MatchedEnrollment: target.Enrollment,
-                    Detail: BuildHybridSuccessDetail(claudeResult, target.LocalCosine, hybridScore, claudeThreshold));
+                    Detail: $"{BuildHybridSuccessDetail(claudeResult, target.LocalCosine, hybridScore, claudeThreshold)}{roboflowSuffix}");
             }
 
             if (IsTransientClaudeFailure(claudeResult) && liveVector is { Length: > 0 })
@@ -431,7 +445,8 @@ public class MultiLayerBiometricLoginStrategy(
                     liveVector,
                     candidateEnrollments,
                     isOneToOne: true,
-                    deterministicThreshold);
+                    deterministicThreshold,
+                    roboflowSuffix);
             }
 
             double rejectedScore = Math.Round(Math.Clamp(claudeResult.Similarity, 0.0, 1.0), 4);
@@ -441,7 +456,7 @@ public class MultiLayerBiometricLoginStrategy(
                 FinalScore: rejectedScore,
                 EffectiveThreshold: claudeThreshold,
                 MatchedEnrollment: null,
-                Detail: BuildHybridFailureReason(isOneToOne: true, claudeResult, claudeThreshold));
+                Detail: $"{BuildHybridFailureReason(isOneToOne: true, claudeResult, claudeThreshold)}{roboflowSuffix}");
         }
 
         List<RankedCandidate> topKCandidates = SelectTopKPoseCandidates(ranked, HybridTopKCandidates);
@@ -465,7 +480,8 @@ public class MultiLayerBiometricLoginStrategy(
                         new ClaudeBiometricIdentityInput(
                             LiveCaptureBase64: primaryLiveCapture,
                             PoseFramesJson: candidate.Enrollment.PoseFramesJson,
-                            LiveCaptureFramesBase64: context.LiveCaptureFramesBase64),
+                            LiveCaptureFramesBase64: context.LiveCaptureFramesBase64,
+                            RoboflowFaceContext: rfFaceResult),
                         ct);
                     return (candidate, claudeResult);
                 }
@@ -525,11 +541,7 @@ public class MultiLayerBiometricLoginStrategy(
                 FinalScore: hybridScore,
                 EffectiveThreshold: claudeThreshold,
                 MatchedEnrollment: winningMatch.Candidate.Enrollment,
-                Detail: BuildHybridSuccessDetail(
-                    winningMatch.Result,
-                    winningMatch.Candidate.LocalCosine,
-                    hybridScore,
-                    claudeThreshold));
+                Detail: $"{BuildHybridSuccessDetail(winningMatch.Result, winningMatch.Candidate.LocalCosine, hybridScore, claudeThreshold)}{roboflowSuffix}");
         }
 
         if (!spoofDetected && providerUnavailable && liveVector is { Length: > 0 })
@@ -541,7 +553,8 @@ public class MultiLayerBiometricLoginStrategy(
                 liveVector,
                 candidateEnrollments,
                 isOneToOne: false,
-                deterministicThreshold);
+                deterministicThreshold,
+                roboflowSuffix);
         }
 
         if (!spoofDetected && !providerUnavailable && liveHumanConfirmed && liveVector != null)
@@ -556,7 +569,7 @@ public class MultiLayerBiometricLoginStrategy(
                     FinalScore: fallbackScore,
                     EffectiveThreshold: deterministicThreshold,
                     MatchedEnrollment: legacyMatch.Enrollment,
-                    Detail: $"128-D Cosine similarity {fallbackScore:F4} >= {deterministicThreshold:F2} threshold verified (Claude live-human check passed).");
+                    Detail: $"128-D Cosine similarity {fallbackScore:F4} >= {deterministicThreshold:F2} threshold verified (Claude live-human check passed).{roboflowSuffix}");
             }
         }
 
@@ -567,14 +580,15 @@ public class MultiLayerBiometricLoginStrategy(
             FinalScore: Math.Round(Math.Clamp(bestFailedClaudeSim, 0.0, 1.0), 4),
             EffectiveThreshold: claudeThreshold,
             MatchedEnrollment: null,
-            Detail: BuildHybridFailureReason(isOneToOne: false, diagnosticResult, claudeThreshold));
+            Detail: $"{BuildHybridFailureReason(isOneToOne: false, diagnosticResult, claudeThreshold)}{roboflowSuffix}");
     }
 
     private static Layer4VerificationOutcome ExecuteDeterministicVerification(
         float[]? liveVector,
         IReadOnlyList<BiometricEnrollment> candidateEnrollments,
         bool isOneToOne,
-        double threshold)
+        double threshold,
+        string roboflowSuffix = "")
     {
         if (liveVector == null || liveVector.Length == 0)
         {
@@ -584,7 +598,7 @@ public class MultiLayerBiometricLoginStrategy(
                 FinalScore: 0.0,
                 EffectiveThreshold: threshold,
                 MatchedEnrollment: null,
-                Detail: $"Biometric {(isOneToOne ? "1:1" : "1:N")} verification failed: No 128-D live vector available (similarity: 0.0000 < {threshold:F2}). Identity mismatch rejected.");
+                Detail: $"Biometric {(isOneToOne ? "1:1" : "1:N")} verification failed: No 128-D live vector available (similarity: 0.0000 < {threshold:F2}). Identity mismatch rejected.{roboflowSuffix}");
         }
 
         BiometricEnrollment? bestEnrollment = null;
@@ -612,8 +626,8 @@ public class MultiLayerBiometricLoginStrategy(
 
         bool passed = bestEnrollment != null && maxSimilarity >= threshold;
         string detail = passed
-            ? $"128-D Cosine similarity {clampedSimilarity:F4} >= {threshold:F2} threshold verified."
-            : $"Biometric {(isOneToOne ? "1:1" : "1:N")} verification failed: Cosine similarity ({clampedSimilarity:F4}) is below the {threshold:F2} security threshold. Identity mismatch rejected.";
+            ? $"128-D Cosine similarity {clampedSimilarity:F4} >= {threshold:F2} threshold verified.{roboflowSuffix}"
+            : $"Biometric {(isOneToOne ? "1:1" : "1:N")} verification failed: Cosine similarity ({clampedSimilarity:F4}) is below the {threshold:F2} security threshold. Identity mismatch rejected.{roboflowSuffix}";
 
         return new Layer4VerificationOutcome(
             Passed: passed,
@@ -1111,6 +1125,40 @@ public class MultiLayerBiometricLoginStrategy(
 
         return (normA > 0 && normB > 0) ? (dot / (Math.Sqrt(normA) * Math.Sqrt(normB))) : 0.0;
     }
+
+    private async Task<RoboflowWorkflowDetectionResult?> TryDetectRoboflowFaceAsync(
+        string? primaryLiveCapture,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(primaryLiveCapture))
+        {
+            return null;
+        }
+
+        var (mime, b64) = SharedGovIdForensicsEvaluator.ParseDataUrl(primaryLiveCapture);
+        byte[] bytes = SharedGovIdForensicsEvaluator.TryDecodeBase64(b64);
+        if (bytes.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _roboflowWorkflowStrategy.DetectFaceAsync(
+                new RoboflowWorkflowImageInput(bytes, mime),
+                ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger?.LogDebug(ex, "[MultiLayerBiometricLoginStrategy] Optional Roboflow face detection skipped.");
+            return null;
+        }
+    }
+
+    private static string FormatRoboflowFaceDetailSuffix(RoboflowWorkflowDetectionResult? rfFaceResult) =>
+        rfFaceResult is { Success: true, Predictions.Count: > 0 }
+            ? $" Roboflow face={rfFaceResult.TopClass ?? RoboflowPretrainedDatasets.DefaultFaceClasses} (conf: {rfFaceResult.TopConfidence:F2}, 15m cacheHit: {rfFaceResult.CacheHit})."
+            : string.Empty;
 
     private static bool IsPortalOriginAllowed(UserRole role, string? portalOrigin) =>
         string.Equals(portalOrigin, "Admin", StringComparison.OrdinalIgnoreCase)

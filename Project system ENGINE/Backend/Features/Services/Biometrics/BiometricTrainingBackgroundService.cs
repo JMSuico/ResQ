@@ -12,6 +12,7 @@ using Backend.Features.Data.Models;
 using Backend.Features.Helpers.Infrastructure;
 using Backend.Features.Services.Interfaces;
 using Backend.Features.Services.Verification;
+using Backend.Features.Services.Vision;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -69,8 +70,9 @@ public sealed class BiometricTrainingBackgroundService(
                     AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                     IClaudeMessagesClient? claudeClient = scope.ServiceProvider.GetService<IClaudeMessagesClient>();
                     IConfiguration? configuration = scope.ServiceProvider.GetService<IConfiguration>();
+                    IRoboflowWorkflowStrategy? roboflowStrategy = scope.ServiceProvider.GetService<IRoboflowWorkflowStrategy>();
 
-                    await ProcessEnrollmentCoreAsync(db, enrollmentId, claudeClient, configuration, logger, stoppingToken);
+                    await ProcessEnrollmentCoreAsync(db, enrollmentId, claudeClient, configuration, roboflowStrategy, logger, stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -95,7 +97,7 @@ public sealed class BiometricTrainingBackgroundService(
         AppDbContext db,
         Guid enrollmentId,
         CancellationToken ct = default) =>
-        ProcessEnrollmentCoreAsync(db, enrollmentId, claudeClient: null, configuration: null, logger: null, ct);
+        ProcessEnrollmentCoreAsync(db, enrollmentId, claudeClient: null, configuration: null, roboflowStrategy: null, logger: null, ct);
 
     private async Task RecoverPendingLearningEnrollmentsAsync(CancellationToken ct)
     {
@@ -105,6 +107,7 @@ public sealed class BiometricTrainingBackgroundService(
             AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             IClaudeMessagesClient? claudeClient = scope.ServiceProvider.GetService<IClaudeMessagesClient>();
             IConfiguration? configuration = scope.ServiceProvider.GetService<IConfiguration>();
+            IRoboflowWorkflowStrategy? roboflowStrategy = scope.ServiceProvider.GetService<IRoboflowWorkflowStrategy>();
 
             List<Guid> pendingIds = await db.BiometricEnrollments
                 .AsNoTracking()
@@ -120,7 +123,7 @@ public sealed class BiometricTrainingBackgroundService(
                     break;
                 }
 
-                await ProcessEnrollmentCoreAsync(db, enrollmentId, claudeClient, configuration, logger, ct);
+                await ProcessEnrollmentCoreAsync(db, enrollmentId, claudeClient, configuration, roboflowStrategy, logger, ct);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -138,6 +141,7 @@ public sealed class BiometricTrainingBackgroundService(
         Guid enrollmentId,
         IClaudeMessagesClient? claudeClient,
         IConfiguration? configuration,
+        IRoboflowWorkflowStrategy? roboflowStrategy,
         ILogger? logger,
         CancellationToken ct)
     {
@@ -185,6 +189,7 @@ public sealed class BiometricTrainingBackgroundService(
         (double? ClaudeQuality, string? ClaudeNotes) claudeOutcome = await TryRunClaudeReinforcementAsync(
             claudeClient,
             configuration,
+            roboflowStrategy,
             frames,
             govIdReference,
             logger,
@@ -449,6 +454,7 @@ public sealed class BiometricTrainingBackgroundService(
     private static async Task<(double? ClaudeQuality, string? ClaudeNotes)> TryRunClaudeReinforcementAsync(
         IClaudeMessagesClient? claudeClient,
         IConfiguration? configuration,
+        IRoboflowWorkflowStrategy? roboflowStrategy,
         IReadOnlyList<ExtractedTrainingFrame> frames,
         (byte[] Bytes, string MimeType)? govIdReference,
         ILogger? logger,
@@ -471,6 +477,18 @@ public sealed class BiometricTrainingBackgroundService(
 
         try
         {
+            IRoboflowWorkflowStrategy effectiveRoboflow = roboflowStrategy
+                ?? new RoboflowServerlessWorkflowStrategy(null, configuration);
+            string faceDatasetContext = effectiveRoboflow.GetPretrainedDatasetPromptContext("FACE_DETECTION");
+            string philippineIdsContext = effectiveRoboflow.GetPretrainedDatasetPromptContext("PHILIPPINE_ID_DETECTION");
+            string systemPrompt =
+                "You are a biometric enrollment training and dataset calibration engine for ResQTrack.\n" +
+                $"{faceDatasetContext}\n" +
+                $"{philippineIdsContext}\n" +
+                "Evaluate enrolled multi-pose facial training frames (CENTER, RIGHT, LEFT, BLINK) and any Government ID reference " +
+                "for optical liveness clarity, pose diversity, and portrait consistency. " +
+                "Return ONLY JSON: {\"qualityScore\":0.0,\"poseDiversityOk\":true,\"summary\":\"...\"}.";
+
             List<ExtractedTrainingFrame> sampleFrames = frames
                 .GroupBy(f => f.PoseKey, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
@@ -519,6 +537,15 @@ public sealed class BiometricTrainingBackgroundService(
             {
                 ["max_tokens"] = 192,
                 ["temperature"] = 0.0,
+                ["system"] = new object[]
+                {
+                    new
+                    {
+                        type = "text",
+                        text = systemPrompt,
+                        cache_control = new { type = "ephemeral" }
+                    }
+                },
                 ["messages"] = new object[]
                 {
                     new

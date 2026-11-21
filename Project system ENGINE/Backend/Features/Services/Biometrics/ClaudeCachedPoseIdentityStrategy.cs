@@ -8,6 +8,7 @@ using System.Text.Json;
 using Backend.Features.Services.Implementations;
 using Backend.Features.Services.Interfaces;
 using Backend.Features.Services.Verification;
+using Backend.Features.Services.Vision;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -18,7 +19,8 @@ public sealed record ClaudeBiometricIdentityInput(
     string LiveCaptureBase64,
     string? PoseFramesJson,
     string? PreferredModel = null,
-    string[]? LiveCaptureFramesBase64 = null);
+    string[]? LiveCaptureFramesBase64 = null,
+    RoboflowWorkflowDetectionResult? RoboflowFaceContext = null);
 
 public sealed record ClaudeBiometricIdentityResult(
     bool SamePerson,
@@ -41,7 +43,8 @@ public interface IClaudeBiometricIdentityStrategy
 public class ClaudeCachedPoseIdentityStrategy(
     IClaudeMessagesClient? claudeClient = null,
     IConfiguration? configuration = null,
-    ILogger<ClaudeCachedPoseIdentityStrategy>? logger = null) : IClaudeBiometricIdentityStrategy
+    ILogger<ClaudeCachedPoseIdentityStrategy>? logger = null,
+    IRoboflowWorkflowStrategy? roboflowWorkflowStrategy = null) : IClaudeBiometricIdentityStrategy
 {
     public const double DefaultClaudeSimilarityThreshold = 0.78;
     private const int MaxLiveFrames = 3;
@@ -54,6 +57,9 @@ public class ClaudeCachedPoseIdentityStrategy(
 
     private readonly ILogger<ClaudeCachedPoseIdentityStrategy> _logger =
         logger ?? NullLogger<ClaudeCachedPoseIdentityStrategy>.Instance;
+
+    private readonly IRoboflowWorkflowStrategy _roboflowWorkflowStrategy =
+        roboflowWorkflowStrategy ?? new RoboflowServerlessWorkflowStrategy(null, configuration);
 
     public bool IsConfigured => _claudeClient.IsConfigured;
 
@@ -105,7 +111,22 @@ public class ClaudeCachedPoseIdentityStrategy(
                 errorCode: "PROVIDER_UNAVAILABLE");
         }
 
-        Dictionary<string, object> payload = BuildAnthropicPayload(liveFrames, cachedPoses);
+        RoboflowWorkflowDetectionResult? faceContext = input.RoboflowFaceContext;
+        if (faceContext is null && _roboflowWorkflowStrategy.IsFaceWorkflowConfigured)
+        {
+            try
+            {
+                faceContext = await _roboflowWorkflowStrategy.DetectFaceAsync(
+                    new RoboflowWorkflowImageInput(liveFrames[0].Bytes, liveFrames[0].MimeType),
+                    ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Optional Roboflow face detection skipped during Claude cached-pose verification.");
+            }
+        }
+
+        Dictionary<string, object> payload = BuildAnthropicPayload(liveFrames, cachedPoses, faceContext);
 
         ClaudeMessageAttemptResult attempt;
         try
@@ -148,9 +169,10 @@ public class ClaudeCachedPoseIdentityStrategy(
             ? configured
             : DefaultClaudeSimilarityThreshold;
 
-    private static Dictionary<string, object> BuildAnthropicPayload(
+    private Dictionary<string, object> BuildAnthropicPayload(
         IReadOnlyList<(byte[] Bytes, string MimeType)> liveFrames,
-        IReadOnlyList<(string PoseKey, byte[] Bytes, string MimeType)> cachedPoses)
+        IReadOnlyList<(string PoseKey, byte[] Bytes, string MimeType)> cachedPoses,
+        RoboflowWorkflowDetectionResult? faceContext)
     {
         var contentBlocks = new List<object>(liveFrames.Count + cachedPoses.Count + 1);
 
@@ -169,12 +191,16 @@ public class ClaudeCachedPoseIdentityStrategy(
             ", ",
             cachedPoses.Select((pose, idx) => $"Image {liveFrames.Count + 1 + idx}={pose.PoseKey}"));
 
+        string faceContextNotice = faceContext is { Success: true, Predictions.Count: > 0 }
+            ? $" Roboflow pretrained face prior: class={faceContext.TopClass ?? RoboflowPretrainedDatasets.DefaultFaceClasses} conf={faceContext.TopConfidence:F2} cacheHit={faceContext.CacheHit}."
+            : string.Empty;
+
         contentBlocks.Add(new
         {
             type = "text",
             text = $"{liveRange} represent(s) the live login capture frame(s). " +
                    $"The subsequent images ({poseLabels}) are the user's cached enrollment pose gallery " +
-                   $"(BIOMETRIC_GALLERY_MATCH). Judge liveness (reject printed photo, screen replay, mask, or flat frame) " +
+                   $"(BIOMETRIC_GALLERY_MATCH).{faceContextNotice} Judge liveness (reject printed photo, screen replay, mask, or flat frame) " +
                    $"and whether the live person matches the enrolled identity across all cached enrollment poses. " +
                    $"Return ONLY JSON with isLiveHuman, samePerson, similarity (0.0-1.0), bestMatchingPose, and reason."
         });
@@ -215,16 +241,20 @@ public class ClaudeCachedPoseIdentityStrategy(
             }
         };
 
-    private static string BuildSystemPrompt() =>
-        "You are a forensic facial liveness and biometric identity verification engine (BIOMETRIC_GALLERY_MATCH).\n" +
-        "Compare the live login capture frame(s) against the user's cached enrollment pose gallery (CENTER, RIGHT, LEFT, BLINK).\n" +
-        "1. isLiveHuman: true only for a genuine live human face; false for printed photo, screen replay, bezel, moire, mask, or flat spoof frame.\n" +
-        "2. samePerson: true only if facial bone structure, eye/brow spacing, nose bridge, and jawline clearly match the cached enrollment pose gallery even under dim or uneven lighting.\n" +
-        "3. similarity: 0.0 to 1.0 identity similarity score.\n" +
-        "4. bestMatchingPose: \"CENTER\"|\"RIGHT\"|\"LEFT\"|\"BLINK\"|\"UNKNOWN\".\n" +
-        "5. reason: concise 1-sentence reason.\n" +
-        "Respond with ONLY valid JSON (no markdown):\n" +
-        "{\"isLiveHuman\":true|false,\"samePerson\":true|false,\"similarity\":0.0,\"bestMatchingPose\":\"CENTER\",\"reason\":\"...\"}";
+    private string BuildSystemPrompt()
+    {
+        string faceDatasetContext = _roboflowWorkflowStrategy.GetPretrainedDatasetPromptContext("FACE_DETECTION");
+        return "You are a forensic facial liveness and biometric identity verification engine (BIOMETRIC_GALLERY_MATCH).\n" +
+               $"{faceDatasetContext}\n" +
+               "Compare the live login capture frame(s) against the user's cached enrollment pose gallery (CENTER, RIGHT, LEFT, BLINK).\n" +
+               "1. isLiveHuman: true only for a genuine live human face; false for printed photo, screen replay, bezel, moire, mask, or flat spoof frame.\n" +
+               "2. samePerson: true only if facial bone structure, eye/brow spacing, nose bridge, and jawline clearly match the cached enrollment pose gallery even under dim or uneven lighting.\n" +
+               "3. similarity: 0.0 to 1.0 identity similarity score.\n" +
+               "4. bestMatchingPose: \"CENTER\"|\"RIGHT\"|\"LEFT\"|\"BLINK\"|\"UNKNOWN\".\n" +
+               "5. reason: concise 1-sentence reason.\n" +
+               "Respond with ONLY valid JSON (no markdown):\n" +
+               "{\"isLiveHuman\":true|false,\"samePerson\":true|false,\"similarity\":0.0,\"bestMatchingPose\":\"CENTER\",\"reason\":\"...\"}";
+    }
 
     private static ClaudeBiometricIdentityResult ParseVerdict(
         ClaudeMessageAttemptResult attempt,

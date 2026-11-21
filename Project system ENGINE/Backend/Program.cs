@@ -16,6 +16,7 @@ using Backend.Features.Services.Implementations;
 using Backend.Features.Services.IncidentVision;
 using Backend.Features.Services.Interfaces;
 using Backend.Features.Services.Verification;
+using Backend.Features.Services.Vision;
 using ResQTrack.Backend.Features.Services.Biometrics;
 using ResQTrack.Backend.Features.Services.Standby;
 
@@ -54,7 +55,9 @@ if (!string.IsNullOrWhiteSpace(fallbackBindUrl))
 builder.Services.AddControllers()
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
+builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("RoboflowServerless");
 
 // Add OpenAPI
 builder.Services.AddOpenApi();
@@ -166,6 +169,7 @@ builder.Services.AddScoped<IStandbyGovIdAutoApproveStrategy, ClaudeAutoApproveGo
 builder.Services.AddScoped<IStandbyResponderAutoDispatchStrategy, ClaudeAutoDispatchResponderStrategy>();
 builder.Services.AddScoped<IClaudeBiometricIdentityStrategy, ClaudeCachedPoseIdentityStrategy>();
 builder.Services.AddScoped<IBiometricLoginValidationStrategy, MultiLayerBiometricLoginStrategy>();
+builder.Services.AddScoped<IRoboflowWorkflowStrategy, RoboflowServerlessWorkflowStrategy>();
 builder.Services.AddScoped<IRoboflowAccidentDetectionStrategy, RoboflowServerlessAccidentDetectionStrategy>();
 builder.Services.AddScoped<IClaudeIncidentVisionStrategy, ClaudeHaikuIncidentVisionStrategy>();
 builder.Services.AddScoped<IIncidentSceneAiAnalysisStrategy, DualStageIncidentSceneAiStrategy>();

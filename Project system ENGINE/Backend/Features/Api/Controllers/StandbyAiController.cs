@@ -2,6 +2,7 @@
 // Responsibility: Exposes Claude Standby AI Governance (Auto-Approve Uploaded Gov ID) and Multi-Objective Responder Auto-Dispatch endpoints.
 // Universal Lambda Expressions (=>). Strategy Pattern (OCP). Zero emojis.
 
+using Backend.Features.Services.Vision;
 using Microsoft.AspNetCore.Mvc;
 using ResQTrack.Backend.Features.Services.Standby;
 
@@ -12,7 +13,8 @@ namespace Backend.Features.Api.Controllers;
 public class StandbyAiController(
     IConfiguration configuration,
     IStandbyGovIdAutoApproveStrategy govIdStrategy,
-    IStandbyResponderAutoDispatchStrategy dispatchStrategy) : ControllerBase
+    IStandbyResponderAutoDispatchStrategy dispatchStrategy,
+    IRoboflowWorkflowStrategy? roboflowWorkflowStrategy = null) : ControllerBase
 {
     [HttpGet("status")]
     public IActionResult GetStatus() =>
@@ -44,9 +46,30 @@ public class StandbyAiController(
             standbyAutoApproveGovIdEnabled = bool.TryParse(configuration["Claude:StandbyAutoApproveGovIdEnabled"], out var g) ? g : true,
             standbyAutoDispatchRespondersEnabled = bool.TryParse(configuration["Claude:StandbyAutoDispatchRespondersEnabled"], out var d) ? d : true,
             autoApproveGovIdStrategy = govIdStrategy.StrategyKey,
-            autoDispatchResponderStrategy = dispatchStrategy.StrategyKey
+            autoDispatchResponderStrategy = dispatchStrategy.StrategyKey,
+            roboflowConfigured = ResolveRoboflowConfigured(),
+            roboflowFaceClasses = string.IsNullOrWhiteSpace(configuration["Roboflow:FaceClasses"])
+                ? RoboflowPretrainedDatasets.DefaultFaceClasses
+                : configuration["Roboflow:FaceClasses"]!.Trim(),
+            roboflowIdClasses = string.IsNullOrWhiteSpace(configuration["Roboflow:IdClasses"])
+                ? RoboflowPretrainedDatasets.DefaultPhilippineIdClasses
+                : configuration["Roboflow:IdClasses"]!.Trim(),
+            philippineIdsDataset = RoboflowPretrainedDatasets.PhilippineIdsDatasetSlug,
+            workflowCacheTtlMinutes = ResolveWorkflowCacheTtlMinutes(),
+            claudeTrainingCacheEnabled = ResolveClaudeTrainingCacheEnabled()
         };
     }
+
+    private bool ResolveRoboflowConfigured() =>
+        (roboflowWorkflowStrategy ?? new RoboflowServerlessWorkflowStrategy(null, configuration)).IsConfigured;
+
+    private int ResolveWorkflowCacheTtlMinutes() =>
+        int.TryParse(configuration["Roboflow:WorkflowCacheTtlMinutes"], out int parsed) && parsed is >= 1 and <= 120
+            ? parsed
+            : RoboflowPretrainedDatasets.WorkflowCacheMinutes;
+
+    private bool ResolveClaudeTrainingCacheEnabled() =>
+        !string.Equals(configuration["Biometrics:EnableAsyncClaudeTraining"], "false", StringComparison.OrdinalIgnoreCase);
 
     private string ResolveApiKey()
     {

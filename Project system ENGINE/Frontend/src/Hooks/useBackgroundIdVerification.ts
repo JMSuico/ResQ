@@ -5,7 +5,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as idScanEngineModule from '@/Libs/Vision/idScanner/idScanEngine';
+import type { RoboflowPredictionBox } from '@/components/RoboflowDetectionOverlay';
 import {
+  areEquivalentPhilippineIdClasses,
   claudeSonnetOcrProvider,
   type ClaudeDualSideExtractRequest,
   type ClaudeNormalizedIdFields
@@ -67,6 +69,13 @@ export interface IdVerificationState {
   readonly detectedIdLabel: string | null;
   readonly authenticityVerdict: string | null;
   readonly providerUsed: string | null;
+  readonly confidence: number | null;
+  readonly roboflowIdPredictions: readonly RoboflowPredictionBox[];
+  readonly roboflowDetectedClass: string | null;
+  readonly roboflowDetectedConfidence: number | null;
+  readonly roboflowCacheHit: boolean;
+  readonly roboflowDataset: string | null;
+  readonly claudeTrainingCacheActive: boolean;
 }
 
 export interface UseBackgroundIdVerificationResult extends IdVerificationState {
@@ -117,6 +126,22 @@ type DualSideOcrDiagnostics = ClaudeNormalizedIdFields & {
   readonly cityOrMunicipality?: string;
   readonly province?: string;
   readonly phoneNumber?: string;
+  readonly roboflowIdPredictions?: readonly RoboflowPredictionBox[];
+  readonly roboflowDetectedClass?: string | null;
+  readonly roboflowDetectedConfidence?: number | null;
+  readonly roboflowCacheHit?: boolean;
+  readonly roboflowDataset?: string | null;
+  readonly claudeTrainingCacheActive?: boolean;
+};
+
+const INITIAL_ROBOFLOW_TELEMETRY = {
+  confidence: null as number | null,
+  roboflowIdPredictions: [] as readonly RoboflowPredictionBox[],
+  roboflowDetectedClass: null as string | null,
+  roboflowDetectedConfidence: null as number | null,
+  roboflowCacheHit: false,
+  roboflowDataset: null as string | null,
+  claudeTrainingCacheActive: false
 };
 
 const INITIAL_VERIFICATION_STATE: IdVerificationState = {
@@ -128,7 +153,8 @@ const INITIAL_VERIFICATION_STATE: IdVerificationState = {
   detectedIdType: null,
   detectedIdLabel: null,
   authenticityVerdict: null,
-  providerUsed: null
+  providerUsed: null,
+  ...INITIAL_ROBOFLOW_TELEMETRY
 };
 
 const PROVIDER_FALLBACK_CODES: ReadonlySet<string> = new Set([
@@ -423,7 +449,8 @@ export const useBackgroundIdVerification = ({
       detectedIdType: null,
       detectedIdLabel: null,
       authenticityVerdict: null,
-      providerUsed: null
+      providerUsed: null,
+      ...INITIAL_ROBOFLOW_TELEMETRY
     });
 
     const timerId = window.setTimeout((): void => {
@@ -453,7 +480,8 @@ export const useBackgroundIdVerification = ({
             detectedIdType: null,
             detectedIdLabel: null,
             authenticityVerdict: 'DUPLICATE_FRONT_BACK',
-            providerUsed: 'local-preflight'
+            providerUsed: 'local-preflight',
+            ...INITIAL_ROBOFLOW_TELEMETRY
           });
           return;
         }
@@ -495,7 +523,8 @@ export const useBackgroundIdVerification = ({
                   detectedIdType: null,
                   detectedIdLabel: null,
                   authenticityVerdict: 'REJECTED_LOCAL_PREFLIGHT',
-                  providerUsed: 'local-preflight'
+                  providerUsed: 'local-preflight',
+                  ...INITIAL_ROBOFLOW_TELEMETRY
                 });
                 return;
               }
@@ -528,6 +557,34 @@ export const useBackgroundIdVerification = ({
           const detectedIdLabel = rawResult.detectedIdLabel?.trim() || null;
           const authenticityVerdict = rawResult.authenticityVerdict?.trim() || null;
           const providerUsed = rawResult.providerUsed?.trim() || 'claude';
+          const confidence =
+            typeof rawResult.confidence === 'number' &&
+            Number.isFinite(rawResult.confidence) &&
+            rawResult.confidence > 0
+              ? rawResult.confidence
+              : null;
+          const roboflowIdPredictions = Array.isArray(rawResult.roboflowIdPredictions)
+            ? rawResult.roboflowIdPredictions
+            : [];
+          const roboflowDetectedClass = rawResult.roboflowDetectedClass?.trim() || null;
+          const roboflowDetectedConfidence =
+            typeof rawResult.roboflowDetectedConfidence === 'number' &&
+            Number.isFinite(rawResult.roboflowDetectedConfidence)
+              ? rawResult.roboflowDetectedConfidence
+              : null;
+          const roboflowCacheHit = Boolean(rawResult.roboflowCacheHit);
+          const roboflowDataset = rawResult.roboflowDataset?.trim() || null;
+          const claudeTrainingCacheActive = Boolean(rawResult.claudeTrainingCacheActive);
+
+          const roboflowTelemetry = {
+            confidence,
+            roboflowIdPredictions,
+            roboflowDetectedClass,
+            roboflowDetectedConfidence,
+            roboflowCacheHit,
+            roboflowDataset,
+            claudeTrainingCacheActive
+          };
 
           // Check graceful offline / temporary outage fallback -> PENDING_MANUAL_REVIEW
           if (
@@ -546,12 +603,16 @@ export const useBackgroundIdVerification = ({
               detectedIdType,
               detectedIdLabel,
               authenticityVerdict: authenticityVerdict ?? 'PENDING_MANUAL_REVIEW',
-              providerUsed
+              providerUsed,
+              ...roboflowTelemetry
             });
             return;
           }
 
           // Check explicit forensic / side / type / authenticity rejection flags
+          const isEquivalentIdType = Boolean(
+            detectedIdType && areEquivalentPhilippineIdClasses(idTypeClean, detectedIdType)
+          );
           const verdictUpper = (authenticityVerdict ?? '').toUpperCase();
           let explicitRejectCode: IdVerificationErrorCode | null = null;
           if (rawResult.areSidesIdentical === true) {
@@ -560,7 +621,7 @@ export const useBackgroundIdVerification = ({
             explicitRejectCode = 'WRONG_ID_SIDE_FRONT_EXPECTED';
           } else if (rawResult.backSlotDetectedSide?.toUpperCase() === 'FRONT') {
             explicitRejectCode = 'WRONG_ID_SIDE_BACK_EXPECTED';
-          } else if (rawResult.matchesSelectedIdType === false) {
+          } else if (rawResult.matchesSelectedIdType === false && !isEquivalentIdType) {
             explicitRejectCode = 'WRONG_GOVERNMENT_ID_TYPE';
           } else if (
             verdictUpper === 'FAKE_OR_AI_GENERATED' ||
@@ -593,7 +654,8 @@ export const useBackgroundIdVerification = ({
               detectedIdType,
               detectedIdLabel,
               authenticityVerdict,
-              providerUsed
+              providerUsed,
+              ...roboflowTelemetry
             });
             return;
           }
@@ -619,7 +681,8 @@ export const useBackgroundIdVerification = ({
             detectedIdType,
             detectedIdLabel,
             authenticityVerdict: authenticityVerdict ?? 'GENUINE_PHYSICAL_ID',
-            providerUsed
+            providerUsed,
+            ...roboflowTelemetry
           });
         } catch (err: unknown) {
           if (controller.signal.aborted || activeRunIdRef.current !== runId) {
@@ -639,7 +702,8 @@ export const useBackgroundIdVerification = ({
             detectedIdType: null,
             detectedIdLabel: null,
             authenticityVerdict: 'PENDING_MANUAL_REVIEW',
-            providerUsed: 'manual-fallback'
+            providerUsed: 'manual-fallback',
+            ...INITIAL_ROBOFLOW_TELEMETRY
           });
         }
       };

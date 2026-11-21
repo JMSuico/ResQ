@@ -33,7 +33,8 @@ import {
   claudeFacialBiometricStrategy,
   createInitialFiveLayerPipeline,
   type BiometricLoginLayerTelemetry,
-  type BiometricValidationLayerCode
+  type BiometricValidationLayerCode,
+  type RoboflowFacePredictionBox
 } from '@/Libs/Biometrics/claudeFacialBiometricStrategy';
 
 type FacePresenceState = 'STANDBY' | 'NO_FACE' | 'ALIGN_FACE' | 'FACE_DETECTED';
@@ -130,6 +131,44 @@ const computeFrameSharpnessAndContrast = (
   };
 };
 
+interface LocalTrackedFaceBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly confidence: number;
+}
+
+const mapRoboflowFaceToSvg = (
+  pred: RoboflowFacePredictionBox,
+  mirrorHorizontal: boolean = true
+): { x: number; y: number; width: number; height: number } => {
+  const srcW = pred.imageWidth && pred.imageWidth > 0 ? pred.imageWidth : 640;
+  const srcH = pred.imageHeight && pred.imageHeight > 0 ? pred.imageHeight : 480;
+  const scaleX = 640 / srcW;
+  const scaleY = 480 / srcH;
+  const scaledW = Math.max(8, pred.width * scaleX);
+  const scaledH = Math.max(8, pred.height * scaleY);
+  const rawLeft = (pred.x - pred.width * 0.5) * scaleX;
+  const rawTop = (pred.y - pred.height * 0.5) * scaleY;
+  const clampedTop = Math.max(0, Math.min(480 - scaledH, rawTop));
+  const clampedLeft = Math.max(0, Math.min(640 - scaledW, rawLeft));
+  const x = mirrorHorizontal ? Math.max(0, 640 - (clampedLeft + scaledW)) : clampedLeft;
+  return { x, y: clampedTop, width: scaledW, height: scaledH };
+};
+
+const capture640FrameFromVideo = (
+  video: HTMLVideoElement,
+  snapshotCanvas: HTMLCanvasElement
+): string => {
+  snapshotCanvas.width = 640;
+  snapshotCanvas.height = 480;
+  const ctx = snapshotCanvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return '';
+  ctx.drawImage(video, 0, 0, 640, 480);
+  return snapshotCanvas.toDataURL('image/jpeg', 0.88);
+};
+
 const captureLiveBurstFrames = async (
   video: HTMLVideoElement | null,
   canvas: HTMLCanvasElement | null,
@@ -154,14 +193,7 @@ const captureLiveBurstFrames = async (
     if (video.readyState < 2 || video.videoWidth === 0) {
       break;
     }
-    canvas.width = 320;
-    canvas.height = 240;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) {
-      break;
-    }
-    ctx.drawImage(video, 0, 0, 320, 240);
-    const snapshot = canvas.toDataURL('image/jpeg', 0.86);
+    const snapshot = capture640FrameFromVideo(video, canvas);
     if (snapshot && snapshot.trim().length > 0) {
       frames.push(snapshot);
     } else {
@@ -192,6 +224,13 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
   );
   const [validationVerdict, setValidationVerdict] = useState<'IDLE' | 'SUCCESS_LOGIN' | 'INVALID'>('IDLE');
   const [facePresence, setFacePresence] = useState<FacePresenceState>('STANDBY');
+  const [localFaceBox, setLocalFaceBox] = useState<LocalTrackedFaceBox | null>(null);
+  const [roboflowPredictions, setRoboflowPredictions] = useState<RoboflowFacePredictionBox[]>([]);
+  const [roboflowTelemetry, setRoboflowTelemetry] = useState<{
+    confidence: number | null;
+    cacheHit: boolean;
+    claudeCacheActive: boolean;
+  }>({ confidence: null, cacheHit: false, claudeCacheActive: false });
   const [trainingStatusUi, setTrainingStatusUi] = useState<{
     state: 'idle' | 'ready' | 'learning';
     label: string;
@@ -199,6 +238,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const snapshotCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animationFrameId = useRef<number | null>(null);
   const prevGrayRef = useRef<Float32Array | undefined>(undefined);
@@ -209,11 +249,48 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
   const centeredFrameCountRef = useRef<number>(0);
   const lastFaceUiUpdateRef = useRef<number>(0);
   const lastFacePresenceRef = useRef<FacePresenceState>('STANDBY');
+  const localFaceBoxRef = useRef<LocalTrackedFaceBox | null>(null);
+  const lastOpticalMetricsRef = useRef<{
+    sharpness: number;
+    contrast: number;
+    alignment: number;
+  }>({ sharpness: 0, contrast: 0, alignment: 0 });
+  const roboflowAbortRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef<boolean>(true);
   const processFrameRef = useRef<() => void>(() => {});
   const stopCameraRef = useRef<() => void>(() => {});
   const scheduleTickRef = useRef<() => void>(() => {});
   const retryTimeoutRef = useRef<number | null>(null);
   const manualEmailEditRef = useRef<boolean>(false);
+
+  const triggerNonBlockingRoboflowFaceDetect = useCallback((imageDataUrl: string): void => {
+    const trimmed = imageDataUrl.trim();
+    if (!trimmed) return;
+    if (roboflowAbortRef.current) {
+      roboflowAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    roboflowAbortRef.current = controller;
+    void claudeFacialBiometricStrategy
+      .detectRoboflowFace(trimmed, controller.signal)
+      .then((res) => {
+        if (!isMountedRef.current || controller.signal.aborted || !res) {
+          return;
+        }
+        if (res.predictions && res.predictions.length > 0) {
+          setRoboflowPredictions(res.predictions);
+        }
+        setRoboflowTelemetry({
+          confidence:
+            res.topConfidence > 0
+              ? res.topConfidence
+              : res.predictions[0]?.confidence ?? null,
+          cacheHit: Boolean(res.cacheHit),
+          claudeCacheActive: Boolean(res.claudeTrainingCacheActive)
+        });
+      })
+      .catch(() => undefined);
+  }, []);
 
   const refreshTrainingStatus = useCallback(async (targetEmail: string): Promise<void> => {
     const clean = targetEmail.trim().toLowerCase();
@@ -293,6 +370,10 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
       window.clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
     }
+    if (roboflowAbortRef.current) {
+      roboflowAbortRef.current.abort();
+      roboflowAbortRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -307,6 +388,8 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     }
     lastFacePresenceRef.current = 'STANDBY';
     lastFaceUiUpdateRef.current = 0;
+    localFaceBoxRef.current = null;
+    setLocalFaceBox(null);
     setFacePresence('STANDBY');
   }, []);
 
@@ -316,6 +399,10 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     setFacePresence('STANDBY');
     lastFacePresenceRef.current = 'STANDBY';
     lastFaceUiUpdateRef.current = 0;
+    localFaceBoxRef.current = null;
+    setLocalFaceBox(null);
+    setRoboflowPredictions([]);
+    setRoboflowTelemetry({ confidence: null, cacheHit: false, claudeCacheActive: false });
     setStatusMessage('');
     setStatusTone('');
     setEmailError('');
@@ -442,7 +529,8 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
       descriptorVector: number[],
       frameDataUrl: string = '',
       fallbackVector?: number[],
-      extraLiveFrames?: string[]
+      extraLiveFrames?: string[],
+      opticalMetrics?: { sharpness: number; contrast: number; alignment: number }
     ) => {
       setStage('VERIFYING');
       setStatusMessage('Verifying face…');
@@ -450,7 +538,17 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
 
       const liveEvaluation = await claudeFacialBiometricStrategy.evaluateLiveLoginScanLayers(
         frameDataUrl,
-        descriptorVector
+        descriptorVector,
+        opticalMetrics
+          ? {
+              measuredSharpness: opticalMetrics.sharpness,
+              measuredContrast: opticalMetrics.contrast,
+              measuredAlignment: opticalMetrics.alignment,
+              roboflowFaceConfidence: roboflowTelemetry.confidence ?? undefined
+            }
+          : roboflowTelemetry.confidence !== null
+          ? { roboflowFaceConfidence: roboflowTelemetry.confidence }
+          : undefined
       );
       setPipelineLayers(liveEvaluation.layers);
 
@@ -561,10 +659,19 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
         }
       }
     },
-    [email, portalOrigin, stopCamera, onLoginSuccess, markPipelineSuccess, markPipelineFailure, refreshTrainingStatus]
+    [
+      email,
+      portalOrigin,
+      stopCamera,
+      onLoginSuccess,
+      markPipelineSuccess,
+      markPipelineFailure,
+      refreshTrainingStatus,
+      roboflowTelemetry.confidence
+    ]
   );
 
-  // Dedicated Frame Processing Logic for Genuine Optical Face Detection
+  // Dedicated Frame Processing Logic for Genuine Optical Face Detection (320x240 tracking + 640x480 capture)
   const processFrame = useCallback(() => {
     if (!videoRef.current || !canvasRef.current || hasDispatchedRef.current || autoScanPausedRef.current) return;
     const video = videoRef.current;
@@ -603,6 +710,38 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     const pitchVal = Math.abs(skinRes?.pitchDegrees || 0);
     const isCentered = Boolean(hasGenuineFace && skinRes && yawVal <= 22 && pitchVal <= 22);
 
+    const alignmentScore = hasGenuineFace
+      ? Math.max(0.5, Math.min(1, 1 - (yawVal + pitchVal) / 90))
+      : 0;
+    lastOpticalMetricsRef.current = {
+      sharpness: frameQuality.laplacianVar,
+      contrast: frameQuality.contrastStdDev,
+      alignment: alignmentScore
+    };
+
+    if (skinRes?.isValidFace && skinRes.landmarks?.faceBox) {
+      const fb = skinRes.landmarks.faceBox;
+      const boxW = Math.max(24, fb.w * 2);
+      const boxH = Math.max(24, fb.h * 2);
+      const mirroredX = Math.max(0, Math.min(640 - boxW, 640 - (fb.x * 2 + boxW)));
+      const boxY = Math.max(0, Math.min(480 - boxH, fb.y * 2));
+      const conf =
+        typeof skinRes.confidence === 'number' && Number.isFinite(skinRes.confidence)
+          ? skinRes.confidence
+          : typeof skinRes.trackingConfidence === 'number' && Number.isFinite(skinRes.trackingConfidence)
+          ? skinRes.trackingConfidence
+          : Math.min(0.99, Math.max(0.6, skinRes.haarCheck?.score ?? 0.84));
+      localFaceBoxRef.current = {
+        x: Math.round(mirroredX),
+        y: Math.round(boxY),
+        width: Math.round(boxW),
+        height: Math.round(boxH),
+        confidence: conf
+      };
+    } else {
+      localFaceBoxRef.current = null;
+    }
+
     const nextPresence: FacePresenceState = hasGenuineFace
       ? isCentered
         ? 'FACE_DETECTED'
@@ -613,6 +752,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
       lastFacePresenceRef.current = nextPresence;
       lastFaceUiUpdateRef.current = now;
       setFacePresence(nextPresence);
+      setLocalFaceBox(localFaceBoxRef.current);
     }
 
     if (hasGenuineFace && skinRes && frameQuality.isSharpAndContrasted) {
@@ -625,14 +765,23 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
         if (centeredFrameCountRef.current >= 6 && nextProgress >= 100 && !hasDispatchedRef.current) {
           hasDispatchedRef.current = true;
           setStage('VERIFYING');
-          const bestFrameUrl = canvas.toDataURL('image/jpeg', 0.86);
+          const snapCanvas = snapshotCanvasRef.current ?? canvas;
+          const bestFrameUrl = capture640FrameFromVideo(video, snapCanvas);
+          triggerNonBlockingRoboflowFaceDetect(bestFrameUrl);
+          const capturedOptical = { ...lastOpticalMetricsRef.current };
           void Promise.all([
-            captureLiveBurstFrames(video, canvas, bestFrameUrl),
+            captureLiveBurstFrames(video, snapCanvas, bestFrameUrl),
             extractBiometricFeatureVector(bestFrameUrl)
           ])
             .then(([burstFrames, vec]) => {
               if (vec && vec.length === 128) {
-                void executeBiometricLogin(vec, bestFrameUrl, undefined, burstFrames);
+                void executeBiometricLogin(
+                  vec,
+                  bestFrameUrl,
+                  undefined,
+                  burstFrames,
+                  capturedOptical
+                );
               } else {
                 hasDispatchedRef.current = false;
                 centeredFrameCountRef.current = 0;
@@ -663,7 +812,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
       scanProgressRef.current = nextProgress;
       setScanProgress(nextProgress);
     }
-  }, [executeBiometricLogin]);
+  }, [executeBiometricLogin, triggerNonBlockingRoboflowFaceDetect]);
 
   stopCameraRef.current = stopCamera;
   processFrameRef.current = processFrame;
@@ -709,6 +858,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
 
   // Stable Camera Lifecycle triggered on modal open/close
   useEffect(() => {
+    isMountedRef.current = true;
     let isCancelled = false;
 
     if (!isOpen) {
@@ -717,10 +867,14 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
       setFacePresence('STANDBY');
       lastFacePresenceRef.current = 'STANDBY';
       lastFaceUiUpdateRef.current = 0;
+      localFaceBoxRef.current = null;
+      setLocalFaceBox(null);
       scanProgressRef.current = 0;
       centeredFrameCountRef.current = 0;
       setScanProgress(0);
-      return;
+      return () => {
+        isMountedRef.current = false;
+      };
     }
 
     hasDispatchedRef.current = false;
@@ -814,6 +968,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
 
     return () => {
       isCancelled = true;
+      isMountedRef.current = false;
       stopCameraRef.current();
       setIsStreaming(false);
     };
@@ -892,7 +1047,9 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
+    const snapCanvas = snapshotCanvasRef.current ?? canvas;
     let dataUrl = '';
+    let measuredOptical: { sharpness: number; contrast: number; alignment: number } | undefined;
 
     if (video && canvas && video.readyState >= 2 && video.videoWidth > 0) {
       canvas.width = 320;
@@ -907,7 +1064,12 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
           setStatusTone('bad');
           return;
         }
-        dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+        measuredOptical = {
+          sharpness: quality.laplacianVar,
+          contrast: quality.contrastStdDev,
+          alignment: lastOpticalMetricsRef.current.alignment || 0.85
+        };
+        dataUrl = snapCanvas ? capture640FrameFromVideo(video, snapCanvas) : canvas.toDataURL('image/jpeg', 0.88);
       }
     }
 
@@ -918,12 +1080,15 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     setScanProgress(100);
     setStage('VERIFYING');
 
-    const burstFrames = dataUrl ? await captureLiveBurstFrames(video, canvas, dataUrl) : [];
+    if (dataUrl) {
+      triggerNonBlockingRoboflowFaceDetect(dataUrl);
+    }
+    const burstFrames = dataUrl ? await captureLiveBurstFrames(video, snapCanvas, dataUrl) : [];
     const vector = dataUrl
       ? await extractBiometricFeatureVector(dataUrl)
       : new Array<number>(128).fill(0).map((_, i) => (i === 0 ? 1 : 0));
 
-    await executeBiometricLogin(vector, dataUrl, undefined, burstFrames);
+    await executeBiometricLogin(vector, dataUrl, undefined, burstFrames, measuredOptical);
   };
 
   const handleSyntheticTestScan = async () => {
@@ -941,8 +1106,10 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
 
     let dataUrl = '';
     let liveExtractedVec: number[] | null = null;
+    let measuredOptical: { sharpness: number; contrast: number; alignment: number } | undefined;
     const video = videoRef.current;
     const canvas = canvasRef.current;
+    const snapCanvas = snapshotCanvasRef.current ?? canvas;
 
     if (video && canvas && video.videoWidth > 0) {
       canvas.width = 320;
@@ -953,7 +1120,14 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
         const imgData = ctx.getImageData(0, 0, 320, 240);
         const quality = computeFrameSharpnessAndContrast(imgData.data, 320, 240);
         if (quality.isSharpAndContrasted) {
-          dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+          measuredOptical = {
+            sharpness: quality.laplacianVar,
+            contrast: quality.contrastStdDev,
+            alignment: lastOpticalMetricsRef.current.alignment || 0.88
+          };
+          dataUrl = snapCanvas
+            ? capture640FrameFromVideo(video, snapCanvas)
+            : canvas.toDataURL('image/jpeg', 0.88);
           const extracted = await extractBiometricFeatureVector(dataUrl);
           if (extracted && extracted.length === 128) {
             liveExtractedVec = extracted;
@@ -962,7 +1136,10 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
       }
     }
 
-    const burstFrames = dataUrl ? await captureLiveBurstFrames(video, canvas, dataUrl) : [];
+    if (dataUrl) {
+      triggerNonBlockingRoboflowFaceDetect(dataUrl);
+    }
+    const burstFrames = dataUrl ? await captureLiveBurstFrames(video, snapCanvas, dataUrl) : [];
     const trimmedEmail = email.trim();
     if (!dataUrl || !liveExtractedVec) {
       if (!trimmedEmail) {
@@ -981,7 +1158,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
         ? liveExtractedVec
         : generateDeterministicBiometricVector(trimmedEmail);
 
-    await executeBiometricLogin(primaryVec, dataUrl, undefined, burstFrames);
+    await executeBiometricLogin(primaryVec, dataUrl, undefined, burstFrames, measuredOptical);
   };
 
   if (!isOpen) return null;
@@ -1067,31 +1244,54 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
           </div>
           {emailError && <p className="font-mono text-xs sm:text-sm text-[#670626] font-semibold">{emailError}</p>}
 
-          {trainingStatusUi.state !== 'idle' && (
-            <div
-              id="biometric-training-status-badge"
-              role="status"
-              aria-live="polite"
-              className={`px-3 py-2 rounded-xl border font-mono text-xs font-semibold flex items-center gap-2 ${
-                trainingStatusUi.state === 'ready'
+          <div
+            id="biometric-training-status-badge"
+            role="status"
+            aria-live="polite"
+            className={`px-3 py-2 rounded-xl border font-mono text-xs font-semibold flex flex-wrap items-center justify-between gap-2 ${
+              email.trim().includes('@') && trainingStatusUi.state !== 'idle'
+                ? trainingStatusUi.state === 'ready'
                   ? 'bg-emerald-50 border-emerald-600/35 text-emerald-800'
                   : 'bg-[#E9D9D0] border-[#A83B4D]/45 text-[#670626]'
-              }`}
-            >
-              {trainingStatusUi.state === 'ready' ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
-              ) : (
+                : 'bg-[#EFE4DD] border-[#D5BEB3] text-[#670626]'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {email.trim().includes('@') && trainingStatusUi.state === 'learning' ? (
                 <Cpu className="w-4 h-4 text-[#A83B4D] shrink-0 animate-pulse" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
               )}
-              <span>{trainingStatusUi.label}</span>
+              <span>
+                {email.trim().includes('@') && trainingStatusUi.state !== 'idle'
+                  ? trainingStatusUi.label
+                  : 'Roboflow face Workflow + Claude Cached Pose Gallery Ready'}
+              </span>
             </div>
-          )}
+            <div className="flex items-center gap-1.5 text-[11px]">
+              {roboflowTelemetry.confidence !== null && (
+                <span className="px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-600/40 text-emerald-800 font-bold">
+                  face{' '}
+                  {Math.round(
+                    roboflowTelemetry.confidence <= 1
+                      ? roboflowTelemetry.confidence * 100
+                      : roboflowTelemetry.confidence
+                  )}
+                  %
+                </span>
+              )}
+              <span className="px-1.5 py-0.5 rounded bg-[#F7F1EA] border border-[#D5BEB3] text-[#7D2B3D] font-bold">
+                {roboflowTelemetry.cacheHit ? '15m Cache HIT' : '15m Cache'}
+              </span>
+            </div>
+          </div>
         </form>
 
         <div className="flex flex-col items-center">
           {/* Live Camera Viewport */}
           <div className="relative w-full h-36 bg-[#24030D] rounded-2xl overflow-hidden border-2 border-[#670626]/30 flex items-center justify-center shadow-inner">
             <canvas ref={canvasRef} className="hidden" />
+            <canvas ref={snapshotCanvasRef} className="hidden" />
             <video
               ref={videoRef}
               autoPlay
@@ -1101,6 +1301,95 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
                 isStreaming ? 'opacity-100' : 'opacity-0'
               }`}
             />
+
+            {/* Dynamic SVG Face Bounding-Box Reticle Overlay */}
+            {isStreaming && (localFaceBox || roboflowPredictions.length > 0) && (
+              <svg
+                id="biometric-login-face-bbox-svg"
+                className="absolute inset-0 w-full h-full pointer-events-none z-10"
+                viewBox="0 0 640 480"
+                preserveAspectRatio="xMidYMid slice"
+              >
+                {localFaceBox && (
+                  <g>
+                    <rect
+                      x={localFaceBox.x}
+                      y={localFaceBox.y}
+                      width={localFaceBox.width}
+                      height={localFaceBox.height}
+                      rx={8}
+                      fill="none"
+                      stroke={facePresence === 'FACE_DETECTED' ? '#10b981' : '#38bdf8'}
+                      strokeWidth={3}
+                      strokeDasharray={facePresence === 'FACE_DETECTED' ? 'none' : '10 6'}
+                    />
+                    <rect
+                      x={localFaceBox.x}
+                      y={Math.max(4, localFaceBox.y - 26)}
+                      width={138}
+                      height={22}
+                      rx={5}
+                      fill="#2B0210"
+                      fillOpacity={0.88}
+                    />
+                    <text
+                      x={localFaceBox.x + 8}
+                      y={Math.max(19, localFaceBox.y - 11)}
+                      fill={facePresence === 'FACE_DETECTED' ? '#34d399' : '#7dd3fc'}
+                      fontSize={13}
+                      fontWeight="bold"
+                      fontFamily="monospace"
+                    >
+                      {`face ${Math.round(
+                        (localFaceBox.confidence <= 1
+                          ? localFaceBox.confidence * 100
+                          : localFaceBox.confidence)
+                      )}%`}
+                    </text>
+                  </g>
+                )}
+
+                {roboflowPredictions.map((pred, idx) => {
+                  const mapped = mapRoboflowFaceToSvg(pred, true);
+                  const confPct = Math.round(
+                    pred.confidence <= 1 ? pred.confidence * 100 : pred.confidence
+                  );
+                  return (
+                    <g key={`rf-login-face-${idx}`}>
+                      <rect
+                        x={mapped.x}
+                        y={mapped.y}
+                        width={mapped.width}
+                        height={mapped.height}
+                        rx={8}
+                        fill="none"
+                        stroke="#fbbf24"
+                        strokeWidth={3}
+                      />
+                      <rect
+                        x={mapped.x}
+                        y={Math.min(452, mapped.y + mapped.height + 4)}
+                        width={162}
+                        height={22}
+                        rx={5}
+                        fill="#451a03"
+                        fillOpacity={0.92}
+                      />
+                      <text
+                        x={mapped.x + 8}
+                        y={Math.min(467, mapped.y + mapped.height + 19)}
+                        fill="#fde68a"
+                        fontSize={13}
+                        fontWeight="bold"
+                        fontFamily="monospace"
+                      >
+                        {`${pred.className || 'face'} ${confPct}% (RF)`}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            )}
 
             {/* Connecting Spinner Overlay */}
             {!isStreaming && !cameraError && (
@@ -1232,43 +1521,56 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              {pipelineLayers.map((layer) => (
-                <div
-                  key={layer.layerCode}
-                  data-layer-code={layer.layerCode}
-                  className="flex items-center justify-between text-xs font-mono px-2.5 py-1.5 rounded-xl bg-[#F7F1EA] border border-[#D5BEB3]"
-                >
-                  <div className="flex items-center gap-2 truncate pr-2">
-                    <CheckCircle2
-                      className={`w-3.5 h-3.5 shrink-0 ${
-                        layer.status === 'PASSED'
-                          ? 'text-emerald-700'
-                          : layer.status === 'FAILED'
-                          ? 'text-[#670626]'
-                          : layer.status === 'RUNNING'
-                          ? 'text-[#A83B4D] animate-pulse'
-                          : 'text-[#A83B4D]/50'
-                      }`}
-                    />
-                    <span className="text-[#670626] font-medium truncate">
-                      {COMPACT_LAYER_LABELS[layer.layerCode] || layer.layerName}
-                    </span>
-                  </div>
-                  <span
-                    className={`shrink-0 text-xs font-bold px-1.5 py-0.5 rounded ${
-                      layer.status === 'PASSED'
-                        ? 'text-emerald-700'
-                        : layer.status === 'FAILED'
-                        ? 'text-[#670626]'
-                        : layer.status === 'RUNNING'
-                        ? 'text-[#A83B4D]'
-                        : 'text-[#A83B4D]/70'
-                    }`}
+              {pipelineLayers.map((layer) => {
+                const scorePct =
+                  layer.score > 0
+                    ? Math.min(100, Math.round(layer.score <= 1 ? layer.score * 100 : layer.score))
+                    : 0;
+                return (
+                  <div
+                    key={layer.layerCode}
+                    data-layer-code={layer.layerCode}
+                    className="flex items-center justify-between text-xs font-mono px-2.5 py-1.5 rounded-xl bg-[#F7F1EA] border border-[#D5BEB3]"
                   >
-                    {layer.status}
-                  </span>
-                </div>
-              ))}
+                    <div className="flex items-center gap-2 truncate pr-2">
+                      <CheckCircle2
+                        className={`w-3.5 h-3.5 shrink-0 ${
+                          layer.status === 'PASSED'
+                            ? 'text-emerald-700'
+                            : layer.status === 'FAILED'
+                            ? 'text-[#670626]'
+                            : layer.status === 'RUNNING'
+                            ? 'text-[#A83B4D] animate-pulse'
+                            : 'text-[#A83B4D]/50'
+                        }`}
+                      />
+                      <span className="text-[#670626] font-medium truncate">
+                        {COMPACT_LAYER_LABELS[layer.layerCode] || layer.layerName}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {scorePct > 0 && (
+                        <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-[#EFE4DD] border border-[#D5BEB3] text-[#670626] tabular-nums">
+                          {scorePct}%
+                        </span>
+                      )}
+                      <span
+                        className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                          layer.status === 'PASSED'
+                            ? 'text-emerald-700'
+                            : layer.status === 'FAILED'
+                            ? 'text-[#670626]'
+                            : layer.status === 'RUNNING'
+                            ? 'text-[#A83B4D]'
+                            : 'text-[#A83B4D]/70'
+                        }`}
+                      >
+                        {layer.status}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

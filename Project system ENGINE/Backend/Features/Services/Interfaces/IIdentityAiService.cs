@@ -20,6 +20,26 @@ public interface IIdentityAiService
         CancellationToken ct = default);
     Task<IdentityDocumentAnalyzeResponseDto> AnalyzeDocumentAsync(IdentityDocumentAnalyzeRequestDto request, CancellationToken ct = default);
     Task<FacialGeometryAnalysisResponseDto> AnalyzeFacialGeometryAsync(FacialGeometryAnalysisRequestDto request, CancellationToken ct = default);
+    Task<RoboflowWorkflowDetectResponseDto> DetectRoboflowFaceAsync(
+        RoboflowWorkflowDetectRequestDto request,
+        CancellationToken ct = default) =>
+        Task.FromResult(new RoboflowWorkflowDetectResponseDto
+        {
+            Success = false,
+            TaskType = "FACE_DETECTION",
+            ErrorCode = "NOT_IMPLEMENTED",
+            ErrorMessage = "Roboflow face detection is not implemented on this service."
+        });
+    Task<RoboflowWorkflowDetectResponseDto> DetectRoboflowPhilippineIdAsync(
+        RoboflowWorkflowDetectRequestDto request,
+        CancellationToken ct = default) =>
+        Task.FromResult(new RoboflowWorkflowDetectResponseDto
+        {
+            Success = false,
+            TaskType = "PHILIPPINE_ID_DETECTION",
+            ErrorCode = "NOT_IMPLEMENTED",
+            ErrorMessage = "Roboflow Philippine ID detection is not implemented on this service."
+        });
     Task<BiometricTrainingStatusDto> GetBiometricTrainingStatusAsync(string? email, CancellationToken ct = default) =>
         Task.FromResult(new BiometricTrainingStatusDto(
             Email: email?.Trim().ToLowerInvariant() ?? string.Empty,

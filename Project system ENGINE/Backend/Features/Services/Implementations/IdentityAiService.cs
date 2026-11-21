@@ -11,9 +11,12 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Backend.Features.Api.DTOs;
 using Backend.Features.Data;
+using Backend.Features.Helpers.Infrastructure;
 using Backend.Features.Services.Interfaces;
 using Backend.Features.Services.Verification;
+using Backend.Features.Services.Vision;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -31,6 +34,7 @@ public class IdentityAiService : IIdentityAiService
     private readonly IVerificationTokenCacheStrategy _tokenCacheStrategy;
     private readonly IGovIdAuthenticityEvaluator _authenticityEvaluator;
     private readonly IFaceToGovIdMatchStrategy _faceToIdMatchStrategy;
+    private readonly IRoboflowWorkflowStrategy _roboflowWorkflowStrategy;
     private readonly bool _hasInjectedAuthenticityEvaluator;
     private readonly AppDbContext? _db;
 
@@ -42,7 +46,8 @@ public class IdentityAiService : IIdentityAiService
         IVerificationTokenCacheStrategy? tokenCacheStrategy = null,
         IGovIdAuthenticityEvaluator? authenticityEvaluator = null,
         IFaceToGovIdMatchStrategy? faceToIdMatchStrategy = null,
-        AppDbContext? db = null)
+        AppDbContext? db = null,
+        IRoboflowWorkflowStrategy? roboflowWorkflowStrategy = null)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
@@ -53,6 +58,9 @@ public class IdentityAiService : IIdentityAiService
                 httpClientFactory?.CreateClient("ClaudeMessages") ?? new HttpClient(),
                 configuration,
                 NullLogger<ClaudeMessagesClient>.Instance);
+
+        _roboflowWorkflowStrategy = roboflowWorkflowStrategy
+            ?? new RoboflowServerlessWorkflowStrategy(null, configuration);
 
         IOptions<VerificationTokenOptions> tokenOptions =
             Options.Create(ResolveVerificationTokenOptions(configuration));
@@ -65,14 +73,16 @@ public class IdentityAiService : IIdentityAiService
             ?? new SharedGovIdForensicsEvaluator(
                 configuration,
                 _claudeClient,
-                NullLogger<SharedGovIdForensicsEvaluator>.Instance);
+                NullLogger<SharedGovIdForensicsEvaluator>.Instance,
+                _roboflowWorkflowStrategy);
 
         _faceToIdMatchStrategy = faceToIdMatchStrategy
             ?? new ClaudeFaceToGovIdMatchStrategy(
                 configuration,
                 _claudeClient,
                 tokenOptions,
-                NullLogger<ClaudeFaceToGovIdMatchStrategy>.Instance);
+                NullLogger<ClaudeFaceToGovIdMatchStrategy>.Instance,
+                _roboflowWorkflowStrategy);
     }
 
     public AiProviderStatusDto GetAiStatus() =>
@@ -82,8 +92,69 @@ public class IdentityAiService : IIdentityAiService
             GeminiConfigured = IsGeminiConfigured(),
             OpenAiConfigured = IsOpenAiConfigured(),
             AzureConfigured = IsAzureConfigured(),
+            RoboflowConfigured = _roboflowWorkflowStrategy.IsConfigured,
+            RoboflowFaceWorkflowConfigured = _roboflowWorkflowStrategy.IsFaceWorkflowConfigured,
+            RoboflowIdWorkflowConfigured = _roboflowWorkflowStrategy.IsPhilippineIdWorkflowConfigured,
             ActiveChain = ResolveActiveChainSummary()
         };
+
+    public async Task<RoboflowWorkflowDetectResponseDto> DetectRoboflowFaceAsync(
+        RoboflowWorkflowDetectRequestDto request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        RoboflowWorkflowImageInput input = BuildRoboflowImageInput(request);
+        RoboflowWorkflowDetectionResult detection = await _roboflowWorkflowStrategy.DetectFaceAsync(input, ct);
+
+        if ((!detection.Success || detection.Predictions.Count == 0) &&
+            input.ImageBytes.Length > 0 &&
+            _claudeClient.IsConfigured)
+        {
+            RoboflowWorkflowDetectionResult? claudeFallback = await TryDetectWithClaudeDatasetPriorAsync(
+                taskType: "FACE_DETECTION",
+                datasetSlug: RoboflowPretrainedDatasets.FaceDatasetSlug,
+                classes: RoboflowServerlessWorkflowStrategy.SanitizeClassesCsv(
+                    request.Classes,
+                    RoboflowPretrainedDatasets.DefaultFaceClasses),
+                input: input,
+                ct: ct);
+            if (claudeFallback is { Success: true, Predictions.Count: > 0 })
+            {
+                detection = claudeFallback;
+            }
+        }
+
+        return MapRoboflowDetectResponse(detection);
+    }
+
+    public async Task<RoboflowWorkflowDetectResponseDto> DetectRoboflowPhilippineIdAsync(
+        RoboflowWorkflowDetectRequestDto request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        RoboflowWorkflowImageInput input = BuildRoboflowImageInput(request);
+        RoboflowWorkflowDetectionResult detection = await _roboflowWorkflowStrategy.DetectPhilippineIdAsync(input, ct);
+
+        if ((!detection.Success || detection.Predictions.Count == 0) &&
+            input.ImageBytes.Length > 0 &&
+            _claudeClient.IsConfigured)
+        {
+            RoboflowWorkflowDetectionResult? claudeFallback = await TryDetectWithClaudeDatasetPriorAsync(
+                taskType: "PHILIPPINE_ID_DETECTION",
+                datasetSlug: RoboflowPretrainedDatasets.PhilippineIdsDatasetSlug,
+                classes: RoboflowServerlessWorkflowStrategy.SanitizeClassesCsv(
+                    request.Classes,
+                    RoboflowPretrainedDatasets.DefaultPhilippineIdClasses),
+                input: input,
+                ct: ct);
+            if (claudeFallback is { Success: true, Predictions.Count: > 0 })
+            {
+                detection = claudeFallback;
+            }
+        }
+
+        return MapRoboflowDetectResponse(detection);
+    }
 
     public async Task<AiExtractResponseDto> ExtractIdentityAsync(AiExtractRequestDto request, CancellationToken ct = default)
     {
@@ -236,7 +307,13 @@ public class IdentityAiService : IIdentityAiService
                         issuedToken = issued.Token;
                     }
 
-                    return MapForensicsToOcrResponse(forensics, idType, sw.ElapsedMilliseconds, issuedToken);
+                    RoboflowWorkflowDetectionResult? fallbackIdDetection = forensics.RoboflowDetection;
+                    if (fallbackIdDetection is null && _roboflowWorkflowStrategy.IsPhilippineIdWorkflowConfigured)
+                    {
+                        fallbackIdDetection = await TryDetectPhilippineIdNonBlockingAsync(frontBytes, frontMime, idType, ct);
+                    }
+
+                    return MapForensicsToOcrResponse(forensics, idType, sw.ElapsedMilliseconds, issuedToken, fallbackIdDetection);
                 }
 
                 AiOcrResponseDto mappedFailure = MapForensicsToOcrResponse(forensics, idType, sw.ElapsedMilliseconds);
@@ -671,6 +748,10 @@ public class IdentityAiService : IIdentityAiService
                 }
             }
 
+            RoboflowWorkflowDetectionResult? legacyFaceDetection = hasCenter
+                ? await TryDetectFaceNonBlockingAsync(centerBytes, liveCenterMime, ct)
+                : null;
+
             string legacySignatureJson = BuildGeometricSignatureJson(providerUsed, patternHash, livenessConfidence, request.SamplingFps);
             bool isValidGeometry = hasCenter || (request.ClientDescriptorVector ?? request.DescriptorVector) is { Count: 128 };
             return new FacialGeometryAnalysisResponseDto
@@ -694,6 +775,11 @@ public class IdentityAiService : IIdentityAiService
                 FacialVerificationToken = null,
                 IsAutoApproveEligible = false,
                 RequiresPendingManualReview = false,
+                RoboflowFacePredictions = MapRoboflowPredictions(legacyFaceDetection?.Predictions),
+                RoboflowFaceConfidence = legacyFaceDetection is { TopConfidence: > 0 } ? legacyFaceDetection.TopConfidence : null,
+                RoboflowCacheHit = legacyFaceDetection?.CacheHit ?? false,
+                RoboflowDataset = legacyFaceDetection?.DatasetSlug ?? RoboflowPretrainedDatasets.FaceDatasetSlug,
+                ClaudeTrainingCacheActive = _claudeClient.IsConfigured,
                 Summary = isValidGeometry
                     ? "4-pose anthropometric facial geometry and 128-D L2-normalized descriptor evaluated via Claude Vision Biometric Strategy."
                     : "No live facial capture frames or 128-D descriptor vector provided."
@@ -729,7 +815,8 @@ public class IdentityAiService : IIdentityAiService
                     ratiosJson: ratiosJson,
                     ratiosDict: ratiosDict,
                     combinedSignatureJson: combinedSignatureJson,
-                    normalized128D: normalized128D);
+                    normalized128D: normalized128D,
+                    claudeTrainingCacheActive: _claudeClient.IsConfigured);
             }
         }
 
@@ -779,7 +866,9 @@ public class IdentityAiService : IIdentityAiService
                 ratiosJson: ratiosJson,
                 ratiosDict: ratiosDict,
                 combinedSignatureJson: combinedSignatureJson,
-                normalized128D: normalized128D);
+                normalized128D: normalized128D,
+                roboflowFaceDetection: matchResult.RoboflowFaceDetection,
+                claudeTrainingCacheActive: _claudeClient.IsConfigured);
         }
 
         string? facialToken = null;
@@ -821,6 +910,11 @@ public class IdentityAiService : IIdentityAiService
             RequiresPendingManualReview = false,
             ErrorCode = null,
             ErrorMessage = null,
+            RoboflowFacePredictions = MapRoboflowPredictions(matchResult.RoboflowFaceDetection?.Predictions),
+            RoboflowFaceConfidence = matchResult.RoboflowFaceDetection is { TopConfidence: > 0 } ? matchResult.RoboflowFaceDetection.TopConfidence : null,
+            RoboflowCacheHit = matchResult.RoboflowFaceDetection?.CacheHit ?? false,
+            RoboflowDataset = matchResult.RoboflowFaceDetection?.DatasetSlug ?? RoboflowPretrainedDatasets.FaceDatasetSlug,
+            ClaudeTrainingCacheActive = _claudeClient.IsConfigured,
             Summary = $"Live 4-pose biometric liveness and Face-to-Gov-ID portrait match passed (similarity {matchResult.FaceToIdSimilarity:F2})."
         };
     }
@@ -988,11 +1082,12 @@ public class IdentityAiService : IIdentityAiService
         return combined;
     }
 
-    private static AiOcrResponseDto MapForensicsToOcrResponse(
+    private AiOcrResponseDto MapForensicsToOcrResponse(
         GovIdForensicsResult forensics,
         string? requestedIdType,
         long elapsedMs,
-        string? idVerificationToken = null)
+        string? idVerificationToken = null,
+        RoboflowWorkflowDetectionResult? roboflowOverride = null)
     {
         bool verifiedGenuine = forensics.Success &&
                                forensics.IsGenuineId &&
@@ -1002,6 +1097,7 @@ public class IdentityAiService : IIdentityAiService
                                string.IsNullOrWhiteSpace(forensics.ErrorCode);
 
         AiOcrFieldsDto? fields = verifiedGenuine || forensics.Success ? forensics.Fields : null;
+        RoboflowWorkflowDetectionResult? rfDetection = forensics.RoboflowDetection ?? roboflowOverride;
 
         return new AiOcrResponseDto
         {
@@ -1045,7 +1141,13 @@ public class IdentityAiService : IIdentityAiService
             ErrorCode = forensics.ErrorCode,
             ErrorMessage = forensics.ErrorMessage,
             Warnings = forensics.Warnings ?? [],
-            ExecutionTimeMs = Math.Max(1, elapsedMs)
+            ExecutionTimeMs = Math.Max(1, elapsedMs),
+            RoboflowIdPredictions = MapRoboflowPredictions(rfDetection?.Predictions),
+            RoboflowDetectedClass = rfDetection?.TopClass,
+            RoboflowDetectedConfidence = rfDetection is { TopConfidence: > 0 } ? rfDetection.TopConfidence : null,
+            RoboflowCacheHit = rfDetection?.CacheHit ?? false,
+            RoboflowDataset = rfDetection?.DatasetSlug ?? RoboflowPretrainedDatasets.PhilippineIdsDatasetSlug,
+            ClaudeTrainingCacheActive = _claudeClient.IsConfigured
         };
     }
 
@@ -1125,7 +1227,9 @@ public class IdentityAiService : IIdentityAiService
         string ratiosJson,
         Dictionary<string, double> ratiosDict,
         string combinedSignatureJson,
-        List<double> normalized128D) =>
+        List<double> normalized128D,
+        RoboflowWorkflowDetectionResult? roboflowFaceDetection = null,
+        bool claudeTrainingCacheActive = false) =>
         new()
         {
             IsValidFaceGeometry = isValidGeometry,
@@ -1149,6 +1253,11 @@ public class IdentityAiService : IIdentityAiService
             RequiresPendingManualReview = requiresPendingManualReview,
             ErrorCode = errorCode,
             ErrorMessage = errorMessage,
+            RoboflowFacePredictions = MapRoboflowPredictions(roboflowFaceDetection?.Predictions),
+            RoboflowFaceConfidence = roboflowFaceDetection is { TopConfidence: > 0 } ? roboflowFaceDetection.TopConfidence : null,
+            RoboflowCacheHit = roboflowFaceDetection?.CacheHit ?? false,
+            RoboflowDataset = roboflowFaceDetection?.DatasetSlug ?? RoboflowPretrainedDatasets.FaceDatasetSlug,
+            ClaudeTrainingCacheActive = claudeTrainingCacheActive,
             Summary = errorMessage
         };
 
@@ -1308,10 +1417,235 @@ public class IdentityAiService : IIdentityAiService
     {
         var active = new List<string>();
         if (_claudeClient.IsConfigured) active.Add("claude");
+        if (_roboflowWorkflowStrategy.IsConfigured) active.Add("roboflow");
         if (IsGeminiConfigured()) active.Add("gemini");
         if (IsAzureConfigured()) active.Add("azure");
         if (IsOpenAiConfigured()) active.Add("openai");
         return string.Join(", ", active);
+    }
+
+    private static RoboflowWorkflowImageInput BuildRoboflowImageInput(RoboflowWorkflowDetectRequestDto request)
+    {
+        string rawSource = !string.IsNullOrWhiteSpace(request.ImageDataUrl)
+            ? request.ImageDataUrl
+            : (request.ImageBase64 ?? string.Empty);
+        var (parsedMime, base64Payload) = SharedGovIdForensicsEvaluator.ParseDataUrl(rawSource);
+        byte[] imageBytes = SharedGovIdForensicsEvaluator.TryDecodeBase64(base64Payload);
+        string resolvedMime = rawSource.TrimStart().StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+            ? parsedMime
+            : (imageBytes.Length > 0 ? CaptureStorageHelper.DetermineContentType(imageBytes) : parsedMime);
+
+        return new RoboflowWorkflowImageInput(
+            ImageBytes: imageBytes,
+            MimeType: resolvedMime,
+            SelectedIdType: request.SelectedIdType,
+            ClassesOverride: request.Classes);
+    }
+
+    private RoboflowWorkflowDetectResponseDto MapRoboflowDetectResponse(RoboflowWorkflowDetectionResult detection) =>
+        new()
+        {
+            Success = detection.Success,
+            RanOnline = detection.RanOnline,
+            CacheHit = detection.CacheHit,
+            CacheTtlSeconds = detection.CacheTtlSeconds,
+            TaskType = detection.TaskType,
+            DatasetSlug = detection.DatasetSlug,
+            RequestedClasses = detection.RequestedClasses,
+            TopClass = detection.TopClass,
+            TopConfidence = detection.TopConfidence,
+            CanonicalIdType = detection.CanonicalIdType,
+            AuthTransport = detection.AuthTransport,
+            TransportMode = detection.TransportMode,
+            ClaudeTrainingCacheActive = _claudeClient.IsConfigured,
+            ErrorCode = detection.ErrorCode,
+            ErrorMessage = detection.ErrorMessage,
+            Predictions = MapRoboflowPredictions(detection.Predictions)
+        };
+
+    private static List<RoboflowWorkflowPredictionItemDto> MapRoboflowPredictions(
+        IReadOnlyList<RoboflowBoundingBox>? predictions) =>
+        predictions is null || predictions.Count == 0
+            ? []
+            : predictions.Select(p => new RoboflowWorkflowPredictionItemDto
+            {
+                X = p.X,
+                Y = p.Y,
+                Width = p.Width,
+                Height = p.Height,
+                ClassName = p.ClassName,
+                Confidence = p.Confidence,
+                ImageWidth = p.ImageWidth,
+                ImageHeight = p.ImageHeight
+            }).ToList();
+
+    private async Task<RoboflowWorkflowDetectionResult?> TryDetectPhilippineIdNonBlockingAsync(
+        byte[] frontBytes,
+        string frontMime,
+        string? selectedIdType,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await _roboflowWorkflowStrategy.DetectPhilippineIdAsync(
+                new RoboflowWorkflowImageInput(frontBytes, frontMime, selectedIdType),
+                ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Optional Roboflow Philippine ID detection skipped during OCR mapping.");
+            return null;
+        }
+    }
+
+    private async Task<RoboflowWorkflowDetectionResult?> TryDetectFaceNonBlockingAsync(
+        byte[] faceBytes,
+        string faceMime,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await _roboflowWorkflowStrategy.DetectFaceAsync(
+                new RoboflowWorkflowImageInput(faceBytes, faceMime),
+                ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Optional Roboflow face detection skipped during legacy facial geometry analysis.");
+            return null;
+        }
+    }
+
+    private static readonly MemoryCache ClaudeDatasetFallbackCache = new(new MemoryCacheOptions());
+
+    private async Task<RoboflowWorkflowDetectionResult?> TryDetectWithClaudeDatasetPriorAsync(
+        string taskType,
+        string datasetSlug,
+        string classes,
+        RoboflowWorkflowImageInput input,
+        CancellationToken ct)
+    {
+        string imageSha = Convert.ToHexString(SHA256.HashData(input.ImageBytes));
+        string cacheKey = $"resqtrack:claude_ds:{taskType}:{classes}:{imageSha}";
+
+        if (ClaudeDatasetFallbackCache.TryGetValue(cacheKey, out RoboflowWorkflowDetectionResult? cached) &&
+            cached is { Success: true, Predictions.Count: > 0 })
+        {
+            return cached with { CacheHit = true };
+        }
+
+        string datasetContext = _roboflowWorkflowStrategy.GetPretrainedDatasetPromptContext(
+            taskType,
+            input.SelectedIdType,
+            workflowDetection: null);
+
+        string systemPrompt = string.Equals(taskType, "FACE_DETECTION", StringComparison.OrdinalIgnoreCase)
+            ? $"Pretrained Face Detection Engine calibrated with {datasetContext}. Locate human faces inside the image in 0..1000 coordinates (x,y center, width, height) and classify as \"face\". Return ONLY single-line JSON: {{\"predictions\":[{{\"x\":500,\"y\":450,\"width\":360,\"height\":440,\"class\":\"face\",\"confidence\":0.94}}]}}."
+            : $"Pretrained Philippine ID Detection Engine calibrated with {datasetContext}. Locate the government ID card in 0..1000 coordinates (x,y center, width, height) and classify using {classes} (or canonical key if outside). Return ONLY single-line JSON: {{\"predictions\":[{{\"x\":500,\"y\":500,\"width\":840,\"height\":540,\"class\":\"driver\",\"confidence\":0.94}}]}}.";
+
+        var payload = new Dictionary<string, object>
+        {
+            ["max_tokens"] = 256,
+            ["temperature"] = 0.0,
+            ["system"] = new object[]
+            {
+                new
+                {
+                    type = "text",
+                    text = systemPrompt,
+                    cache_control = new { type = "ephemeral" }
+                }
+            },
+            ["messages"] = new object[]
+            {
+                new
+                {
+                    role = "user",
+                    content = new object[]
+                    {
+                        new
+                        {
+                            type = "image",
+                            source = new
+                            {
+                                type = "base64",
+                                media_type = SharedGovIdForensicsEvaluator.NormalizeClaudeMime(input.MimeType),
+                                data = Convert.ToBase64String(input.ImageBytes)
+                            }
+                        },
+                        new
+                        {
+                            type = "text",
+                            text = $"Detect bounding boxes in 0..1000 scale for classes [{classes}] and return ONLY JSON."
+                        }
+                    }
+                }
+            }
+        };
+
+        try
+        {
+            ClaudeMessageAttemptResult attempt = await _claudeClient.SendMessagesAsync(payload, ct);
+            if (!attempt.Success || string.IsNullOrWhiteSpace(attempt.RawText))
+            {
+                return null;
+            }
+
+            string cleanJson = SharedGovIdForensicsEvaluator.CleanJsonFences(attempt.RawText);
+            List<RoboflowBoundingBox> predictions = RoboflowServerlessWorkflowStrategy
+                .ParsePredictionsFromJson(cleanJson, classes)
+                .Select(p =>
+                {
+                    double x = p.X <= 1.0 && p.Width <= 1.0 ? Math.Round(p.X * 1000.0, 2) : p.X;
+                    double y = p.Y <= 1.0 && p.Height <= 1.0 ? Math.Round(p.Y * 1000.0, 2) : p.Y;
+                    double w = p.Width <= 1.0 ? Math.Round(p.Width * 1000.0, 2) : p.Width;
+                    double h = p.Height <= 1.0 ? Math.Round(p.Height * 1000.0, 2) : p.Height;
+                    return p with { X = x, Y = y, Width = w, Height = h, ImageWidth = 1000, ImageHeight = 1000 };
+                })
+                .Where(p => p.Width > 0 && p.Height > 0 && p.Confidence > 0)
+                .ToList();
+
+            if (predictions.Count == 0)
+            {
+                return null;
+            }
+
+            RoboflowBoundingBox top = predictions[0];
+            string? canonicalId = string.Equals(taskType, "PHILIPPINE_ID_DETECTION", StringComparison.OrdinalIgnoreCase)
+                ? RoboflowPretrainedDatasets.CanonicalizePhilippineIdClass(top.ClassName)
+                : null;
+
+            var result = new RoboflowWorkflowDetectionResult(
+                Success: true,
+                RanOnline: true,
+                CacheHit: false,
+                CacheTtlSeconds: RoboflowPretrainedDatasets.WorkflowCacheTtlSeconds,
+                TaskType: taskType,
+                DatasetSlug: datasetSlug,
+                RequestedClasses: classes,
+                TopClass: top.ClassName,
+                TopConfidence: top.Confidence,
+                CanonicalIdType: canonicalId,
+                AuthTransport: "CLAUDE_EPHEMERAL_DATASET_VISION",
+                TransportMode: "CLAUDE_EPHEMERAL_DATASET_VISION",
+                Predictions: predictions,
+                ErrorCode: null,
+                ErrorMessage: null,
+                RawJson: cleanJson);
+
+            // Cache Poisoning Guard: only cache positive non-empty predictions for 15 minutes
+            ClaudeDatasetFallbackCache.Set(
+                cacheKey,
+                result,
+                TimeSpan.FromMinutes(RoboflowPretrainedDatasets.WorkflowCacheMinutes));
+
+            return result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Claude dataset detection fallback skipped.");
+            return null;
+        }
     }
 
     private static IdentityDocumentAnalyzeResponseDto ExecuteDeterministicDocumentAnalysis(IdentityDocumentAnalyzeRequestDto request)

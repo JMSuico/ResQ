@@ -41,7 +41,8 @@ import { trackSkinFace } from '@/Libs/Vision/idScanner/face/skinFaceTracker';
 import {
   claudeFacialBiometricStrategy,
   buildAlignedGeometricSignature,
-  type ClaudeFacialGeometryAnalysisResult
+  type ClaudeFacialGeometryAnalysisResult,
+  type RoboflowFacePredictionBox
 } from '@/Libs/Biometrics/claudeFacialBiometricStrategy';
 
 export interface FacialCaptureMetadata {
@@ -304,6 +305,32 @@ const computeLaplacianVariance = (
   }
 };
 
+interface LocalFaceBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly confidence: number;
+}
+
+const mapRoboflowBoxToSvgViewport = (
+  pred: RoboflowFacePredictionBox,
+  mirrorHorizontal: boolean = true
+): { x: number; y: number; width: number; height: number } => {
+  const srcW = pred.imageWidth && pred.imageWidth > 0 ? pred.imageWidth : 640;
+  const srcH = pred.imageHeight && pred.imageHeight > 0 ? pred.imageHeight : 480;
+  const scaleX = 640 / srcW;
+  const scaleY = 480 / srcH;
+  const scaledW = Math.max(8, pred.width * scaleX);
+  const scaledH = Math.max(8, pred.height * scaleY);
+  const rawLeft = (pred.x - pred.width * 0.5) * scaleX;
+  const rawTop = (pred.y - pred.height * 0.5) * scaleY;
+  const clampedTop = Math.max(0, Math.min(480 - scaledH, rawTop));
+  const clampedLeft = Math.max(0, Math.min(640 - scaledW, rawLeft));
+  const x = mirrorHorizontal ? Math.max(0, 640 - (clampedLeft + scaledW)) : clampedLeft;
+  return { x, y: clampedTop, width: scaledW, height: scaledH };
+};
+
 export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> = ({
   capturedDataUrl,
   isConfirmed,
@@ -319,9 +346,11 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const samplingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const snapshotCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const samplingTimerRef = useRef<number | null>(null);
+  const isMountedRef = useRef<boolean>(true);
 
   const [cameraState, setCameraState] = useState<'idle' | 'requesting' | 'streaming' | 'denied' | 'error'>('idle');
   const [isFaceDetected, setIsFaceDetected] = useState<boolean>(false);
@@ -331,6 +360,13 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
   const lastFrameTimestampRef = useRef<number>(performance.now());
   const lastUiUpdateRef = useRef<number>(0);
   const lastDetectedFaceRef = useRef<boolean>(false);
+  const localFaceBoxRef = useRef<LocalFaceBox | null>(null);
+  const [localFaceBox, setLocalFaceBox] = useState<LocalFaceBox | null>(null);
+  const [roboflowPredictions, setRoboflowPredictions] = useState<RoboflowFacePredictionBox[]>([]);
+  const [roboflowFaceConfidence, setRoboflowFaceConfidence] = useState<number | null>(null);
+  const [roboflowCacheHit, setRoboflowCacheHit] = useState<boolean>(false);
+  const [claudeTrainingCacheActive, setClaudeTrainingCacheActive] = useState<boolean>(false);
+  const roboflowAbortRef = useRef<AbortController | null>(null);
   const smoothedVarRef = useRef<number>(0);
   const smoothedFpsRef = useRef<number>(0);
   const poseStartTimeRef = useRef<number>(performance.now());
@@ -403,6 +439,32 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
   );
   const currentIdBindingKey = buildIdBindingSignature(idVerificationToken, frontIdCaptureDataUrl);
 
+  const triggerNonBlockingRoboflowFaceDetect = useCallback((imageDataUrl: string): void => {
+    const trimmed = imageDataUrl.trim();
+    if (!trimmed) return;
+    if (roboflowAbortRef.current) {
+      roboflowAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    roboflowAbortRef.current = controller;
+    void claudeFacialBiometricStrategy
+      .detectRoboflowFace(trimmed, controller.signal)
+      .then((res) => {
+        if (!isMountedRef.current || controller.signal.aborted || !res) {
+          return;
+        }
+        if (res.predictions && res.predictions.length > 0) {
+          setRoboflowPredictions(res.predictions);
+          setRoboflowFaceConfidence(res.topConfidence > 0 ? res.topConfidence : res.predictions[0].confidence);
+        } else if (res.topConfidence > 0) {
+          setRoboflowFaceConfidence(res.topConfidence);
+        }
+        setRoboflowCacheHit(Boolean(res.cacheHit));
+        setClaudeTrainingCacheActive(Boolean(res.claudeTrainingCacheActive));
+      })
+      .catch(() => undefined);
+  }, []);
+
   const resetFaceMatchVerification = useCallback(
     (statusMessage?: string): void => {
       matchedIdBindingRef.current = null;
@@ -411,6 +473,10 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       setFaceToIdSimilarity(null);
       setFaceMatchDiagnostic('');
       setFaceMatchErrorCode(null);
+      setRoboflowPredictions([]);
+      setRoboflowFaceConfidence(null);
+      setRoboflowCacheHit(false);
+      setClaudeTrainingCacheActive(false);
       onFacialTokenIssuedRef.current?.({
         facialVerificationToken: null,
         faceToIdSimilarity: null,
@@ -463,14 +529,21 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       videoRef.current.srcObject = null;
     }
     lastDetectedFaceRef.current = false;
+    localFaceBoxRef.current = null;
     setIsFaceDetected(false);
+    setLocalFaceBox(null);
     // Synchronize latest frames and counts when stopping stream
     setPoseCounts(biometricFrameCache.getPoseCounts());
     setBestFrames(biometricFrameCache.getBestFrames());
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
+      if (roboflowAbortRef.current) {
+        roboflowAbortRef.current.abort();
+      }
       stopCameraStream();
     };
   }, [stopCameraStream]);
@@ -518,9 +591,33 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     }
 
     const detectedFaceNow = Boolean(skinRes?.isValidFace);
+    if (detectedFaceNow && skinRes?.landmarks?.faceBox) {
+      const fb = skinRes.landmarks.faceBox;
+      const boxW = Math.max(24, fb.w * 2);
+      const boxH = Math.max(24, fb.h * 2);
+      const mirroredX = Math.max(0, Math.min(640 - boxW, 640 - (fb.x * 2 + boxW)));
+      const boxY = Math.max(0, Math.min(480 - boxH, fb.y * 2));
+      const conf =
+        typeof skinRes.confidence === 'number' && Number.isFinite(skinRes.confidence)
+          ? skinRes.confidence
+          : typeof skinRes.trackingConfidence === 'number' && Number.isFinite(skinRes.trackingConfidence)
+          ? skinRes.trackingConfidence
+          : Math.min(0.99, Math.max(0.6, skinRes.haarCheck?.score ?? 0.82));
+      localFaceBoxRef.current = {
+        x: Math.round(mirroredX),
+        y: Math.round(boxY),
+        width: Math.round(boxW),
+        height: Math.round(boxH),
+        confidence: conf
+      };
+    } else {
+      localFaceBoxRef.current = null;
+    }
+
     if (lastDetectedFaceRef.current !== detectedFaceNow) {
       lastDetectedFaceRef.current = detectedFaceNow;
       setIsFaceDetected(detectedFaceNow);
+      setLocalFaceBox(localFaceBoxRef.current);
     }
 
     const { variance } = computeLaplacianVariance(ctx, width, height);
@@ -545,9 +642,22 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       ? 15
       : 0;
 
-    // Gate frame ingestion by genuine tracked face presence so empty background frames never poison bestFrames
+    // Gate frame ingestion by genuine tracked face presence and capture crisp 640x480 snapshots for Roboflow & Claude Vision
     if (skinRes?.isValidFace) {
-      const frameDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      let frameDataUrl = '';
+      const snapCanvas = snapshotCanvasRef.current;
+      if (snapCanvas) {
+        snapCanvas.width = 640;
+        snapCanvas.height = 480;
+        const snapCtx = snapCanvas.getContext('2d');
+        if (snapCtx) {
+          snapCtx.drawImage(video, 0, 0, 640, 480);
+          frameDataUrl = snapCanvas.toDataURL('image/jpeg', 0.88);
+        }
+      }
+      if (!frameDataUrl) {
+        frameDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      }
       biometricFrameCache.addFrame(
         currentPose,
         frameDataUrl,
@@ -585,6 +695,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       setPoseCounts(currentPoseCounts);
       setLastLaplacian(smoothedVarRef.current);
       setMeasuredFps(currentFps);
+      setLocalFaceBox(localFaceBoxRef.current);
       setFpsBracket(
         currentFps >= 45
           ? '60 FPS HD ULTRA'
@@ -726,24 +837,36 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
             trackedPitch = Math.round(skinRes.pitchDegrees * 10) / 10;
           }
           measuredVar = computeLaplacianVariance(ctx, 320, 240).variance;
-          fallbackFrameUrl = canvas.toDataURL('image/jpeg', 0.85);
+          const snapCanvas = snapshotCanvasRef.current;
+          if (snapCanvas) {
+            snapCanvas.width = 640;
+            snapCanvas.height = 480;
+            const snapCtx = snapCanvas.getContext('2d');
+            if (snapCtx) {
+              snapCtx.drawImage(videoRef.current, 0, 0, 640, 480);
+              fallbackFrameUrl = snapCanvas.toDataURL('image/jpeg', 0.88);
+            }
+          }
+          if (!fallbackFrameUrl) {
+            fallbackFrameUrl = canvas.toDataURL('image/jpeg', 0.88);
+          }
         }
       }
       if (!fallbackFrameUrl) {
         const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = 320;
-        tempCanvas.height = 240;
+        tempCanvas.width = 640;
+        tempCanvas.height = 480;
         const tCtx = tempCanvas.getContext('2d');
         if (tCtx) {
           tCtx.fillStyle = '#14020a';
-          tCtx.fillRect(0, 0, 320, 240);
+          tCtx.fillRect(0, 0, 640, 480);
           tCtx.strokeStyle = '#ff5c74';
-          tCtx.lineWidth = 2;
+          tCtx.lineWidth = 3;
           tCtx.beginPath();
-          tCtx.ellipse(160, 120, 70, 90, 0, 0, Math.PI * 2);
+          tCtx.ellipse(320, 240, 140, 180, 0, 0, Math.PI * 2);
           tCtx.stroke();
-          measuredVar = computeLaplacianVariance(tCtx, 320, 240).variance;
-          fallbackFrameUrl = tempCanvas.toDataURL('image/jpeg', 0.85);
+          measuredVar = computeLaplacianVariance(tCtx, 640, 480).variance;
+          fallbackFrameUrl = tempCanvas.toDataURL('image/jpeg', 0.88);
         }
       }
       biometricFrameCache.addFrame(
@@ -758,8 +881,12 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     }
 
     // Flush pose counts and best frames to state immediately upon locking
+    const updatedBest = biometricFrameCache.getBestFrames();
     setPoseCounts(biometricFrameCache.getPoseCounts());
-    setBestFrames(biometricFrameCache.getBestFrames());
+    setBestFrames(updatedBest);
+    if (currentPose === 'CENTER' && updatedBest.CENTER) {
+      triggerNonBlockingRoboflowFaceDetect(updatedBest.CENTER);
+    }
     const config = POSE_CONFIGS[currentPose];
     if (config.nextPose) {
       setCurrentPose(config.nextPose);
@@ -770,7 +897,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       stopCameraStream();
       setCameraState('idle');
     }
-  }, [currentPose, stopCameraStream]);
+  }, [currentPose, stopCameraStream, triggerNonBlockingRoboflowFaceDetect]);
 
   useEffect(() => {
     handleLockAndAdvancePoseRef.current = handleLockAndAdvancePose;
@@ -1110,8 +1237,8 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
         });
 
         const offscreen = document.createElement('canvas');
-        const targetW = Math.min(320, Math.max(64, img.naturalWidth));
-        const targetH = Math.min(240, Math.max(64, img.naturalHeight));
+        const targetW = Math.min(640, Math.max(64, img.naturalWidth));
+        const targetH = Math.min(480, Math.max(64, img.naturalHeight));
         offscreen.width = targetW;
         offscreen.height = targetH;
         const offCtx = offscreen.getContext('2d');
@@ -1262,8 +1389,19 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
 
       if (options?.callRemoteFaceToId) {
         if (knowledgePkg.geometryAnalysis?.ok) {
+          const ga = knowledgePkg.geometryAnalysis;
+          if (ga.roboflowFacePredictions && ga.roboflowFacePredictions.length > 0) {
+            setRoboflowPredictions(ga.roboflowFacePredictions);
+            setRoboflowFaceConfidence(
+              ga.roboflowFaceConfidence ?? ga.roboflowFacePredictions[0]?.confidence ?? null
+            );
+          } else if (typeof ga.roboflowFaceConfidence === 'number' && ga.roboflowFaceConfidence > 0) {
+            setRoboflowFaceConfidence(ga.roboflowFaceConfidence);
+          }
+          setRoboflowCacheHit(Boolean(ga.roboflowCacheHit));
+          setClaudeTrainingCacheActive(Boolean(ga.claudeTrainingCacheActive));
           setClaudeGeometryTelemetryStatus(
-            knowledgePkg.geometryAnalysis.isFaceMatchedToId
+            ga.isFaceMatchedToId
               ? 'ClaudeVisionFacialBiometricStrategy v2.0 // Face-to-ID Verified'
               : 'ClaudeVisionFacialBiometricStrategy v2.0 // Online Enriched'
           );
@@ -1439,6 +1577,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       };
 
       if (isStaticFileUpload) {
+        if (bestFrames.CENTER) {
+          triggerNonBlockingRoboflowFaceDetect(bestFrames.CENTER);
+        }
         const claudePkg = await computeClaudeGeometryAndFramesPackage({ callRemoteFaceToId: false });
         const staticPendingNotice =
           'Static photo upload fallback cannot qualify for AI auto-approval. Your record is staged for LDRRMO Pending Manual Review.';
@@ -1466,6 +1607,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
         return;
       }
 
+      if (bestFrames.CENTER && roboflowPredictions.length === 0) {
+        triggerNonBlockingRoboflowFaceDetect(bestFrames.CENTER);
+      }
       const claudePkg = await computeClaudeGeometryAndFramesPackage({ callRemoteFaceToId: true });
       const analysis = claudePkg.geometryAnalysis;
       const isServiceUnavailableOrPending =
@@ -1612,8 +1756,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
 
   return (
     <div className="space-y-4" id="manual-facial-capture-panel">
-      {/* Hidden sampling canvas & file input */}
+      {/* Hidden sampling & 640x480 snapshot canvases & file input */}
       <canvas ref={samplingCanvasRef} className="hidden" />
+      <canvas ref={snapshotCanvasRef} className="hidden" />
       <input
         ref={fileInputRef}
         type="file"
@@ -1692,7 +1837,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           />
         </div>
 
-        {/* Claude AI Geometric Pattern & 4-Pose Frame Cache Status Card */}
+        {/* Claude AI Geometric Pattern, Roboflow face Workflow & 4-Pose Frame Cache Status Card */}
         <div
           id="biometric-training-status-card"
           className="mt-1 p-3 rounded-xl bg-[#EFE4DD] border border-[#D5BEB3] font-mono text-xs space-y-2"
@@ -1702,18 +1847,47 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
               <Sparkles className="w-4 h-4 text-[#A83B4D]" />
               <span>128-D Geometric &amp; 4-Pose Cache</span>
             </span>
-            <span
-              id="badge-biometric-trained"
-              className={`px-2.5 py-1 rounded-lg border font-bold text-xs ${
-                isAllPosesComplete
-                  ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
-                  : 'bg-[#F7F1EA] border-[#D5BEB3] text-[#A83B4D]'
-              }`}
-            >
-              {isAllPosesComplete
-                ? `128-D Vector Norm ${trainedVectorNorm.toFixed(4)} // Ready`
-                : 'Calibrating 30-60 FPS 4-Pose Cache'}
-            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="px-2 py-0.5 rounded-md border border-[#D5BEB3] bg-[#F7F1EA] text-[#670626] font-bold text-[11px]">
+                {roboflowFaceConfidence !== null
+                  ? `Roboflow face Workflow (${Math.round(
+                      (roboflowFaceConfidence <= 1
+                        ? roboflowFaceConfidence * 100
+                        : roboflowFaceConfidence)
+                    )}%)`
+                  : 'Roboflow face Workflow'}
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-md border font-bold text-[11px] ${
+                  roboflowCacheHit
+                    ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                    : 'bg-[#F7F1EA] border-[#D5BEB3] text-[#7D2B3D]'
+                }`}
+              >
+                {roboflowCacheHit ? '15m Cache HIT' : '15m Cache'}
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-md border font-bold text-[11px] ${
+                  claudeTrainingCacheActive
+                    ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                    : 'bg-[#F7F1EA] border-[#D5BEB3] text-[#7D2B3D]'
+                }`}
+              >
+                {claudeTrainingCacheActive ? 'Claude Ephemeral Cache Active' : 'Claude Ephemeral Cache'}
+              </span>
+              <span
+                id="badge-biometric-trained"
+                className={`px-2.5 py-1 rounded-lg border font-bold text-xs ${
+                  isAllPosesComplete
+                    ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                    : 'bg-[#F7F1EA] border-[#D5BEB3] text-[#A83B4D]'
+                }`}
+              >
+                {isAllPosesComplete
+                  ? `128-D Vector Norm ${trainedVectorNorm.toFixed(4)} // Ready`
+                  : 'Calibrating 30-60 FPS 4-Pose Cache'}
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-[#670626]">
@@ -1729,7 +1903,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
             </div>
           </div>
           <p className="text-[11.5px] font-sans text-[#7D2B3D] m-0">
-            Up to 3 sharpest frames per pose (oval, forward, right, left, blink) are packaged for 5-minute AI enrollment study upon registration.
+            Up to 3 sharpest 640x480 frames per pose (oval, forward, right, left, blink) are packaged for 5-minute AI enrollment study upon registration.
           </p>
         </div>
       </div>
@@ -1944,6 +2118,87 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                     strokeDasharray={isFaceDetected ? 'none' : '8 6'}
                     className="transition-all duration-300"
                   />
+
+                  {/* Live Local Face Bounding-Box Reticle */}
+                  {isFaceDetected && localFaceBox && (
+                    <g id="manual-facial-live-bbox">
+                      <rect
+                        x={localFaceBox.x}
+                        y={localFaceBox.y}
+                        width={localFaceBox.width}
+                        height={localFaceBox.height}
+                        rx="8"
+                        fill="none"
+                        stroke="#10b981"
+                        strokeWidth="2.5"
+                        strokeDasharray="10 6"
+                      />
+                      <rect
+                        x={localFaceBox.x}
+                        y={Math.max(4, localFaceBox.y - 24)}
+                        width="130"
+                        height="20"
+                        rx="5"
+                        fill="#022c22"
+                        fillOpacity="0.9"
+                      />
+                      <text
+                        x={localFaceBox.x + 8}
+                        y={Math.max(18, localFaceBox.y - 10)}
+                        fill="#6ee7b7"
+                        fontSize="12"
+                        fontWeight="bold"
+                        fontFamily="monospace"
+                      >
+                        {`face ${Math.round(
+                          (roboflowFaceConfidence ?? localFaceBox.confidence) <= 1
+                            ? (roboflowFaceConfidence ?? localFaceBox.confidence) * 100
+                            : roboflowFaceConfidence ?? localFaceBox.confidence
+                        )}%`}
+                      </text>
+                    </g>
+                  )}
+
+                  {/* Roboflow Face Workflow Prediction Bounding-Box Reticle */}
+                  {roboflowPredictions.map((pred, idx) => {
+                    const mapped = mapRoboflowBoxToSvgViewport(pred, true);
+                    const pct = Math.round(
+                      pred.confidence <= 1 ? pred.confidence * 100 : pred.confidence
+                    );
+                    return (
+                      <g key={`rf-enroll-face-${idx}`}>
+                        <rect
+                          x={mapped.x}
+                          y={mapped.y}
+                          width={mapped.width}
+                          height={mapped.height}
+                          rx="8"
+                          fill="none"
+                          stroke="#fbbf24"
+                          strokeWidth="2.5"
+                        />
+                        <rect
+                          x={mapped.x}
+                          y={Math.min(454, mapped.y + mapped.height + 4)}
+                          width="150"
+                          height="20"
+                          rx="5"
+                          fill="#451a03"
+                          fillOpacity="0.92"
+                        />
+                        <text
+                          x={mapped.x + 8}
+                          y={Math.min(468, mapped.y + mapped.height + 18)}
+                          fill="#fde68a"
+                          fontSize="12"
+                          fontWeight="bold"
+                          fontFamily="monospace"
+                        >
+                          {`${pred.className || 'face'} ${pct}% (RF)`}
+                        </text>
+                      </g>
+                    );
+                  })}
 
                   {/* Eye-level Horizontal Guideline & Pupil Crosshairs */}
                   <line
@@ -2336,22 +2591,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
         </div>
       </div>
 
-      {/* RA 10173 Biometric & Privacy Consent Checkbox */}
-      <div className="clay-surface px-4 py-3 rounded-2xl bg-[#F7F1EA] border border-[#D8C2B8] space-y-2 shadow-sm">
-        <div className="flex items-center justify-between font-mono text-xs sm:text-sm text-[#670626]">
-          <span className="font-bold uppercase tracking-wider">RA 10173 Biometric Consent</span>
-          <label className="inline-flex items-center gap-2 cursor-pointer text-[#670626] font-semibold" htmlFor="chk-facial-consent">
-            <input
-              type="checkbox"
-              id="chk-facial-consent"
-              checked={consentAccepted}
-              onChange={(e) => onConsentChange(e.target.checked)}
-              className="w-4 h-4 rounded accent-[#670626] cursor-pointer"
-            />
-            <span>Accept</span>
-          </label>
-        </div>
-        <label className="flex items-center gap-2.5 cursor-pointer" htmlFor="facial-consent-checkbox">
+      {/* RA 10173 Biometric & Privacy Consent Checkbox (Single Visual Control, Dual-ID Compatibility) */}
+      <div className="clay-surface relative px-4 py-3 rounded-2xl bg-[#F7F1EA] border border-[#D8C2B8] shadow-sm">
+        <label className="flex items-center gap-2.5 pr-6 cursor-pointer" htmlFor="facial-consent-checkbox">
           <input
             type="checkbox"
             id="facial-consent-checkbox"
@@ -2360,9 +2602,21 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
             className="w-4 h-4 rounded accent-[#670626] shrink-0 cursor-pointer"
           />
           <span className="font-mono text-xs sm:text-sm text-[#591529] leading-snug">
-            [RA 10173] Consent to 4-pose video recording at 30-60 FPS (encrypted).
+            <span className="font-bold uppercase tracking-wider text-[#670626] mr-1.5">
+              RA 10173 Biometric Consent:
+            </span>
+            I consent to 4-pose video recording at 30-60 FPS in compliance with RA 10173 (encrypted).
           </span>
         </label>
+        <input
+          type="checkbox"
+          id="chk-facial-consent"
+          aria-label="Accept RA 10173 Biometric Consent"
+          checked={consentAccepted}
+          onChange={(e) => onConsentChange(e.target.checked)}
+          tabIndex={-1}
+          className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-0 cursor-pointer"
+        />
       </div>
 
       {/* Primary Action Button: Confirm 4-Pose Facial Record */}
