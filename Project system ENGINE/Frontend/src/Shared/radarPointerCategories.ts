@@ -1,7 +1,8 @@
 // [Layer: Shared]
 // radarPointerCategories.ts -- Deterministic 16-category tactical radar pointer registry,
-// medic vs non-medic role permission filters, localStorage settings sync, and 5-minute verification countdown helpers.
-// Universal lambda expressions (=>). 100% pure Lucide icons (zero emojis).
+// high-contrast vector SVG beacon/vehicle icon helpers, medic vs non-medic role permission filters,
+// localStorage settings sync, and 5-minute verification countdown helpers.
+// Universal lambda expressions (=>). 100% pure vector SVG / Lucide icons (zero emojis, zero 'any').
 
 import {
   Truck,
@@ -62,9 +63,54 @@ export interface MedicPointerSettings {
   hideNonMedicOnSort: boolean;
 }
 
+export interface TacticalBeaconVisual {
+  bgColor: string;
+  ringColor: string;
+  svgMarkup: string;
+  ariaLabel: string;
+  kindLabel: string;
+}
+
+export interface ResponderBadgeVisual {
+  bgColor: string;
+  accentColor: string;
+  svgMarkup: string;
+  ariaLabel: string;
+  agencyLabel: string;
+  isAvailable: boolean;
+}
+
 export const MEDIC_POINTER_SETTINGS_STORAGE_KEY = 'resqtrack_medic_pointer_settings';
 export const RESPONDED_GREEN_COLOR = '#10B981';
 export const DEFAULT_VERIFICATION_CLOSE_SECONDS = 300; // 5 minutes (05:00 -> 00:00)
+
+// Crisp high-contrast vector SVG silhouettes (24x24 viewBox)
+export const SVG_CAR_CRASH =
+  '<path d="M2 16v-3l2-3h4l2 2"/><path d="M22 16v-3l-2-3h-4l-2 2"/><circle cx="5.5" cy="17.5" r="1.5"/><circle cx="18.5" cy="17.5" r="1.5"/><path d="M12 3v4"/><path d="m9 5 3 3 3-3"/><path d="M3 16h6"/><path d="M15 16h6"/>';
+
+export const SVG_BURNING_HOUSE =
+  '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/><path d="M12 19a3 3 0 0 0 3-3c0-1.5-1.2-2.6-2-3.7-.6 1-1.3 1.4-1.6 1.7-.4-.8-.6-1.5-.4-2.5C9.7 12.7 9 14.3 9 16a3 3 0 0 0 3 3z" fill="currentColor" stroke="none"/>';
+
+export const SVG_WEAPON_DANGER =
+  '<circle cx="12" cy="12" r="8"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="m8.5 15.5 7-7"/><path d="m13 8 3 3"/>';
+
+export const SVG_FLOOD_RESCUE =
+  '<path d="M4 11 12 4l8 7"/><path d="M6 10v4"/><path d="M18 10v4"/><path d="M2 17c1.5 1 3 1 4.5 0s3-1 4.5 0 3 1 4.5 0 3-1 4.5 0"/><path d="M2 21c1.5 1 3 1 4.5 0s3-1 4.5 0 3 1 4.5 0 3-1 4.5 0"/>';
+
+export const SVG_MEDICAL_TRAUMA =
+  '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M12 8v5"/><path d="M9.5 10.5h5"/>';
+
+export const SVG_FIRETRUCK =
+  '<path d="M2 16V9a2 2 0 0 1 2-2h9v9"/><path d="M13 10h5l3 3.5V16h-2"/><path d="M4 7h7"/><path d="M4 4h7"/><path d="M5.5 4v3"/><path d="M9.5 4v3"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/><path d="M8.5 16h7"/>';
+
+export const SVG_AMBULANCE =
+  '<path d="M10 10H6"/><path d="M8 8v4"/><path d="M19 17h2c.6 0 1-.4 1-1v-4a2 2 0 0 0-2-2h-3l-2.4-3.6A2 2 0 0 0 13 6H5a2 2 0 0 0-2 2v8c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>';
+
+export const SVG_POLICE_CRUISER =
+  '<path d="M10 5h4"/><path d="M3 13l2-4.5A2 2 0 0 1 6.8 7h10.4a2 2 0 0 1 1.8 1.5L21 13"/><rect x="2" y="13" width="20" height="4" rx="1"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="17.5" cy="17.5" r="1.8"/><path d="M10 13v2h4v-2"/>';
+
+export const SVG_COMMAND_UNIT =
+  '<path d="M12 2 4 5v6c0 5 3.5 9.2 8 10.8 4.5-1.6 8-5.8 8-10.8V5l-8-3z"/><circle cx="12" cy="11" r="2.5"/><path d="M12 6.5v2"/><path d="M12 13.5v2"/><path d="M7.5 11h2"/><path d="M14.5 11h2"/>';
 
 export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
   // ============================================================================
@@ -78,12 +124,12 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: false,
     icon: Truck,
     iconName: 'Truck',
-    color: '#F59E0B',
+    color: '#D97706',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'High',
     agency: 'PNP / BFP',
     description: 'Heavy sedan, SUV, truck, or multi-axle commercial vehicle collision.',
-    svgPathMarkup: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>'
+    svgPathMarkup: SVG_CAR_CRASH
   },
   {
     index: 2,
@@ -93,7 +139,7 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: false,
     icon: Bike,
     iconName: 'Bike',
-    color: '#F59E0B',
+    color: '#D97706',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'Moderate',
     agency: 'PNP / Traffic',
@@ -108,12 +154,12 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: false,
     icon: CarFront,
     iconName: 'CarFront',
-    color: '#F97316',
+    color: '#DC2626',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'Critical',
     agency: 'LDRRMO / PNP / BFP',
     description: 'Multi-vehicle collision involving motorcycles and 4-wheel vehicles.',
-    svgPathMarkup: '<path d="m21 8-2 2-1.5-3.7A2 2 0 0 0 15.646 5H8.4a2 2 0 0 0-1.903 1.257L5 10 3 8"/><path d="M7 14h.01"/><path d="M17 14h.01"/><rect width="18" height="8" x="3" y="10" rx="2"/><path d="M5 18v2"/><path d="M19 18v2"/>'
+    svgPathMarkup: SVG_CAR_CRASH
   },
   {
     index: 4,
@@ -123,12 +169,12 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: false,
     icon: Flame,
     iconName: 'Flame',
-    color: '#F43F5E',
+    color: '#EA580C',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'High',
     agency: 'PNP Patrol',
     description: 'Hostile altercation between motorists requiring police intervention.',
-    svgPathMarkup: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>'
+    svgPathMarkup: SVG_BURNING_HOUSE
   },
   {
     index: 5,
@@ -138,7 +184,7 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: false,
     icon: KeyRound,
     iconName: 'KeyRound',
-    color: '#A855F7',
+    color: '#7C3AED',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'High',
     agency: 'PNP HPG',
@@ -153,7 +199,7 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: false,
     icon: ShieldCheck,
     iconName: 'ShieldCheck',
-    color: '#6366F1',
+    color: '#1D4ED8',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'Low',
     agency: 'PNP / AFP',
@@ -168,7 +214,7 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: false,
     icon: AlertOctagon,
     iconName: 'AlertOctagon',
-    color: '#DC2626',
+    color: '#991B1B',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'Critical',
     agency: 'PNP / Crisis Unit',
@@ -179,22 +225,22 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     index: 8,
     code: 'HOMICIDE',
     label: 'Homicide',
-    shortLabel: 'Homicide Scene',
+    shortLabel: 'Homicide / Armed Threat',
     isMedicAllowed: false,
     icon: Crosshair,
     iconName: 'Crosshair',
-    color: '#EF4444',
+    color: '#991B1B',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'Critical',
     agency: 'PNP SOCO',
-    description: 'Lethal violent crime scene under police forensic perimeter lock.',
-    svgPathMarkup: '<circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/>'
+    description: 'Armed threat or violent crime scene under police forensic perimeter lock.',
+    svgPathMarkup: SVG_WEAPON_DANGER
   },
   {
     index: 9,
     code: 'GENOCIDE',
     label: 'Genocide',
-    shortLabel: 'Mass Casualty / Genocide',
+    shortLabel: 'Mass Casualty / Armed Threat',
     isMedicAllowed: false,
     icon: Biohazard,
     iconName: 'Biohazard',
@@ -203,7 +249,7 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     severityLevel: 'Critical',
     agency: 'PNP / AFP / LDRRMO',
     description: 'Extreme mass-atrocity security threat requiring armed command lockdown.',
-    svgPathMarkup: '<circle cx="12" cy="11.9" r="2"/><path d="M6.7 3.4c-.9 2.5 0 5.2 2.2 6.7-1.4-1.2-2.2-3.1-1.9-5 .3-1.9 1.7-3.4 3.5-4C9 1.5 7.5 2.2 6.7 3.4z"/><path d="M17.3 3.4c.9 2.5 0 5.2-2.2 6.7 1.4-1.2 2.2-3.1 1.9-5-.3-1.9-1.7-3.4-3.5-4 1.5.4 3 1.1 3.8 2.3z"/><path d="M12 22c-2.7 0-5-1.8-5.7-4.4.8 1.6 2.5 2.6 4.3 2.5 1.8-.1 3.4-1.3 4-3 .6 2.3-.6 4.9-2.6 4.9z"/>'
+    svgPathMarkup: SVG_WEAPON_DANGER
   },
 
   // ============================================================================
@@ -217,12 +263,12 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: true,
     icon: HeartHandshake,
     iconName: 'HeartHandshake',
-    color: '#06B6D4',
+    color: '#0284C7',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'Low',
     agency: 'RHU MEDIC',
     description: 'Superficial abrasions, mild sprains, or non-life-threatening trauma.',
-    svgPathMarkup: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M12 5 9.04 7.96a2.17 2.17 0 0 0 0 3.08c.82.82 2.13.85 3 .07l2.07-1.9a2.82 2.82 0 0 1 3.79 0l2.96 2.66"/><path d="m18 15-2-2"/><path d="m15 18-2-2"/>'
+    svgPathMarkup: SVG_MEDICAL_TRAUMA
   },
   {
     index: 11,
@@ -232,7 +278,7 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: true,
     icon: BriefcaseMedical,
     iconName: 'BriefcaseMedical',
-    color: '#14B8A6',
+    color: '#0891B2',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'Moderate',
     agency: 'RHU MEDIC',
@@ -247,12 +293,12 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: true,
     icon: Ambulance,
     iconName: 'Ambulance',
-    color: '#F97316',
+    color: '#EA580C',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'High',
     agency: 'RHU MEDIC',
     description: 'Urgent ambulance extraction and rapid hospital emergency room transport.',
-    svgPathMarkup: '<path d="M10 10H6"/><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.28a1 1 0 0 0-.684-.948l-1.923-.641a1 1 0 0 1-.578-.502l-1.539-3.076A1 1 0 0 0 16.382 8H14"/><path d="M8 8v4"/><path d="M9 18h6"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>'
+    svgPathMarkup: SVG_AMBULANCE
   },
   {
     index: 13,
@@ -262,12 +308,12 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: true,
     icon: HeartPulse,
     iconName: 'HeartPulse',
-    color: '#EF4444',
+    color: '#DC2626',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'Critical',
     agency: 'RHU MEDIC',
     description: 'Life-threatening cardiac, respiratory, or severe hemorrhagic trauma.',
-    svgPathMarkup: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/>'
+    svgPathMarkup: SVG_MEDICAL_TRAUMA
   },
   {
     index: 14,
@@ -277,7 +323,7 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: true,
     icon: Stethoscope,
     iconName: 'Stethoscope',
-    color: '#3B82F6',
+    color: '#0284C7',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'Moderate',
     agency: 'RHU MEDIC',
@@ -292,7 +338,7 @@ export const RADAR_POINTER_CATEGORIES: RadarPointerCategoryMeta[] = [
     isMedicAllowed: true,
     icon: Skull,
     iconName: 'Skull',
-    color: '#BE123C',
+    color: '#670626',
     respondedColor: RESPONDED_GREEN_COLOR,
     severityLevel: 'Critical',
     agency: 'RHU MEDIC / PNP',
@@ -380,14 +426,31 @@ const matchCategoryText = (rawText: string, seedId?: string): RadarPointerCatego
   if (text.includes('many vehicle') || text.includes('multi') || text.includes('pileup')) {
     return RADAR_POINTER_CATEGORIES[2]; // MULTI_VEHICLE_ACCIDENT
   }
-  if (text.includes('4 wheel') || text.includes('truck') || text.includes('4w') || text.includes('bus')) {
+  if (
+    text.includes('4 wheel') ||
+    text.includes('truck') ||
+    text.includes('4w') ||
+    text.includes('bus') ||
+    text.includes('vehicular') ||
+    text.includes('car accident') ||
+    text.includes('collision') ||
+    text.includes('road accident')
+  ) {
     return RADAR_POINTER_CATEGORIES[0]; // VEHICLE_4W_PLUS
   }
   if (text.includes('motor accident') || text.includes('motorcycle') || text.includes('bike')) {
     return RADAR_POINTER_CATEGORIES[1]; // MOTOR_ACCIDENT
   }
-  if (text.includes('road rage') || text.includes('altercation')) {
-    return RADAR_POINTER_CATEGORIES[3]; // ROAD_RAGE
+  if (
+    text.includes('fire') ||
+    text.includes('burn') ||
+    text.includes('flame') ||
+    text.includes('arson') ||
+    text.includes('smoke') ||
+    text.includes('road rage') ||
+    text.includes('altercation')
+  ) {
+    return RADAR_POINTER_CATEGORIES[3]; // ROAD_RAGE / Fire Alert fallback
   }
   if (text.includes('carnap') || text.includes('motornap') || text.includes('stolen')) {
     return RADAR_POINTER_CATEGORIES[4]; // CARNAPPING_MOTORNAPPING
@@ -398,8 +461,19 @@ const matchCategoryText = (rawText: string, seedId?: string): RadarPointerCatego
   if (text.includes('suicide') || text.includes('self-harm')) {
     return RADAR_POINTER_CATEGORIES[6]; // SUICIDE
   }
-  if (text.includes('homicide') || text.includes('murder') || text.includes('shooting')) {
-    return RADAR_POINTER_CATEGORIES[7]; // HOMICIDE
+  if (
+    text.includes('homicide') ||
+    text.includes('murder') ||
+    text.includes('shooting') ||
+    text.includes('armed') ||
+    text.includes('knife') ||
+    text.includes('pistol') ||
+    text.includes('gun') ||
+    text.includes('weapon') ||
+    text.includes('violence') ||
+    text.includes('assault')
+  ) {
+    return RADAR_POINTER_CATEGORIES[7]; // HOMICIDE / Armed threat
   }
   if (text.includes('genocide') || text.includes('massacre')) {
     return RADAR_POINTER_CATEGORIES[8]; // GENOCIDE
@@ -413,7 +487,13 @@ const matchCategoryText = (rawText: string, seedId?: string): RadarPointerCatego
   if (text.includes('hospital emergency') || text.includes('ambulance') || text.includes('transport')) {
     return RADAR_POINTER_CATEGORIES[11]; // HOSPITAL_EMERGENCY
   }
-  if (text.includes('critical condition') || text.includes('cardiac') || text.includes('trauma') || text.includes('medical')) {
+  if (
+    text.includes('critical condition') ||
+    text.includes('cardiac') ||
+    text.includes('trauma') ||
+    text.includes('medical') ||
+    text.includes('flood')
+  ) {
     return RADAR_POINTER_CATEGORIES[12]; // CRITICAL_CONDITIONS
   }
   if (text.includes('under medical care') || text.includes('monitoring') || text.includes('triage')) {
@@ -435,6 +515,190 @@ const matchCategoryText = (rawText: string, seedId?: string): RadarPointerCatego
   }
 
   return RADAR_POINTER_CATEGORIES[12];
+};
+
+// Resolves crisp vector icon, semantic color, and accessible aria-label for any incident marker
+export const resolveIncidentBeaconVisual = (
+  input: {
+    category?: string;
+    pointerCategory?: string;
+    type?: string;
+    title?: string;
+    description?: string;
+    severity?: string;
+  },
+  meta: RadarPointerCategoryMeta,
+  isResponded: boolean
+): TacticalBeaconVisual => {
+  const norm = `${input.category || ''} ${input.pointerCategory || ''} ${input.type || ''} ${
+    input.title || ''
+  } ${input.description || ''} ${meta.code || ''}`.toLowerCase();
+
+  if (isResponded) {
+    return {
+      bgColor: RESPONDED_GREEN_COLOR,
+      ringColor: '#34D399',
+      svgMarkup: meta.svgPathMarkup,
+      ariaLabel: `Responded incident: ${meta.label}`,
+      kindLabel: 'Responded'
+    };
+  }
+
+  // 1. Burning Home / Structure Fire
+  if (
+    norm.includes('fire') ||
+    norm.includes('burn') ||
+    norm.includes('arson') ||
+    norm.includes('flame') ||
+    norm.includes('bfp') ||
+    norm.includes('explosion')
+  ) {
+    return {
+      bgColor: '#EA580C',
+      ringColor: '#FDBA74',
+      svgMarkup: SVG_BURNING_HOUSE,
+      ariaLabel: 'Structure Fire or Burning Home Beacon',
+      kindLabel: 'Structure Fire'
+    };
+  }
+
+  // 2. Homicide / Armed / Violence / Knife / Pistol Threat
+  if (
+    norm.includes('homicide') ||
+    norm.includes('genocide') ||
+    norm.includes('armed') ||
+    norm.includes('knife') ||
+    norm.includes('pistol') ||
+    norm.includes('gun') ||
+    norm.includes('weapon') ||
+    norm.includes('violence') ||
+    norm.includes('assault') ||
+    norm.includes('shooting') ||
+    norm.includes('crime')
+  ) {
+    return {
+      bgColor: '#991B1B',
+      ringColor: '#FCA5A5',
+      svgMarkup: SVG_WEAPON_DANGER,
+      ariaLabel: 'Armed Threat or Violent Incident Beacon',
+      kindLabel: 'Armed Threat'
+    };
+  }
+
+  // 3. Vehicular / Car Accident
+  if (
+    norm.includes('vehicle') ||
+    norm.includes('vehicular') ||
+    norm.includes('car') ||
+    norm.includes('crash') ||
+    norm.includes('collision') ||
+    norm.includes('pileup') ||
+    norm.includes('traffic') ||
+    norm.includes('motor')
+  ) {
+    const isCritical = (input.severity || '').toLowerCase() === 'critical' || norm.includes('multi');
+    return {
+      bgColor: isCritical ? '#DC2626' : '#D97706',
+      ringColor: isCritical ? '#FCA5A5' : '#FCD34D',
+      svgMarkup: SVG_CAR_CRASH,
+      ariaLabel: 'Vehicular Accident Beacon',
+      kindLabel: 'Vehicular Crash'
+    };
+  }
+
+  // 4. Flood / Typhoon / Water Disaster
+  if (norm.includes('flood') || norm.includes('typhoon') || norm.includes('water') || norm.includes('landslide')) {
+    return {
+      bgColor: '#0284C7',
+      ringColor: '#7DD3FC',
+      svgMarkup: SVG_FLOOD_RESCUE,
+      ariaLabel: 'Flood or Weather Hazard Beacon',
+      kindLabel: 'Flood Hazard'
+    };
+  }
+
+  // 5. Medical / Trauma
+  if (
+    meta.isMedicAllowed ||
+    norm.includes('medical') ||
+    norm.includes('trauma') ||
+    norm.includes('cardiac') ||
+    norm.includes('injur') ||
+    norm.includes('hospital')
+  ) {
+    return {
+      bgColor: meta.color || '#DC2626',
+      ringColor: '#FCA5A5',
+      svgMarkup: meta.svgPathMarkup || SVG_MEDICAL_TRAUMA,
+      ariaLabel: `Medical Triage Beacon: ${meta.label}`,
+      kindLabel: meta.shortLabel
+    };
+  }
+
+  return {
+    bgColor: meta.color || '#670626',
+    ringColor: '#E9D9D0',
+    svgMarkup: meta.svgPathMarkup,
+    ariaLabel: `Incident Beacon: ${meta.label}`,
+    kindLabel: meta.shortLabel
+  };
+};
+
+// Resolves agency vehicle badge for responder units (FIRE, RHU, PNP, LDRRMO)
+export const resolveResponderBadgeVisual = (
+  agency?: string,
+  name?: string,
+  status?: string
+): ResponderBadgeVisual => {
+  const norm = `${agency || ''} ${name || ''}`.toLowerCase();
+  const normStatus = (status || '').toLowerCase();
+  const isAvailable =
+    normStatus === 'onduty' ||
+    normStatus === 'available' ||
+    normStatus === 'standby' ||
+    normStatus === '';
+
+  if (norm.includes('fire') || norm.includes('bfp')) {
+    return {
+      bgColor: '#EA580C',
+      accentColor: '#FED7AA',
+      svgMarkup: SVG_FIRETRUCK,
+      ariaLabel: `Fire Rescue Unit ${name || ''}`.trim(),
+      agencyLabel: 'FIRE',
+      isAvailable
+    };
+  }
+
+  if (norm.includes('pnp') || norm.includes('police') || norm.includes('patrol')) {
+    return {
+      bgColor: '#1D4ED8',
+      accentColor: '#BFDBFE',
+      svgMarkup: SVG_POLICE_CRUISER,
+      ariaLabel: `Police Cruiser Unit ${name || ''}`.trim(),
+      agencyLabel: 'PNP',
+      isAvailable
+    };
+  }
+
+  if (norm.includes('ldrrmo') || norm.includes('command') || norm.includes('c2')) {
+    return {
+      bgColor: '#670626',
+      accentColor: '#F7F1EA',
+      svgMarkup: SVG_COMMAND_UNIT,
+      ariaLabel: `LDRRMO Command Unit ${name || ''}`.trim(),
+      agencyLabel: 'LDRRMO',
+      isAvailable
+    };
+  }
+
+  return {
+    bgColor: '#0284C7',
+    accentColor: '#BAE6FD',
+    svgMarkup: SVG_AMBULANCE,
+    ariaLabel: `RHU Medical Unit ${name || ''}`.trim(),
+    agencyLabel: 'RHU',
+    isAvailable
+  };
 };
 
 export const isMedicAllowedCategory = (

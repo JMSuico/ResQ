@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Montserrat:wght@400;500;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
 @import url('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
 
 @import './style.css';
@@ -9,28 +9,253 @@
 @import './responders.css';
 @import './settings.css';
 @import './MainLayout.css';
+@import './PartLayout.css';
+@import './FontSyle/fontStyles.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ResQTrack Tactical Dark Sleek Scrollbar */
+:root {
+  /* Official Cherry & Warm Ivory Stitch Design System Tokens */
+  --resq-cherry: #670626;
+  --resq-cherry-deep: #4A041A;
+  --resq-cherry-sidebar: #400014;
+  --resq-ivory: #F7F1EA;
+  --resq-cream: #FAF5EE;
+  --resq-muted-cherry: #A83B4D;
+  --resq-beige: #E9D9D0;
+  --resq-ink-on-ivory: #2B010E;
+  --resq-ink-on-cherry: #F7F1EA;
+  --resq-blush-on-cherry: #FFD9DD;
+
+  /* Stitch Typography & Readability Scale */
+  --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-ui: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --resq-font-xs: 12px;
+  --resq-font-sm: 13.5px;
+  --resq-font-base: 15px;
+  --resq-font-md: 16px;
+  --resq-font-lg: 18px;
+  --resq-font-title: 22px;
+
+  --font-fluid-base: clamp(14.5px, 0.35vw + 13.5px, 16px);
+  --font-fluid-title: clamp(19px, 0.85vw + 15px, 24px);
+  --font-fluid-header: clamp(24px, 1.5vw + 18px, 34px);
+
+  /* Cherry Glass & Surface Fallbacks */
+  --resq-glass-bg: rgba(74, 4, 26, 0.82);
+  --resq-glass-bg-elevated: rgba(64, 0, 20, 0.9);
+  --resq-glass-bg-soft: rgba(103, 6, 38, 0.72);
+  --resq-glass-border: rgba(255, 217, 221, 0.18);
+  --resq-glass-border-strong: rgba(255, 217, 221, 0.28);
+  --resq-glass-blur: blur(16px);
+}
+
+html {
+  font-size: 16px;
+  font-family: var(--font-sans);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--resq-font-base, 15px);
+  line-height: 1.55;
+  color: var(--resq-ink-on-cherry);
+  background-color: var(--resq-cherry-deep);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  /* Official Stitch Claymorphism Surfaces (Warm Ivory & Soft Cream) */
+  .clay-surface {
+    background-color: var(--resq-ivory, #F7F1EA);
+    color: var(--resq-ink-on-ivory, #2B010E);
+    border-radius: 1.25rem;
+    border: 1px solid rgba(168, 59, 77, 0.18);
+    box-shadow:
+      0 14px 32px -8px rgba(43, 1, 14, 0.26),
+      0 4px 12px -2px rgba(64, 0, 20, 0.14),
+      inset 0 2px 3px rgba(255, 255, 255, 0.88),
+      inset 0 -3px 6px rgba(103, 6, 38, 0.08);
+  }
+
+  .clay-surface-cream {
+    background-color: var(--resq-cream, #FAF5EE);
+    color: var(--resq-ink-on-ivory, #2B010E);
+    border-radius: 1.25rem;
+    border: 1px solid rgba(168, 59, 77, 0.16);
+    box-shadow:
+      0 12px 28px -8px rgba(43, 1, 14, 0.22),
+      0 4px 10px -2px rgba(64, 0, 20, 0.12),
+      inset 0 2px 3px rgba(255, 255, 255, 0.92),
+      inset 0 -2px 5px rgba(103, 6, 38, 0.06);
+  }
+
+  .clay-well {
+    background-color: var(--resq-beige, #E9D9D0);
+    color: var(--resq-ink-on-ivory, #2B010E);
+    border-radius: 1rem;
+    border: 1px solid rgba(103, 6, 38, 0.16);
+    box-shadow:
+      inset 0 2px 6px rgba(64, 0, 20, 0.12),
+      inset 0 -1px 2px rgba(255, 255, 255, 0.65);
+  }
+
+  /* Tactile Clay Buttons */
+  .clay-button-cherry {
+    background-color: var(--resq-cherry, #670626);
+    color: var(--resq-ink-on-cherry, #F7F1EA);
+    border-radius: 0.9rem;
+    border: 1px solid rgba(255, 217, 221, 0.22);
+    font-weight: 700;
+    box-shadow:
+      0 10px 20px -6px rgba(43, 1, 14, 0.45),
+      inset 0 2px 2px rgba(255, 217, 221, 0.24),
+      inset 0 -2px 4px rgba(43, 1, 14, 0.45);
+    transition: transform 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .clay-button-cherry:hover {
+    background-color: var(--resq-cherry-deep, #4A041A);
+    box-shadow:
+      0 12px 24px -6px rgba(43, 1, 14, 0.55),
+      inset 0 2px 2px rgba(255, 217, 221, 0.28),
+      inset 0 -2px 4px rgba(43, 1, 14, 0.55);
+  }
+
+  .clay-button-cherry:active {
+    transform: translateY(1px) scale(0.985);
+  }
+
+  .clay-button-ivory {
+    background-color: var(--resq-ivory, #F7F1EA);
+    color: var(--resq-cherry, #670626);
+    border-radius: 0.9rem;
+    border: 1px solid rgba(168, 59, 77, 0.28);
+    font-weight: 700;
+    box-shadow:
+      0 8px 18px -6px rgba(43, 1, 14, 0.22),
+      inset 0 2px 2px rgba(255, 255, 255, 0.95),
+      inset 0 -2px 4px rgba(168, 59, 77, 0.12);
+    transition: transform 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .clay-button-ivory:hover {
+    background-color: var(--resq-cream, #FAF5EE);
+    border-color: rgba(103, 6, 38, 0.42);
+  }
+
+  .clay-button-ivory:active {
+    transform: translateY(1px) scale(0.985);
+  }
+
+  /* Mobile Fixed Bottom Navigation Dock in Sidebar Cherry (#400014) */
+  .clay-dock {
+    display: none;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 650;
+    min-height: calc(62px + env(safe-area-inset-bottom));
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    background-color: var(--resq-cherry-sidebar, #400014);
+    color: var(--resq-ink-on-cherry, #F7F1EA);
+    border-top: 1px solid rgba(255, 217, 221, 0.2);
+    box-shadow:
+      0 -12px 30px rgba(43, 1, 14, 0.42),
+      inset 0 1px 0 rgba(255, 217, 221, 0.16);
+  }
+
+  @media (max-width: 700px) {
+    .clay-dock {
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      gap: 4px;
+    }
+  }
+}
+
+/* Cherry Translucent Surfaces for Legacy Glass Panels */
+.resq-glass,
+.glass-panel,
+.glass-card,
+.glass-surface {
+  background: var(--resq-glass-bg, rgba(74, 4, 26, 0.82));
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid var(--resq-glass-border, rgba(255, 217, 221, 0.18));
+  box-shadow:
+    0 14px 36px -10px rgba(43, 1, 14, 0.52),
+    inset 0 1px 0 rgba(255, 217, 221, 0.12);
+}
+
+.resq-glass--elevated {
+  background: var(--resq-glass-bg-elevated, rgba(64, 0, 20, 0.9));
+  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  border: 1px solid var(--resq-glass-border-strong, rgba(255, 217, 221, 0.26));
+}
+
+/* Global Typography Readability Floor Across All Portals */
+.dashboard {
+  font-size: var(--resq-font-base, 15px);
+  line-height: 1.55;
+}
+
+.sidebar__link {
+  font-size: 14.5px;
+  line-height: 1.4;
+}
+
+.topbar {
+  font-size: 14.5px;
+}
+
+.text-\[7\.5px\],
+.text-\[8px\],
+.text-\[8\.5px\],
+.text-\[9px\],
+.text-\[9\.5px\],
+.text-\[10px\],
+.text-\[10\.5px\],
+.text-\[11px\],
+.text-\[11\.5px\] {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (min-width: 640px) {
+  .sm\:text-\[10px\],
+  .sm\:text-\[11px\] {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+}
+
+/* ResQTrack Cherry & Ivory Scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.7);
+  background: rgba(64, 0, 20, 0.65);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(71, 85, 105, 0.7);
+  background: rgba(168, 59, 77, 0.78);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.9);
+  background: rgba(247, 241, 234, 0.85);
 }
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(71, 85, 105, 0.7) rgba(15, 23, 42, 0.7);
+  scrollbar-color: rgba(168, 59, 77, 0.78) rgba(64, 0, 20, 0.65);
 }

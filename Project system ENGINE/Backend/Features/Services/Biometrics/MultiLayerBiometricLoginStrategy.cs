@@ -29,7 +29,8 @@ public class MultiLayerBiometricLoginStrategy(
     public const double DefaultSimilarityThreshold = 0.82;
     public const double DefaultClaudeSimilarityThreshold = 0.78;
     public const double MinimumLivenessThreshold = 0.70;
-    private const int HybridTopKCandidates = 3;
+    private const int HybridTopKCandidates = 12;
+    private const int MaxConcurrentClaudeComparisons = 3;
 
     private static readonly string[] GeometricComparisonKeys =
     [
@@ -182,6 +183,7 @@ public class MultiLayerBiometricLoginStrategy(
             }
 
             List<BiometricEnrollment> userEnrollments = await db.BiometricEnrollments
+                .AsNoTracking()
                 .Include(b => b.User)
                 .Where(b =>
                     b.UserId == targetUser.Id &&
@@ -189,6 +191,7 @@ public class MultiLayerBiometricLoginStrategy(
                     b.EnrollmentStatus == "ACTIVE" &&
                     (b.EncryptedTemplateData.Length >= 4 || (b.PoseFramesJson != null && b.PoseFramesJson != "")))
                 .OrderByDescending(b => b.EnrolledAtUtc)
+                .Take(5)
                 .ToListAsync(ct);
 
             BiometricEnrollment? userEnrollment = userEnrollments.FirstOrDefault(IsUsableEnrollment);
@@ -209,22 +212,74 @@ public class MultiLayerBiometricLoginStrategy(
         }
         else
         {
-            List<BiometricEnrollment> rawEnrollments = await db.BiometricEnrollments
-                .Include(b => b.User)
+            var metadataEnrollments = await db.BiometricEnrollments
+                .AsNoTracking()
                 .Where(b =>
                     b.RevokedAtUtc == null &&
                     b.EnrollmentStatus == "ACTIVE" &&
-                    (b.EncryptedTemplateData.Length >= 4 || (b.PoseFramesJson != null && b.PoseFramesJson != "")))
-                .OrderByDescending(b => b.EnrolledAtUtc)
-                .ToListAsync(ct);
-
-            candidateEnrollments = rawEnrollments
-                .Where(b =>
                     b.User != null &&
                     !b.User.IsDeleted &&
                     b.User.Status != AccountStatus.Suspended &&
-                    IsPortalOriginAllowed(b.User.Role, context.PortalOrigin) &&
-                    IsUsableEnrollment(b))
+                    (b.EncryptedTemplateData.Length >= 4 || (b.PoseFramesJson != null && b.PoseFramesJson != "")))
+                .OrderByDescending(b => b.EnrolledAtUtc)
+                .Select(b => new
+                {
+                    b.Id,
+                    b.UserId,
+                    b.EncryptedTemplateData,
+                    b.GeometricSignatureJson,
+                    b.EnrollmentStatus,
+                    b.EnrolledAtUtc,
+                    b.RevokedAtUtc,
+                    HasPoseFrames = b.PoseFramesJson != null && b.PoseFramesJson != "",
+                    UserRole = b.User!.Role,
+                    UserEmail = b.User.Email,
+                    UserStatus = b.User.Status
+                })
+                .ToListAsync(ct);
+
+            var portalFiltered = metadataEnrollments
+                .Where(m => IsPortalOriginAllowed(m.UserRole, context.PortalOrigin))
+                .ToList();
+
+            Dictionary<Guid, string?> poseFramesById = new();
+            if (claudeHybridReady)
+            {
+                List<Guid> poseIds = portalFiltered
+                    .Where(m => m.HasPoseFrames)
+                    .Select(m => m.Id)
+                    .ToList();
+
+                if (poseIds.Count > 0)
+                {
+                    poseFramesById = await db.BiometricEnrollments
+                        .AsNoTracking()
+                        .Where(b => poseIds.Contains(b.Id))
+                        .Select(b => new { b.Id, b.PoseFramesJson })
+                        .ToDictionaryAsync(x => x.Id, x => x.PoseFramesJson, ct);
+                }
+            }
+
+            candidateEnrollments = portalFiltered
+                .Select(m => new BiometricEnrollment
+                {
+                    Id = m.Id,
+                    UserId = m.UserId,
+                    EncryptedTemplateData = m.EncryptedTemplateData,
+                    GeometricSignatureJson = m.GeometricSignatureJson,
+                    PoseFramesJson = poseFramesById.GetValueOrDefault(m.Id),
+                    EnrollmentStatus = m.EnrollmentStatus,
+                    EnrolledAtUtc = m.EnrolledAtUtc,
+                    RevokedAtUtc = m.RevokedAtUtc,
+                    User = new User
+                    {
+                        Id = m.UserId,
+                        Email = m.UserEmail,
+                        Role = m.UserRole,
+                        Status = m.UserStatus
+                    }
+                })
+                .Where(IsUsableEnrollment)
                 .ToList();
         }
 
@@ -296,7 +351,7 @@ public class MultiLayerBiometricLoginStrategy(
         {
             LayerNumber = 4,
             LayerCode = "MULTI_FACTOR_VERIFICATION_ENGINE",
-            LayerName = usedHybridClaude
+            LayerName = outcome.UsedHybridMode
                 ? "Hybrid Claude 4-Pose Gallery & 128-D Cosine Verification"
                 : "128-D Cosine Similarity & Geometric Pattern Verification",
             Passed = outcome.Passed,
@@ -367,6 +422,18 @@ public class MultiLayerBiometricLoginStrategy(
                     Detail: BuildHybridSuccessDetail(claudeResult, target.LocalCosine, hybridScore, claudeThreshold));
             }
 
+            if (IsTransientClaudeFailure(claudeResult) && liveVector is { Length: > 0 })
+            {
+                logger?.LogWarning(
+                    "[MultiLayerBiometricLoginStrategy] Claude 1:1 unavailable ({ErrorCode}); falling back to 128-D cosine verification.",
+                    claudeResult.ErrorCode);
+                return ExecuteDeterministicVerification(
+                    liveVector,
+                    candidateEnrollments,
+                    isOneToOne: true,
+                    deterministicThreshold);
+            }
+
             double rejectedScore = Math.Round(Math.Clamp(claudeResult.Similarity, 0.0, 1.0), 4);
             return new Layer4VerificationOutcome(
                 Passed: false,
@@ -379,51 +446,102 @@ public class MultiLayerBiometricLoginStrategy(
 
         List<RankedCandidate> topKCandidates = SelectTopKPoseCandidates(ranked, HybridTopKCandidates);
         ClaudeBiometricIdentityResult? lastResult = null;
+        ClaudeBiometricIdentityResult? spoofResult = null;
+        ClaudeBiometricIdentityResult? unavailableResult = null;
         double bestFailedClaudeSim = 0.0;
         bool spoofDetected = false;
         bool providerUnavailable = false;
         bool liveHumanConfirmed = false;
 
-        foreach (RankedCandidate candidate in topKCandidates)
-        {
-            ClaudeBiometricIdentityResult claudeResult = await claudeBiometricStrategy!.VerifyLiveAgainstCachedPosesAsync(
-                new ClaudeBiometricIdentityInput(
-                    LiveCaptureBase64: primaryLiveCapture,
-                    PoseFramesJson: candidate.Enrollment.PoseFramesJson,
-                    LiveCaptureFramesBase64: context.LiveCaptureFramesBase64),
-                ct);
+        // Bounded concurrency across independent Claude HTTP/vision comparisons; DbContext is never accessed inside these tasks.
+        using var concurrencyGate = new SemaphoreSlim(MaxConcurrentClaudeComparisons, MaxConcurrentClaudeComparisons);
+        Task<(RankedCandidate Candidate, ClaudeBiometricIdentityResult Result)>[] evaluationTasks = topKCandidates
+            .Select(async candidate =>
+            {
+                await concurrencyGate.WaitAsync(ct);
+                try
+                {
+                    ClaudeBiometricIdentityResult claudeResult = await claudeBiometricStrategy!.VerifyLiveAgainstCachedPosesAsync(
+                        new ClaudeBiometricIdentityInput(
+                            LiveCaptureBase64: primaryLiveCapture,
+                            PoseFramesJson: candidate.Enrollment.PoseFramesJson,
+                            LiveCaptureFramesBase64: context.LiveCaptureFramesBase64),
+                        ct);
+                    return (candidate, claudeResult);
+                }
+                finally
+                {
+                    concurrencyGate.Release();
+                }
+            })
+            .ToArray();
 
+        (RankedCandidate Candidate, ClaudeBiometricIdentityResult Result)[] evaluations =
+            await Task.WhenAll(evaluationTasks);
+
+        (RankedCandidate Candidate, ClaudeBiometricIdentityResult Result)? bestMatch = null;
+        foreach (var entry in evaluations)
+        {
+            ClaudeBiometricIdentityResult claudeResult = entry.Result;
             lastResult = claudeResult;
             if (claudeResult.Similarity > bestFailedClaudeSim)
             {
                 bestFailedClaudeSim = claudeResult.Similarity;
             }
 
-            if (string.Equals(claudeResult.ErrorCode, "PROVIDER_UNAVAILABLE", StringComparison.OrdinalIgnoreCase))
+            if (IsTransientClaudeFailure(claudeResult))
             {
                 providerUnavailable = true;
-                break;
+                unavailableResult ??= claudeResult;
+                continue;
             }
 
             if (!claudeResult.IsLiveHuman)
             {
                 spoofDetected = true;
-                break;
+                spoofResult ??= claudeResult;
+                continue;
             }
 
             liveHumanConfirmed = true;
 
-            if (claudeResult.SamePerson && claudeResult.Similarity >= claudeThreshold)
+            if (claudeResult.SamePerson &&
+                claudeResult.Similarity >= claudeThreshold &&
+                (bestMatch == null || claudeResult.Similarity > bestMatch.Value.Result.Similarity))
             {
-                double hybridScore = ComputeHybridScore(claudeResult.Similarity, candidate.LocalCosine, claudeThreshold);
-                return new Layer4VerificationOutcome(
-                    Passed: true,
-                    UsedHybridMode: true,
-                    FinalScore: hybridScore,
-                    EffectiveThreshold: claudeThreshold,
-                    MatchedEnrollment: candidate.Enrollment,
-                    Detail: BuildHybridSuccessDetail(claudeResult, candidate.LocalCosine, hybridScore, claudeThreshold));
+                bestMatch = entry;
             }
+        }
+
+        if (bestMatch is { } winningMatch)
+        {
+            double hybridScore = ComputeHybridScore(
+                winningMatch.Result.Similarity,
+                winningMatch.Candidate.LocalCosine,
+                claudeThreshold);
+            return new Layer4VerificationOutcome(
+                Passed: true,
+                UsedHybridMode: true,
+                FinalScore: hybridScore,
+                EffectiveThreshold: claudeThreshold,
+                MatchedEnrollment: winningMatch.Candidate.Enrollment,
+                Detail: BuildHybridSuccessDetail(
+                    winningMatch.Result,
+                    winningMatch.Candidate.LocalCosine,
+                    hybridScore,
+                    claudeThreshold));
+        }
+
+        if (!spoofDetected && providerUnavailable && liveVector is { Length: > 0 })
+        {
+            logger?.LogWarning(
+                "[MultiLayerBiometricLoginStrategy] Claude 1:N encountered transient failure ({ErrorCode}); falling back to 128-D cosine verification.",
+                unavailableResult?.ErrorCode ?? "PROVIDER_UNAVAILABLE");
+            return ExecuteDeterministicVerification(
+                liveVector,
+                candidateEnrollments,
+                isOneToOne: false,
+                deterministicThreshold);
         }
 
         if (!spoofDetected && !providerUnavailable && liveHumanConfirmed && liveVector != null)
@@ -442,13 +560,14 @@ public class MultiLayerBiometricLoginStrategy(
             }
         }
 
+        ClaudeBiometricIdentityResult? diagnosticResult = spoofResult ?? (liveHumanConfirmed ? lastResult : unavailableResult ?? lastResult);
         return new Layer4VerificationOutcome(
             Passed: false,
             UsedHybridMode: true,
             FinalScore: Math.Round(Math.Clamp(bestFailedClaudeSim, 0.0, 1.0), 4),
             EffectiveThreshold: claudeThreshold,
             MatchedEnrollment: null,
-            Detail: BuildHybridFailureReason(isOneToOne: false, lastResult, claudeThreshold));
+            Detail: BuildHybridFailureReason(isOneToOne: false, diagnosticResult, claudeThreshold));
     }
 
     private static Layer4VerificationOutcome ExecuteDeterministicVerification(
@@ -556,28 +675,184 @@ public class MultiLayerBiometricLoginStrategy(
     {
         var selected = new List<RankedCandidate>(k);
         var seenIds = new HashSet<Guid>();
+        var seenGalleryFingerprints = new HashSet<string>(StringComparer.Ordinal);
 
-        int overallWindow = Math.Min(k, ranked.Count);
-        for (int i = 0; i < overallWindow; i++)
+        int recentReserve = Math.Max(1, k / 2);
+        int scoreSlotLimit = Math.Max(1, k - recentReserve);
+
+        bool TrySelectDistinctCandidate(RankedCandidate candidate, bool requireDistinctGallery)
         {
-            RankedCandidate candidate = ranked[i];
-            if (candidate.HasPoses && seenIds.Add(candidate.Enrollment.Id))
+            if (!candidate.HasPoses || selected.Count >= k)
+            {
+                return false;
+            }
+
+            if (requireDistinctGallery)
+            {
+                string fingerprint = BuildCandidateGalleryFingerprint(candidate.Enrollment);
+                if (!seenGalleryFingerprints.Add(fingerprint))
+                {
+                    return false;
+                }
+            }
+
+            if (seenIds.Add(candidate.Enrollment.Id))
             {
                 selected.Add(candidate);
+                return true;
             }
+
+            return false;
+        }
+
+        // Phase 1: Diverse gallery coverage sorted by ranking score so cloned E2E fixtures cannot crowd out real accounts.
+        for (int i = 0; i < ranked.Count && selected.Count < scoreSlotLimit; i++)
+        {
+            TrySelectDistinctCandidate(ranked[i], requireDistinctGallery: true);
+        }
+
+        // Phase 2: Reserve slots for the most recently enrolled distinct active candidates.
+        int recentInspected = 0;
+        foreach (RankedCandidate recentCandidate in ranked
+            .Where(c => c.HasPoses)
+            .OrderByDescending(c => c.Enrollment.EnrolledAtUtc)
+            .ThenByDescending(c => c.RankingScore))
+        {
+            if (selected.Count >= k || recentInspected >= recentReserve)
+            {
+                break;
+            }
+
+            if (TrySelectDistinctCandidate(recentCandidate, requireDistinctGallery: true))
+            {
+                recentInspected++;
+            }
+        }
+
+        // Phase 3: Backfill remaining capacity with any remaining distinct galleries, then non-distinct fallback if fewer than k.
+        for (int i = 0; i < ranked.Count && selected.Count < k; i++)
+        {
+            TrySelectDistinctCandidate(ranked[i], requireDistinctGallery: true);
         }
 
         for (int i = 0; i < ranked.Count && selected.Count < k; i++)
         {
-            RankedCandidate candidate = ranked[i];
-            if (candidate.HasPoses && seenIds.Add(candidate.Enrollment.Id))
-            {
-                selected.Add(candidate);
-            }
+            TrySelectDistinctCandidate(ranked[i], requireDistinctGallery: false);
         }
 
         return selected;
     }
+
+    private static string BuildCandidateGalleryFingerprint(BiometricEnrollment enrollment)
+    {
+        // Fingerprint using the CENTER pose frame slice + 16 sampled vector dims so JSON timestamps never split clones.
+        string pose = enrollment.PoseFramesJson ?? string.Empty;
+        string centerSlice = ExtractCenterImageSlice(pose);
+
+        float[]? vec = ExtractEnrolledVector(enrollment);
+        if (vec is { Length: > 0 })
+        {
+            var sampled = new List<string>(16);
+            int step = Math.Max(1, vec.Length / 16);
+            for (int i = 0; i < vec.Length && sampled.Count < 16; i += step)
+            {
+                sampled.Add(Math.Round(vec[i], 2).ToString("0.00", CultureInfo.InvariantCulture));
+            }
+            return $"{string.Join(",", sampled)}|{centerSlice}";
+        }
+
+        return centerSlice;
+    }
+
+    private static bool IsTransientClaudeFailure(ClaudeBiometricIdentityResult? result)
+    {
+        if (result == null || string.IsNullOrWhiteSpace(result.ErrorCode))
+        {
+            return false;
+        }
+
+        string code = result.ErrorCode.Trim();
+        if (string.Equals(code, "LIVENESS_SPOOF_REJECTED", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return string.Equals(code, "PROVIDER_UNAVAILABLE", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(code, "REQUEST_FAILED", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(code, "INVALID_AI_RESPONSE", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ExtractCenterImageSlice(string poseJson)
+    {
+        if (string.IsNullOrEmpty(poseJson))
+        {
+            return "empty";
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(poseJson);
+            JsonElement root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                string? centerImage =
+                    TryExtractPoseDataUrl(root, "bestFrames", "CENTER") ??
+                    TryExtractPoseDataUrl(root, "poses", "CENTER") ??
+                    TryExtractPoseDataUrlFromContainer(root, "CENTER");
+
+                if (!string.IsNullOrWhiteSpace(centerImage))
+                {
+                    return FormatCenterSlice(centerImage);
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Non-JSON payload: fall back to bounded raw tail signature below.
+        }
+
+        return poseJson.Length > 128 ? $"{poseJson.Length}:{poseJson[^128..]}" : $"{poseJson.Length}:{poseJson}";
+    }
+
+    private static string? TryExtractPoseDataUrl(JsonElement root, string containerKey, string poseKey) =>
+        SharedGovIdForensicsEvaluator.TryGetPropertyCaseInsensitive(root, containerKey, out JsonElement container) &&
+        container.ValueKind == JsonValueKind.Object
+            ? TryExtractPoseDataUrlFromContainer(container, poseKey)
+            : null;
+
+    private static string? TryExtractPoseDataUrlFromContainer(JsonElement container, string poseKey)
+    {
+        if (!SharedGovIdForensicsEvaluator.TryGetPropertyCaseInsensitive(container, poseKey, out JsonElement poseEl))
+        {
+            return null;
+        }
+
+        return poseEl.ValueKind switch
+        {
+            JsonValueKind.String => poseEl.GetString(),
+            JsonValueKind.Array => poseEl.EnumerateArray()
+                .Select(item => item.ValueKind == JsonValueKind.String
+                    ? item.GetString()
+                    : item.ValueKind == JsonValueKind.Object
+                        ? SharedGovIdForensicsEvaluator.TryReadOptionalString(item, "bestFrameDataUrl") ??
+                          SharedGovIdForensicsEvaluator.TryReadOptionalString(item, "frameDataUrl") ??
+                          SharedGovIdForensicsEvaluator.TryReadOptionalString(item, "dataUrl") ??
+                          SharedGovIdForensicsEvaluator.TryReadOptionalString(item, "base64")
+                        : null)
+                .FirstOrDefault(s => !string.IsNullOrWhiteSpace(s)),
+            JsonValueKind.Object =>
+                SharedGovIdForensicsEvaluator.TryReadOptionalString(poseEl, "bestFrameDataUrl") ??
+                SharedGovIdForensicsEvaluator.TryReadOptionalString(poseEl, "frameDataUrl") ??
+                SharedGovIdForensicsEvaluator.TryReadOptionalString(poseEl, "dataUrl") ??
+                SharedGovIdForensicsEvaluator.TryReadOptionalString(poseEl, "base64"),
+            _ => null
+        };
+    }
+
+    private static string FormatCenterSlice(string center) =>
+        center.Length > 128
+            ? $"{center.Length}:{center[..64]}:{center[^64..]}"
+            : $"{center.Length}:{center}";
 
     private static double ComputeHybridScore(double claudeSimilarity, double localCosine, double claudeThreshold)
     {

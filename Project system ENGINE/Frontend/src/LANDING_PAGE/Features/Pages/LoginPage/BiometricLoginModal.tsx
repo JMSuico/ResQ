@@ -17,7 +17,12 @@ import {
   Layers,
   ScanFace
 } from 'lucide-react';
-import { biometricLoginUser, BiometricLoginPayload, LoginResponse } from '@/Endpoints/authApi';
+import {
+  biometricLoginUser,
+  getBiometricTrainingStatus,
+  BiometricLoginPayload,
+  LoginResponse
+} from '@/Endpoints/authApi';
 import { trackSkinFace } from '@/Libs/Vision/idScanner/face/skinFaceTracker';
 import {
   extractBiometricFeatureVector,
@@ -57,7 +62,6 @@ interface ExtendedBiometricLoginPayload extends BiometricLoginPayload {
 }
 
 const TERMINAL_AUTH_FAILURE_TOKENS: readonly string[] = [
-  'locked',
   'pending',
   'suspended',
   'not found',
@@ -72,9 +76,57 @@ const isTerminalAuthFailure = (msg: string): boolean => {
   return TERMINAL_AUTH_FAILURE_TOKENS.some((token) => lower.includes(token));
 };
 
-const isHardAccountBlock = (msg: string): boolean => {
-  const lower = msg.toLowerCase();
-  return ['locked', 'pending', 'suspended'].some((token) => lower.includes(token));
+const computeFrameSharpnessAndContrast = (
+  data: Uint8ClampedArray,
+  width: number,
+  height: number
+): { contrastStdDev: number; laplacianVar: number; isSharpAndContrasted: boolean } => {
+  const startX = Math.max(2, Math.floor(width * 0.2));
+  const endX = Math.min(width - 2, Math.ceil(width * 0.8));
+  const startY = Math.max(2, Math.floor(height * 0.1));
+  const endY = Math.min(height - 2, Math.ceil(height * 0.9));
+
+  let lumSum = 0;
+  let lumSqSum = 0;
+  let lapSum = 0;
+  let lapSqSum = 0;
+  let count = 0;
+
+  const getLum = (x: number, y: number): number => {
+    const idx = (y * width + x) * 4;
+    return 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+  };
+
+  for (let y = startY; y < endY; y += 2) {
+    for (let x = startX; x < endX; x += 2) {
+      const c = getLum(x, y);
+      lumSum += c;
+      lumSqSum += c * c;
+
+      const lap =
+        4 * c - getLum(x - 1, y) - getLum(x + 1, y) - getLum(x, y - 1) - getLum(x, y + 1);
+      lapSum += lap;
+      lapSqSum += lap * lap;
+      count++;
+    }
+  }
+
+  if (count === 0) {
+    return { contrastStdDev: 0, laplacianVar: 0, isSharpAndContrasted: false };
+  }
+
+  const lumMean = lumSum / count;
+  const contrastVar = Math.max(0, lumSqSum / count - lumMean * lumMean);
+  const contrastStdDev = Math.sqrt(contrastVar);
+
+  const lapMean = lapSum / count;
+  const laplacianVar = Math.max(0, lapSqSum / count - lapMean * lapMean);
+
+  return {
+    contrastStdDev,
+    laplacianVar,
+    isSharpAndContrasted: contrastStdDev >= 8 && laplacianVar >= 12
+  };
 };
 
 const captureLiveBurstFrames = async (
@@ -95,7 +147,7 @@ const captureLiveBurstFrames = async (
   while (frames.length < 3) {
     if (frames.length > 0) {
       await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 110);
+        window.setTimeout(resolve, 60);
       });
     }
     if (video.readyState < 2 || video.videoWidth === 0) {
@@ -139,6 +191,10 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
   );
   const [validationVerdict, setValidationVerdict] = useState<'IDLE' | 'SUCCESS_LOGIN' | 'INVALID'>('IDLE');
   const [facePresence, setFacePresence] = useState<FacePresenceState>('STANDBY');
+  const [trainingStatusUi, setTrainingStatusUi] = useState<{
+    state: 'idle' | 'ready' | 'learning';
+    label: string;
+  }>({ state: 'idle', label: '' });
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -149,16 +205,87 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
   const autoScanPausedRef = useRef<boolean>(false);
   const autoRetryCountRef = useRef<number>(0);
   const scanProgressRef = useRef<number>(0);
+  const centeredFrameCountRef = useRef<number>(0);
   const lastFaceUiUpdateRef = useRef<number>(0);
   const lastFacePresenceRef = useRef<FacePresenceState>('STANDBY');
   const processFrameRef = useRef<() => void>(() => {});
   const stopCameraRef = useRef<() => void>(() => {});
   const scheduleTickRef = useRef<() => void>(() => {});
   const retryTimeoutRef = useRef<number | null>(null);
+  const manualEmailEditRef = useRef<boolean>(false);
+
+  const refreshTrainingStatus = useCallback(async (targetEmail: string): Promise<void> => {
+    const clean = targetEmail.trim().toLowerCase();
+    if (!clean.includes('@') || !clean.includes('.')) {
+      setTrainingStatusUi({ state: 'idle', label: '' });
+      return;
+    }
+    try {
+      const res = await getBiometricTrainingStatus(clean);
+      if (
+        res.exists === false ||
+        res.found === false ||
+        res.hasBiometricEnrollment === false
+      ) {
+        setTrainingStatusUi({ state: 'idle', label: '' });
+        return;
+      }
+      const statusNorm = String(res.biometricTrainingStatus || res.trainingStatus || '')
+        .trim()
+        .toUpperCase();
+      if (!statusNorm || statusNorm === 'NONE') {
+        setTrainingStatusUi({ state: 'idle', label: '' });
+        return;
+      }
+      const isReady =
+        res.isReady === true ||
+        res.ready === true ||
+        statusNorm === 'READY' ||
+        statusNorm === 'COMPLETED' ||
+        (typeof res.remainingSeconds === 'number' && res.remainingSeconds <= 0);
+
+      if (isReady) {
+        setTrainingStatusUi({
+          state: 'ready',
+          label: 'AI Learning: Ready'
+        });
+      } else {
+        const mins =
+          typeof res.remainingMinutes === 'number' && res.remainingMinutes > 0
+            ? Math.ceil(res.remainingMinutes)
+            : typeof res.remainingSeconds === 'number' && res.remainingSeconds > 0
+            ? Math.max(1, Math.ceil(res.remainingSeconds / 60))
+            : 5;
+        setTrainingStatusUi({
+          state: 'learning',
+          label: `AI Learning in progress (~${mins} min remaining) — Please wait up to 5 minutes after registration`
+        });
+      }
+    } catch {
+      // Non-blocking: ignore unavailable or un-enrolled status lookups
+    }
+  }, []);
 
   useEffect(() => {
     setEmail(initialEmail || '');
+    manualEmailEditRef.current = false;
+    if (!isOpen) {
+      setTrainingStatusUi({ state: 'idle', label: '' });
+    }
   }, [initialEmail, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const clean = email.trim();
+    if (!clean.includes('@') || !clean.includes('.')) {
+      setTrainingStatusUi({ state: 'idle', label: '' });
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void refreshTrainingStatus(clean);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [email, isOpen, refreshTrainingStatus]);
 
   const stopCamera = useCallback(() => {
     if (retryTimeoutRef.current !== null) {
@@ -193,6 +320,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     setEmailError('');
     setScanProgress(0);
     scanProgressRef.current = 0;
+    centeredFrameCountRef.current = 0;
     setCameraError(null);
     setPipelineLayers(createInitialFiveLayerPipeline());
     setValidationVerdict('IDLE');
@@ -327,7 +455,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
           ? [trimmedFrameDataUrl]
           : [];
 
-      const buildPayload = (vec: number[]): ExtendedBiometricLoginPayload => {
+      const buildPayload = (vec: number[], useEmailTarget: boolean): ExtendedBiometricLoginPayload => {
         const req: ExtendedBiometricLoginPayload = {
           liveDescriptorVector: vec,
           liveDescriptorVectorJson: JSON.stringify(vec),
@@ -337,26 +465,37 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
           livenessScore: liveEvaluation.livenessScore,
           portalOrigin
         };
-        if (is1To1) {
+        if (useEmailTarget) {
           req.email = trimmedEmail;
         }
         return req;
       };
 
+      let resolvedOneToOne = is1To1;
+
       try {
         let response: LoginResponse;
         try {
-          response = await biometricLoginUser(buildPayload(liveEvaluation.liveDescriptorVector));
+          response = await biometricLoginUser(buildPayload(liveEvaluation.liveDescriptorVector, is1To1));
         } catch (firstErr: unknown) {
-          if (fallbackVector && fallbackVector.length === 128) {
-            response = await biometricLoginUser(buildPayload(fallbackVector));
+          const firstMsg = firstErr instanceof Error ? firstErr.message.toLowerCase() : '';
+          // If LoginPage autofill carried an un-enrolled demo/legacy email into the 1:1 slot,
+          // seamlessly fall back to 1:N face identification so enrolled users (e.g. SUICO) still match.
+          if (is1To1 && !manualEmailEditRef.current && firstMsg.includes('no active biometric enrollment')) {
+            resolvedOneToOne = false;
+            setEmail('');
+            setStatusMessage(`'${trimmedEmail}' has no face frames — scanning enrolled faces (1:N)…`);
+            setStatusTone('');
+            response = await biometricLoginUser(buildPayload(liveEvaluation.liveDescriptorVector, false));
+          } else if (fallbackVector && fallbackVector.length === 128) {
+            response = await biometricLoginUser(buildPayload(fallbackVector, is1To1));
           } else {
             throw firstErr;
           }
         }
 
         const recognizedName = response.session?.fullName || 'Verified User';
-        markPipelineSuccess(recognizedName, is1To1 ? `1:1 ${trimmedEmail}` : '1:N Optical Identification');
+        markPipelineSuccess(recognizedName, resolvedOneToOne ? `1:1 ${trimmedEmail}` : '1:N Optical Identification');
 
         setStatusMessage(`Identity verified (${recognizedName}) — Redirecting…`);
         setStatusTone('ok');
@@ -380,18 +519,16 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
         }
         hasDispatchedRef.current = false;
         scanProgressRef.current = 0;
+        centeredFrameCountRef.current = 0;
         setScanProgress(0);
         setStage('CAMERA_SCAN');
 
+        if (is1To1) {
+          void refreshTrainingStatus(trimmedEmail);
+        }
+
         if (isTerminalAuthFailure(msg) || autoRetryCountRef.current >= 1) {
           autoScanPausedRef.current = true;
-          if (isHardAccountBlock(msg)) {
-            stopCamera();
-            setIsStreaming(false);
-            setFacePresence('STANDBY');
-            lastFacePresenceRef.current = 'STANDBY';
-            lastFaceUiUpdateRef.current = 0;
-          }
         } else {
           autoRetryCountRef.current += 1;
           retryTimeoutRef.current = window.setTimeout(() => {
@@ -403,7 +540,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
         }
       }
     },
-    [email, portalOrigin, stopCamera, onLoginSuccess, markPipelineSuccess, markPipelineFailure]
+    [email, portalOrigin, stopCamera, onLoginSuccess, markPipelineSuccess, markPipelineFailure, refreshTrainingStatus]
   );
 
   // Dedicated Frame Processing Logic for Genuine Optical Face Detection
@@ -421,6 +558,9 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     ctx.drawImage(video, 0, 0, 320, 240);
     const imgData = ctx.getImageData(0, 0, 320, 240);
 
+    // Reject pure flat/blank/blurry frames before progressing or firing API
+    const frameQuality = computeFrameSharpnessAndContrast(imgData.data, 320, 240);
+
     const skinRes = trackSkinFace(
       imgData.data,
       320,
@@ -434,7 +574,8 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
 
     // Require genuine skin face & landmark/haar validation for automatic hands-free reticle trigger
     const hasGenuineFace = Boolean(
-      skinRes?.isValidFace &&
+      frameQuality.isSharpAndContrasted &&
+        skinRes?.isValidFace &&
         (skinRes.landmarks?.isValidLandmarks || (skinRes.haarCheck?.score ?? 0) >= 0.55)
     );
     const yawVal = Math.abs(skinRes?.yawDegrees || 0);
@@ -453,13 +594,14 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
       setFacePresence(nextPresence);
     }
 
-    if (hasGenuineFace && skinRes) {
+    if (hasGenuineFace && skinRes && frameQuality.isSharpAndContrasted) {
       if (isCentered) {
-        const nextProgress = Math.min(scanProgressRef.current + 14, 100);
+        centeredFrameCountRef.current += 1;
+        const nextProgress = Math.min(scanProgressRef.current + 18, 100);
         scanProgressRef.current = nextProgress;
         setScanProgress(nextProgress);
 
-        if (nextProgress >= 100 && !hasDispatchedRef.current) {
+        if (centeredFrameCountRef.current >= 6 && nextProgress >= 100 && !hasDispatchedRef.current) {
           hasDispatchedRef.current = true;
           setStage('VERIFYING');
           const bestFrameUrl = canvas.toDataURL('image/jpeg', 0.86);
@@ -472,6 +614,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
                 void executeBiometricLogin(vec, bestFrameUrl, undefined, burstFrames);
               } else {
                 hasDispatchedRef.current = false;
+                centeredFrameCountRef.current = 0;
                 scanProgressRef.current = 0;
                 setScanProgress(0);
                 setStage('CAMERA_SCAN');
@@ -480,6 +623,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
             })
             .catch(() => {
               hasDispatchedRef.current = false;
+              centeredFrameCountRef.current = 0;
               scanProgressRef.current = 0;
               setScanProgress(0);
               setStage('CAMERA_SCAN');
@@ -487,11 +631,13 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
             });
         }
       } else {
+        centeredFrameCountRef.current = Math.max(0, centeredFrameCountRef.current - 1);
         const nextProgress = Math.max(10, scanProgressRef.current - 1);
         scanProgressRef.current = nextProgress;
         setScanProgress(nextProgress);
       }
     } else {
+      centeredFrameCountRef.current = 0;
       const nextProgress = Math.max(0, scanProgressRef.current - 2);
       scanProgressRef.current = nextProgress;
       setScanProgress(nextProgress);
@@ -551,6 +697,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
       lastFacePresenceRef.current = 'STANDBY';
       lastFaceUiUpdateRef.current = 0;
       scanProgressRef.current = 0;
+      centeredFrameCountRef.current = 0;
       setScanProgress(0);
       return;
     }
@@ -559,6 +706,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     autoScanPausedRef.current = false;
     autoRetryCountRef.current = 0;
     scanProgressRef.current = 0;
+    centeredFrameCountRef.current = 0;
     setScanProgress(0);
     setCameraError(null);
     setEmailError('');
@@ -661,12 +809,16 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     autoScanPausedRef.current = false;
     autoRetryCountRef.current = 0;
     scanProgressRef.current = 0;
+    centeredFrameCountRef.current = 0;
     setScanProgress(0);
     setStage('CAMERA_SCAN');
     setValidationVerdict('IDLE');
 
     await startOrEnsureCamera();
     scheduleTickRef.current();
+    if (email.trim().includes('@')) {
+      void refreshTrainingStatus(email);
+    }
 
     setPipelineLayers((prev) =>
       prev.map((layer, idx) =>
@@ -687,6 +839,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
   };
 
   const handleDirect1ToNScan = async () => {
+    manualEmailEditRef.current = false;
     setEmail('');
     setEmailError('');
     if (retryTimeoutRef.current !== null) {
@@ -697,7 +850,9 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     autoScanPausedRef.current = false;
     autoRetryCountRef.current = 0;
     scanProgressRef.current = 0;
+    centeredFrameCountRef.current = 0;
     setScanProgress(0);
+    setTrainingStatusUi({ state: 'idle', label: '' });
     setStage('CAMERA_SCAN');
     setValidationVerdict('IDLE');
     await startOrEnsureCamera();
@@ -713,8 +868,6 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
       window.clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
     }
-    autoScanPausedRef.current = true;
-    autoRetryCountRef.current = 1;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -726,10 +879,19 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (ctx) {
         ctx.drawImage(video, 0, 0, 320, 240);
+        const imgData = ctx.getImageData(0, 0, 320, 240);
+        const quality = computeFrameSharpnessAndContrast(imgData.data, 320, 240);
+        if (!quality.isSharpAndContrasted) {
+          setStatusMessage('Frame is blank or lacks contrast. Ensure clear lighting and face visibility before scanning.');
+          setStatusTone('bad');
+          return;
+        }
         dataUrl = canvas.toDataURL('image/jpeg', 0.86);
       }
     }
 
+    autoScanPausedRef.current = true;
+    autoRetryCountRef.current = 1;
     hasDispatchedRef.current = true;
     scanProgressRef.current = 100;
     setScanProgress(100);
@@ -767,10 +929,14 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (ctx) {
         ctx.drawImage(video, 0, 0, 320, 240);
-        dataUrl = canvas.toDataURL('image/jpeg', 0.86);
-        const extracted = await extractBiometricFeatureVector(dataUrl);
-        if (extracted && extracted.length === 128) {
-          liveExtractedVec = extracted;
+        const imgData = ctx.getImageData(0, 0, 320, 240);
+        const quality = computeFrameSharpnessAndContrast(imgData.data, 320, 240);
+        if (quality.isSharpAndContrasted) {
+          dataUrl = canvas.toDataURL('image/jpeg', 0.86);
+          const extracted = await extractBiometricFeatureVector(dataUrl);
+          if (extracted && extracted.length === 128) {
+            liveExtractedVec = extracted;
+          }
         }
       }
     }
@@ -779,38 +945,33 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     const deterministicVec = generateDeterministicBiometricVector(
       email.trim() || 'resident.juan@resqtrack.gov.ph'
     );
-    const primaryVec = liveExtractedVec || deterministicVec;
-    const secondaryVec = liveExtractedVec ? deterministicVec : undefined;
+    // Never fall back silently to deterministic email vector when real webcam frames are present.
+    const primaryVec = dataUrl && liveExtractedVec ? liveExtractedVec : deterministicVec;
 
-    await executeBiometricLogin(primaryVec, dataUrl, secondaryVec, burstFrames);
+    await executeBiometricLogin(primaryVec, dataUrl, undefined, burstFrames);
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#2B0210]/75 backdrop-blur-md p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
       <div
-        className="relative w-full max-w-lg rounded-2xl bg-[#070b14] border border-rose-500/35 p-5 shadow-2xl text-white font-sans my-auto"
-        style={{ boxShadow: '0 0 35px rgba(225, 29, 72, 0.25)' }}
+        className="clay-surface relative w-full max-w-xl max-h-[94vh] overflow-y-auto rounded-3xl bg-[#F7F1EA] border border-[#D8C2B8] p-4 sm:p-5 shadow-[0_28px_64px_-12px_rgba(38,2,14,0.6),inset_0_2px_4px_rgba(255,255,255,0.85)] text-[#670626] font-sans my-auto"
       >
-        {/* Military Corner Brackets */}
-        <div className="absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 border-[#ff5c74]" />
-        <div className="absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 border-[#ff5c74]" />
-        <div className="absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-[#ff5c74]" />
-        <div className="absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-[#ff5c74]" />
-
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-rose-500/20 pb-2.5 mb-3">
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-[#ff5c74]" />
+        <div className="flex items-center justify-between border-b border-[#D5BEB3] pb-2.5 mb-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-[#E9D9D0] border border-[#D5BEB3]">
+              <Shield className="w-5 h-5 text-[#670626]" />
+            </div>
             <div>
-              <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-slate-100">
+              <h3 className="font-mono text-sm sm:text-base font-bold uppercase tracking-wider text-[#670626]">
                 {email && email.trim().includes('@')
                   ? 'Biometric Face Login (1:1)'
                   : 'Biometric Face Login (1:N)'}
               </h3>
               {email && email.trim().includes('@') && (
-                <p className="font-mono text-[9px] text-[#ff5c74]/80 tracking-widest uppercase">
+                <p className="font-mono text-xs text-[#A83B4D] font-semibold tracking-wider uppercase mt-0.5">
                   {email.trim().toLowerCase()}
                 </p>
               )}
@@ -819,7 +980,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
           <button
             type="button"
             onClick={handleClose}
-            className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+            className="text-[#A83B4D] hover:text-[#670626] p-1.5 rounded-xl hover:bg-[#E9D9D0] transition-colors cursor-pointer"
             title="Close"
           >
             <X className="w-4 h-4" />
@@ -827,10 +988,10 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
         </div>
 
         {/* 1:1 Account Email Form & 1:N Direct Scan Switcher */}
-        <form onSubmit={handleActivateLiveCameraSubmit} className="mb-3 space-y-2">
+        <form onSubmit={handleActivateLiveCameraSubmit} className="mb-3.5 space-y-2">
           <div className="flex items-center justify-between">
             <label
-              className="block font-mono text-[10px] uppercase tracking-wider text-slate-300 font-semibold"
+              className="block font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
               htmlFor="bio-email"
             >
               Email (Optional for 1:N)
@@ -839,46 +1000,64 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
               type="button"
               id="btn-direct-1ton-scan"
               onClick={handleDirect1ToNScan}
-              className="font-mono text-[9.5px] text-emerald-400 hover:text-emerald-300 underline cursor-pointer flex items-center gap-1"
+              className="font-mono text-xs sm:text-sm text-[#670626] hover:text-[#4A041A] font-semibold underline cursor-pointer flex items-center gap-1"
             >
-              <ScanFace className="w-3 h-3" />
+              <ScanFace className="w-3.5 h-3.5 text-[#A83B4D]" />
               <span>1:N Scan (No Email)</span>
             </button>
           </div>
 
-          <div className="flex gap-2">
-            <div
-              className="flex-1 focus-within:ring-2 focus-within:ring-rose-500/50 flex items-center px-3 rounded-lg border border-rose-500/30"
-              style={{ background: 'rgba(46, 10, 22, 0.85)' }}
-            >
-              <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex-1 min-w-0 focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] flex items-center px-3 rounded-xl border border-[#D5BEB3] bg-[#E9D9D0]">
+              <User className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
               <input
                 id="bio-email"
                 type="email"
                 value={email}
                 onChange={(e) => {
+                  manualEmailEditRef.current = e.target.value.trim().length > 0;
                   setEmail(e.target.value);
                   setEmailError('');
                 }}
                 placeholder="Email (optional for 1:N)"
-                className="w-full py-2 bg-transparent font-sans text-xs text-white focus:outline-none placeholder:text-slate-500"
+                className="w-full min-w-0 py-2.5 bg-transparent font-sans text-sm text-[#670626] focus:outline-none placeholder:text-[#A83B4D]/70"
               />
             </div>
 
             <button
               type="submit"
-              className="px-3 py-2 rounded-lg bg-gradient-to-r from-[#a5002e] via-[#d9093e] to-[#ff2b4a] hover:brightness-110 text-white font-mono text-[10.5px] font-bold uppercase tracking-wider shadow-md cursor-pointer flex items-center gap-1.5 shrink-0 transition-transform active:scale-[0.99]"
+              className="px-3.5 py-2.5 rounded-xl bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-mono text-xs sm:text-sm font-bold uppercase tracking-wider shadow-md shadow-[#4A041A]/20 cursor-pointer flex items-center justify-center gap-1.5 shrink-0 transition-all active:scale-[0.99]"
             >
               <span>Activate Live Camera</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="w-4 h-4" />
             </button>
           </div>
-          {emailError && <p className="font-mono text-[10px] text-rose-400">{emailError}</p>}
+          {emailError && <p className="font-mono text-xs sm:text-sm text-[#670626] font-semibold">{emailError}</p>}
+
+          {trainingStatusUi.state !== 'idle' && (
+            <div
+              id="biometric-training-status-badge"
+              role="status"
+              aria-live="polite"
+              className={`px-3 py-2 rounded-xl border font-mono text-xs font-semibold flex items-center gap-2 ${
+                trainingStatusUi.state === 'ready'
+                  ? 'bg-emerald-50 border-emerald-600/35 text-emerald-800'
+                  : 'bg-[#E9D9D0] border-[#A83B4D]/45 text-[#670626]'
+              }`}
+            >
+              {trainingStatusUi.state === 'ready' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+              ) : (
+                <Cpu className="w-4 h-4 text-[#A83B4D] shrink-0 animate-pulse" />
+              )}
+              <span>{trainingStatusUi.label}</span>
+            </div>
+          )}
         </form>
 
         <div className="flex flex-col items-center">
           {/* Live Camera Viewport */}
-          <div className="relative w-full h-48 bg-slate-950 rounded-xl overflow-hidden border border-rose-500/40 flex items-center justify-center">
+          <div className="relative w-full h-36 bg-[#24030D] rounded-2xl overflow-hidden border-2 border-[#670626]/30 flex items-center justify-center shadow-inner">
             <canvas ref={canvasRef} className="hidden" />
             <video
               ref={videoRef}
@@ -892,8 +1071,8 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
 
             {/* Connecting Spinner Overlay */}
             {!isStreaming && !cameraError && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 gap-2 text-rose-300 font-mono text-[11px] z-10">
-                <RefreshCw className="w-5 h-5 animate-spin text-[#ff5c74]" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#24030D]/90 gap-2 text-[#F7F1EA] font-mono text-sm z-10">
+                <RefreshCw className="w-5 h-5 animate-spin text-[#E9D9D0]" />
                 <span className="tracking-widest uppercase">Starting camera…</span>
               </div>
             )}
@@ -908,8 +1087,8 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
                     : facePresence === 'ALIGN_FACE'
                     ? '#38bdf8'
                     : facePresence === 'NO_FACE'
-                    ? 'rgba(255, 92, 116, 0.75)'
-                    : '#ff5c74',
+                    ? 'rgba(233, 217, 208, 0.75)'
+                    : '#F7F1EA',
                 borderStyle: facePresence === 'NO_FACE' ? 'dashed' : 'solid',
                 boxShadow:
                   scanProgress >= 100 || facePresence === 'FACE_DETECTED'
@@ -919,7 +1098,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
             />
 
             {/* Scanline Animation */}
-            <div className="absolute inset-x-0 h-0.5 bg-rose-500/80 shadow-[0_0_8px_#ff5c74] animate-pulse pointer-events-none top-1/2 -translate-y-1/2 z-10" />
+            <div className="absolute inset-x-0 h-0.5 bg-[#E9D9D0]/80 shadow-[0_0_8px_#F7F1EA] animate-pulse pointer-events-none top-1/2 -translate-y-1/2 z-10" />
 
             {/* Live Face Detection Status Badge */}
             <div
@@ -930,29 +1109,29 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
                 facePresence === 'FACE_DETECTED' || facePresence === 'ALIGN_FACE' ? 'true' : 'false'
               }
               data-face-presence={facePresence}
-              className={`absolute top-2 left-2 px-2 py-0.5 rounded bg-black/75 border text-[9px] font-mono font-bold tracking-wider flex items-center gap-1.5 z-10 ${
+              className={`absolute top-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-[#2B0210]/90 border text-xs font-mono font-bold tracking-wider flex items-center gap-1.5 z-10 ${
                 !isStreaming
-                  ? 'border-slate-600/60 text-slate-300'
+                  ? 'border-[#E9D9D0]/25 text-[#E9D9D0]'
                   : facePresence === 'FACE_DETECTED'
-                  ? 'border-emerald-500/60 text-emerald-300'
+                  ? 'border-emerald-400/60 text-emerald-300'
                   : facePresence === 'ALIGN_FACE'
-                  ? 'border-sky-500/60 text-sky-300'
+                  ? 'border-sky-400/60 text-sky-300'
                   : facePresence === 'NO_FACE'
-                  ? 'border-rose-500/60 text-rose-300'
-                  : 'border-slate-600/60 text-slate-300'
+                  ? 'border-[#E9D9D0]/45 text-[#F7F1EA]'
+                  : 'border-[#E9D9D0]/25 text-[#E9D9D0]'
               }`}
             >
               <span
-                className={`w-1.5 h-1.5 rounded-full ${
+                className={`w-2 h-2 rounded-full ${
                   !isStreaming
-                    ? 'bg-slate-400'
+                    ? 'bg-[#E9D9D0]/60'
                     : facePresence === 'FACE_DETECTED'
                     ? 'bg-emerald-400'
                     : facePresence === 'ALIGN_FACE'
                     ? 'bg-sky-400'
                     : facePresence === 'NO_FACE'
                     ? 'bg-rose-400'
-                    : 'bg-slate-400'
+                    : 'bg-[#E9D9D0]/60'
                 }`}
               />
               <span>
@@ -969,9 +1148,9 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
             </div>
 
             {stage === 'VERIFYING' && (
-              <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center gap-2 z-20">
-                <Cpu className="w-7 h-7 text-[#ff5c74] animate-spin" />
-                <span className="font-mono text-xs text-rose-300 font-bold uppercase tracking-wider">
+              <div className="absolute inset-0 bg-[#2B0210]/90 flex flex-col items-center justify-center gap-2 z-20">
+                <Cpu className="w-7 h-7 text-[#E9D9D0] animate-spin" />
+                <span className="font-mono text-sm text-[#F7F1EA] font-bold uppercase tracking-wider">
                   Verifying face…
                 </span>
               </div>
@@ -979,14 +1158,14 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
           </div>
 
           {/* Progress Bar */}
-          <div className="w-full mt-2.5">
-            <div className="flex justify-between font-mono text-[9px] text-slate-400 mb-1">
-              <span>FACE SCAN</span>
-              <span className="text-rose-300 font-bold">{scanProgress}%</span>
+          <div className="w-full mt-3">
+            <div className="flex justify-between font-mono text-xs sm:text-sm text-[#7D2B3D] mb-1">
+              <span className="font-semibold">FACE SCAN</span>
+              <span className="text-[#670626] font-bold">{scanProgress}%</span>
             </div>
-            <div className="w-full bg-[#14020a] rounded-full h-1.5 overflow-hidden border border-rose-950/60">
+            <div className="w-full bg-[#E9D9D0] rounded-full h-2.5 overflow-hidden border border-[#D5BEB3]">
               <div
-                className="bg-gradient-to-r from-[#a5002e] via-[#e8114c] to-[#ff5c74] h-full transition-all duration-150"
+                className="bg-gradient-to-r from-[#670626] via-[#8E1538] to-[#A83B4D] h-full transition-all duration-150"
                 style={{ width: `${scanProgress}%` }}
               />
             </div>
@@ -995,20 +1174,20 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
           {/* 5-Layer Facial Recognition Validation Pipeline */}
           <div
             id="biometric-5layer-pipeline"
-            className="w-full mt-2.5 p-2.5 rounded-xl bg-[#0d1322] border border-rose-500/25 space-y-1.5"
+            className="w-full mt-3 p-3 rounded-2xl bg-[#EFE4DD] border border-[#D5BEB3] space-y-2"
           >
-            <div className="flex items-center justify-between border-b border-rose-500/20 pb-1">
-              <div className="flex items-center gap-1.5 font-mono text-[9.5px] font-bold uppercase tracking-wider text-rose-300">
-                <Layers className="w-3.5 h-3.5 text-[#ff5c74]" />
+            <div className="flex items-center justify-between border-b border-[#D5BEB3] pb-1.5">
+              <div className="flex items-center gap-1.5 font-mono text-xs sm:text-sm font-bold uppercase tracking-wider text-[#670626]">
+                <Layers className="w-4 h-4 text-[#A83B4D]" />
                 <span>Verification Pipeline</span>
               </div>
               <span
-                className={`font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                className={`font-mono text-xs font-bold px-2 py-0.5 rounded-md border ${
                   validationVerdict === 'SUCCESS_LOGIN'
-                    ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
+                    ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
                     : validationVerdict === 'INVALID'
-                    ? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
-                    : 'bg-slate-900 border-slate-700 text-slate-400'
+                    ? 'bg-[#670626] border-[#4A041A] text-[#F7F1EA]'
+                    : 'bg-[#F7F1EA] border-[#D5BEB3] text-[#670626]'
                 }`}
               >
                 {validationVerdict === 'SUCCESS_LOGIN'
@@ -1019,38 +1198,38 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
               </span>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {pipelineLayers.map((layer) => (
                 <div
                   key={layer.layerCode}
                   data-layer-code={layer.layerCode}
-                  className="flex items-center justify-between text-[9.5px] font-mono px-2 py-1 rounded bg-black/40 border border-slate-800/80"
+                  className="flex items-center justify-between text-xs font-mono px-2.5 py-1.5 rounded-xl bg-[#F7F1EA] border border-[#D5BEB3]"
                 >
-                  <div className="flex items-center gap-1.5 truncate pr-2">
+                  <div className="flex items-center gap-2 truncate pr-2">
                     <CheckCircle2
-                      className={`w-3 h-3 shrink-0 ${
+                      className={`w-3.5 h-3.5 shrink-0 ${
                         layer.status === 'PASSED'
-                          ? 'text-emerald-400'
+                          ? 'text-emerald-700'
                           : layer.status === 'FAILED'
-                          ? 'text-rose-400'
+                          ? 'text-[#670626]'
                           : layer.status === 'RUNNING'
-                          ? 'text-sky-400 animate-pulse'
-                          : 'text-slate-600'
+                          ? 'text-[#A83B4D] animate-pulse'
+                          : 'text-[#A83B4D]/50'
                       }`}
                     />
-                    <span className="text-slate-200 truncate">
+                    <span className="text-[#670626] font-medium truncate">
                       {COMPACT_LAYER_LABELS[layer.layerCode] || layer.layerName}
                     </span>
                   </div>
                   <span
-                    className={`shrink-0 text-[8.5px] font-bold px-1.5 py-0.2 rounded ${
+                    className={`shrink-0 text-xs font-bold px-1.5 py-0.5 rounded ${
                       layer.status === 'PASSED'
-                        ? 'text-emerald-400'
+                        ? 'text-emerald-700'
                         : layer.status === 'FAILED'
-                        ? 'text-rose-400'
+                        ? 'text-[#670626]'
                         : layer.status === 'RUNNING'
-                        ? 'text-sky-400'
-                        : 'text-slate-500'
+                        ? 'text-[#A83B4D]'
+                        : 'text-[#A83B4D]/70'
                     }`}
                   >
                     {layer.status}
@@ -1061,22 +1240,22 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
           </div>
 
           {cameraError && (
-            <div className="w-full mt-2 p-2 rounded bg-rose-950/60 border border-rose-500/40 text-rose-300 font-mono text-[9.5px] flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <div className="w-full mt-2.5 p-2.5 rounded-xl bg-[#670626]/10 border border-[#670626]/40 text-[#670626] font-mono text-xs sm:text-sm flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-[#670626] shrink-0" />
               <span>{cameraError}</span>
             </div>
           )}
 
           {/* Primary Action & Synthetic Test Scan Buttons */}
-          <div className="w-full mt-2.5 space-y-1.5">
+          <div className="w-full mt-3 space-y-2">
             <button
               type="button"
               id="btn-scan-biometric-face"
               onClick={handleManualScanNow}
               disabled={stage === 'VERIFYING'}
-              className="w-full !h-[40px] rounded-lg bg-gradient-to-r from-[#a5002e] via-[#d9093e] to-[#ff2b4a] hover:brightness-110 text-white font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-[0_0_15px_rgba(232,17,76,0.3)] disabled:opacity-50 active:scale-[0.99]"
+              className="w-full !h-[44px] rounded-xl bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-mono text-sm sm:text-base font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md shadow-[#4A041A]/25 disabled:opacity-50 active:scale-[0.99]"
             >
-              <Camera className="w-4 h-4 text-white" />
+              <Camera className="w-4 h-4 text-[#F7F1EA]" />
               <span>Scan Face</span>
             </button>
 
@@ -1085,20 +1264,20 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
               id="btn-synthetic-test-scan"
               onClick={handleSyntheticTestScan}
               disabled={stage === 'VERIFYING'}
-              className="w-full !h-[34px] rounded-lg border border-purple-500/40 bg-purple-950/50 hover:bg-purple-900/60 text-purple-200 font-mono text-[10.5px] font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+              className="w-full !h-[40px] rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626] font-mono text-xs sm:text-sm font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
             >
-              <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+              <Sparkles className="w-4 h-4 text-[#A83B4D]" />
               <span>Test Scan (5-Layer)</span>
             </button>
           </div>
 
           {/* Bottom Control Actions */}
-          <div className="flex gap-2 w-full mt-2.5">
+          <div className="flex gap-2.5 w-full mt-3">
             <button
               type="button"
               id="btn-use-password"
               onClick={handleClose}
-              className="flex-1 !h-[36px] rounded-lg border border-rose-500/40 bg-rose-950/40 text-rose-300 hover:bg-rose-900/60 font-mono text-xs cursor-pointer transition-colors"
+              className="flex-1 !h-[40px] rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] text-[#670626] hover:bg-[#DFC9BE] font-mono text-xs sm:text-sm font-semibold cursor-pointer transition-colors"
             >
               Use Password
             </button>
@@ -1106,7 +1285,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
               type="button"
               id="btn-close-biometric"
               onClick={handleClose}
-              className="flex-1 !h-[36px] rounded-lg border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 font-mono text-xs cursor-pointer transition-colors"
+              className="flex-1 !h-[40px] rounded-xl border border-[#D5BEB3] bg-[#EFE4DD] text-[#7D2B3D] hover:bg-[#E9D9D0] font-mono text-xs sm:text-sm font-semibold cursor-pointer transition-colors"
             >
               Cancel
             </button>
@@ -1114,27 +1293,33 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
         </div>
 
         {statusMessage && (
-          <p
-            role="alert"
-            className="font-mono text-[10.5px] text-center mt-2.5 p-2 rounded border"
-            style={{
-              background:
+          <div className="mt-3 space-y-2">
+            <p
+              role="alert"
+              className={`font-mono text-xs sm:text-sm text-center p-2.5 rounded-xl border font-semibold ${
                 statusTone === 'ok'
-                  ? 'rgba(6, 32, 21, 0.85)'
+                  ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
                   : statusTone === 'bad'
-                  ? 'rgba(52, 3, 19, 0.85)'
-                  : 'rgba(30, 41, 59, 0.85)',
-              borderColor:
-                statusTone === 'ok'
-                  ? 'rgba(52, 211, 153, 0.4)'
-                  : statusTone === 'bad'
-                  ? 'rgba(255, 92, 116, 0.5)'
-                  : 'rgba(148, 163, 184, 0.3)',
-              color: statusTone === 'ok' ? '#34d399' : statusTone === 'bad' ? '#ff5c74' : '#e2e8f0'
-            }}
-          >
-            {statusMessage}
-          </p>
+                  ? 'bg-[#670626] border-[#4A041A] text-[#F7F1EA]'
+                  : 'bg-[#E9D9D0] border-[#D5BEB3] text-[#670626]'
+              }`}
+            >
+              {statusMessage}
+            </p>
+            {statusTone === 'bad' &&
+              email.trim().includes('@') &&
+              statusMessage.toLowerCase().includes('no active biometric enrollment') && (
+                <button
+                  type="button"
+                  id="btn-fallback-1ton-scan"
+                  onClick={handleDirect1ToNScan}
+                  className="w-full !h-[38px] rounded-xl border border-emerald-600/45 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-mono text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                >
+                  <ScanFace className="w-4 h-4 text-emerald-700" />
+                  <span>Switch to 1:N Face Scan (Find My Account)</span>
+                </button>
+              )}
+          </div>
         )}
       </div>
     </div>

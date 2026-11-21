@@ -315,7 +315,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
         severity: incident.severity || 'Medium',
         location: incident.place || 'Katipunan Sector',
         coordinates: `${incident.lat.toFixed(4)}° N, ${incident.lng.toFixed(4)}° E`,
-        ipAddress: incident.ipAddress || '192.168.1.100',
+        ipAddress: incident.ipAddress || 'Pending / Direct GPS',
         evidenceUrl: incident.evidenceUrl,
         responderId: unitToDeploy.id,
         responderName: `${unitToDeploy.unitName} (${unitToDeploy.unitCode})`,
@@ -391,45 +391,45 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
       <div className="space-y-4">
         {/* Success Banner */}
         {successBanner && (
-          <div className="p-3.5 rounded-xl bg-emerald-950/80 border border-emerald-500/80 text-emerald-200 text-xs flex items-center gap-3 animate-pulse">
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          <div className="p-3.5 rounded-xl bg-emerald-50 border-2 border-emerald-400 text-emerald-900 text-sm flex items-center gap-3 animate-pulse">
+            <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" />
             <div className="font-mono">
-              <strong className="text-white block font-bold">DEPLOYMENT ORDER CONFIRMED:</strong>
+              <strong className="text-emerald-950 block font-bold">DEPLOYMENT ORDER CONFIRMED:</strong>
               <span>{successBanner}</span>
             </div>
           </div>
         )}
 
         {/* 1. Target Incident Telemetry Bar */}
-        <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-mono">
+        <div className="p-3.5 rounded-xl bg-[#E9D9D0]/65 border border-[#D8C1B5] flex flex-col md:flex-row md:items-center justify-between gap-3 text-sm font-mono">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-rose-950 border border-rose-500/50 flex items-center justify-center shrink-0">
-              <MapPin className="w-5 h-5 text-rose-400" />
+            <div className="w-9 h-9 rounded-lg bg-[#670626]/12 border border-[#A83B4D]/40 flex items-center justify-center shrink-0">
+              <MapPin className="w-5 h-5 text-[#670626]" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-white text-sm">{incTitle}</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-[#3B1722] text-base">{incTitle}</span>
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
+                  className={`text-xs px-2 py-0.5 rounded font-bold uppercase ${
                     (incident.severity || '').toLowerCase() === 'critical'
-                      ? 'bg-rose-900/80 text-rose-300 border border-rose-600'
-                      : 'bg-amber-900/80 text-amber-300 border border-amber-600'
+                      ? 'bg-rose-100 text-[#991B1B] border border-rose-300'
+                      : 'bg-amber-100 text-amber-900 border border-amber-300'
                   }`}
                 >
                   {incident.severity || 'Medium'}
                 </span>
               </div>
-              <span className="text-slate-400 text-[11px] flex items-center gap-1.5 mt-0.5">
+              <span className="text-[#7A4E59] text-xs flex items-center gap-1.5 mt-0.5">
                 <span>{incident.place || 'Katipunan Municipal Sector'}</span>
                 <span>•</span>
-                <span className="text-sky-400">{incident.lat.toFixed(4)}° N, {incident.lng.toFixed(4)}° E</span>
+                <span className="text-[#670626] font-bold">{incident.lat.toFixed(4)}° N, {incident.lng.toFixed(4)}° E</span>
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <span className="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 text-slate-300 text-[11px]">
-              Category: <strong className="text-white">{incident.category || incident.type || 'Emergency'}</strong>
+            <span className="px-2.5 py-1 rounded-lg bg-[#F7F1EA] border border-[#D4B8AA] text-[#5C313E] text-xs">
+              Category: <strong className="text-[#670626]">{incident.category || incident.type || 'Emergency'}</strong>
             </span>
           </div>
         </div>
@@ -437,31 +437,31 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
         {/* 2. Dispatch Strategy Analytics Strip */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
           {/* Card A: Fleet Workload Balance Index */}
-          <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-sky-950 border border-sky-800/60 flex items-center justify-center text-sky-400 shrink-0">
+          <div className="p-3 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5] flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-[#F7F1EA] border border-[#D4B8AA] flex items-center justify-center text-[#670626] shrink-0">
               <Activity className="w-4 h-4" />
             </div>
-            <div className="flex flex-col text-xs font-mono">
-              <span className="text-[10px] text-slate-400 uppercase font-bold">Fleet Workload State</span>
-              <span className="font-extrabold text-white text-xs mt-0.5">
-                <span className="text-emerald-400 font-bold">{unassignedCount} Fresh</span>
-                {highWorkloadCount > 0 && <span className="text-amber-400 ml-1.5">({highWorkloadCount} High Load)</span>}
+            <div className="flex flex-col text-sm font-mono">
+              <span className="text-xs text-[#7A4E59] uppercase font-bold">Fleet Workload State</span>
+              <span className="font-extrabold text-[#3B1722] text-sm mt-0.5">
+                <span className="text-emerald-700 font-bold">{unassignedCount} Fresh</span>
+                {highWorkloadCount > 0 && <span className="text-amber-800 ml-1.5">({highWorkloadCount} High Load)</span>}
               </span>
             </div>
           </div>
 
           {/* Card B: AI Optimal Recommendation */}
-          <div className="p-3 rounded-xl bg-slate-950/80 border border-emerald-900/60 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-950 border border-emerald-700/60 flex items-center justify-center text-emerald-400 shrink-0">
+          <div className="p-3 rounded-xl bg-emerald-50/90 border border-emerald-300 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-700 shrink-0">
               <Sparkles className="w-4 h-4" />
             </div>
-            <div className="flex flex-col text-xs font-mono">
-              <span className="text-[10px] text-emerald-400 uppercase font-bold">AI Balanced Recommendation</span>
-              <span className="font-extrabold text-white text-xs truncate mt-0.5">
+            <div className="flex flex-col text-sm font-mono min-w-0">
+              <span className="text-xs text-emerald-800 uppercase font-bold">AI Balanced Recommendation</span>
+              <span className="font-extrabold text-[#3B1722] text-sm truncate mt-0.5">
                 {optimalUnit ? (
                   <>
-                    <strong className="text-emerald-300 font-bold">{optimalUnit.unitCode}</strong>
-                    <span className="text-slate-400 ml-1.5">({optimalUnit.compositeScore}%)</span>
+                    <strong className="text-emerald-800 font-bold">{optimalUnit.unitCode}</strong>
+                    <span className="text-[#5C313E] ml-1.5">({optimalUnit.compositeScore}% · {optimalUnit.distanceKm} km)</span>
                   </>
                 ) : (
                   'Evaluating...'
@@ -472,20 +472,20 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
         </div>
 
         {/* 3. Strategy Controls Bar: Sort Mode + Agency Filter */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3 rounded-xl bg-slate-950/90 border border-slate-800 text-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5] text-sm">
           {/* Strategy Sort Tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-            <span className="text-slate-500 font-mono text-[11px] mr-1 flex items-center gap-1">
+            <span className="text-[#7A4E59] font-mono text-xs mr-1 flex items-center gap-1 font-bold">
               <Sliders className="w-3.5 h-3.5" />
               <span>Sort:</span>
             </span>
             <button
               type="button"
               onClick={() => setSortStrategy('BALANCED')}
-              className={`px-2.5 py-1 rounded text-[11px] font-mono font-bold transition-all whitespace-nowrap ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all whitespace-nowrap cursor-pointer ${
                 sortStrategy === 'BALANCED'
                   ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  : 'bg-[#F7F1EA] text-[#5C313E] hover:text-[#670626] border border-[#D4B8AA]'
               }`}
             >
               Smart Balanced
@@ -493,10 +493,10 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
             <button
               type="button"
               onClick={() => setSortStrategy('FRESH')}
-              className={`px-2.5 py-1 rounded text-[11px] font-mono font-bold transition-all whitespace-nowrap ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all whitespace-nowrap cursor-pointer ${
                 sortStrategy === 'FRESH'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  ? 'bg-[#A83B4D] text-white shadow-sm'
+                  : 'bg-[#F7F1EA] text-[#5C313E] hover:text-[#670626] border border-[#D4B8AA]'
               }`}
             >
               Fresh First
@@ -504,10 +504,10 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
             <button
               type="button"
               onClick={() => setSortStrategy('PROXIMITY')}
-              className={`px-2.5 py-1 rounded text-[11px] font-mono font-bold transition-all whitespace-nowrap ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all whitespace-nowrap cursor-pointer ${
                 sortStrategy === 'PROXIMITY'
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  ? 'bg-[#670626] text-[#F7F1EA] shadow-sm'
+                  : 'bg-[#F7F1EA] text-[#5C313E] hover:text-[#670626] border border-[#D4B8AA]'
               }`}
             >
               Closest
@@ -521,10 +521,10 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
                 key={ag}
                 type="button"
                 onClick={() => setAgencyFilter(ag)}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
                   agencyFilter === ag
-                    ? 'bg-slate-200 text-slate-950'
-                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    ? 'bg-[#670626] text-[#F7F1EA]'
+                    : 'bg-[#F7F1EA] text-[#5C313E] hover:text-[#670626] border border-[#D4B8AA]'
                 }`}
               >
                 {ag === 'ALL' ? 'All Units' : ag}
@@ -536,7 +536,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
         {/* 4. Evaluated Responder Units Selection Cards List */}
         <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
           {filteredAndSortedUnits.length === 0 ? (
-            <div className="p-8 text-center text-slate-500 font-mono text-xs bg-slate-950/40 rounded-xl border border-slate-800">
+            <div className="p-8 text-center text-[#7A4E59] font-mono text-sm bg-[#E9D9D0]/45 rounded-xl border border-[#D8C1B5]">
               No responder units match the specified agency or search criteria.
             </div>
           ) : (
@@ -551,10 +551,10 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
                   onClick={() => setSelectedUnitId(u.id)}
                   className={`p-3.5 rounded-xl border cursor-pointer transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 ${
                     isSelected
-                      ? 'bg-slate-900 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.25)]'
+                      ? 'bg-[#FFFBF7] border-emerald-600 shadow-[0_6px_18px_-4px_rgba(5,150,105,0.25)] ring-1 ring-emerald-500/40'
                       : isOptimal
-                      ? 'bg-slate-950/90 border-emerald-900/80 hover:border-emerald-700'
-                      : 'bg-slate-950/70 border-slate-800 hover:border-slate-700 hover:bg-slate-900/50'
+                      ? 'bg-emerald-50/70 border-emerald-400 hover:border-emerald-600'
+                      : 'bg-[#E9D9D0]/50 border-[#D8C1B5] hover:border-[#A83B4D] hover:bg-[#E9D9D0]/75'
                   }`}
                 >
                   {/* Left: Agency Icon + Unit Info */}
@@ -562,10 +562,10 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
                     <div
                       className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
                         u.agency === 'RHU'
-                          ? 'bg-sky-950/80 border-sky-800 text-sky-400'
+                          ? 'bg-sky-100 border-sky-300 text-sky-700'
                           : u.agency === 'FIRE' || u.agency === 'BFP'
-                          ? 'bg-orange-950/80 border-orange-800 text-orange-400'
-                          : 'bg-blue-950/80 border-blue-800 text-blue-400'
+                          ? 'bg-orange-100 border-orange-300 text-orange-700'
+                          : 'bg-blue-100 border-blue-300 text-blue-700'
                       }`}
                     >
                       {u.agency === 'RHU' ? (
@@ -579,30 +579,32 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
 
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-bold text-white text-xs">{u.unitName}</h4>
-                        <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
+                        <h4 className="font-bold text-[#3B1722] text-sm">{u.unitName}</h4>
+                        <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-[#F7F1EA] border border-[#D4B8AA] text-[#670626] font-bold">
                           {u.unitCode}
                         </span>
                         {/* Tag Label */}
                         <span
-                          className={`text-[9px] font-mono font-extrabold px-1.5 py-0.5 rounded ${
+                          className={`text-xs font-mono font-extrabold px-2 py-0.5 rounded ${
                             u.recommendationTag === 'OPTIMAL_BALANCED'
-                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-600'
+                              ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                               : hasFatigueWarning
-                              ? 'bg-amber-950 text-amber-300 border border-amber-600'
+                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
                               : u.recommendationTag === 'FRESH_UNCHOSEN'
-                              ? 'bg-purple-950 text-purple-300 border border-purple-600'
-                              : 'bg-slate-800 text-slate-400'
+                              ? 'bg-[#F3E4E7] text-[#670626] border border-[#A83B4D]/40'
+                              : 'bg-[#F7F1EA] text-[#5C313E] border border-[#D4B8AA]'
                           }`}
                         >
                           {u.tagLabel}
                         </span>
                       </div>
 
-                      <div className="text-[11px] font-mono text-slate-400 flex items-center gap-2 mt-1">
-                        <span>Commander: <strong className="text-slate-300">{u.commanderName || 'Officer on Duty'}</strong></span>
+                      <div className="text-xs font-mono text-[#7A4E59] flex items-center gap-2 mt-1 flex-wrap">
+                        <span>Commander: <strong className="text-[#3B1722]">{u.commanderName || 'Officer on Duty'}</strong></span>
                         <span>•</span>
-                        <span className="text-slate-400">{u.contactHotline}</span>
+                        <span>Status: <strong className="text-emerald-800">{u.status || 'OnDuty'}</strong></span>
+                        <span>•</span>
+                        <span className="text-[#670626] font-bold">{u.distanceKm} km away</span>
                       </div>
                     </div>
                   </div>
@@ -610,35 +612,35 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
                   {/* Right: Metrics + Workload + Score + Radio */}
                   <div className="flex items-center gap-4 shrink-0 justify-between md:justify-end">
                     {/* Distance & ETA */}
-                    <div className="flex flex-col text-right font-mono text-xs">
-                      <span className="font-extrabold text-white">{u.distanceKm} km</span>
-                      <span className="text-[10px] text-sky-400">~{u.etaMinutes}m ETA</span>
+                    <div className="flex flex-col text-right font-mono text-sm">
+                      <span className="font-extrabold text-[#3B1722]">{u.distanceKm} km</span>
+                      <span className="text-xs text-[#A83B4D] font-bold">~{u.etaMinutes}m ETA</span>
                     </div>
 
                     {/* Workload Metric */}
-                    <div className="flex flex-col text-right font-mono text-xs">
+                    <div className="flex flex-col text-right font-mono text-sm">
                       <span
                         className={`font-bold ${
                           u.isUnassignedEver
-                            ? 'text-emerald-400'
+                            ? 'text-emerald-700'
                             : u.dispatchCount === 1
-                            ? 'text-sky-400'
-                            : 'text-amber-400'
+                            ? 'text-[#670626]'
+                            : 'text-amber-800'
                         }`}
                       >
                         {u.isUnassignedEver ? '0 Dispatches' : `${u.dispatchCount} Dispatches`}
                       </span>
-                      <span className="text-[10px] text-slate-400">
+                      <span className="text-xs text-[#7A4E59]">
                         {u.isUnassignedEver ? 'Fresh' : u.dispatchCount >= 2 ? 'High Load' : 'Normal'}
                       </span>
                     </div>
 
                     {/* Match Score Badge */}
                     <div className="flex flex-col items-end w-16">
-                      <span className="font-mono font-black text-xs text-emerald-400">{u.compositeScore}%</span>
-                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
+                      <span className="font-mono font-black text-sm text-emerald-700">{u.compositeScore}%</span>
+                      <div className="w-full bg-[#D8C1B5] h-1.5 rounded-full overflow-hidden mt-1">
                         <div
-                          className="bg-emerald-500 h-full rounded-full transition-all"
+                          className="bg-emerald-600 h-full rounded-full transition-all"
                           style={{ width: `${u.compositeScore}%` }}
                         />
                       </div>
@@ -647,7 +649,7 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
                     {/* Radio Button */}
                     <div
                       className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                        isSelected ? 'border-emerald-400 bg-emerald-500' : 'border-slate-600 bg-slate-900'
+                        isSelected ? 'border-emerald-600 bg-emerald-600' : 'border-[#A83B4D]/50 bg-[#FFFBF7]'
                       }`}
                     >
                       {isSelected && <Check className="w-3 h-3 text-white stroke-[3]" />}
@@ -660,13 +662,13 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
         </div>
 
         {/* 5. Footer Action Deck */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-800 text-xs font-mono">
-          <div className="text-slate-400">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#E9D9D0] text-sm font-mono">
+          <div className="text-[#5C313E]">
             {optimalUnit && (
               <span className="flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Recommended: <strong className="text-white">{optimalUnit.unitCode}</strong></span>
-                <span className="text-emerald-400 font-bold">({optimalUnit.compositeScore}%)</span>
+                <Sparkles className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Recommended: <strong className="text-[#3B1722]">{optimalUnit.unitCode}</strong></span>
+                <span className="text-emerald-700 font-bold">({optimalUnit.compositeScore}%)</span>
               </span>
             )}
           </div>
@@ -679,11 +681,11 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
             {/* Automatic Deploy Optimal Button */}
             {optimalUnit && (
               <Button
-                variant="primary"
+                variant="action-green"
                 size="sm"
                 onClick={handleAutoDeployOptimal}
                 disabled={isSubmitting}
-                className="bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-mono font-bold flex items-center gap-1.5 border border-emerald-400/50 shadow-lg shadow-emerald-950/40"
+                className="font-mono font-bold flex items-center gap-1.5"
               >
                 <Zap className="w-3.5 h-3.5 text-white" />
                 <span>AUTO-DEPLOY OPTIMAL UNIT</span>
@@ -692,13 +694,13 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
 
             {/* Manual Deploy Selected Button */}
             <Button
-              variant="outline"
+              variant="primary"
               size="sm"
               onClick={() => handleConfirmDeploy()}
               disabled={!selectedUnitId || isSubmitting}
-              className="bg-slate-900 hover:bg-slate-800 text-sky-300 border border-sky-800 font-mono font-bold flex items-center gap-1.5"
+              className="font-mono font-bold flex items-center gap-1.5"
             >
-              <Send className="w-3.5 h-3.5 text-sky-400" />
+              <Send className="w-3.5 h-3.5 text-[#F7F1EA]" />
               <span>{isSubmitting ? 'Deploying...' : 'Deploy Selected'}</span>
             </Button>
           </div>

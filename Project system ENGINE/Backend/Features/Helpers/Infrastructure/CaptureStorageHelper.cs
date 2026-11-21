@@ -82,9 +82,82 @@ public static class CaptureStorageHelper
     public static Task<string?> SavePngDataUrlAsync(string? dataUrl, string folderPath, string prefix, CancellationToken ct = default) =>
         SaveCaptureDataUrlAsync(dataUrl, folderPath, prefix, ct);
 
+    public static bool IsPathWithinAllowedRoots(string? filePath, params string[] allowedRoots)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return false;
+        }
+
+        string fullTarget;
+        try
+        {
+            fullTarget = Path.GetFullPath(filePath);
+        }
+        catch
+        {
+            return false;
+        }
+
+        string fileName = Path.GetFileName(fullTarget);
+        if (string.IsNullOrWhiteSpace(fileName) ||
+            fileName.Equals("appsettings.json", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("appsettings.Development.json", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("appsettings.Local.json", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals(".env", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+            fileName.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var candidateRoots = new List<string>();
+        if (allowedRoots is { Length: > 0 })
+        {
+            foreach (string root in allowedRoots)
+            {
+                if (!string.IsNullOrWhiteSpace(root))
+                {
+                    candidateRoots.Add(root);
+                }
+            }
+        }
+
+        candidateRoots.Add(Path.Combine(Directory.GetCurrentDirectory(), "server-data", "uploads"));
+        candidateRoots.Add(Path.Combine(AppContext.BaseDirectory, "server-data", "uploads"));
+        candidateRoots.Add(Path.GetTempPath());
+
+        string uploadSegment = Path.Combine("server-data", "uploads");
+        if (fullTarget.Contains(uploadSegment, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        foreach (string rawRoot in candidateRoots)
+        {
+            try
+            {
+                string canonicalRoot = Path.GetFullPath(rawRoot)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    + Path.DirectorySeparatorChar;
+
+                if (fullTarget.StartsWith(canonicalRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // Ignore invalid root candidate
+            }
+        }
+
+        return false;
+    }
+
     public static async Task<(byte[] Bytes, string ContentType)> ReadCaptureFileAsync(string? filePath, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+        if (string.IsNullOrWhiteSpace(filePath) || !IsPathWithinAllowedRoots(filePath) || !File.Exists(filePath))
             return (GenerateSyntheticFallbackPng(), "image/png");
 
         byte[] rawDiskBytes = await File.ReadAllBytesAsync(filePath, ct);

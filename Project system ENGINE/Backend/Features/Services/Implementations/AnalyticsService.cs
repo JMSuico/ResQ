@@ -104,8 +104,13 @@ public class AnalyticsService(AppDbContext db) : IAnalyticsService
     private async Task<List<AgencyWorkloadItem>> ExecuteGetAgencyWorkloadAsync(CancellationToken ct)
     {
         var reports = await db.Reports
-            .Include(r => r.AllocatedUnit)
+            .AsNoTracking()
             .Where(r => r.AllocatedUnitId != null)
+            .Select(r => new
+            {
+                Agency = r.AllocatedUnit != null ? (ResponderUnitType?)r.AllocatedUnit.Agency : null,
+                r.AllocatedUnitCode
+            })
             .ToListAsync(ct);
 
         int rhuCount = 0;
@@ -114,7 +119,7 @@ public class AnalyticsService(AppDbContext db) : IAnalyticsService
 
         foreach (var r in reports)
         {
-            var agency = r.AllocatedUnit?.Agency;
+            var agency = r.Agency;
             if (agency == ResponderUnitType.RHU || r.AllocatedUnitCode?.StartsWith("RHU", StringComparison.OrdinalIgnoreCase) == true)
             {
                 rhuCount++;

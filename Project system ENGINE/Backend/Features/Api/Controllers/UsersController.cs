@@ -97,10 +97,7 @@ public class UsersController(IUserGovernanceService governanceService) : Control
     private async Task<IActionResult> ServeCaptureFileAsync(Guid id, CaptureKind kind, CancellationToken ct)
     {
         string? path = await governanceService.GetUserCapturePathAsync(id, kind, ct);
-        if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
-            return File(CaptureStorageHelper.GenerateSyntheticFallbackPng(), "image/png");
-
         var (bytes, contentType) = await CaptureStorageHelper.ReadCaptureFileAsync(path, ct);
-        return File(bytes, contentType);
+        return MediaStreamResponseHelper.CreateBytesOrRangeResponse(HttpContext, bytes, contentType);
     }
 }

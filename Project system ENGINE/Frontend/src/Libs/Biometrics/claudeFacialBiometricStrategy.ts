@@ -15,8 +15,10 @@ export type BiometricValidationLayerCode =
 export interface FacialGeometricRatios {
   interOcularRatio: number;
   nasalBridgeVerticalRatio: number;
+  nasalBridgeRatio?: number;
   jawSymmetryIndex: number;
   ovalCenteringScore: number;
+  ovalCenterAlignment?: number;
   yawRightAngleDeg: number;
   yawLeftAngleDeg: number;
   blinkEarDelta: number;
@@ -29,6 +31,7 @@ export interface FourPoseFramesInput {
   LEFT?: string;
   BLINK?: string;
   UP?: string;
+  poseSamples?: Partial<Record<'CENTER' | 'RIGHT' | 'LEFT' | 'BLINK' | 'UP', string[]>>;
   frameCounts?: {
     CENTER?: number;
     RIGHT?: number;
@@ -169,7 +172,7 @@ const normalize128DVector = (rawVector: number[]): number[] => {
   return vec;
 };
 
-const computeAnthropometricRatiosFromVector = (vector128D: number[]): FacialGeometricRatios => {
+export const computeAnthropometricRatiosFromVector = (vector128D: number[]): FacialGeometricRatios => {
   const safeVal = (idx: number): number => Math.abs(vector128D[idx % vector128D.length] || 0);
   const interOcularRatio = Number((0.36 + (safeVal(4) % 0.06)).toFixed(4));
   const nasalBridgeVerticalRatio = Number((0.44 + (safeVal(12) % 0.05)).toFixed(4));
@@ -185,12 +188,33 @@ const computeAnthropometricRatiosFromVector = (vector128D: number[]): FacialGeom
   return {
     interOcularRatio,
     nasalBridgeVerticalRatio,
+    nasalBridgeRatio: nasalBridgeVerticalRatio,
     jawSymmetryIndex,
     ovalCenteringScore,
+    ovalCenterAlignment: ovalCenteringScore,
     yawRightAngleDeg,
     yawLeftAngleDeg,
     blinkEarDelta,
     alignmentScore
+  };
+};
+
+export const buildAlignedGeometricSignature = (
+  vector128D: number[],
+  extras?: Record<string, unknown>
+): Record<string, unknown> => {
+  const ratios = computeAnthropometricRatiosFromVector(vector128D);
+  return {
+    ...ratios,
+    ...(extras ?? {}),
+    anthropometricRatios: {
+      interOcularRatio: ratios.interOcularRatio,
+      nasalBridgeRatio: ratios.nasalBridgeVerticalRatio,
+      jawSymmetryIndex: ratios.jawSymmetryIndex,
+      ovalCenterAlignment: ratios.ovalCenteringScore,
+      alignmentScore: ratios.alignmentScore
+    },
+    evaluatedAtUtc: new Date().toISOString()
   };
 };
 
@@ -632,6 +656,12 @@ export class ClaudeFacialBiometricStrategy implements IFacialBiometricStrategy {
     let livenessConfidence = 0.96;
 
     const typedInput = framesByPose as FourPoseFramesInput;
+    const poseSamples = {
+      CENTER: (typedInput.poseSamples?.CENTER ?? (centerFrame ? [centerFrame] : [])).slice(0, 3),
+      RIGHT: (typedInput.poseSamples?.RIGHT ?? (rightFrame ? [rightFrame] : [])).slice(0, 3),
+      LEFT: (typedInput.poseSamples?.LEFT ?? (leftFrame ? [leftFrame] : [])).slice(0, 3),
+      BLINK: (typedInput.poseSamples?.BLINK ?? (blinkFrame ? [blinkFrame] : [])).slice(0, 3)
+    };
     const poseFramesPayload = {
       strategy: this.strategyName,
       capturedAtUtc: new Date().toISOString(),
@@ -649,17 +679,18 @@ export class ClaudeFacialBiometricStrategy implements IFacialBiometricStrategy {
         RIGHT: rightFrame,
         LEFT: leftFrame,
         BLINK: blinkFrame
-      }
+      },
+      poseSamples
     };
 
     const localGeometricSignatureJson =
       trimNonEmptyString(faceToIdContext?.geometricSignatureJson) ??
-      JSON.stringify({
-        strategyName: this.strategyName,
-        providerUsed,
-        ...geometricRatios,
-        evaluatedAtUtc: new Date().toISOString()
-      });
+      JSON.stringify(
+        buildAlignedGeometricSignature(descriptorVector128D, {
+          strategyName: this.strategyName,
+          providerUsed
+        })
+      );
 
     let geometryAnalysis: ClaudeFacialGeometryAnalysisResult = {
       httpStatus: 200,
@@ -718,12 +749,13 @@ export class ClaudeFacialBiometricStrategy implements IFacialBiometricStrategy {
     const finalGeometricSignatureJson =
       remoteSig && remoteSig !== '{}'
         ? remoteSig
-        : JSON.stringify({
-            strategyName: this.strategyName,
-            providerUsed,
-            ...geometricRatios,
-            evaluatedAtUtc: new Date().toISOString()
-          });
+        : JSON.stringify(
+            buildAlignedGeometricSignature(descriptorVector128D, {
+              strategyName: this.strategyName,
+              providerUsed,
+              ...geometricRatios
+            })
+          );
 
     return {
       strategyName: 'ClaudeVisionFacialBiometricStrategy',
@@ -754,12 +786,12 @@ export class ClaudeFacialBiometricStrategy implements IFacialBiometricStrategy {
     const layer1Passed = livenessScore >= 0.7;
     const layer2Passed = normalizedVector.length === 128 && ratios.alignmentScore >= 0.65;
 
-    const liveGeometricSignatureJson = JSON.stringify({
-      strategyName: this.strategyName,
-      ...ratios,
-      livenessScore,
-      evaluatedAtUtc: new Date().toISOString()
-    });
+    const liveGeometricSignatureJson = JSON.stringify(
+      buildAlignedGeometricSignature(normalizedVector, {
+        strategyName: this.strategyName,
+        livenessScore
+      })
+    );
 
     const layers: BiometricLoginLayerTelemetry[] = [
       {

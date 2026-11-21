@@ -67,7 +67,7 @@ export const ToggleDrawerSidebarMenu: FC<ToggleDrawerSidebarMenuProps> = ({ clas
     <button
       type="button"
       onClick={toggleSidebar}
-      className={`p-1.5 rounded-md hover:bg-white/10 text-slate-300 hover:text-white transition-all flex items-center justify-center cursor-pointer ${className}`}
+      className={`p-1.5 rounded-lg hover:bg-[#E9D9D0] text-[#670626] hover:text-[#3B1722] transition-all flex items-center justify-center cursor-pointer ${className}`}
       title={isCollapsed ? 'Expand Navigation Menu' : 'Collapse to Icons Only'}
       aria-label={isCollapsed ? 'Expand Navigation Menu' : 'Collapse to Icons Only'}
     >

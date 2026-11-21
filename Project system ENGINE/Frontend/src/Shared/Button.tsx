@@ -44,34 +44,34 @@ export const Button: FC<ButtonProps> = ({
   ...props
 }) => {
   const baseClasses =
-    'inline-flex items-center justify-center font-semibold tracking-wide transition-all duration-150 select-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100';
+    'inline-flex items-center justify-center font-semibold tracking-wide transition-all duration-150 select-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#A83B4D] focus-visible:ring-offset-2 focus-visible:ring-offset-[#F7F1EA] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100';
 
   const sizeClasses: Record<ButtonSize, string> = {
-    xs: 'px-2.5 py-1 text-[11px] gap-1 rounded-md',
-    sm: 'px-3 py-1.5 text-xs gap-1.5 rounded-lg',
-    md: 'px-4 py-2 text-sm gap-2 rounded-lg',
-    lg: 'px-5 py-2.5 text-base gap-2.5 rounded-xl',
+    xs: 'px-2.5 py-1 text-xs gap-1 rounded-lg',
+    sm: 'px-3 py-1.5 text-sm gap-1.5 rounded-xl',
+    md: 'px-4 py-2 text-sm gap-2 rounded-xl',
+    lg: 'px-5 py-2.5 text-base gap-2.5 rounded-2xl',
   };
 
   const variantClasses: Record<ButtonVariant, string> = {
     primary:
-      'bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white border border-sky-400/30 hover:border-sky-300/60 focus:ring-sky-500 shadow-md shadow-sky-950/60',
+      'bg-[#670626] hover:bg-[#7D0A30] active:bg-[#52041E] text-[#F7F1EA] border border-[#A83B4D]/45 focus:ring-[#670626] shadow-[0_8px_18px_-4px_rgba(103,6,38,0.35),inset_0_1px_1px_rgba(255,255,255,0.22)]',
     secondary:
-      'bg-slate-800/90 hover:bg-slate-700/90 active:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 hover:border-slate-600 focus:ring-slate-500 shadow-sm backdrop-blur-sm',
+      'clay-surface bg-[#E9D9D0] hover:bg-[#DFC9BE] active:bg-[#D4B8AA] text-[#670626] border border-[#D4B8AA] hover:border-[#A83B4D]/50 focus:ring-[#A83B4D] shadow-[0_4px_12px_-3px_rgba(103,6,38,0.14),inset_0_1px_1px_rgba(255,255,255,0.8)]',
     'action-green':
-      'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white border border-emerald-400/30 hover:border-emerald-300/60 focus:ring-emerald-500 shadow-md shadow-emerald-950/60 font-bold',
+      'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white border border-emerald-500/45 focus:ring-emerald-600 shadow-[0_6px_16px_-4px_rgba(5,150,105,0.35),inset_0_1px_1px_rgba(255,255,255,0.22)] font-bold',
     success:
-      'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white border border-emerald-400/30 hover:border-emerald-300/60 focus:ring-emerald-500 shadow-md shadow-emerald-950/60',
+      'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white border border-emerald-500/45 focus:ring-emerald-600 shadow-[0_6px_16px_-4px_rgba(5,150,105,0.35),inset_0_1px_1px_rgba(255,255,255,0.22)]',
     danger:
-      'bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white border border-rose-400/30 hover:border-rose-300/60 focus:ring-rose-500 shadow-md shadow-rose-950/60',
+      'bg-[#991B1B] hover:bg-[#B91C1C] active:bg-[#7F1D1D] text-white border border-rose-400/40 focus:ring-[#991B1B] shadow-[0_6px_16px_-4px_rgba(153,27,27,0.35),inset_0_1px_1px_rgba(255,255,255,0.2)]',
     warning:
-      'bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white border border-amber-400/30 hover:border-amber-300/60 focus:ring-amber-500 shadow-md shadow-amber-950/60',
+      'bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white border border-amber-500/40 focus:ring-amber-600 shadow-[0_6px_16px_-4px_rgba(217,119,6,0.32),inset_0_1px_1px_rgba(255,255,255,0.2)]',
     ghost:
-      'bg-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white focus:ring-slate-700',
+      'bg-transparent text-[#670626] hover:bg-[#E9D9D0]/65 hover:text-[#3B1722] focus:ring-[#A83B4D]',
     outline:
-      'bg-transparent border border-slate-600/80 hover:border-slate-400 text-slate-200 hover:bg-slate-800/60 hover:text-white focus:ring-sky-500',
+      'bg-[#F7F1EA] hover:bg-[#E9D9D0]/70 border border-[#D4B8AA] hover:border-[#A83B4D] text-[#670626] focus:ring-[#670626] shadow-[0_2px_8px_-2px_rgba(103,6,38,0.1)]',
     'soft-blue':
-      'bg-sky-950/70 text-sky-300 border border-sky-800/60 hover:bg-sky-900/80 hover:text-sky-100 hover:border-sky-700/80 focus:ring-sky-500 font-semibold backdrop-blur-sm',
+      'bg-[#F3E4E7] text-[#670626] border border-[#A83B4D]/35 hover:bg-[#E9D9D0] hover:border-[#670626]/50 focus:ring-[#A83B4D] font-semibold shadow-sm',
   };
 
   const widthClass = fullWidth ? 'w-full' : '';

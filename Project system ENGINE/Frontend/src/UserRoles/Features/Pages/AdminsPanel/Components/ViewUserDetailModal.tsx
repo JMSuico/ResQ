@@ -1,35 +1,32 @@
 // [Layer: UserRoles/Features/Pages/AdminsPanel/Components]
 // ViewUserDetailModal.tsx -- Comprehensive identity card and biometric preview modal for ResQTrack User Governance.
-// Conforms to Squad 5:
-// - Universal Lucide Migration: No raw inline SVGs.
-// - Uses Universal Lambdas (=>), Katipuneros architecture, and DefaultFloatingModalCard.
-// - Zero 'any' typing and Zero hardcoded static numbers.
+// Stitch Warm Ivory (#F7F1EA) + Soft Beige (#E9D9D0) + Cherry (#670626) claymorphic styling.
+// Zero tel: links; phoneNumber / emergencyContactPhone rendered as plain text only.
+// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis.
 
-import React, { useEffect, useState, FC } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   User,
   MapPin,
   Shield,
   FileText,
-  Lock,
   AlertTriangle,
-  Check,
   CheckCircle2,
   Loader2,
   HeartPulse,
   Flame,
   ShieldAlert,
   Phone,
-  Radio,
   Building2,
   Eye,
   Sliders,
-  UserCheck,
-  Clock,
+  UserCheck
 } from 'lucide-react';
-import { DefaultFloatingModalCard, Button } from '@/Shared';
 import { getUserDetail, UserDetail } from '@/Endpoints/adminGovernanceApi';
 import { ImageLightboxModal } from '@/Shared/ImageLightboxModal';
+import { AdminButton } from '../Shared/AdminButton';
+import { AdminModalCard } from '../Shared/AdminModalCard';
+import { CLAY_WELL } from '../Shared/adminCommandHelpers';
 
 export interface ViewUserDetailModalProps {
   userId: string | null;
@@ -42,21 +39,12 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
   userId,
   isOpen,
   onClose,
-  onEdit,
+  onEdit
 }) => {
   const [user, setUser] = useState<UserDetail | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lightboxData, setLightboxData] = useState<{ url: string; title: string } | null>(null);
-
-  useEffect(() => {
-    if (isOpen && userId) {
-      loadDetail(userId);
-    } else {
-      setUser(null);
-      setErrorMessage(null);
-    }
-  }, [isOpen, userId]);
 
   const loadDetail = async (id: string) => {
     setIsLoading(true);
@@ -72,16 +60,21 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (isOpen && userId) {
+      void loadDetail(userId);
+    } else {
+      setUser(null);
+      setErrorMessage(null);
+    }
+  }, [isOpen, userId]);
+
   const fmtDate = (iso?: string | null): string => {
     if (!iso) return 'Not Provided';
     try {
       const d = new Date(iso);
       if (isNaN(d.getTime())) return iso;
-      return d.toLocaleDateString('en-PH', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
+      return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
     } catch {
       return iso;
     }
@@ -97,103 +90,74 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
-        minute: '2-digit',
+        minute: '2-digit'
       });
     } catch {
       return iso;
     }
   };
 
-  // Agency Badge Indicators
   const renderRoleBadge = (role: string, unit: string) => {
     if (role === 'LDRRMO_Admin') {
       return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-[#340313] text-amber-300 border border-amber-600/80 shadow-[0_0_12px_rgba(232,17,76,0.3)]">
-          <Building2 className="w-3.5 h-3.5 text-amber-400" />
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold uppercase bg-[#670626] text-[#F7F1EA]">
+          <Building2 className="w-3.5 h-3.5" />
           LDRRMO Executive Command
         </span>
       );
     }
     if (role === 'Responder') {
-      if (unit === 'RHU') {
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-emerald-950/90 text-emerald-300 border border-emerald-600/80 shadow-[0_0_12px_rgba(16,185,129,0.3)]">
-            <HeartPulse className="w-3.5 h-3.5 text-emerald-400" />
-            RHU Medical Responder
-          </span>
-        );
-      }
-      if (unit === 'FIRE') {
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-orange-950/90 text-orange-300 border border-orange-600/80 shadow-[0_0_12px_rgba(249,115,22,0.3)]">
-            <Flame className="w-3.5 h-3.5 text-orange-400" />
-            FIRE (BFP Engine)
-          </span>
-        );
-      }
-      if (unit === 'PNP') {
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-sky-950/90 text-sky-300 border border-sky-600/80 shadow-[0_0_12px_rgba(14,165,233,0.3)]">
-            <ShieldAlert className="w-3.5 h-3.5 text-sky-400" />
-            PNP Sector Police
-          </span>
-        );
-      }
       return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-indigo-950/90 text-indigo-300 border border-indigo-600/80 shadow-[0_0_12px_rgba(99,102,241,0.3)]">
-          <Shield className="w-3.5 h-3.5 text-indigo-400" />
-          Tactical Responder
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold uppercase bg-[#A83B4D] text-[#F7F1EA]">
+          {unit === 'RHU' ? <HeartPulse className="w-3.5 h-3.5" /> : unit === 'FIRE' ? <Flame className="w-3.5 h-3.5" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+          {unit} Responder
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-purple-950/80 text-purple-300 border border-purple-700/80 shadow-[0_0_10px_rgba(168,85,247,0.2)]">
-        <User className="w-3.5 h-3.5 text-purple-400" />
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold uppercase bg-[#F7F1EA] text-[#670626] border border-[#670626]/25">
+        <User className="w-3.5 h-3.5" />
         Civilian Resident
       </span>
     );
   };
 
-  // Status Pill
   const renderStatusBadge = (status: string) => {
     if (status === 'Verified') {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold tracking-wider uppercase bg-emerald-950/90 text-emerald-300 border border-emerald-500/80 shadow-[0_0_10px_rgba(16,185,129,0.25)]">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-bold uppercase bg-emerald-100 text-emerald-900 border border-emerald-700/30">
           ACTIVE
         </span>
       );
     }
     if (status === 'Suspended') {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold tracking-wider uppercase bg-rose-950/90 text-rose-300 border border-rose-600/80 shadow-[0_0_10px_rgba(244,63,94,0.25)]">
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-bold uppercase bg-[#670626] text-[#F7F1EA]">
           SUSPENDED
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold tracking-wider uppercase bg-amber-950/90 text-amber-300 border border-amber-500/80 shadow-[0_0_10px_rgba(245,158,11,0.25)]">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-bold uppercase bg-amber-100 text-amber-900 border border-amber-700/30">
         PENDING
       </span>
     );
   };
 
   const renderHeroIcon = () => {
-    if (!user) return <User className="w-7 h-7 text-slate-400" />;
-    if (user.role === 'LDRRMO_Admin') return <Building2 className="w-7 h-7 text-amber-400" />;
+    if (!user) return <User className="w-7 h-7 text-[#670626]" />;
+    if (user.role === 'LDRRMO_Admin') return <Building2 className="w-7 h-7 text-[#670626]" />;
     if (user.role === 'Responder') {
-      if (user.unit === 'RHU') return <HeartPulse className="w-7 h-7 text-emerald-400" />;
-      if (user.unit === 'FIRE') return <Flame className="w-7 h-7 text-orange-400" />;
-      return <ShieldAlert className="w-7 h-7 text-sky-400" />;
+      if (user.unit === 'RHU') return <HeartPulse className="w-7 h-7 text-emerald-700" />;
+      if (user.unit === 'FIRE') return <Flame className="w-7 h-7 text-orange-700" />;
+      return <ShieldAlert className="w-7 h-7 text-sky-700" />;
     }
-    return <User className="w-7 h-7 text-purple-400" />;
+    return <User className="w-7 h-7 text-[#A83B4D]" />;
   };
 
   return (
     <>
-      <DefaultFloatingModalCard
+      <AdminModalCard
         isOpen={isOpen}
         onClose={onClose}
         title="User Details"
@@ -201,374 +165,244 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
         maxWidth="4xl"
       >
         {isLoading && (
-          <div className="p-12 text-center text-slate-400 space-y-3">
-            <Loader2 className="w-8 h-8 text-sky-400 animate-spin mx-auto" />
-            <p className="text-xs font-mono">Loading user details…</p>
+          <div className="p-12 text-center text-[#A83B4D] space-y-3">
+            <Loader2 className="w-8 h-8 text-[#670626] animate-spin mx-auto" />
+            <p className="text-sm font-mono">Loading user details…</p>
           </div>
         )}
 
         {errorMessage && (
-          <div className="p-4 rounded-xl bg-rose-950/80 border border-rose-600 text-rose-200 text-xs font-mono flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+          <div className="p-4 rounded-xl bg-[#670626] text-[#F7F1EA] text-sm font-mono flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             <span>{errorMessage}</span>
           </div>
         )}
 
         {!isLoading && user && (
-          <div className="space-y-4 text-xs text-slate-200">
-            {/* Top Identity Hero Card */}
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-[#071522] via-[#0a1a2b] to-[#0e243a] border border-[#1d3c5c] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
+          <div className="space-y-4 text-sm text-[#670626]">
+            <div className={`${CLAY_WELL} p-4 flex flex-col md:flex-row md:items-center justify-between gap-4`}>
               <div className="flex items-center gap-3.5">
-                <div className="w-14 h-14 rounded-2xl bg-[#071522] border-2 border-[#1d3c5c] flex items-center justify-center flex-shrink-0 shadow-lg font-mono font-bold">
+                <div className="w-14 h-14 rounded-2xl bg-[#F7F1EA] border border-[#670626]/20 flex items-center justify-center flex-shrink-0">
                   {renderHeroIcon()}
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-base font-black text-white tracking-wide font-display">{user.fullName}</h3>
+                    <h3 className="text-lg font-black text-[#670626]">{user.fullName}</h3>
                     {renderStatusBadge(user.status)}
                     {user.faceVerified && (
-                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800 font-bold font-mono">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Live Face Verified
+                      <span className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-700/30 font-bold font-mono">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Live Face Verified
                       </span>
                     )}
                   </div>
-                  <div className="text-slate-400 font-mono text-[11px] mt-1 flex items-center gap-3 flex-wrap">
+                  <div className="text-[#A83B4D] font-mono text-xs mt-1 flex items-center gap-3 flex-wrap">
                     <span>{user.email}</span>
                     <span>•</span>
-                    <span className="text-sky-400 font-semibold">ID: {user.employeeOrResidentId || 'N/A'}</span>
-                    {user.rankOrTitle && (
-                      <>
-                        <span>•</span>
-                        <span className="text-slate-300 font-semibold">{user.rankOrTitle}</span>
-                      </>
-                    )}
+                    <span className="font-bold text-[#670626]">ID: {user.employeeOrResidentId || 'N/A'}</span>
                   </div>
                 </div>
               </div>
-
-              <div className="flex items-center gap-2">
-                {renderRoleBadge(user.role, user.unit)}
-              </div>
+              <div>{renderRoleBadge(user.role, user.unit)}</div>
             </div>
 
-            {/* Biometric & Government ID Capture Previews */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* ID Capture */}
-              <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2 shadow-lg">
-                <div className="flex items-center justify-between text-slate-300 font-semibold text-xs">
-                  <span className="flex items-center gap-1.5 font-mono text-[11px] text-sky-400 uppercase tracking-wider">
-                    <FileText className="w-3.5 h-3.5 text-sky-400" /> Government ID
+              <div className={`${CLAY_WELL} p-4 space-y-2.5`}>
+                <div className="flex items-center justify-between font-semibold text-xs">
+                  <span className="flex items-center gap-1.5 font-mono uppercase tracking-wider text-[#670626]">
+                    <FileText className="w-4 h-4 text-[#A83B4D]" /> Government ID
                   </span>
-                  <span className="text-[10px] font-mono text-slate-400 bg-[#0a1a2b] px-2 py-0.5 rounded border border-[#1d3c5c]">
+                  <span className="text-xs font-mono bg-[#F7F1EA] px-2.5 py-0.5 rounded border border-[#670626]/20">
                     {user.governmentIdType || 'National ID / LTO'}
                   </span>
                 </div>
-                <div className="h-48 rounded-lg overflow-hidden bg-[#0a1a2b] border border-[#1d3c5c] flex items-center justify-center relative group">
+                <div className="h-48 rounded-lg overflow-hidden bg-[#F7F1EA] border border-[#670626]/15 flex items-center justify-center relative">
                   <img
                     src={`/api/users/${user.id}/captures/id`}
                     alt="Government ID"
-                    className="w-full h-full object-contain cursor-pointer transition-transform group-hover:scale-105"
-                    onClick={() => setLightboxData({
-                      url: `/api/users/${user.id}/captures/id`,
-                      title: `${user.fullName} - Government ID (${user.governmentIdType || 'Valid ID'})`
-                    })}
+                    className="w-full h-full object-contain cursor-pointer"
+                    onClick={() =>
+                      setLightboxData({
+                        url: `/api/users/${user.id}/captures/id`,
+                        title: `${user.fullName} - Government ID`
+                      })
+                    }
                   />
                   <button
                     type="button"
-                    onClick={() => setLightboxData({
-                      url: `/api/users/${user.id}/captures/id`,
-                      title: `${user.fullName} - Government ID (${user.governmentIdType || 'Valid ID'})`
-                    })}
-                    className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-black/80 hover:bg-black text-[10px] font-mono text-white backdrop-blur-md cursor-pointer border border-white/20 transition-all flex items-center gap-1.5"
+                    onClick={() =>
+                      setLightboxData({
+                        url: `/api/users/${user.id}/captures/id`,
+                        title: `${user.fullName} - Government ID`
+                      })
+                    }
+                    className="absolute bottom-2.5 right-2.5 px-3 py-1.5 rounded-lg bg-[#670626] text-xs font-mono text-[#F7F1EA] cursor-pointer flex items-center gap-1.5"
                   >
-                    <Eye className="w-3 h-3" /> Enlarge ID
+                    <Eye className="w-3.5 h-3.5" /> Enlarge ID
                   </button>
                 </div>
               </div>
 
-              {/* Face Biometric */}
-              <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2 shadow-lg">
-                <div className="flex items-center justify-between text-slate-300 font-semibold text-xs">
-                  <span className="flex items-center gap-1.5 font-mono text-[11px] text-emerald-400 uppercase tracking-wider">
-                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" /> Face Biometric
+              <div className={`${CLAY_WELL} p-4 space-y-2.5`}>
+                <div className="flex items-center justify-between font-semibold text-xs">
+                  <span className="flex items-center gap-1.5 font-mono uppercase tracking-wider text-[#670626]">
+                    <UserCheck className="w-4 h-4 text-emerald-700" /> Face Biometric
                   </span>
-                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
+                  <span className="text-xs font-mono bg-[#F7F1EA] px-2.5 py-0.5 rounded border border-[#670626]/20">
                     {user.faceVerified ? 'Verified' : 'Pending'}
                   </span>
                 </div>
-                <div className="h-48 rounded-lg overflow-hidden bg-[#0a1a2b] border border-[#1d3c5c] flex items-center justify-center relative group">
+                <div className="h-48 rounded-lg overflow-hidden bg-[#F7F1EA] border border-[#670626]/15 flex items-center justify-center relative">
                   <img
                     src={`/api/users/${user.id}/captures/face`}
                     alt="Live Face Biometric"
-                    className="w-full h-full object-contain cursor-pointer transition-transform group-hover:scale-105"
-                    onClick={() => setLightboxData({
-                      url: `/api/users/${user.id}/captures/face`,
-                      title: `${user.fullName} - Live Face Biometric Capture`
-                    })}
+                    className="w-full h-full object-contain cursor-pointer"
+                    onClick={() =>
+                      setLightboxData({
+                        url: `/api/users/${user.id}/captures/face`,
+                        title: `${user.fullName} - Face Biometric`
+                      })
+                    }
                   />
                   <button
                     type="button"
-                    onClick={() => setLightboxData({
-                      url: `/api/users/${user.id}/captures/face`,
-                      title: `${user.fullName} - Live Face Biometric Capture`
-                    })}
-                    className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-black/80 hover:bg-black text-[10px] font-mono text-white backdrop-blur-md cursor-pointer border border-white/20 transition-all flex items-center gap-1.5"
+                    onClick={() =>
+                      setLightboxData({
+                        url: `/api/users/${user.id}/captures/face`,
+                        title: `${user.fullName} - Face Biometric`
+                      })
+                    }
+                    className="absolute bottom-2.5 right-2.5 px-3 py-1.5 rounded-lg bg-[#670626] text-xs font-mono text-[#F7F1EA] cursor-pointer flex items-center gap-1.5"
                   >
-                    <Eye className="w-3 h-3" /> Enlarge Face
+                    <Eye className="w-3.5 h-3.5" /> Enlarge Face
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Granular Profile Grids */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Personal & Vitals */}
-              <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2.5 shadow-md">
-                <h4 className="font-bold text-sky-400 uppercase tracking-wider font-mono text-[11px] flex items-center gap-1.5 border-b border-[#1d3c5c] pb-1.5">
-                  <User className="w-3.5 h-3.5 text-sky-400" /> Personal & Vital Information
+              <div className={`${CLAY_WELL} p-4 space-y-3`}>
+                <h4 className="font-bold text-[#670626] uppercase tracking-wider font-mono text-xs flex items-center gap-1.5 border-b border-[#670626]/15 pb-2">
+                  <User className="w-4 h-4 text-[#A83B4D]" /> Personal & Vital Information
                 </h4>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Sex:</span>
-                    <span className="font-semibold text-slate-200">{user.sex || '—'}</span>
+                    <span className="text-[#A83B4D] font-mono text-xs uppercase block">Sex:</span>
+                    <span className="font-semibold">{user.sex || '—'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Blood Type:</span>
-                    <span className="font-black text-rose-400 font-mono text-sm">{user.bloodType || '—'}</span>
+                    <span className="text-[#A83B4D] font-mono text-xs uppercase block">Blood Type:</span>
+                    <span className="font-black font-mono text-base">{user.bloodType || '—'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Date of Birth:</span>
-                    <span className="font-mono text-slate-200">{fmtDate(user.dateOfBirth)}</span>
+                    <span className="text-[#A83B4D] font-mono text-xs uppercase block">Date of Birth:</span>
+                    <span className="font-mono">{fmtDate(user.dateOfBirth)}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Phone Telemetry:</span>
-                    <span className="font-mono text-slate-200">{user.phoneNumber || '—'}</span>
+                    <span className="text-[#A83B4D] font-mono text-xs uppercase block">Phone Number:</span>
+                    <span className="font-mono">{user.phoneNumber || '—'}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Philippine Address */}
-              <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2.5 shadow-md">
-                <h4 className="font-bold text-sky-400 uppercase tracking-wider font-mono text-[11px] flex items-center gap-1.5 border-b border-[#1d3c5c] pb-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-sky-400" /> Registered Residence Sector
+              <div className={`${CLAY_WELL} p-4 space-y-3`}>
+                <h4 className="font-bold text-[#670626] uppercase tracking-wider font-mono text-xs flex items-center gap-1.5 border-b border-[#670626]/15 pb-2">
+                  <MapPin className="w-4 h-4 text-[#A83B4D]" /> Registered Residence Sector
                 </h4>
-                <div className="space-y-1.5 text-[11px]">
+                <div className="space-y-2 text-sm">
                   <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Full Residence Address:</span>
-                    <span className="font-medium text-slate-100">{user.fullAddress || `${user.streetOrPurok || ''}, ${user.barangay}, ${user.cityOrMunicipality}, ${user.province}`}</span>
+                    <span className="text-[#A83B4D] font-mono text-xs uppercase block">Address:</span>
+                    <span className="font-medium">
+                      {user.fullAddress || `${user.streetOrPurok || ''}, ${user.barangay}, ${user.cityOrMunicipality}, ${user.province}`}
+                    </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                  <div className="grid grid-cols-2 gap-3 pt-1">
                     <div>
-                      <span className="text-slate-500 font-mono text-[10px] uppercase block">Barangay:</span>
-                      <span className="font-bold text-sky-300 font-mono">{user.barangay}</span>
+                      <span className="text-[#A83B4D] font-mono text-xs uppercase block">Barangay:</span>
+                      <span className="font-bold font-mono">{user.barangay}</span>
                     </div>
                     <div>
-                      <span className="text-slate-500 font-mono text-[10px] uppercase block">City & Province:</span>
-                      <span className="font-semibold text-slate-200">{user.cityOrMunicipality}, {user.province}</span>
+                      <span className="text-[#A83B4D] font-mono text-xs uppercase block">Municipality:</span>
+                      <span className="font-semibold">{user.cityOrMunicipality}, {user.province}</span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Emergency Contact */}
-              <div className="p-3.5 rounded-xl bg-[#071522] border border-amber-900/60 space-y-2.5 shadow-md">
-                <h4 className="font-bold text-amber-300 uppercase tracking-wider font-mono text-[11px] flex items-center gap-1.5 border-b border-amber-900/60 pb-1.5">
-                  <Phone className="w-3.5 h-3.5 text-amber-400" /> Emergency Contact (Next of Kin)
+              <div className={`${CLAY_WELL} p-4 space-y-3`}>
+                <h4 className="font-bold text-[#670626] uppercase tracking-wider font-mono text-xs flex items-center gap-1.5 border-b border-[#670626]/15 pb-2">
+                  <Phone className="w-4 h-4 text-[#A83B4D]" /> Emergency Contact (Next of Kin)
                 </h4>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="col-span-2">
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Contact Name:</span>
-                    <span className="font-bold text-slate-100">{user.emergencyContactName || 'None Listed'}</span>
+                    <span className="text-[#A83B4D] font-mono text-xs uppercase block">Contact Name:</span>
+                    <span className="font-bold">{user.emergencyContactName || 'None Listed'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Relationship:</span>
-                    <span className="font-medium text-slate-200">{user.emergencyContactRelationship || '—'}</span>
+                    <span className="text-[#A83B4D] font-mono text-xs uppercase block">Relationship:</span>
+                    <span className="font-medium">{user.emergencyContactRelationship || '—'}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Emergency Phone:</span>
-                    <span className="font-mono text-amber-300 font-bold">{user.emergencyContactPhone || '—'}</span>
+                    <span className="text-[#A83B4D] font-mono text-xs uppercase block">Contact Phone:</span>
+                    <span className="font-mono font-bold">{user.emergencyContactPhone || '—'}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Station & Agency Allocation */}
-              <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2.5 shadow-md">
-                <h4 className="font-bold text-sky-400 uppercase tracking-wider font-mono text-[11px] flex items-center gap-1.5 border-b border-[#1d3c5c] pb-1.5">
-                  <Shield className="w-3.5 h-3.5 text-sky-400" /> Agency & Station Assignment
+              <div className={`${CLAY_WELL} p-4 space-y-3`}>
+                <h4 className="font-bold text-[#670626] uppercase tracking-wider font-mono text-xs flex items-center gap-1.5 border-b border-[#670626]/15 pb-2">
+                  <Shield className="w-4 h-4 text-[#A83B4D]" /> Agency & Station Assignment
                 </h4>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Role / Unit:</span>
-                    <span className="font-semibold text-slate-200">{user.role} {user.unit !== 'None' ? `(${user.unit})` : ''}</span>
+                    <span className="text-[#A83B4D] font-mono text-xs uppercase block">Role / Unit:</span>
+                    <span className="font-semibold">{user.role} {user.unit !== 'None' ? `(${user.unit})` : ''}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Rank / Title:</span>
-                    <span className="font-medium text-slate-200">{user.rankOrTitle || '—'}</span>
+                    <span className="text-[#A83B4D] font-mono text-xs uppercase block">Rank / Title:</span>
+                    <span className="font-medium">{user.rankOrTitle || '—'}</span>
                   </div>
                   <div className="col-span-2">
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Station or Sector:</span>
-                    <span className="font-medium text-slate-200">{user.departmentOrBarangay || 'Central Dispatch'}</span>
+                    <span className="text-[#A83B4D] font-mono text-xs uppercase block">Station or Sector:</span>
+                    <span className="font-medium">{user.departmentOrBarangay || 'Katipunan Command'}</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Role-Specific Structured Emergency Badges Panel */}
-            <div className="p-4 rounded-xl bg-[#0a1a2b] border border-[#1d3c5c] space-y-3 shadow-lg">
-              <h4 className="font-bold text-sky-300 uppercase tracking-wider font-mono text-[11px] flex items-center gap-2 border-b border-[#1d3c5c] pb-2">
-                <FileText className="w-3.5 h-3.5 text-sky-300" /> Specific Philippine Emergency Registry Badges
-              </h4>
-
-              {user.role === 'Civilian' && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Gov ID Type:</span>
-                    <span className="font-semibold text-slate-200">{user.governmentIdType || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">ID Number:</span>
-                    <span className="font-mono text-slate-200">{user.governmentIdNumber || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Residency Category:</span>
-                    <span className="font-medium text-slate-200">{user.residencyCategory || 'Permanent'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Priority / Vulnerability:</span>
-                    <span className="font-bold text-amber-400 font-mono">{user.vulnerabilityFlags || 'None'}</span>
-                  </div>
-                </div>
-              )}
-
-              {user.role === 'Responder' && user.unit === 'RHU' && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-[11px]">
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">PRC Medical License:</span>
-                    <span className="font-mono text-emerald-400 font-bold">{user.medicalLicenseNumber || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Medical Cadre:</span>
-                    <span className="font-medium text-slate-200">{user.medicalCadre || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Ambulance Call Sign:</span>
-                    <span className="font-mono text-emerald-300 font-bold">{user.ambulanceCallSign || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Health Center Station:</span>
-                    <span className="font-medium text-slate-200">{user.stationHealthCenter || '—'}</span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Medical Certifications:</span>
-                    <span className="font-medium text-slate-200 font-mono">{user.medicalCertifications || '—'}</span>
-                  </div>
-                </div>
-              )}
-
-              {user.role === 'Responder' && user.unit === 'FIRE' && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-[11px]">
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">BFP Firefighter Rank:</span>
-                    <span className="font-bold text-orange-400 font-mono">{user.firefighterRank || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">BFP Badge Number:</span>
-                    <span className="font-mono text-orange-300 font-bold">{user.bfpBadgeNumber || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Apparatus Call Sign:</span>
-                    <span className="font-mono text-orange-300 font-bold">{user.apparatusCallSign || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Assigned Fire Station:</span>
-                    <span className="font-medium text-slate-200">{user.fireStation || '—'}</span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Fire Specialization:</span>
-                    <span className="font-medium text-slate-200">{user.fireSpecialization || '—'}</span>
-                  </div>
-                </div>
-              )}
-
-              {user.role === 'Responder' && user.unit === 'PNP' && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-[11px]">
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">PNP Police Rank:</span>
-                    <span className="font-bold text-sky-400 font-mono">{user.policeRank || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">PNP Badge Number:</span>
-                    <span className="font-mono text-sky-300 font-bold">{user.pnpBadgeNumber || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Sidearm Serial:</span>
-                    <span className="font-mono text-rose-300 font-bold">{user.sidearmSerial || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Precinct / Station:</span>
-                    <span className="font-medium text-slate-200">{user.precinctOrStation || '—'}</span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Police Assignment:</span>
-                    <span className="font-medium text-slate-200">{user.policeAssignment || '—'}</span>
-                  </div>
-                </div>
-              )}
-
-              {user.role === 'LDRRMO_Admin' && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-[11px]">
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">LGU Plantilla Number:</span>
-                    <span className="font-mono text-amber-300 font-bold">{user.plantillaNumber || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Executive Designation:</span>
-                    <span className="font-semibold text-slate-100">{user.executiveDesignation || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 font-mono text-[10px] uppercase block">Security Clearance:</span>
-                    <span className="font-semibold text-sky-400 font-mono">{user.clearanceLevel || 'Level 2'}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Audit & Compliance Footnote */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between text-[10px] font-mono text-slate-400 p-3 rounded-lg bg-[#071522] border border-[#1d3c5c] gap-2">
-              <div>Created: {fmtDateTime(user.createdAt)} · Last Synchronized: {fmtDateTime(user.updatedAt)}</div>
+            <div className={`${CLAY_WELL} flex flex-col md:flex-row md:items-center justify-between text-xs font-mono p-3.5 gap-2`}>
+              <div>Created: {fmtDateTime(user.createdAt)} · Synced: {fmtDateTime(user.updatedAt)}</div>
               <div>
-                Status: {user.isDeleted ? (
-                  <span className="text-rose-400 font-bold">Soft-Deleted on {fmtDateTime(user.deletedAt)} by {user.deletedBy}</span>
+                {user.isDeleted ? (
+                  <span className="text-[#670626] font-bold">Soft-Deleted on {fmtDateTime(user.deletedAt)}</span>
                 ) : (
-                  <span className="text-emerald-400 font-semibold">Active Record</span>
+                  <span className="text-emerald-800 font-bold">Active Record</span>
                 )}
               </div>
             </div>
           </div>
         )}
 
-        {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-[#1d3c5c]">
-          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+        <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-[#670626]/15">
+          <AdminButton type="button" variant="outline" size="sm" onClick={onClose}>
             Close
-          </Button>
+          </AdminButton>
           {user && onEdit && (
-            <button
+            <AdminButton
               type="button"
+              variant="primary"
+              size="sm"
               onClick={() => {
                 onClose();
                 onEdit(user);
               }}
-              className="px-4 py-2 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-sky-600 hover:bg-sky-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.4)] transition-all cursor-pointer flex items-center gap-1.5"
+              icon={<Sliders className="w-4 h-4" />}
             >
-              <Sliders className="w-3.5 h-3.5" />
               Edit Profile
-            </button>
+            </AdminButton>
           )}
         </div>
-      </DefaultFloatingModalCard>
+      </AdminModalCard>
 
-      {/* Lightbox for Zooming Captures */}
       <ImageLightboxModal
         isOpen={lightboxData !== null}
         onClose={() => setLightboxData(null)}

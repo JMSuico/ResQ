@@ -99,7 +99,24 @@ public record CreateReportRequest(
     bool? IsBlurry,
     bool? RequiresManualVerification,
     string? LocationLabel,
-    string? ImageDataUrl
+    string? ImageDataUrl,
+    string? ReporterContactNumber = null,
+    string? RoboflowPrediction = null,
+    double? RoboflowConfidence = null,
+    bool? RoboflowNeedsReview = null,
+    string? ClaudeModelUsed = null,
+    string? ClaudeIncidentCategory = null,
+    string? ClaudeSituationSummary = null,
+    string? ClaudeVisibleHazards = null,
+    string? ClaudeUncertaintyNotes = null,
+    string? PointerIconType = null
+);
+
+public record AnalyzeIncidentImageRequest(
+    string ImageDataUrl,
+    string? TitleHint = null,
+    string? NoteHint = null,
+    string? CategoryHint = null
 );
 
 public record DistressBeaconRequest(

@@ -7,28 +7,31 @@
   z-index: 3;
   display: flex;
   flex-direction: column;
-  width: 320px;
-  max-height: min(56vh, 430px);
-  padding: 15px 16px 14px;
-  border-radius: 11px;
-  background: #fff;
-  color: var(--ink);
-  box-shadow: 0 20px 44px rgba(2, 10, 20, 0.38);
+  width: 340px;
+  max-height: min(56vh, 450px);
+  padding: 16px 18px 15px;
+  border: 1px solid rgba(103, 6, 38, 0.2);
+  border-radius: 1.25rem;
+  background: var(--resq-ivory, #F7F1EA);
+  color: var(--resq-ink-on-ivory, #2B010E);
+  box-shadow:
+    0 20px 44px rgba(43, 1, 14, 0.35),
+    inset 0 2px 3px rgba(255, 255, 255, 0.88);
 }
 
 .myreports__head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 11px;
+  margin-bottom: 12px;
 }
 
 .myreports__icon {
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   fill: none;
-  stroke: var(--pink-solid);
+  stroke: var(--pink);
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -38,21 +41,21 @@
   flex: 1 1 auto;
   margin: 0;
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: 0.01em;
-  color: var(--ink);
+  color: #f8fafc;
 }
 
 .myreports__count {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--pink-solid);
+  color: #ff7e92;
   white-space: nowrap;
 }
 
@@ -61,16 +64,16 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 24px;
-  padding: 0 9px;
-  border: 1.5px solid var(--pink-solid);
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 92, 116, 0.55);
   border-radius: 6px;
-  background: transparent;
-  color: var(--pink-solid);
+  background: rgba(15, 23, 42, 0.65);
+  color: #ff7e92;
   font-family: var(--font-ui);
-  font-size: 9.5px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
@@ -98,9 +101,9 @@
 
 .myreports__state {
   margin: 2px 0;
-  font-size: 11.5px;
+  font-size: 14px;
   line-height: 1.5;
-  color: #46566a;
+  color: #cbd5e1;
 }
 
 .myreports__list {
@@ -118,17 +121,17 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px;
-  border: 1px solid #e6e9ee;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  background: #f7f9fb;
+  background: rgba(15, 23, 42, 0.62);
   cursor: pointer;
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .myrep:hover {
-  border-color: var(--pink-solid);
-  background: #fff;
+  border-color: rgba(255, 92, 116, 0.6);
+  background: rgba(30, 41, 59, 0.78);
 }
 
 .myrep:focus-visible {
@@ -142,7 +145,7 @@
   height: 44px;
   border-radius: 6px;
   object-fit: cover;
-  background: #dde4ec;
+  background: rgba(30, 41, 59, 0.8);
 }
 
 .myrep__body {
@@ -152,26 +155,26 @@
 
 .myrep__title {
   margin: 0;
-  font-size: 12px;
+  font-size: 14.5px;
   font-weight: 700;
-  color: var(--ink);
+  color: #f8fafc;
 }
 
 .myrep__meta {
-  margin: 2px 0 0;
+  margin: 3px 0 0;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #66788c;
+  color: #94a3b8;
 }
 
 .myrep__note {
-  margin: 3px 0 0;
-  font-size: 11px;
-  line-height: 1.35;
-  color: #46566a;
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: #cbd5e1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -179,16 +182,16 @@
 
 .myrep__view {
   flex: none;
-  height: 24px;
-  padding: 0 9px;
-  border: 1.5px solid var(--navy-700);
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 6px;
-  background: transparent;
-  color: var(--navy-700);
+  background: rgba(15, 23, 42, 0.65);
+  color: #e2e8f0;
   font-family: var(--font-ui);
-  font-size: 9.5px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;

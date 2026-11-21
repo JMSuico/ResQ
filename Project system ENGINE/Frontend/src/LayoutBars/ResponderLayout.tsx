@@ -1,11 +1,11 @@
 // [Layer: LayoutBars]
 // Responsibility: Master layout wrapper for all emergency responder branches (RHU Medic, BFP Fire Rescue, and PNP Police Force).
-// Dynamically reads active authenticated session, injects branch telemetry HUD banner, and binds tactile layout frame.
+// Dynamically reads active authenticated session, injects branch telemetry HUD banner, and binds Cherry/Ivory Stitch shell frame.
 // ResQTrack Incident AI System Detection -- Universal Lucide icon standard with strict typing (ZERO any).
 
 import React from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
-import { Shield, Activity, PhoneCall } from 'lucide-react';
+import { Shield, Activity } from 'lucide-react';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { Footer } from './Footer';
@@ -22,24 +22,35 @@ const DEFAULT_RESPONDER_NAME = 'Active Duty Responder';
 const DEFAULT_EMPLOYEE_ID = 'RES-773-009';
 const DEFAULT_VERIFIED_STATUS = 'Verified';
 
-const getTabSession = (): { unit?: string; fullName?: string; displayName?: string; employeeOrResidentId?: string; employeeId?: string; role?: string; status?: string; faceVerified?: boolean } | null => {
+interface StoredResponderTabSession {
+  unit?: string;
+  fullName?: string;
+  displayName?: string;
+  employeeOrResidentId?: string;
+  employeeId?: string;
+  role?: string;
+  status?: string;
+  faceVerified?: boolean;
+}
+
+const getTabSession = (): StoredResponderTabSession | null => {
   if (typeof window === 'undefined') return null;
   try {
     // 1. Tab-isolated session storage (Guarantees Tab 1 Medic never reads Fire)
     const tabRaw = sessionStorage.getItem('resqtrack_session') || sessionStorage.getItem('resqtrack_user');
-    if (tabRaw) return JSON.parse(tabRaw);
+    if (tabRaw) return JSON.parse(tabRaw) as StoredResponderTabSession;
 
     // 2. Active tab unit-specific local storage
     const tabUnit = (sessionStorage.getItem('resqtrack_unit') || '').toLowerCase().trim();
     if (tabUnit && tabUnit !== 'none') {
       const unitRaw = localStorage.getItem(`resqtrack_session_${tabUnit}`) || localStorage.getItem(`resqtrack_user_${tabUnit}`);
-      if (unitRaw) return JSON.parse(unitRaw);
+      if (unitRaw) return JSON.parse(unitRaw) as StoredResponderTabSession;
     }
 
-    const port = window.location.port || '5173';
+    const port = window.location.port || '1997';
     const portRaw = localStorage.getItem(`resqtrack_session_${port}`) || localStorage.getItem(`resqtrack_user_${port}`);
     if (portRaw) {
-      const parsed = JSON.parse(portRaw);
+      const parsed = JSON.parse(portRaw) as StoredResponderTabSession;
       if (!(parsed.role || '').toLowerCase().includes('admin')) {
         return parsed;
       }
@@ -54,8 +65,8 @@ export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) =>
   const { session } = useSession();
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
 
-  // Strict Port Guard: Port 5174 will NEVER display Responder or Civilian views
-  if (currentPort === '5174') {
+  // Strict Port Guard: Port 1996 will NEVER display Responder or Civilian views
+  if (currentPort === '1996') {
     return <Navigate to="/admin/login" replace />;
   }
 
@@ -85,22 +96,22 @@ export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) =>
       case 'FIRE':
         return {
           label: 'BFP Fire',
-          accent: 'text-orange-400',
-          bg: 'bg-orange-950/30 border-orange-800/40'
+          accent: 'text-[#670626]',
+          badgeBg: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/30'
         };
       case 'PNP':
       case 'SECURITY':
         return {
           label: 'PNP Police',
-          accent: 'text-sky-400',
-          bg: 'bg-sky-950/30 border-sky-800/40'
+          accent: 'text-[#670626]',
+          badgeBg: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/30'
         };
       case 'RHU':
       default:
         return {
           label: 'RHU Medic',
-          accent: 'text-[#ff5c74]',
-          bg: 'bg-rose-950/30 border-rose-800/40'
+          accent: 'text-[#670626]',
+          badgeBg: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/30'
         };
     }
   };
@@ -109,36 +120,33 @@ export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) =>
 
   return (
     <DrawerSidebarProvider>
-      <div className={`app-shell responder-portal responder-branch-${normUnit.toLowerCase()} flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100`}>
+      <div className={`app-shell responder-portal responder-branch-${normUnit.toLowerCase()} flex flex-col h-screen w-screen overflow-hidden bg-[#4A041A] text-[#F7F1EA]`}>
         <Header user={user} />
 
-        <div className="dash relative flex flex-1 min-h-0 w-full overflow-hidden bg-slate-950">
+        <div className="dash relative flex flex-1 min-h-0 w-full overflow-hidden bg-[#4A041A]">
           <Sidebar userRole={activeRole} userUnit={normUnit} />
 
-          <main className="dash__main flex-1 w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-6 lg:px-10 bg-slate-950/95 transition-all flex flex-col justify-between">
-            <div className="w-full flex-1 min-h-0 flex flex-col max-w-[1720px] mx-auto">
-              {/* Responder Unit Status Bar */}
+          <main className="dash__main flex-1 w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4 pb-24 md:pb-8 sm:px-6 sm:py-6 md:px-8 md:py-6 lg:px-10 bg-gradient-to-br from-[#670626] via-[#4A041A] to-[#400014] transition-all flex flex-col">
+            <div className="w-full flex-none flex flex-col max-w-[1720px] mx-auto">
+              {/* Responder Unit Status Bar — Warm Ivory Clay Pill */}
               <div
-                className={`mb-4 px-3 py-2 rounded-lg border flex flex-wrap items-center justify-between gap-2 text-xs font-mono select-none ${branch.bg}`}
+                className="clay-surface mb-4 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm font-mono select-none"
                 role="status"
                 aria-label="Responder Unit Status"
               >
-                <div className="flex items-center gap-2">
-                  <Shield className={`w-3.5 h-3.5 ${branch.accent} flex-shrink-0`} aria-hidden="true" />
-                  <span className="font-bold tracking-wide text-slate-200">{branch.label}</span>
-                  <span className="text-slate-600" aria-hidden="true">&bull;</span>
-                  <span className="text-slate-400">{user.name} ({user.id})</span>
+                <div className="flex items-center gap-2.5">
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg border font-bold ${branch.badgeBg}`}>
+                    <Shield className={`w-3.5 h-3.5 ${branch.accent} flex-shrink-0`} aria-hidden="true" />
+                    <span>{branch.label}</span>
+                  </span>
+                  <span className="text-[#A83B4D]" aria-hidden="true">&bull;</span>
+                  <span className="text-[#2B010E] font-semibold">{user.name} ({user.id})</span>
                 </div>
 
-                <div className="flex items-center gap-3 text-[11px] text-slate-400">
-                  <div className="flex items-center gap-1 hidden sm:flex">
-                    <Activity className="w-3 h-3 text-[#ff5c74] flex-shrink-0" aria-hidden="true" />
-                    <span>GPS Locked</span>
-                  </div>
-
-                  <div className="flex items-center gap-1 hidden md:flex">
-                    <PhoneCall className="w-3 h-3 text-rose-400 flex-shrink-0" aria-hidden="true" />
-                    <span>Hotline 911</span>
+                <div className="flex items-center gap-3 text-xs text-[#670626] font-bold">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#A83B4D]/25">
+                    <Activity className="w-3.5 h-3.5 text-[#670626] flex-shrink-0" aria-hidden="true" />
+                    <span>GPS Telemetry Locked</span>
                   </div>
                 </div>
               </div>

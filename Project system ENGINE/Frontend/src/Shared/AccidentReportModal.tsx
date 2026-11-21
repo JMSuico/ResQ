@@ -8,116 +8,19 @@ import { X, Camera, AlertTriangle, Crosshair, Send, CheckCircle2 } from 'lucide-
 import { createReport, CreateReportPayload, ReportItem } from '../Endpoints/reportsApi';
 import { useGpsLocation } from '../Hooks/useGpsLocation';
 import { getKatipunanBarangay } from '@/Libs/Map/mapAccuracy';
+import {
+  computeLaplacianVariance,
+  calculateDynamicClarityThreshold,
+  DEFAULT_CLARITY_THRESHOLD,
+  CANVAS_WIDTH,
+  CANVAS_HEIGHT
+} from '@/Libs/Vision/cameraClarityHelper';
 
 export interface AccidentReportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onReportCreated?: (report: ReportItem | (CreateReportPayload & { id: string })) => void;
 }
-
-const DEFAULT_CLARITY_THRESHOLD = 70.0;
-const SD_RESOLUTION_THRESHOLD = 640 * 480;
-const HD_RESOLUTION_THRESHOLD = 1920 * 1080;
-const LOW_LIGHT_LUMINANCE_CUTOFF = 45;
-const HIGH_GLARE_LUMINANCE_CUTOFF = 215;
-const LOW_FRAMERATE_CUTOFF = 20;
-const CANVAS_WIDTH = 1280;
-const CANVAS_HEIGHT = 720;
-
-// Client-side Laplacian edge variance for blurriness detection
-const computeLaplacianVariance = (
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number
-): { variance: number; meanLuminance: number } => {
-  try {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-    const gray = new Float32Array(width * height);
-    let totalLuminance = 0;
-
-    for (let i = 0; i < data.length; i += 4) {
-      const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-      gray[i / 4] = lum;
-      totalLuminance += lum;
-    }
-
-    const meanLuminance = totalLuminance / (width * height);
-
-    let sum = 0;
-    let sumSq = 0;
-    let sampleCount = 0;
-
-    for (let y = 1; y < height - 1; y += 2) {
-      for (let x = 1; x < width - 1; x += 2) {
-        const idx = y * width + x;
-        const laplacian =
-          -gray[idx - width - 1] -
-          gray[idx - width] -
-          gray[idx - width + 1] -
-          gray[idx - 1] +
-          8 * gray[idx] -
-          gray[idx + 1] -
-          gray[idx + width - 1] -
-          gray[idx + width] -
-          gray[idx + width + 1];
-
-        sum += laplacian;
-        sumSq += laplacian * laplacian;
-        sampleCount++;
-      }
-    }
-
-    if (sampleCount === 0) return { variance: 100, meanLuminance: 128 };
-    const mean = sum / sampleCount;
-    return {
-      variance: Math.round((sumSq / sampleCount - mean * mean) * 10) / 10,
-      meanLuminance: Math.round(meanLuminance * 10) / 10
-    };
-  } catch {
-    return { variance: 100, meanLuminance: 128 };
-  }
-};
-
-// Dynamic Laplacian threshold calculator (70 default, dynamically adjusted)
-const calculateDynamicClarityThreshold = (
-  width: number,
-  height: number,
-  meanLuminance: number,
-  trackSettings?: MediaTrackSettings
-): { threshold: number; reasoning: string } => {
-  let multiplier = 1.0;
-  const factors: string[] = [`Base: ${DEFAULT_CLARITY_THRESHOLD}`];
-
-  const totalPixels = width * height;
-  if (totalPixels >= HD_RESOLUTION_THRESHOLD) {
-    multiplier *= 1.15;
-    factors.push('1080p+ (+15%)');
-  } else if (totalPixels <= SD_RESOLUTION_THRESHOLD) {
-    multiplier *= 0.85;
-    factors.push('SD Sensor (-15%)');
-  }
-
-  if (meanLuminance < LOW_LIGHT_LUMINANCE_CUTOFF) {
-    const lowLightScale = Math.max(0.65, meanLuminance / LOW_LIGHT_LUMINANCE_CUTOFF);
-    multiplier *= lowLightScale;
-    factors.push(`Night/Low-Light (${Math.round((lowLightScale - 1) * 100)}%)`);
-  } else if (meanLuminance > HIGH_GLARE_LUMINANCE_CUTOFF) {
-    multiplier *= 0.90;
-    factors.push('Glare (-10%)');
-  }
-
-  if (trackSettings?.frameRate && trackSettings.frameRate < LOW_FRAMERATE_CUTOFF) {
-    multiplier *= 0.90;
-    factors.push('Low FPS (-10%)');
-  }
-
-  const dynamicThreshold = Math.round(DEFAULT_CLARITY_THRESHOLD * multiplier * 10) / 10;
-  return {
-    threshold: dynamicThreshold,
-    reasoning: factors.join(' · ')
-  };
-};
 
 export const AccidentReportModal: FC<AccidentReportModalProps> = ({
   isOpen,
@@ -343,7 +246,7 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
       gpsAccuracyMeters: coords.accuracy,
       isHardwareGeolocated,
       isBlurry,
-      requiresManualVerification: false, // Live camera capture is automatically verified and approved
+      requiresManualVerification: true, // Always enter as unverified Submitted/Pending for Responder/Admin review
       locationLabel,
       imageDataUrl: shotDataUrl
     };
@@ -374,37 +277,37 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
   const currentBarangay = getKatipunanBarangay(coords.latitude, coords.longitude);
 
   return (
-    <div className="camera modal--report" id="report-cam" role="dialog" aria-modal="true" aria-label="Road accident report camera">
-      <div className="camera__panel">
-        <header className="camera__head">
+    <div className="camera modal--report bg-[#3B1722]/45 backdrop-blur-md" id="report-cam" role="dialog" aria-modal="true" aria-label="Road accident report camera">
+      <div className="camera__panel clay-surface !bg-[#F7F1EA] !text-[#3B1722] !border !border-[#E9D9D0] !rounded-2xl shadow-[0_24px_60px_-12px_rgba(103,6,38,0.28),inset_0_2px_4px_rgba(255,255,255,0.9)]">
+        <header className="camera__head !justify-between !border-b !border-[#E9D9D0] !pb-2.5">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ color: '#e8114c', fontWeight: 700, fontSize: '13px', letterSpacing: '0.5px' }}>
+            <span style={{ color: '#670626', fontWeight: 800, fontSize: '16px', letterSpacing: '0.4px' }}>
               Emergency Report
             </span>
             {isBlurry && (
-              <span className="inline-flex items-center gap-1" style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+              <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md text-xs font-semibold">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
                 <span>Low Clarity</span>
               </span>
             )}
           </div>
-          <button className="camera__close" type="button" id="report-close" aria-label="Close camera" onClick={() => { stopStream(); onClose(); }}>
-            <X className="w-5 h-5 text-slate-300 hover:text-white" />
+          <button className="camera__close !bg-[#E9D9D0] hover:!bg-[#DFC9BE] !border-[#D4B8AA] !text-[#670626]" type="button" id="report-close" aria-label="Close camera" onClick={() => { stopStream(); onClose(); }}>
+            <X className="w-5 h-5 text-[#670626]" />
           </button>
         </header>
 
-        <div className="camera__stage">
+        <div className="camera__stage border-2 border-[#E9D9D0] rounded-xl overflow-hidden bg-[#240812]">
           <video className="camera__video" id="report-video" ref={videoRef} playsInline muted></video>
           <img className="camera__shot" id="report-shot" ref={shotRef} alt="Captured road accident photo" hidden />
           <canvas ref={canvasRef} hidden></canvas>
         </div>
 
-        <p className="camera__hint" id="report-hint" hidden={!hint}>{hint}</p>
-        <p className="camera__error" id="report-error" role="alert" hidden={!errorMsg}>{errorMsg}</p>
+        <p className="camera__hint !text-xs !text-[#5C313E]" id="report-hint" hidden={!hint}>{hint}</p>
+        <p className="camera__error !text-xs !text-[#991B1B]" id="report-error" role="alert" hidden={!errorMsg}>{errorMsg}</p>
 
-        <label className="camera__label" htmlFor="report-note">Note / Situation Observations (optional)</label>
+        <label className="camera__label !text-xs !font-bold !text-[#670626]" htmlFor="report-note">Note / Situation Observations (optional)</label>
         <input
-          className="camera__note"
+          className="camera__note !text-sm !bg-[#FFFBF7] !text-[#3B1722] !placeholder-[#9B727D] !border-[#D8C1B5] focus:!border-[#670626] !h-10 !rounded-xl"
           id="report-note"
           type="text"
           maxLength={140}
@@ -415,7 +318,7 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
 
         <div className="camera__actions">
           <button
-            className="camera__btn inline-flex items-center justify-center gap-1.5"
+            className="camera__btn !text-sm !bg-[#E9D9D0] hover:!bg-[#DFC9BE] !text-[#670626] !border-[#D4B8AA] inline-flex items-center justify-center gap-1.5"
             type="button"
             id="report-start"
             onClick={handleStartCamera}
@@ -426,7 +329,7 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
           </button>
 
           <button
-            className="camera__btn camera__btn--capture inline-flex items-center justify-center gap-1.5"
+            className="camera__btn camera__btn--capture !text-sm !bg-[#A83B4D] hover:!bg-[#670626] !text-white inline-flex items-center justify-center gap-1.5"
             type="button"
             id="report-capture"
             onClick={handleCapture}
@@ -437,7 +340,7 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
           </button>
 
           <button
-            className="camera__btn camera__btn--send inline-flex items-center justify-center gap-1.5"
+            className="camera__btn camera__btn--send !text-sm !bg-[#670626] hover:!bg-[#7D0A30] !text-[#F7F1EA] inline-flex items-center justify-center gap-1.5"
             type="button"
             id="report-send"
             onClick={handleSendReport}
@@ -448,16 +351,16 @@ export const AccidentReportModal: FC<AccidentReportModalProps> = ({
           </button>
         </div>
 
-        <p className="camera__place flex items-center flex-wrap gap-1">
-          <span><strong>{currentBarangay}</strong> &middot; <code>{coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}</code> &middot;</span>
+        <p className="camera__place !text-xs !text-[#5C313E] flex items-center flex-wrap gap-1">
+          <span><strong className="text-[#670626]">{currentBarangay}</strong> &middot; <code className="text-[#3B1722]">{coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}</code> &middot;</span>
           {isHardwareGeolocated ? (
-            <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold">
+            <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold">
               <Crosshair className="w-3.5 h-3.5" />
               <span>Hardware GPS</span>
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-slate-400">
-              <Crosshair className="w-3.5 h-3.5 text-amber-400" />
+            <span className="inline-flex items-center gap-1 text-[#7A4E59]">
+              <Crosshair className="w-3.5 h-3.5 text-amber-700" />
               <span>Ground Ref</span>
             </span>
           )}

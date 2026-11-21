@@ -1,8 +1,9 @@
 // [Layer: UserRoles/Features/Pages/AdminsPanel]
 // StrategicMapPage.tsx -- Full Enlarged Tactical Strategic Map with 4-Pane Live Command Deck.
-// Conforms to Task 11 with full enlarge satellite map and live pane for Incidents, Calls, Units, Severity.
-// Universal Lucide migration, strictly typed relational synchronization, and dynamic Haversine distance & ETA calculations.
-// 100% arrow functions (=>), ZERO emojis, STRICT TypeScript with ZERO any.
+// Stitch Official Cherry (#670626) / Warm Ivory (#F7F1EA) / Soft Beige (#E9D9D0) / Muted Cherry (#A83B4D) Clay Design System.
+// REMOVING #11: Zero '911 Central Hotline' / tel: displays.
+// Preserves DASHBOARD back button, min-h-[580px] full-height SatelliteCommandMap, and Haversine nearest-unit ranking.
+// Strictly 100% arrow functions (=>), ZERO 'any', ZERO emojis.
 
 import React, { useState, useEffect, FC, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -10,7 +11,6 @@ import {
   ArrowLeft,
   RefreshCw,
   AlertTriangle,
-  Phone,
   Users,
   Activity,
   Crosshair,
@@ -29,7 +29,7 @@ import { getIncidentFixtures, IncidentFixture } from '@/Endpoints/adminGovernanc
 import { getAnalyticsSummary, AnalyticsSummaryDto } from '@/Endpoints/analyticsApi';
 import { requestJson } from '@/Endpoints/apiClient';
 import { SatelliteCommandMap, MapMarker } from '@/Shared/SatelliteCommandMap';
-import { Button, Dropdown } from '@/Shared';
+import { Dropdown } from '@/Shared';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import {
@@ -44,6 +44,8 @@ import {
   BASELINE_DUTY_ROSTER,
   BASELINE_ANALYTICS_SUMMARY
 } from '@/Libs/Assets/baselineFixtures';
+import { AdminButton } from './Shared/AdminButton';
+import { CLAY_SURFACE, CLAY_WELL } from './Shared/adminCommandHelpers';
 
 export {
   calculateHaversineDistanceKm,
@@ -77,7 +79,7 @@ export const findNearestResponderUnit = (
     bestUnit.baseLongitude
   );
 
-  for (let i = 1; i < eligibleUnits.length; i++) {
+  for (let i = 1; i < eligibleUnits.length; i += 1) {
     const unit = eligibleUnits[i];
     const dist = calculateHaversineDistanceKm(
       incidentLat,
@@ -143,7 +145,6 @@ export const StrategicMapPage: FC = () => {
     void loadData();
   });
 
-  // Map markers: combines fixtures, incident pins, and active responder unit locations
   const markers: MapMarker[] = useMemo(() => [
     ...fixtures.map((fix) => ({
       id: fix.id,
@@ -242,7 +243,6 @@ export const StrategicMapPage: FC = () => {
     }
   };
 
-  // Rank all active roster units by Haversine distance to selected incident
   const rankedUnitsForSelectedIncident = useMemo(() => {
     if (!selectedIncident) return [];
     return roster
@@ -265,26 +265,29 @@ export const StrategicMapPage: FC = () => {
 
   return (
     <div className="flex flex-col gap-4 w-full h-[calc(100vh-130px)] min-h-[580px] flex-1">
-      {/* Top Header Bar */}
-      <div className="relative z-[500] pointer-events-auto flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-700/70 backdrop-blur-md">
+      {/* Top Header Bar (.clay-surface #F7F1EA) */}
+      <div className={`relative z-[500] pointer-events-auto ${CLAY_SURFACE} flex flex-wrap items-center justify-between gap-3 p-3.5`}>
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => navigate('/admin/dashboard')}
-            className="p-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white transition-all flex items-center gap-1.5 text-xs font-mono font-bold cursor-pointer relative z-[510] pointer-events-auto"
+            className="px-3 py-1.5 rounded-xl border border-[#670626]/25 bg-[#E9D9D0] hover:bg-[#670626] text-[#670626] hover:text-[#F7F1EA] transition-all flex items-center gap-1.5 text-xs sm:text-sm font-mono font-bold cursor-pointer relative z-[510] pointer-events-auto"
             title="Return to Executive Dashboard"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>DASHBOARD</span>
           </button>
-          <div className="h-4 w-[1px] bg-slate-700" />
-          <h1 className="text-base sm:text-lg font-black tracking-wide text-white uppercase flex items-center gap-2">
-            <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
+          <div className="h-5 w-[1px] bg-[#670626]/20" />
+          <h1 className="text-lg sm:text-xl font-black tracking-wide text-[#670626] uppercase flex items-center gap-2">
+            <Radio className="w-4 h-4 text-[#A83B4D] animate-pulse" />
             Strategic Map
           </h1>
+          <span className="hidden md:inline text-xs font-mono text-[#A83B4D]">
+            {analyticsSummary ? `${analyticsSummary.totalIncidents} total` : `${reports.length} live`}
+          </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <Dropdown
             value={filterAgency}
             onChange={(val) => setFilterAgency(val as string)}
@@ -296,85 +299,80 @@ export const StrategicMapPage: FC = () => {
             ]}
             className="min-w-[170px]"
           />
-          <Button
+          <AdminButton
             variant="outline"
             size="sm"
             onClick={refreshNow}
             disabled={isRefreshing}
-            className="text-xs font-mono flex items-center gap-1.5 text-slate-200"
+            className="text-xs sm:text-sm font-mono flex items-center gap-1.5"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-rose-400' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-[#670626]' : ''}`} />
             <span>{isRefreshing ? 'SYNCING…' : 'REFRESH'}</span>
-          </Button>
+          </AdminButton>
         </div>
       </div>
 
-      {/* Main Grid: Enlarge Map + 4-Pane Live Command Deck */}
+      {/* Main Grid: Enlarged Map + 4-Pane Live Command Deck */}
       <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-4 flex-1 min-h-0 w-full">
-        {/* Full Enlarged Map (Takes 2 Cols on lg, 3 Cols on xl) */}
-        <div className="lg:col-span-2 xl:col-span-3 rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950/90 shadow-2xl relative flex flex-col flex-1 h-full min-h-[580px]">
-          <div className="absolute top-3 left-3 z-10 flex items-center gap-2 bg-slate-950/85 px-3 py-1.5 rounded-lg border border-slate-700/80 text-[11px] font-mono text-slate-300 backdrop-blur-md">
-            <Crosshair className="w-3.5 h-3.5 text-rose-400" />
-            <span className="text-rose-400 font-bold">{markers.length}</span> Active
-            <span className="text-slate-600">|</span>
-            <span className="text-amber-400 font-bold">{unallocatedQueue.length}</span> Unallocated
+        <div className={`lg:col-span-2 xl:col-span-3 ${CLAY_SURFACE} overflow-hidden relative flex flex-col flex-1 h-full min-h-[580px]`}>
+          <div className="absolute top-3 left-3 z-10 flex items-center gap-2 bg-[#F7F1EA]/95 px-3.5 py-2 rounded-xl border border-[#670626]/25 text-xs font-mono text-[#670626] shadow-md">
+            <Crosshair className="w-4 h-4 text-[#670626]" />
+            <span className="font-black">{markers.length}</span> Active
+            <span className="text-[#A83B4D]">|</span>
+            <span className="text-[#A83B4D] font-bold">{unallocatedQueue.length}</span> Unallocated
           </div>
 
-          {/* Selected Incident Drawer on Map */}
           {selectedIncident && (
-            <div className="absolute top-3 right-3 z-20 w-80 max-w-[90%] bg-slate-950/95 border border-rose-500/50 rounded-xl p-3 shadow-2xl backdrop-blur-md text-xs">
+            <div className={`absolute top-3 right-3 z-20 w-80 max-w-[90%] ${CLAY_SURFACE} p-4 text-sm`}>
               <div className="flex items-center justify-between mb-2">
-                <span className="font-mono text-[10px] text-rose-400 font-bold flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3 text-rose-400" />
+                <span className="font-mono text-xs text-[#A83B4D] font-bold flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-[#670626]" />
                   Incident Details
                 </span>
                 <button
                   type="button"
                   onClick={() => setSelectedIncident(null)}
-                  className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white"
+                  className="p-1 rounded-lg hover:bg-[#E9D9D0] text-[#670626] cursor-pointer"
                   title="Close Inspector"
                 >
-                  <Minimize2 className="w-3.5 h-3.5" />
+                  <Minimize2 className="w-4 h-4" />
                 </button>
               </div>
-              <h3 className="font-bold text-white text-sm truncate">{selectedIncident.title}</h3>
-              <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                <MapPin className="w-3 h-3 text-slate-500" />
+              <h3 className="font-bold text-[#670626] text-base truncate">{selectedIncident.title}</h3>
+              <p className="text-xs text-[#A83B4D] flex items-center gap-1.5 mt-1">
+                <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
                 {selectedIncident.locationLabel || getKatipunanBarangay(selectedIncident.latitude, selectedIncident.longitude)}
               </p>
-              <div className="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between font-mono text-[10px]">
-                <span className="text-slate-400">Severity:</span>
-                <span className={`px-1.5 py-0.2 rounded font-bold uppercase ${
-                  (selectedIncident.severity || '').toLowerCase() === 'critical' ? 'text-rose-400' : 'text-amber-400'
-                }`}>
+              <div className="mt-2.5 pt-2.5 border-t border-[#670626]/15 flex items-center justify-between font-mono text-xs">
+                <span className="text-[#A83B4D]">Severity:</span>
+                <span className="px-2 py-0.5 rounded font-bold uppercase bg-[#670626] text-[#F7F1EA]">
                   {selectedIncident.severity}
                 </span>
               </div>
               {selectedIncident.requiresManualVerification && (
-                <div className="mt-1.5 p-1.5 rounded bg-amber-950/60 border border-amber-700/60 text-[10px] text-amber-300 font-mono">
+                <div className="mt-2 p-2 rounded-lg bg-[#E9D9D0] border border-[#670626]/25 text-xs text-[#670626] font-mono">
                   Low clarity — review needed
                 </div>
               )}
-              {/* Closest Unit Ranking */}
-              <div className="mt-2 pt-2 border-t border-slate-800">
-                <p className="text-[10px] font-mono font-bold text-sky-400 uppercase mb-1">
+              <div className="mt-2.5 pt-2.5 border-t border-[#670626]/15">
+                <p className="text-xs font-mono font-bold text-[#670626] uppercase mb-1.5">
                   Nearest Units:
                 </p>
-                <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
                   {rankedUnitsForSelectedIncident.slice(0, 3).map((rUnit) => (
                     <div
                       key={rUnit.unit.id}
-                      className="p-1.5 rounded bg-slate-900/80 border border-slate-800 flex items-center justify-between text-[10px] font-mono"
+                      className={`${CLAY_WELL} p-2 flex items-center justify-between text-xs font-mono`}
                     >
-                      <span className="text-white font-bold">{rUnit.unit.unitCode} ({rUnit.unit.agency})</span>
+                      <span className="text-[#670626] font-bold">{rUnit.unit.unitCode} ({rUnit.unit.agency})</span>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-emerald-400 font-bold">{rUnit.distanceKm} km</span>
-                        <span className="text-amber-300">~{rUnit.etaMinutes}m ETA</span>
+                        <span className="text-emerald-800 font-bold">{rUnit.distanceKm} km</span>
+                        <span className="text-[#A83B4D]">~{rUnit.etaMinutes}m ETA</span>
                       </div>
                     </div>
                   ))}
                   {rankedUnitsForSelectedIncident.length === 0 && (
-                    <p className="text-slate-500 text-[10px]">No active units in GPS range.</p>
+                    <p className="text-[#A83B4D] text-xs">No active units in GPS range.</p>
                   )}
                 </div>
               </div>
@@ -412,27 +410,20 @@ export const StrategicMapPage: FC = () => {
           </div>
         </div>
 
-        {/* 4-Pane Command Deck (Takes 1 Col on desktop) */}
+        {/* 4-Pane Command Deck */}
         <div className="lg:col-span-1 xl:col-span-1 flex flex-col gap-3 overflow-y-auto pr-1">
-          {/* Pane 1: Live Incidents & Dynamic Haversine Beacons */}
-          <div className="tactical-card p-3.5 flex flex-col gap-2 border-l-4 border-l-rose-500">
+          {/* Pane 1: Live Incidents */}
+          <div className={`tactical-card ${CLAY_SURFACE} p-4 flex flex-col gap-2.5 border-l-4 border-l-[#670626]`}>
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono font-bold tracking-wider text-rose-300 uppercase flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+              <span className="text-xs font-mono font-bold tracking-wider text-[#670626] uppercase flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-[#A83B4D]" />
                 Live Incidents
               </span>
-              <div className="flex items-center gap-1">
-                {unallocatedQueue.length > 0 && (
-                  <span className="text-[9px] px-1 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300 font-mono font-bold">
-                    {unallocatedQueue.length} Unallocated
-                  </span>
-                )}
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-950 border border-rose-800 text-rose-300 font-mono font-bold">
-                  {reports.length} Total
-                </span>
-              </div>
+              <span className="text-xs px-2 py-0.5 rounded bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] font-mono font-bold">
+                {reports.length} Total
+              </span>
             </div>
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 text-xs">
+            <div className="space-y-2 max-h-52 overflow-y-auto pr-1 text-sm">
               {reports.map((r) => {
                 const nearest = findNearestResponderUnit(r.latitude, r.longitude, roster);
                 const isSelected = selectedIncident?.id === r.id;
@@ -440,170 +431,163 @@ export const StrategicMapPage: FC = () => {
                   <div
                     key={r.id}
                     onClick={() => handleSelectIncident(r)}
-                    className={`p-2 rounded cursor-pointer transition-all flex flex-col gap-1 border ${
+                    className={`p-2.5 rounded-xl cursor-pointer transition-all flex flex-col gap-1 border ${
                       isSelected
-                        ? 'bg-rose-950/40 border-rose-500'
-                        : 'bg-slate-900/80 hover:bg-slate-800 border-slate-700/60'
+                        ? 'bg-[#670626] text-[#F7F1EA] border-[#670626]'
+                        : 'bg-[#E9D9D0] text-[#670626] border-[#670626]/15 hover:bg-[#E9D9D0]/80'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-white truncate max-w-[130px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-sm truncate max-w-[140px]">
                         {r.title || 'Incident Report'}
                       </span>
                       <span
-                        className={`text-[9px] font-mono px-1 rounded uppercase font-bold ${
-                          (r.severity || '').toLowerCase() === 'critical'
-                            ? 'bg-red-500 text-white'
-                            : (r.severity || '').toLowerCase() === 'high'
-                            ? 'bg-amber-500/30 text-amber-300'
-                            : 'bg-sky-500/30 text-sky-300'
+                        className={`text-xs font-mono px-1.5 py-0.5 rounded uppercase font-bold ${
+                          isSelected ? 'bg-[#F7F1EA] text-[#670626]' : 'bg-[#670626] text-[#F7F1EA]'
                         }`}
                       >
                         {r.severity}
                       </span>
                     </div>
 
-                    <div className="text-[10px] text-slate-400 truncate">
+                    <div className={`text-xs truncate ${isSelected ? 'text-[#E9D9D0]' : 'text-[#A83B4D]'}`}>
                       {r.locationLabel || getKatipunanBarangay(r.latitude, r.longitude)}
                     </div>
 
-                    {/* Dynamic Haversine & ETA */}
-                    <div className="flex items-center justify-between text-[10px] font-mono pt-1 border-t border-slate-800/80">
-                      {r.allocatedUnitCode ? (
-                        <span className="text-sky-400 font-bold">Assigned: {r.allocatedUnitCode}</span>
-                      ) : (
-                        <span className="text-amber-400 font-bold">UNALLOCATED</span>
-                      )}
+                    <div className={`flex items-center justify-between text-xs font-mono pt-1.5 border-t ${isSelected ? 'border-[#F7F1EA]/20' : 'border-[#670626]/10'}`}>
+                      <span className="font-bold">
+                        {r.allocatedUnitCode ? `Assigned: ${r.allocatedUnitCode}` : 'UNALLOCATED'}
+                      </span>
                       {nearest ? (
-                        <span className="text-emerald-400 flex items-center gap-1 font-bold">
-                          <Navigation className="w-2.5 h-2.5" />
+                        <span className="flex items-center gap-1 font-bold">
+                          <Navigation className="w-3 h-3" />
                           {nearest.distanceKm} km · ~{nearest.etaMinutes}m
                         </span>
                       ) : (
-                        <span className="text-slate-500">Standby</span>
+                        <span>Standby</span>
                       )}
                     </div>
                   </div>
                 );
               })}
-              {reports.length === 0 && <p className="text-[11px] text-slate-500 py-2">No active incidents.</p>}
+              {reports.length === 0 && <p className="text-xs text-[#A83B4D] py-2">No active incidents.</p>}
             </div>
           </div>
 
-          {/* Pane 2: Emergency SOS Calls & Unallocated Queue */}
-          <div className="tactical-card p-3.5 flex flex-col gap-2 border-l-4 border-l-amber-500">
+          {/* Pane 2: Dispatch Queue (Zero hotline displays) */}
+          <div className={`tactical-card ${CLAY_SURFACE} p-4 flex flex-col gap-2.5 border-l-4 border-l-[#A83B4D]`}>
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono font-bold tracking-wider text-amber-300 uppercase flex items-center gap-1.5">
-                <Phone className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-xs font-mono font-bold tracking-wider text-[#670626] uppercase flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-[#A83B4D]" />
                 Dispatch Queue
               </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300 font-mono font-bold">
+              <span className="text-xs px-2 py-0.5 rounded bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] font-mono font-bold">
                 {criticalQueue.length} Priority
               </span>
             </div>
-            <div className="space-y-1 text-xs">
-              <div className="flex items-center justify-between p-2 rounded bg-slate-900/80 border border-slate-800">
-                <span className="text-slate-300 flex items-center gap-1.5">
-                  <Radio className="w-3 h-3 text-emerald-400" />
-                  911 Central Hotline
+            <div className="space-y-1.5 text-xs">
+              <div className={`${CLAY_WELL} flex items-center justify-between p-2.5`}>
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <Radio className="w-3.5 h-3.5 text-emerald-700" />
+                  Unit Readiness Status
                 </span>
-                <span className="font-mono text-emerald-400 font-bold">
+                <span className="font-mono text-emerald-800 font-black">
                   {activeResponders.length} UNITS READY
                 </span>
               </div>
-              <div className="flex items-center justify-between p-2 rounded bg-slate-900/80 border border-slate-800">
-                <span className="text-slate-300 flex items-center gap-1.5">
-                  <Activity className="w-3 h-3 text-sky-400" />
+              <div className={`${CLAY_WELL} flex items-center justify-between p-2.5`}>
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <Activity className="w-3.5 h-3.5 text-[#670626]" />
                   Citizen SOS Ingestion
                 </span>
-                <span className="font-mono text-sky-400 font-bold">
+                <span className="font-mono text-[#670626] font-black">
                   {reports.length} RECEIVED
                 </span>
               </div>
-              <div className="flex items-center justify-between p-2 rounded bg-slate-900/80 border border-slate-800">
-                <span className="text-slate-300 flex items-center gap-1.5">
-                  <Clock className="w-3 h-3 text-amber-400" />
+              <div className={`${CLAY_WELL} flex items-center justify-between p-2.5`}>
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <Clock className="w-3.5 h-3.5 text-[#A83B4D]" />
                   Unallocated Beacons
                 </span>
-                <span className={`font-mono font-bold ${unallocatedQueue.length > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                <span className="font-mono font-black text-[#670626]">
                   {unallocatedQueue.length > 0 ? `${unallocatedQueue.length} PENDING` : 'ALL ALLOCATED'}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Pane 3: Active Responder Units & Dynamic GPS */}
-          <div className="tactical-card p-3.5 flex flex-col gap-2 border-l-4 border-l-sky-500">
+          {/* Pane 3: Active Responder Units */}
+          <div className={`tactical-card ${CLAY_SURFACE} p-4 flex flex-col gap-2.5 border-l-4 border-l-sky-700`}>
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono font-bold tracking-wider text-sky-300 uppercase flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-sky-400" />
+              <span className="text-xs font-mono font-bold tracking-wider text-[#670626] uppercase flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-[#A83B4D]" />
                 Active Units
               </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-950 border border-sky-800 text-sky-300 font-mono font-bold">
+              <span className="text-xs px-2 py-0.5 rounded bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] font-mono font-bold">
                 {activeResponders.length} Deployed
               </span>
             </div>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex items-center justify-between text-slate-300 p-1.5 rounded bg-slate-900/60">
-                <span className="flex items-center gap-1.5">
-                  <HeartPulse className="w-3 h-3 text-sky-400" />
+            <div className="space-y-1.5 text-sm">
+              <div className={`${CLAY_WELL} flex items-center justify-between p-2`}>
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <HeartPulse className="w-3.5 h-3.5 text-[#670626]" />
                   RHU Medical
                 </span>
-                <span className="font-mono font-bold text-white">
+                <span className="font-mono font-bold text-[#670626]">
                   {roster.filter((u) => (u.agency || '').toUpperCase() === 'RHU').length} Units
                 </span>
               </div>
-              <div className="flex items-center justify-between text-slate-300 p-1.5 rounded bg-slate-900/60">
-                <span className="flex items-center gap-1.5">
-                  <Flame className="w-3 h-3 text-orange-400" />
+              <div className={`${CLAY_WELL} flex items-center justify-between p-2`}>
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <Flame className="w-3.5 h-3.5 text-orange-700" />
                   BFP Fire Rescue
                 </span>
-                <span className="font-mono font-bold text-white">
+                <span className="font-mono font-bold text-[#670626]">
                   {roster.filter((u) => {
                     const ag = (u.agency || '').toUpperCase();
                     return ag === 'FIRE' || ag === 'BFP';
                   }).length} Units
                 </span>
               </div>
-              <div className="flex items-center justify-between text-slate-300 p-1.5 rounded bg-slate-900/60">
-                <span className="flex items-center gap-1.5">
-                  <Shield className="w-3 h-3 text-blue-500" />
+              <div className={`${CLAY_WELL} flex items-center justify-between p-2`}>
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <Shield className="w-3.5 h-3.5 text-sky-700" />
                   PNP Police Force
                 </span>
-                <span className="font-mono font-bold text-white">
+                <span className="font-mono font-bold text-[#670626]">
                   {roster.filter((u) => (u.agency || '').toUpperCase() === 'PNP').length} Units
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Pane 4: Triage Severity Spectrum & Resolution Velocity */}
-          <div className="tactical-card p-3.5 flex flex-col gap-2 border-l-4 border-l-purple-500">
+          {/* Pane 4: Severity Breakdown */}
+          <div className={`tactical-card ${CLAY_SURFACE} p-4 flex flex-col gap-2.5 border-l-4 border-l-[#670626]`}>
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono font-bold tracking-wider text-purple-300 uppercase flex items-center gap-1.5">
-                <Activity className="w-3.5 h-3.5 text-purple-400" />
+              <span className="text-xs font-mono font-bold tracking-wider text-[#670626] uppercase flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-[#A83B4D]" />
                 Severity Breakdown
               </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-950 border border-purple-800 text-purple-300 font-mono font-bold">
+              <span className="text-xs px-2 py-0.5 rounded bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] font-mono font-bold">
                 {dynamicResolutionRate} Resolved
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2 rounded bg-slate-900/70 border border-red-500/30 flex flex-col">
-                <span className="text-[10px] text-red-400 font-mono font-bold">Critical</span>
-                <span className="text-lg font-black text-white">{criticalQueue.length}</span>
+            <div className="grid grid-cols-2 gap-2.5 text-sm">
+              <div className={`${CLAY_WELL} p-2.5 flex flex-col`}>
+                <span className="text-xs text-[#670626] font-mono font-bold">Critical</span>
+                <span className="text-xl font-black text-[#670626] mt-0.5">{criticalQueue.length}</span>
               </div>
-              <div className="p-2 rounded bg-slate-900/70 border border-amber-500/30 flex flex-col">
-                <span className="text-[10px] text-amber-400 font-mono font-bold">High</span>
-                <span className="text-lg font-black text-white">{highQueue.length}</span>
+              <div className={`${CLAY_WELL} p-2.5 flex flex-col`}>
+                <span className="text-xs text-[#A83B4D] font-mono font-bold">High</span>
+                <span className="text-xl font-black text-[#670626] mt-0.5">{highQueue.length}</span>
               </div>
-              <div className="p-2 rounded bg-slate-900/70 border border-sky-500/30 flex flex-col">
-                <span className="text-[10px] text-sky-400 font-mono font-bold">Medium</span>
-                <span className="text-lg font-black text-white">{mediumQueue.length}</span>
+              <div className={`${CLAY_WELL} p-2.5 flex flex-col`}>
+                <span className="text-xs text-sky-800 font-mono font-bold">Medium</span>
+                <span className="text-xl font-black text-[#670626] mt-0.5">{mediumQueue.length}</span>
               </div>
-              <div className="p-2 rounded bg-slate-900/70 border border-emerald-500/30 flex flex-col">
-                <span className="text-[10px] text-emerald-400 font-mono font-bold">Low</span>
-                <span className="text-lg font-black text-white">{lowQueue.length}</span>
+              <div className={`${CLAY_WELL} p-2.5 flex flex-col`}>
+                <span className="text-xs text-emerald-800 font-mono font-bold">Low</span>
+                <span className="text-xl font-black text-[#670626] mt-0.5">{lowQueue.length}</span>
               </div>
             </div>
           </div>

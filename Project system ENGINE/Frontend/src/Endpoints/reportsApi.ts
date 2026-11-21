@@ -4,6 +4,33 @@
 
 import { requestJson } from './apiClient';
 
+export type IncidentPointerIconType = 'car-crash' | 'fire' | 'medical' | 'crime' | 'flood' | 'hazard';
+
+export interface IncidentImageAiAnalysisRequest {
+  imageDataUrl: string;
+  titleHint?: string;
+  noteHint?: string;
+  categoryHint?: string;
+}
+
+export interface IncidentImageAiAnalysisResponse {
+  roboflowModelId: string;
+  roboflowPrediction: string;
+  roboflowConfidence: number;
+  roboflowNeedsReview: boolean;
+  roboflowAuthTransport: string;
+  claudeModelUsed: string;
+  isGenuineIncident: boolean;
+  detectedCategory: string;
+  recommendedSeverity: string;
+  pointerIconType: IncidentPointerIconType;
+  situationDescription: string;
+  visibleHazards: string;
+  uncertaintyNotes: string;
+  verificationStatus: string;
+  recommendedAgencyUnit: string;
+}
+
 export interface CreateReportPayload {
   title: string;
   note?: string;
@@ -17,6 +44,17 @@ export interface CreateReportPayload {
   isHardwareGeolocated?: boolean;
   isBlurry?: boolean;
   requiresManualVerification?: boolean;
+  reporterContactNumber?: string;
+  roboflowModelId?: string | null;
+  roboflowPrediction?: string | null;
+  roboflowConfidence?: number | null;
+  roboflowNeedsReview?: boolean;
+  claudeModelUsed?: string | null;
+  claudeIncidentCategory?: string | null;
+  claudeSituationSummary?: string | null;
+  claudeVisibleHazards?: string | null;
+  claudeUncertaintyNotes?: string | null;
+  pointerIconType?: string | null;
 }
 
 export interface IncidentEvidenceItem {
@@ -64,6 +102,18 @@ export interface ReportItem {
   isVerified?: boolean;
   adminAiVerified?: boolean;
   submittedAt?: string;
+  submittedIpAddress?: string | null;
+  reporterContactNumber?: string | null;
+  roboflowModelId?: string | null;
+  roboflowPrediction?: string | null;
+  roboflowConfidence?: number | null;
+  roboflowNeedsReview?: boolean;
+  claudeModelUsed?: string | null;
+  claudeIncidentCategory?: string | null;
+  claudeSituationSummary?: string | null;
+  claudeVisibleHazards?: string | null;
+  claudeUncertaintyNotes?: string | null;
+  pointerIconType?: string | null;
 }
 
 export interface AlertItem {
@@ -112,6 +162,14 @@ export interface PersistIncidentFieldLogPayload {
   submittedAt?: string;
   notes?: string;
 }
+
+export const analyzeIncidentImage = (
+  payload: IncidentImageAiAnalysisRequest
+): Promise<IncidentImageAiAnalysisResponse> =>
+  requestJson<IncidentImageAiAnalysisResponse>('/api/reports/analyze-image', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
 
 export const createReport = (
   payload: CreateReportPayload

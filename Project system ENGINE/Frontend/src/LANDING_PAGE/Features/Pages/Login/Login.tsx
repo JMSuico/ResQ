@@ -44,7 +44,7 @@ export const Login: React.FC = () => {
   };
 
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
-  const isAdminPort = currentPort === '5174';
+  const isAdminPort = currentPort === '1996';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,8 +65,9 @@ export const Login: React.FC = () => {
       const detectedRole: string = String(sessionUser?.role || '');
 
       if (detectedRole === 'LDRRMO_Admin' || detectedRole === 'admin') {
-        if (!isAdminPort && window.location.hostname === '127.0.0.1') {
-          window.location.href = 'http://127.0.0.1:5174/dashboard';
+        if (!isAdminPort && (currentPort === '1997' || currentPort === '1998')) {
+          const host = window.location.hostname || '127.0.0.1';
+          window.location.href = `http://${host}:1996/admin/dashboard`;
         } else {
           navigate('/admin/dashboard');
         }
@@ -84,23 +85,28 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center p-6 bg-command-dark">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-8 flex flex-col gap-6">
+    <div
+      className="min-h-screen flex items-center justify-center p-6"
+      style={{ background: 'linear-gradient(145deg, #4A041A 0%, #670626 55%, #3B0315 100%)' }}
+    >
+      <div className="clay-surface w-full max-w-md bg-[#F7F1EA] border border-[#E9D9D0] rounded-3xl shadow-[0_28px_64px_-12px_rgba(38,2,14,0.55),inset_0_2px_4px_rgba(255,255,255,0.85)] p-8 flex flex-col gap-6 text-[#670626]">
         {/* Header */}
         <div className="text-center">
-          <div className="w-12 h-12 rounded-xl bg-rose-600 mx-auto flex items-center justify-center text-white font-black text-xl shadow-lg shadow-rose-950/60 mb-3">
+          <div className="w-12 h-12 rounded-2xl bg-[#670626] mx-auto flex items-center justify-center text-[#F7F1EA] font-black text-xl shadow-md shadow-[#4A041A]/30 mb-3">
             R
           </div>
-          <h2 className="text-xl font-bold text-white">ResQTrack Emergency Portal</h2>
+          <h2 className="text-2xl sm:text-3xl font-black text-[#670626] tracking-tight font-['Montserrat',sans-serif]">
+            ResQTrack Emergency Portal
+          </h2>
         </div>
 
         {/* Presentation-Only Role Tabs */}
-        <div className="flex rounded-lg bg-slate-950 p-1 border border-slate-800 text-xs">
+        <div className="flex rounded-2xl bg-[#E9D9D0] p-1 border border-[#D5BEB3] text-sm">
           <button
             type="button"
             onClick={() => setSelectedTab('admin')}
-            className={`flex-1 py-1.5 rounded-md font-semibold transition-all ${
-              selectedTab === 'admin' ? 'bg-rose-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+            className={`flex-1 py-2 rounded-xl font-semibold transition-all cursor-pointer ${
+              selectedTab === 'admin' ? 'bg-[#670626] text-[#F7F1EA] shadow-sm' : 'text-[#7D2B3D] hover:text-[#670626]'
             }`}
           >
             LDRRMO Admin
@@ -108,8 +114,8 @@ export const Login: React.FC = () => {
           <button
             type="button"
             onClick={() => setSelectedTab('responder')}
-            className={`flex-1 py-1.5 rounded-md font-semibold transition-all ${
-              selectedTab === 'responder' ? 'bg-sky-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+            className={`flex-1 py-2 rounded-xl font-semibold transition-all cursor-pointer ${
+              selectedTab === 'responder' ? 'bg-[#670626] text-[#F7F1EA] shadow-sm' : 'text-[#7D2B3D] hover:text-[#670626]'
             }`}
           >
             Responders
@@ -117,8 +123,8 @@ export const Login: React.FC = () => {
           <button
             type="button"
             onClick={() => setSelectedTab('civilian')}
-            className={`flex-1 py-1.5 rounded-md font-semibold transition-all ${
-              selectedTab === 'civilian' ? 'bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] text-white shadow' : 'text-slate-400 hover:text-slate-200'
+            className={`flex-1 py-2 rounded-xl font-semibold transition-all cursor-pointer ${
+              selectedTab === 'civilian' ? 'bg-[#670626] text-[#F7F1EA] shadow-sm' : 'text-[#7D2B3D] hover:text-[#670626]'
             }`}
           >
             UG Civilian
@@ -127,8 +133,8 @@ export const Login: React.FC = () => {
 
         {/* Status Error Alert */}
         {errorMessage && (
-          <div className="p-3.5 rounded-lg bg-rose-950/80 border border-rose-600/50 text-xs text-rose-300 flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+          <div className="p-3.5 rounded-xl bg-[#670626] border border-[#4A041A] text-sm text-[#F7F1EA] flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-[#F7F1EA] shrink-0 mt-0.5" />
             <div className="flex-1 font-medium">{errorMessage}</div>
           </div>
         )}
@@ -136,21 +142,25 @@ export const Login: React.FC = () => {
         {/* Login Form */}
         <form onSubmit={handleLogin} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-300">Email Address</label>
+            <label className="text-xs font-mono uppercase tracking-wider font-bold text-[#670626]">
+              Email Address
+            </label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="e.g. ldrrmo.admin@resqtrack.gov.ph"
               required
-              className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors"
+              className="px-3.5 py-2.5 bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl text-base text-[#670626] placeholder:text-[#A83B4D]/70 focus:outline-none focus:border-[#670626] focus:ring-2 focus:ring-[#670626]/30 transition-colors"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-300">Password</label>
-              <span className="text-[11px] text-slate-500">Min. 12 Characters</span>
+              <label className="text-xs font-mono uppercase tracking-wider font-bold text-[#670626]">
+                Password
+              </label>
+              <span className="text-xs text-[#A83B4D] font-mono">Min. 12 Characters</span>
             </div>
             <input
               type="password"
@@ -159,40 +169,46 @@ export const Login: React.FC = () => {
               placeholder="••••••••••••"
               required
               minLength={12}
-              className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors"
+              className="px-3.5 py-2.5 bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl text-base text-[#670626] placeholder:text-[#A83B4D]/70 focus:outline-none focus:border-[#670626] focus:ring-2 focus:ring-[#670626]/30 transition-colors"
             />
           </div>
 
-          <Button type="submit" variant="primary" size="lg" isLoading={isLoading} className="mt-2">
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            isLoading={isLoading}
+            className="mt-2 text-base !bg-[#670626] hover:!bg-[#4A041A] !text-[#F7F1EA] !border-[#4A041A] !rounded-xl !shadow-md"
+          >
             Sign In
           </Button>
         </form>
 
         {/* Quick Demo Credential Fillers */}
-        <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800/80">
-          <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-2 font-bold">Demo:</p>
-          <div className="flex flex-wrap gap-1.5">
-            <button type="button" onClick={() => applyPreset('admin')} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-rose-300 font-mono">
+        <div className="p-3.5 bg-[#EFE4DD] rounded-2xl border border-[#D5BEB3]">
+          <p className="text-xs font-mono text-[#A83B4D] uppercase tracking-wider mb-2 font-bold">Demo:</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => applyPreset('admin')} className="px-2.5 py-1.5 bg-[#E9D9D0] hover:bg-[#DFC9BE] border border-[#D5BEB3] rounded-lg text-xs text-[#670626] font-mono font-semibold cursor-pointer">
               LDRRMO Admin
             </button>
-            <button type="button" onClick={() => applyPreset('rhu')} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-sky-300 font-mono">
+            <button type="button" onClick={() => applyPreset('rhu')} className="px-2.5 py-1.5 bg-[#E9D9D0] hover:bg-[#DFC9BE] border border-[#D5BEB3] rounded-lg text-xs text-[#670626] font-mono font-semibold cursor-pointer">
               RHU Medic
             </button>
-            <button type="button" onClick={() => applyPreset('fire')} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-orange-300 font-mono">
+            <button type="button" onClick={() => applyPreset('fire')} className="px-2.5 py-1.5 bg-[#E9D9D0] hover:bg-[#DFC9BE] border border-[#D5BEB3] rounded-lg text-xs text-[#670626] font-mono font-semibold cursor-pointer">
               BFP Fire
             </button>
-            <button type="button" onClick={() => applyPreset('pnp')} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-blue-300 font-mono">
+            <button type="button" onClick={() => applyPreset('pnp')} className="px-2.5 py-1.5 bg-[#E9D9D0] hover:bg-[#DFC9BE] border border-[#D5BEB3] rounded-lg text-xs text-[#670626] font-mono font-semibold cursor-pointer">
               PNP Patrol
             </button>
-            <button type="button" onClick={() => applyPreset('civilian')} className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-[10px] text-rose-300 font-mono">
+            <button type="button" onClick={() => applyPreset('civilian')} className="px-2.5 py-1.5 bg-[#E9D9D0] hover:bg-[#DFC9BE] border border-[#D5BEB3] rounded-lg text-xs text-[#670626] font-mono font-semibold cursor-pointer">
               UG Civilian
             </button>
           </div>
         </div>
 
-        <div className="text-center text-xs text-slate-400 border-t border-slate-800 pt-4">
+        <div className="text-center text-sm text-[#7D2B3D] border-t border-[#D5BEB3] pt-4">
           No account?{' '}
-          <Link to="/register" className="text-sky-400 hover:text-sky-300 font-semibold underline">
+          <Link to="/register" className="text-[#670626] hover:text-[#A83B4D] font-bold underline">
             Register
           </Link>
         </div>

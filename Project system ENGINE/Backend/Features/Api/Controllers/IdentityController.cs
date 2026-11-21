@@ -105,6 +105,10 @@ public class IdentityController(IIdentityAiService aiService) : ControllerBase
             })
             : MapBiometricActionResult(await aiService.AnalyzeFacialGeometryAsync(request, ct));
 
+    [HttpGet("biometrics/training-status")]
+    public async Task<IActionResult> GetBiometricTrainingStatusAsync([FromQuery] string? email, CancellationToken ct) =>
+        Ok(await aiService.GetBiometricTrainingStatusAsync(email, ct));
+
     private IActionResult MapOcrActionResult(AiExtractResponseDto result) =>
         result.Success && string.IsNullOrWhiteSpace(result.ErrorCode)
             ? Ok(result)

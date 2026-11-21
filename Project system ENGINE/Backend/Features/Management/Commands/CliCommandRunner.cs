@@ -1,39 +1,72 @@
 // [Layer: Backend/Management/Commands]
-// Responsibility: Handles CLI management operations (superadmin, custom admin, adduser, password reset, user listing, deletion).
+// Responsibility: Handles CLI management operations (superadmin, custom admin, responder, civilian, adduser, password reset, user listing, deletion, and EF migrations).
 // DO NOT start the ASP.NET HTTP pipeline when executing CLI management commands.
 
+using System.Diagnostics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Backend.Features.Data;
 using Backend.Features.Data.Enums;
 using Backend.Features.Data.Models;
+using Backend.Features.DBInfrastructure;
 using Backend.Features.Helpers.Infrastructure;
 
 namespace Backend.Features.Management.Commands;
 
 public static class CliCommandRunner
 {
-    public static bool IsCliCommand(string[] args) =>
-        args.Length > 0 &&
-        !args[0].StartsWith("--") &&
-        !args[0].StartsWith("/") &&
-        args[0].TrimStart('-').ToLowerInvariant() switch
-        {
-            "createsuperadmin" or "createcustomsuperadmin" or "createresponder" or
-            "createcivilian" or "adduser" or "edituser" or
-            "resetpassword" or "listcliusers" or "deletecliuser" or
-            "deletesuperadmin" or "deleteallcliusers" => true,
-            _ => false
-        };
-
-    public static async Task RunAsync(string[] rawArgs, AppDbContext db)
+    public static string[] NormalizeArgs(string[] rawArgs)
     {
-        var args = rawArgs;
+        var args = rawArgs ?? [];
         if (args.Length > 0 && args[0] == "--")
         {
             args = args.Skip(1).ToArray();
         }
 
+        // Handle `docker compose run --rm resqtrack-backend dotnet Backend.dll <command>` where ENTRYPOINT is already `dotnet Backend.dll`
+        if (args.Length >= 2 &&
+            args[0].Equals("dotnet", StringComparison.OrdinalIgnoreCase) &&
+            args[1].Equals("Backend.dll", StringComparison.OrdinalIgnoreCase))
+        {
+            args = args.Skip(2).ToArray();
+        }
+
+        if (args.Length > 0 && args[0] == "--")
+        {
+            args = args.Skip(1).ToArray();
+        }
+
+        return args;
+    }
+
+    public static string? NormalizeCommandName(string[] rawArgs)
+    {
+        var args = NormalizeArgs(rawArgs);
+        if (args.Length == 0 || args[0].StartsWith("--") || args[0].StartsWith("/"))
+        {
+            return null;
+        }
+
+        return args[0].TrimStart('-').ToLowerInvariant();
+    }
+
+    public static bool IsCliCommand(string[] rawArgs) =>
+        NormalizeCommandName(rawArgs) switch
+        {
+            "createsuperadmin" or "createcustomsuperadmin" or
+            "createresponder" or "createcustomresponder" or
+            "createcivilian" or "createcustomcivilian" or
+            "adduser" or "edituser" or "resetpassword" or
+            "listcliusers" or "deletecliuser" or "deletesuperadmin" or
+            "deleteallcliusers" or "updatedatabase" or "addmigration" => true,
+            _ => false
+        };
+
+    public static async Task RunAsync(string[] rawArgs, AppDbContext db)
+    {
+        var args = NormalizeArgs(rawArgs);
         if (args.Length == 0)
         {
             PrintUsage();
@@ -58,8 +91,16 @@ public static class CliCommandRunner
                     await HandleCreateResponderAsync(args, db);
                     break;
 
+                case "createcustomresponder":
+                    await HandleCreateCustomResponderAsync(args, db);
+                    break;
+
                 case "createcivilian":
                     await HandleCreateCivilianAsync(args, db);
+                    break;
+
+                case "createcustomcivilian":
+                    await HandleCreateCustomCivilianAsync(args, db);
                     break;
 
                 case "adduser":
@@ -88,6 +129,14 @@ public static class CliCommandRunner
 
                 case "deleteallcliusers":
                     await HandleDeleteAllCliUsersAsync(db);
+                    break;
+
+                case "updatedatabase":
+                    await HandleUpdateDatabaseAsync(db);
+                    break;
+
+                case "addmigration":
+                    await HandleAddMigrationAsync(args);
                     break;
 
                 case "help":
@@ -121,54 +170,19 @@ public static class CliCommandRunner
         string fullName = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3].Trim() : "LDRRMO Executive Admin";
         ResponderUnitType unit = args.Length > 4 ? ParseUnit(args[4], UserRole.LDRRMO_Admin) : ResponderUnitType.LDRRMO;
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < ScryptPasswordHelper.MinimumPasswordLength)
-        {
-            Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
-            return;
-        }
-
-        var (hash, salt) = ScryptPasswordHelper.HashPassword(password);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower());
-
-        if (user != null)
-        {
-            user.FullName = fullName;
-            user.PasswordHash = hash;
-            user.PasswordSalt = salt;
-            user.Role = UserRole.LDRRMO_Admin;
-            user.Unit = unit;
-            user.Status = AccountStatus.Verified;
-            user.FaceVerified = true;
-            user.UpdatedAt = DateTime.UtcNow;
-
-            db.Users.Update(user);
-            await db.SaveChangesAsync();
-            Console.WriteLine($"[CLI] Super Admin user '{email}' updated successfully.");
-        }
-        else
-        {
-            user = new User
-            {
-                Id = Guid.NewGuid(),
-                Email = email,
-                FullName = fullName,
-                EmployeeOrResidentId = "LDRRMO-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
-                PasswordHash = hash,
-                PasswordSalt = salt,
-                Role = UserRole.LDRRMO_Admin,
-                Unit = unit,
-                Status = AccountStatus.Verified,
-                FaceVerified = true,
-                DepartmentOrBarangay = "Command & Operations Center",
-                RankOrTitle = "Executive Director",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            await db.Users.AddAsync(user);
-            await db.SaveChangesAsync();
-            Console.WriteLine($"[CLI] Super Admin user '{email}' created successfully.");
-        }
+        await UpsertCliUserAsync(
+            db: db,
+            email: email,
+            password: password,
+            fullName: fullName,
+            role: UserRole.LDRRMO_Admin,
+            unit: unit,
+            employeeOrResidentId: "LDRRMO-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
+            overrideEmployeeIdOnUpdate: false,
+            departmentOrBarangay: "Command & Operations Center",
+            rankOrTitle: "Executive Director",
+            barangay: null,
+            label: "Super Admin");
     }
 
     private static async Task HandleCreateCustomSuperAdminAsync(string[] args, AppDbContext db)
@@ -185,54 +199,19 @@ public static class CliCommandRunner
         string fullName = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? args[4].Trim() : $"{unit} Unit Administrator";
         UserRole role = unit == ResponderUnitType.LDRRMO ? UserRole.LDRRMO_Admin : UserRole.Responder;
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < ScryptPasswordHelper.MinimumPasswordLength)
-        {
-            Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
-            return;
-        }
-
-        var (hash, salt) = ScryptPasswordHelper.HashPassword(password);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower());
-
-        if (user != null)
-        {
-            user.FullName = fullName;
-            user.PasswordHash = hash;
-            user.PasswordSalt = salt;
-            user.Role = role;
-            user.Unit = unit;
-            user.Status = AccountStatus.Verified;
-            user.FaceVerified = true;
-            user.UpdatedAt = DateTime.UtcNow;
-
-            db.Users.Update(user);
-            await db.SaveChangesAsync();
-            Console.WriteLine($"[CLI] Custom Admin user '{email}' (Role: {role}, Unit: {unit}) updated successfully.");
-        }
-        else
-        {
-            user = new User
-            {
-                Id = Guid.NewGuid(),
-                Email = email,
-                FullName = fullName,
-                EmployeeOrResidentId = $"{unit}-ADMIN-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
-                PasswordHash = hash,
-                PasswordSalt = salt,
-                Role = role,
-                Unit = unit,
-                Status = AccountStatus.Verified,
-                FaceVerified = true,
-                DepartmentOrBarangay = $"{unit} Unit Command",
-                RankOrTitle = "Unit Officer / Administrator",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            await db.Users.AddAsync(user);
-            await db.SaveChangesAsync();
-            Console.WriteLine($"[CLI] Custom Admin user '{email}' (Role: {role}, Unit: {unit}) created successfully.");
-        }
+        await UpsertCliUserAsync(
+            db: db,
+            email: email,
+            password: password,
+            fullName: fullName,
+            role: role,
+            unit: unit,
+            employeeOrResidentId: $"{unit}-ADMIN-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
+            overrideEmployeeIdOnUpdate: false,
+            departmentOrBarangay: $"{unit} Unit Command",
+            rankOrTitle: "Unit Officer / Administrator",
+            barangay: null,
+            label: $"Custom Admin (Role: {role}, Unit: {unit})");
     }
 
     private static async Task HandleCreateResponderAsync(string[] args, AppDbContext db)
@@ -252,54 +231,54 @@ public static class CliCommandRunner
         }
         string fullName = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? args[4].Trim() : $"{unit} Duty Responder";
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < ScryptPasswordHelper.MinimumPasswordLength)
+        await UpsertCliUserAsync(
+            db: db,
+            email: email,
+            password: password,
+            fullName: fullName,
+            role: UserRole.Responder,
+            unit: unit,
+            employeeOrResidentId: $"{unit}-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
+            overrideEmployeeIdOnUpdate: false,
+            departmentOrBarangay: $"{unit} Operations Branch",
+            rankOrTitle: $"{unit} Field Officer",
+            barangay: null,
+            label: $"Responder ({unit})");
+    }
+
+    private static async Task HandleCreateCustomResponderAsync(string[] args, AppDbContext db)
+    {
+        if (args.Length < 3)
         {
-            Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
+            Console.WriteLine("[CLI_ERROR] Usage: createcustomresponder <email> <password> [unit] [fullName] [employeeId] [rankOrTitle]");
             return;
         }
 
-        var (hash, salt) = ScryptPasswordHelper.HashPassword(password);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower());
-
-        if (user != null)
+        string email = args[1].Trim();
+        string password = args[2];
+        ResponderUnitType unit = args.Length > 3 ? ParseUnit(args[3], UserRole.Responder) : ResponderUnitType.RHU;
+        if (unit == ResponderUnitType.None || unit == ResponderUnitType.LDRRMO)
         {
-            user.FullName = fullName;
-            user.PasswordHash = hash;
-            user.PasswordSalt = salt;
-            user.Role = UserRole.Responder;
-            user.Unit = unit;
-            user.Status = AccountStatus.Verified;
-            user.FaceVerified = true;
-            user.UpdatedAt = DateTime.UtcNow;
-
-            db.Users.Update(user);
-            await db.SaveChangesAsync();
-            Console.WriteLine($"[CLI] Responder user '{email}' ({unit}) updated successfully.");
+            unit = ResponderUnitType.RHU;
         }
-        else
-        {
-            user = new User
-            {
-                Id = Guid.NewGuid(),
-                Email = email,
-                FullName = fullName,
-                EmployeeOrResidentId = $"{unit}-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
-                PasswordHash = hash,
-                PasswordSalt = salt,
-                Role = UserRole.Responder,
-                Unit = unit,
-                Status = AccountStatus.Verified,
-                FaceVerified = true,
-                DepartmentOrBarangay = $"{unit} Operations Branch",
-                RankOrTitle = $"{unit} Field Officer",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
+        string fullName = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? args[4].Trim() : $"{unit} Custom Responder";
+        bool hasCustomId = args.Length > 5 && !string.IsNullOrWhiteSpace(args[5]);
+        string employeeId = hasCustomId ? args[5].Trim() : $"{unit}-CUST-" + Guid.NewGuid().ToString("N")[..6].ToUpper();
+        string rankOrTitle = args.Length > 6 && !string.IsNullOrWhiteSpace(args[6]) ? args[6].Trim() : $"{unit} Field Officer";
 
-            await db.Users.AddAsync(user);
-            await db.SaveChangesAsync();
-            Console.WriteLine($"[CLI] Responder user '{email}' ({unit}) created successfully.");
-        }
+        await UpsertCliUserAsync(
+            db: db,
+            email: email,
+            password: password,
+            fullName: fullName,
+            role: UserRole.Responder,
+            unit: unit,
+            employeeOrResidentId: employeeId,
+            overrideEmployeeIdOnUpdate: hasCustomId,
+            departmentOrBarangay: $"{unit} Operations Branch",
+            rankOrTitle: rankOrTitle,
+            barangay: null,
+            label: $"Custom Responder ({unit})");
     }
 
     private static async Task HandleCreateCivilianAsync(string[] args, AppDbContext db)
@@ -314,54 +293,49 @@ public static class CliCommandRunner
         string password = args[2];
         string fullName = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3].Trim() : "Resident Citizen";
 
-        if (string.IsNullOrWhiteSpace(password) || password.Length < ScryptPasswordHelper.MinimumPasswordLength)
+        await UpsertCliUserAsync(
+            db: db,
+            email: email,
+            password: password,
+            fullName: fullName,
+            role: UserRole.Civilian,
+            unit: ResponderUnitType.None,
+            employeeOrResidentId: "CIV-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
+            overrideEmployeeIdOnUpdate: false,
+            departmentOrBarangay: "Katipunan Municipality",
+            rankOrTitle: "Resident Citizen",
+            barangay: null,
+            label: "Civilian");
+    }
+
+    private static async Task HandleCreateCustomCivilianAsync(string[] args, AppDbContext db)
+    {
+        if (args.Length < 3)
         {
-            Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
+            Console.WriteLine("[CLI_ERROR] Usage: createcustomcivilian <email> <password> [fullName] [residentId] [barangay]");
             return;
         }
 
-        var (hash, salt) = ScryptPasswordHelper.HashPassword(password);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower());
+        string email = args[1].Trim();
+        string password = args[2];
+        string fullName = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3].Trim() : "Resident Citizen";
+        bool hasCustomId = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]);
+        string residentId = hasCustomId ? args[4].Trim() : "CIV-CUST-" + Guid.NewGuid().ToString("N")[..6].ToUpper();
+        string barangay = args.Length > 5 && !string.IsNullOrWhiteSpace(args[5]) ? args[5].Trim() : "Katipunan Municipality";
 
-        if (user != null)
-        {
-            user.FullName = fullName;
-            user.PasswordHash = hash;
-            user.PasswordSalt = salt;
-            user.Role = UserRole.Civilian;
-            user.Unit = ResponderUnitType.None;
-            user.Status = AccountStatus.Verified;
-            user.FaceVerified = true;
-            user.UpdatedAt = DateTime.UtcNow;
-
-            db.Users.Update(user);
-            await db.SaveChangesAsync();
-            Console.WriteLine($"[CLI] Civilian user '{email}' updated successfully.");
-        }
-        else
-        {
-            user = new User
-            {
-                Id = Guid.NewGuid(),
-                Email = email,
-                FullName = fullName,
-                EmployeeOrResidentId = "CIV-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
-                PasswordHash = hash,
-                PasswordSalt = salt,
-                Role = UserRole.Civilian,
-                Unit = ResponderUnitType.None,
-                Status = AccountStatus.Verified,
-                FaceVerified = true,
-                DepartmentOrBarangay = "Katipunan Municipality",
-                RankOrTitle = "Resident Citizen",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            await db.Users.AddAsync(user);
-            await db.SaveChangesAsync();
-            Console.WriteLine($"[CLI] Civilian user '{email}' created successfully.");
-        }
+        await UpsertCliUserAsync(
+            db: db,
+            email: email,
+            password: password,
+            fullName: fullName,
+            role: UserRole.Civilian,
+            unit: ResponderUnitType.None,
+            employeeOrResidentId: residentId,
+            overrideEmployeeIdOnUpdate: hasCustomId,
+            departmentOrBarangay: barangay,
+            rankOrTitle: "Resident Citizen",
+            barangay: barangay,
+            label: "Custom Civilian");
     }
 
     private static async Task HandleEditUserAsync(string[] args, AppDbContext db)
@@ -428,8 +402,38 @@ public static class CliCommandRunner
         string fullName = args[3].Trim();
         UserRole role = ParseRole(args[4]);
         ResponderUnitType unit = args.Length > 5 ? ParseUnit(args[5], role) : ParseUnit(null, role);
-        string employeeOrResidentId = args.Length > 6 ? args[6].Trim() : $"{role}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+        bool hasCustomId = args.Length > 6 && !string.IsNullOrWhiteSpace(args[6]);
+        string employeeOrResidentId = hasCustomId ? args[6].Trim() : $"{role}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 
+        await UpsertCliUserAsync(
+            db: db,
+            email: email,
+            password: password,
+            fullName: fullName,
+            role: role,
+            unit: unit,
+            employeeOrResidentId: employeeOrResidentId,
+            overrideEmployeeIdOnUpdate: hasCustomId,
+            departmentOrBarangay: role == UserRole.Civilian ? "Barangay Local" : $"{unit} Operations",
+            rankOrTitle: role == UserRole.Civilian ? "Resident Citizen" : "Operational Personnel",
+            barangay: null,
+            label: $"User ({role}, Unit: {unit})");
+    }
+
+    private static async Task UpsertCliUserAsync(
+        AppDbContext db,
+        string email,
+        string password,
+        string fullName,
+        UserRole role,
+        ResponderUnitType unit,
+        string employeeOrResidentId,
+        bool overrideEmployeeIdOnUpdate,
+        string departmentOrBarangay,
+        string rankOrTitle,
+        string? barangay,
+        string label)
+    {
         if (string.IsNullOrWhiteSpace(password) || password.Length < ScryptPasswordHelper.MinimumPasswordLength)
         {
             Console.WriteLine($"[CLI_ERROR] Password must be at least {ScryptPasswordHelper.MinimumPasswordLength} characters long.");
@@ -446,14 +450,19 @@ public static class CliCommandRunner
             user.PasswordSalt = salt;
             user.Role = role;
             user.Unit = unit;
-            if (args.Length > 6) user.EmployeeOrResidentId = employeeOrResidentId;
+            if (overrideEmployeeIdOnUpdate) user.EmployeeOrResidentId = employeeOrResidentId;
+            if (!string.IsNullOrWhiteSpace(barangay))
+            {
+                user.Barangay = barangay;
+                user.DepartmentOrBarangay = departmentOrBarangay;
+            }
             user.Status = AccountStatus.Verified;
             user.FaceVerified = true;
             user.UpdatedAt = DateTime.UtcNow;
 
             db.Users.Update(user);
             await db.SaveChangesAsync();
-            Console.WriteLine($"[CLI] User '{email}' ({role}, Unit: {unit}) updated successfully.");
+            Console.WriteLine($"[CLI] {label} user '{email}' updated successfully.");
         }
         else
         {
@@ -469,15 +478,16 @@ public static class CliCommandRunner
                 Unit = unit,
                 Status = AccountStatus.Verified,
                 FaceVerified = true,
-                DepartmentOrBarangay = role == UserRole.Civilian ? "Barangay Local" : $"{unit} Operations",
-                RankOrTitle = role == UserRole.Civilian ? "Resident Citizen" : "Operational Personnel",
+                DepartmentOrBarangay = departmentOrBarangay,
+                Barangay = barangay ?? string.Empty,
+                RankOrTitle = rankOrTitle,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
 
             await db.Users.AddAsync(user);
             await db.SaveChangesAsync();
-            Console.WriteLine($"[CLI] User '{email}' ({role}, Unit: {unit}) created successfully.");
+            Console.WriteLine($"[CLI] {label} user '{email}' created successfully.");
         }
     }
 
@@ -646,6 +656,106 @@ public static class CliCommandRunner
         Console.WriteLine($"[CLI] All {users.Count} users deleted successfully.");
     }
 
+    private static async Task HandleUpdateDatabaseAsync(AppDbContext db)
+    {
+        var migrations = db.Database.GetMigrations().ToList();
+        if (migrations.Count > 0)
+        {
+            try
+            {
+                await db.Database.MigrateAsync();
+                await StartupSchemaReconciler.ReconcileAsync(db, NullLogger.Instance);
+                Console.WriteLine($"[CLI] Database migrations applied ({migrations.Count} registered) and schema reconciled successfully.");
+                return;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CLI_WARN] MigrateAsync fell back to schema reconciliation ({ex.Message}).");
+            }
+        }
+
+        await db.Database.EnsureCreatedAsync();
+        await StartupSchemaReconciler.ReconcileAsync(db, NullLogger.Instance);
+        Console.WriteLine("[CLI] Database schema ensured and reconciled successfully.");
+    }
+
+    private static async Task HandleAddMigrationAsync(string[] args)
+    {
+        if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+        {
+            Console.WriteLine("[CLI_ERROR] Usage: addmigration <MigrationName>");
+            return;
+        }
+
+        string migrationName = args[1].Trim();
+        if (!Regex.IsMatch(migrationName, "^[A-Za-z_][A-Za-z0-9_]*$"))
+        {
+            Console.WriteLine("[CLI_ERROR] Invalid migration name. Use alphanumeric characters and underscores only.");
+            return;
+        }
+
+        string? projectDir = ResolveBackendProjectDirectory();
+        if (projectDir == null)
+        {
+            Console.WriteLine("[CLI_ERROR] 'addmigration' requires Backend.csproj and the .NET SDK. Run '.\\start.ps1 addmigration <Name>' or 'dotnet ef migrations add <Name>' inside 'Project system ENGINE/Backend'.");
+            return;
+        }
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"ef migrations add {migrationName}",
+            WorkingDirectory = projectDir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+
+        using var process = Process.Start(startInfo);
+        if (process == null)
+        {
+            Console.WriteLine("[CLI_ERROR] Failed to launch 'dotnet ef migrations add'. Ensure dotnet-ef is installed.");
+            return;
+        }
+
+        string stdout = await process.StandardOutput.ReadToEndAsync();
+        string stderr = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        if (!string.IsNullOrWhiteSpace(stdout)) Console.WriteLine(stdout.TrimEnd());
+        if (!string.IsNullOrWhiteSpace(stderr)) Console.WriteLine(stderr.TrimEnd());
+
+        Console.WriteLine(process.ExitCode == 0
+            ? $"[CLI] Migration '{migrationName}' created successfully."
+            : $"[CLI_ERROR] 'dotnet ef migrations add {migrationName}' failed with exit code {process.ExitCode}.");
+    }
+
+    private static string? ResolveBackendProjectDirectory()
+    {
+        string[] probeRoots = [Directory.GetCurrentDirectory(), AppContext.BaseDirectory];
+        foreach (string root in probeRoots)
+        {
+            string? current = Path.GetFullPath(root);
+            for (int depth = 0; depth < 5 && !string.IsNullOrEmpty(current); depth++)
+            {
+                if (File.Exists(Path.Combine(current, "Backend.csproj")))
+                {
+                    return current;
+                }
+
+                string nested = Path.Combine(current, "Project system ENGINE", "Backend");
+                if (File.Exists(Path.Combine(nested, "Backend.csproj")))
+                {
+                    return nested;
+                }
+
+                current = Directory.GetParent(current)?.FullName;
+            }
+        }
+
+        return null;
+    }
+
     private static UserRole ParseRole(string roleStr)
     {
         var trimmed = roleStr.Trim().ToLowerInvariant();
@@ -689,7 +799,9 @@ public static class CliCommandRunner
         Console.WriteLine("  createsuperadmin <email> <password> [fullName] [unit]");
         Console.WriteLine("  createcustomsuperadmin <email> <password> [unit] [fullName]");
         Console.WriteLine("  createresponder <email> <password> <RHU|FIRE|PNP> [fullName]");
+        Console.WriteLine("  createcustomresponder <email> <password> [unit] [fullName] [employeeId] [rankOrTitle]");
         Console.WriteLine("  createcivilian <email> <password> [fullName]");
+        Console.WriteLine("  createcustomcivilian <email> <password> [fullName] [residentId] [barangay]");
         Console.WriteLine("  adduser <email> <password> <fullName> <role> [unit] [employeeOrResidentId]");
         Console.WriteLine("  edituser <email> [newPassword] [newEmail]");
         Console.WriteLine("  resetpassword <email> <newPassword>");
@@ -697,5 +809,7 @@ public static class CliCommandRunner
         Console.WriteLine("  deletecliuser <email>");
         Console.WriteLine("  deletesuperadmin <email>");
         Console.WriteLine("  deleteallcliusers");
+        Console.WriteLine("  updatedatabase");
+        Console.WriteLine("  addmigration <MigrationName>");
     }
 }

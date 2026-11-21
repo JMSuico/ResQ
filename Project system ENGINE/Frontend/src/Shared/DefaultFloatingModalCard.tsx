@@ -73,11 +73,11 @@ export const DefaultFloatingModalCard: FC<DefaultFloatingModalCardProps> = ({
 
   const modalNode = (
     <div
-      className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-950/85 backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-[#3B1722]/45 backdrop-blur-md animate-fadeIn"
       onClick={onClose}
     >
       <div
-        className={`w-full ${maxWidthClass} bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col ${
+        className={`clay-surface w-full ${maxWidthClass} bg-[#F7F1EA] border border-[#E9D9D0] rounded-2xl shadow-[0_24px_60px_-12px_rgba(103,6,38,0.28),inset_0_2px_4px_rgba(255,255,255,0.9),inset_0_-2px_6px_rgba(233,217,208,0.6)] text-[#3B1722] overflow-hidden flex flex-col ${
           isMobile ? 'max-h-[94vh]' : 'max-h-[90vh]'
         } ${className}`}
         onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}
@@ -86,19 +86,19 @@ export const DefaultFloatingModalCard: FC<DefaultFloatingModalCardProps> = ({
         aria-labelledby="modal-title"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 sm:py-4 border-b border-slate-800 bg-slate-900/90 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 sm:py-4 border-b border-[#E9D9D0] bg-[#EFE5DC]/85 flex-shrink-0">
           <div className="flex flex-col min-w-0 pr-3">
-            <h3 id="modal-title" className="text-sm sm:text-base font-bold text-slate-100 flex items-center gap-2 truncate">
-              <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse flex-shrink-0" />
+            <h3 id="modal-title" className="text-base sm:text-lg font-extrabold text-[#670626] flex items-center gap-2 truncate">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#670626] animate-pulse flex-shrink-0" />
               <span className="truncate">{title}</span>
             </h3>
             {subtitle && (
-              <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 truncate">{subtitle}</p>
+              <p className="text-xs sm:text-sm text-[#7A4E59] font-medium mt-0.5 truncate">{subtitle}</p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors flex-shrink-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="p-1.5 rounded-xl text-[#7A4E59] hover:text-[#670626] hover:bg-[#E9D9D0] transition-colors flex-shrink-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#A83B4D]"
             aria-label="Close dialog"
             title="Close"
           >
@@ -107,11 +107,11 @@ export const DefaultFloatingModalCard: FC<DefaultFloatingModalCardProps> = ({
         </div>
 
         {/* Body */}
-        <div className="p-3.5 sm:p-5 overflow-y-auto flex-1">{children}</div>
+        <div className="p-3.5 sm:p-5 overflow-y-auto flex-1 bg-[#F7F1EA]">{children}</div>
 
         {/* Footer */}
         {footer && (
-          <div className="px-4 sm:px-5 py-3 border-t border-slate-800 bg-slate-900/70 flex items-center justify-end gap-3 flex-shrink-0">
+          <div className="px-4 sm:px-5 py-3 border-t border-[#E9D9D0] bg-[#EFE5DC]/75 flex items-center justify-end gap-3 flex-shrink-0">
             {footer}
           </div>
         )}

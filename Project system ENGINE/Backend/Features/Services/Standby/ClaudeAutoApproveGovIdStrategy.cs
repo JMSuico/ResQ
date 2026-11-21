@@ -231,7 +231,7 @@ public class ClaudeAutoApproveGovIdStrategy : IStandbyGovIdAutoApproveStrategy
 
     private static string? ResolveExistingFilePath(string rawPath)
     {
-        if (File.Exists(rawPath))
+        if (CaptureStorageHelper.IsPathWithinAllowedRoots(rawPath) && File.Exists(rawPath))
         {
             return rawPath;
         }
@@ -243,7 +243,9 @@ public class ClaudeAutoApproveGovIdStrategy : IStandbyGovIdAutoApproveStrategy
         }
 
         string combined = Path.Combine(Directory.GetCurrentDirectory(), relative);
-        return File.Exists(combined) ? combined : null;
+        return CaptureStorageHelper.IsPathWithinAllowedRoots(combined) && File.Exists(combined)
+            ? combined
+            : null;
     }
 
     private static double ComputeAiApprovalConfidence(

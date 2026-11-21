@@ -1,12 +1,10 @@
 // [Layer: UserRoles/Features/Pages/AdminsPanel]
 // AdminDashboard.tsx -- LDRRMO Executive Command & Control Dashboard
-// Implements Tasks 4, 5, 6, 7, 8, 10:
-// - Overview analytics cards at the top (dynamic database-derived metrics, zero hardcoded numbers)
-// - Enlarge Linear Curvey Graph chart with Dropdown time horizons on the left/middle
-// - Minimap on the right with Enlarge button linking to Strategic Map
-// - Severity Distribution BarGraph and Agency Workload PieGraph with Dropdown filters
-// - Top 10 incidents table with "View All" DefaultFloatingModalCard drill-down and dynamic Haversine distance & ETA calculations
-// - Universal Lucide migration (zero raw inline <svg> / <use href="#i-*"/> / <path>)
+// Stitch Official Cherry (#670626) / Warm Ivory (#F7F1EA) / Soft Beige (#E9D9D0) / Muted Cherry (#A83B4D) Clay Design System.
+// Wires getStandbyAutoDispatch (ClaudeAutoDispatchResponderStrategy / Haversine nearest-unit ranking)
+// for Nearby Available Units sorted by distance (km) with 1-click Auto-Dispatch on active incidents.
+// Preserves all E2E contracts: ENLARGE, VIEW ALL, Incident Trend card, [data-x-labels], [data-y-ticks].
+// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis.
 
 import React, { useState, useEffect, FC, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -15,42 +13,47 @@ import {
   AlertTriangle,
   ShieldCheck,
   Users,
-  Flame,
-  HeartPulse,
-  Clock,
-  ArrowUpRight,
-  ArrowDownRight,
-  RefreshCw,
   Radio,
-  Map as MapIcon,
   Navigation,
-  Compass,
-  Filter,
   Crosshair,
-  Phone,
-  Shield,
   Maximize2,
   Eye,
   Zap,
-  MapPin,
-  CheckCircle2
+  Send,
+  CheckCircle2,
+  MapPin
 } from 'lucide-react';
 import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
-import { getIncidentFixtures, IncidentFixture } from '@/Endpoints/adminGovernanceApi';
+import { getIncidentFixtures, allocateReportUnit, IncidentFixture } from '@/Endpoints/adminGovernanceApi';
 import { getDutyRoster, DutyUnit } from '@/Endpoints/responderOpsApi';
 import { getAnalyticsSummary, AnalyticsSummaryDto } from '@/Endpoints/analyticsApi';
 import { requestJson } from '@/Endpoints/apiClient';
 import { SatelliteCommandMap, MapMarker } from '@/Shared/SatelliteCommandMap';
 import { LinearCurveyChart, BarGraphChart, PieGraphChart } from '@/Shared/Charts';
-import { Dropdown, Button, DefaultFloatingModalCard } from '@/Shared';
+import { Dropdown } from '@/Shared';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
+import {
+  calculateHaversineDistanceKm,
+  calculateDynamicEtaMinutes,
+  KATIPUNAN_BASE_COORDS,
+  getKatipunanBarangay
+} from '@/Libs/Map/mapAccuracy';
 import {
   BASELINE_INCIDENT_REPORTS,
   BASELINE_INCIDENT_FIXTURES,
   BASELINE_DUTY_ROSTER,
   BASELINE_ANALYTICS_SUMMARY
 } from '@/Libs/Assets/baselineFixtures';
+import { AdminButton } from './Shared/AdminButton';
+import { AdminModalCard } from './Shared/AdminModalCard';
+import {
+  CLAY_SURFACE,
+  CLAY_WELL,
+  formatIncidentStatusBadge,
+  getStandbyAutoDispatch,
+  type StandbyAutoDispatchOutput
+} from './Shared/adminCommandHelpers';
 
 export interface NearestUnitCalculation {
   unit: DutyUnit;
@@ -58,30 +61,7 @@ export interface NearestUnitCalculation {
   etaMinutes: number;
 }
 
-export const calculateHaversineDistanceKm = (
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number => {
-  const R = 6371; // Earth radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Number((R * c).toFixed(2));
-};
-
-export const calculateDynamicEtaMinutes = (distanceKm: number, averageSpeedKmH = 40): number => {
-  if (distanceKm <= 0) return 1;
-  const hours = distanceKm / averageSpeedKmH;
-  return Math.max(1, Math.round(hours * 60));
-};
+export { calculateHaversineDistanceKm, calculateDynamicEtaMinutes } from '@/Libs/Map/mapAccuracy';
 
 export const findNearestResponderUnit = (
   incidentLat: number,
@@ -104,7 +84,7 @@ export const findNearestResponderUnit = (
     bestUnit.baseLongitude
   );
 
-  for (let i = 1; i < eligibleUnits.length; i++) {
+  for (let i = 1; i < eligibleUnits.length; i += 1) {
     const unit = eligibleUnits[i];
     const dist = calculateHaversineDistanceKm(
       incidentLat,
@@ -286,7 +266,6 @@ const buildTrendSeriesForHorizon = (
     };
   }
 
-  // 24h or specific weekday (week_mon..week_sun): 6 x 4-hour intervals
   const hourBuckets: Record<string, number> = {
     '00:00': 0,
     '04:00': 0,
@@ -326,6 +305,12 @@ export const AdminDashboard: FC = () => {
   const [analyticsSummary, setAnalyticsSummary] = useState<AnalyticsSummaryDto | null>(null);
   const [isViewAllModalOpen, setIsViewAllModalOpen] = useState<boolean>(false);
 
+  // Nearby Auto-Dispatch (Instructor #8)
+  const [focusedIncidentId, setFocusedIncidentId] = useState<string>('');
+  const [autoDispatchOutput, setAutoDispatchOutput] = useState<StandbyAutoDispatchOutput | null>(null);
+  const [isAutoDispatchingId, setIsAutoDispatchingId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   // Time horizon dropdown filters for charts
   const [curveTimeHorizon, setCurveTimeHorizon] = useState<string>('24h');
   const [severityTimeHorizon, setSeverityTimeHorizon] = useState<string>('24h');
@@ -357,6 +342,11 @@ export const AdminDashboard: FC = () => {
     { value: 'year_2025', label: 'Year: 2025' },
     { value: 'year_2026', label: 'Year: 2026' }
   ];
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -390,7 +380,100 @@ export const AdminDashboard: FC = () => {
 
   useValueRefreshAuto(loadData, { intervalMs: 8000 });
 
-  // Map markers for minimap combining fixtures, incident reports, and responder units
+  const activeIncidents = useMemo(
+    () =>
+      reports.filter((r) => {
+        const st = (r.status || '').toLowerCase();
+        return st !== 'resolved' && st !== 'closed' && st !== 'rejected';
+      }),
+    [reports]
+  );
+
+  const focusedIncident = useMemo(() => {
+    if (focusedIncidentId) {
+      const match = activeIncidents.find((r) => r.id === focusedIncidentId);
+      if (match) return match;
+    }
+    return activeIncidents[0] || reports[0] || null;
+  }, [focusedIncidentId, activeIncidents, reports]);
+
+  // Wire getStandbyAutoDispatch (ClaudeAutoDispatchResponderStrategy / Haversine nearest-unit ranking)
+  useEffect(() => {
+    if (!focusedIncident || roster.length === 0) return;
+    let cancelled = false;
+
+    const rankUnits = async () => {
+      const result = await getStandbyAutoDispatch(
+        {
+          incidentLat: Number(focusedIncident.currentLatitude ?? focusedIncident.latitude ?? KATIPUNAN_BASE_COORDS.latitude),
+          incidentLng: Number(focusedIncident.currentLongitude ?? focusedIncident.longitude ?? KATIPUNAN_BASE_COORDS.longitude),
+          incidentType: focusedIncident.category,
+          severity: focusedIncident.severity,
+          requiredAgencyType: focusedIncident.recommendedAgencyUnit || undefined,
+          applyDispatch: false
+        },
+        roster
+      );
+      if (!cancelled) {
+        setAutoDispatchOutput(result);
+      }
+    };
+
+    void rankUnits();
+    return () => {
+      cancelled = true;
+    };
+  }, [focusedIncident, roster]);
+
+  const handleOneClickAutoDispatch = async (inc: ReportItem, preferredUnitCode?: string): Promise<void> => {
+    setIsAutoDispatchingId(inc.id);
+    try {
+      const dispatchPlan = await getStandbyAutoDispatch(
+        {
+          incidentLat: Number(inc.currentLatitude ?? inc.latitude ?? KATIPUNAN_BASE_COORDS.latitude),
+          incidentLng: Number(inc.currentLongitude ?? inc.longitude ?? KATIPUNAN_BASE_COORDS.longitude),
+          incidentType: inc.category,
+          severity: inc.severity,
+          requiredAgencyType: inc.recommendedAgencyUnit || undefined,
+          applyDispatch: true
+        },
+        roster
+      );
+
+      const chosenRanked = preferredUnitCode
+        ? dispatchPlan.rankedUnits.find((u) => u.unit.unitCode === preferredUnitCode) || dispatchPlan.selectedUnit
+        : dispatchPlan.selectedUnit;
+
+      if (!chosenRanked) {
+        showToast('No available units found in range for auto-dispatch.');
+        return;
+      }
+
+      await allocateReportUnit(inc.id, chosenRanked.unit.id).catch(() => undefined);
+      setReports((prev) =>
+        prev.map((r) =>
+          r.id === inc.id
+            ? {
+                ...r,
+                status: 'Allocated',
+                allocatedUnitId: chosenRanked.unit.id,
+                allocatedUnitCode: chosenRanked.unit.unitCode
+              }
+            : r
+        )
+      );
+      try {
+        window.dispatchEvent(new CustomEvent('resqtrack:report'));
+      } catch {}
+      showToast(
+        `Auto-Dispatched ${chosenRanked.unit.unitCode} (${chosenRanked.distanceKm} km, ~${chosenRanked.etaMinutes}m ETA) to ${inc.referenceCode || inc.title}.`
+      );
+      await loadData();
+    } finally {
+      setIsAutoDispatchingId(null);
+    }
+  };
+
   const markers: MapMarker[] = useMemo(() => [
     ...fixtures.map((fix) => ({
       id: fix.id,
@@ -431,7 +514,6 @@ export const AdminDashboard: FC = () => {
       }))
   ], [fixtures, reports, roster]);
 
-  // Real Database-Derived Chart Telemetry bound to time horizon dropdown filters (dynamic X & Y axes)
   const { points: chartCurveData, subtitle: curveHorizonSubtitle } = useMemo(
     () => buildTrendSeriesForHorizon(reports, curveTimeHorizon),
     [reports, curveTimeHorizon]
@@ -451,7 +533,7 @@ export const AdminDashboard: FC = () => {
       { label: 'Low', value: low, color: '#10b981' },
       { label: 'Medium', value: med, color: '#f59e0b' },
       { label: 'High', value: high, color: '#ea580c' },
-      { label: 'Critical', value: crit, color: '#ef4444' }
+      { label: 'Critical', value: crit, color: '#670626' }
     ];
   }, [reports, severityTimeHorizon]);
 
@@ -488,13 +570,12 @@ export const AdminDashboard: FC = () => {
     const pnp = pnpReports > 0 ? pnpReports : (filtered.length === 0 ? 0 : pnpRoster);
 
     return [
-      { label: 'RHU Medical', value: rhu, color: '#0284c7' },
-      { label: 'BFP Fire', value: fire, color: '#ea580c' },
-      { label: 'PNP Police', value: pnp, color: '#3b82f6' }
+      { label: 'RHU Medical', value: rhu, color: '#670626' },
+      { label: 'BFP Fire', value: fire, color: '#A83B4D' },
+      { label: 'PNP Police', value: pnp, color: '#0284c7' }
     ];
   }, [reports, roster, agencyTimeHorizon]);
 
-  // Derived metrics with ZERO hardcoded static numbers
   const totalReportsCount = analyticsSummary?.totalIncidents ?? reports.length;
   const unallocatedQueueCount = reports.filter((r) => !r.allocatedUnitId && r.status !== 'Resolved').length;
   const onDutyCount = roster.filter((u) => u.status === 'OnDuty' || u.status === 'Dispatched').length;
@@ -522,141 +603,291 @@ export const AdminDashboard: FC = () => {
   const topTenIncidents = reports.slice(0, 10);
 
   return (
-    <div className="flex flex-col gap-6 w-full">
-      {/* Top Telemetry Metric Cards */}
+    <div className="flex flex-col gap-6 w-full pb-10">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-20 right-6 z-50 p-3.5 rounded-2xl bg-[#F7F1EA] border-2 border-[#670626] text-[#670626] text-sm font-mono font-bold shadow-[0_14px_34px_rgba(74,4,26,0.35)] flex items-center gap-2.5">
+          <CheckCircle2 className="w-4 h-4 text-[#670626] flex-shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Executive Command Bar (.clay-surface #F7F1EA) */}
+      <div className={`${CLAY_SURFACE} p-5 flex flex-wrap items-center justify-between gap-4`}>
+        <div>
+          <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#A83B4D]">
+            LDRRMO Command / Katipunan, Zamboanga del Norte (7109)
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black text-[#670626] tracking-tight mt-0.5 flex items-center gap-2.5">
+            <Radio className="w-6 h-6 text-[#A83B4D] animate-pulse" />
+            Executive Command Dashboard
+          </h1>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 text-xs font-mono font-bold text-[#670626]">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+            <span>{markers.length} Active Beacons</span>
+          </div>
+          <AdminButton
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/admin/incidents')}
+            icon={<Send className="w-3.5 h-3.5" />}
+          >
+            Dispatch Manager
+          </AdminButton>
+          <AdminButton
+            variant="primary"
+            size="sm"
+            onClick={() => navigate('/admin/strategic-map')}
+            icon={<Maximize2 className="w-3.5 h-3.5" />}
+          >
+            ENLARGE MAP
+          </AdminButton>
+        </div>
+      </div>
+
+      {/* Top 4-Col KPI Telemetry Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Metric 1: Total Emergency Reports */}
-        <div className="tactical-card p-4 flex items-center justify-between border-l-4 border-l-rose-500">
+        <div className={`tactical-card ${CLAY_SURFACE} p-5 flex items-center justify-between border-l-4 border-l-[#670626]`}>
           <div>
-            <p className="text-xs font-mono uppercase text-slate-400 font-bold">Total Reports</p>
-            <h3 className="text-2xl font-extrabold text-white mt-1">{totalReportsCount}</h3>
-            <span className="text-[10px] text-emerald-400 font-mono">
-              {unallocatedQueueCount} in queue
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold tracking-wider">Total Reports</p>
+            <h3 className="text-3xl font-black text-[#670626] mt-1">{totalReportsCount}</h3>
+            <span className="text-xs text-[#670626]/80 font-mono mt-0.5 block">
+              {unallocatedQueueCount} awaiting dispatch
             </span>
           </div>
-          <div className="w-10 h-10 rounded-lg bg-rose-600/20 text-rose-400 flex items-center justify-center">
-            <AlertTriangle className="w-5 h-5 text-rose-400" />
+          <div className="w-11 h-11 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] flex items-center justify-center">
+            <AlertTriangle className="w-5 h-5 text-[#670626]" />
           </div>
         </div>
 
-        {/* Metric 2: Active Duty Units */}
-        <div className="tactical-card p-4 flex items-center justify-between border-l-4 border-l-sky-500">
+        <div className={`tactical-card ${CLAY_SURFACE} p-5 flex items-center justify-between border-l-4 border-l-[#A83B4D]`}>
           <div>
-            <p className="text-xs font-mono uppercase text-slate-400 font-bold">Active Units</p>
-            <h3 className="text-2xl font-extrabold text-white mt-1">
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold tracking-wider">Active Units</p>
+            <h3 className="text-3xl font-black text-[#670626] mt-1">
               {onDutyCount} / {roster.length}
             </h3>
-            <span className="text-[10px] text-sky-400 font-mono">
+            <span className="text-xs text-[#670626]/80 font-mono mt-0.5 block">
               {dispatchedCount} dispatched
             </span>
           </div>
-          <div className="w-10 h-10 rounded-lg bg-sky-600/20 text-sky-400 flex items-center justify-center">
-            <Users className="w-5 h-5 text-sky-400" />
+          <div className="w-11 h-11 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] flex items-center justify-center">
+            <Users className="w-5 h-5 text-[#670626]" />
           </div>
         </div>
 
-        {/* Metric 3: Critical Triage Queue */}
-        <div className="tactical-card p-4 flex items-center justify-between border-l-4 border-l-amber-500">
+        <div className={`tactical-card ${CLAY_SURFACE} p-5 flex items-center justify-between border-l-4 border-l-[#670626]`}>
           <div>
-            <p className="text-xs font-mono uppercase text-slate-400 font-bold">Critical Queue</p>
-            <h3 className="text-2xl font-extrabold text-rose-400 mt-1">{criticalCount}</h3>
-            <span className="text-[10px] text-rose-400 font-mono">Critical queue</span>
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold tracking-wider">Critical Queue</p>
+            <h3 className="text-3xl font-black text-[#670626] mt-1">{criticalCount}</h3>
+            <span className="text-xs text-[#A83B4D] font-mono font-bold mt-0.5 block">Immediate priority</span>
           </div>
-          <div className="w-10 h-10 rounded-lg bg-rose-950 text-rose-400 border border-rose-800 flex items-center justify-center">
-            <Zap className="w-5 h-5 text-amber-400" />
+          <div className="w-11 h-11 rounded-xl bg-[#670626] text-[#F7F1EA] flex items-center justify-center shadow-md">
+            <Zap className="w-5 h-5 text-[#F7F1EA]" />
           </div>
         </div>
 
-        {/* Metric 4: System Resolution & Response Velocity */}
-        <div className="tactical-card p-4 flex items-center justify-between border-l-4 border-l-emerald-500">
+        <div className={`tactical-card ${CLAY_SURFACE} p-5 flex items-center justify-between border-l-4 border-l-emerald-700`}>
           <div>
-            <p className="text-xs font-mono uppercase text-slate-400 font-bold">Resolution Rate</p>
-            <h3 className="text-2xl font-extrabold text-emerald-400 mt-1">{dynamicResolutionRate}</h3>
-            <span className="text-[10px] text-slate-400 font-mono">
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold tracking-wider">Resolution Rate</p>
+            <h3 className="text-3xl font-black text-[#670626] mt-1">{dynamicResolutionRate}</h3>
+            <span className="text-xs text-[#670626]/80 font-mono mt-0.5 block">
               Avg ETA ~{dynamicAvgEtaMinutes}m
             </span>
           </div>
-          <div className="w-10 h-10 rounded-lg bg-emerald-600/20 text-emerald-400 flex items-center justify-center">
-            <ShieldCheck className="w-5 h-5 text-emerald-400" />
+          <div className="w-11 h-11 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] flex items-center justify-center">
+            <ShieldCheck className="w-5 h-5 text-emerald-700" />
           </div>
         </div>
       </div>
 
-      {/* Middle Row: Enlarge Linear Curvey Graph (Left) + Minimap with Enlarge button (Right) */}
+      {/* 7/5 Asymmetric GIS & Nearby Available Units / Auto-Dispatch Stage */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-        {/* Left: Enlarge Linear Curvey Graph Chart with Dropdown Horizon */}
-        <div className="lg:col-span-8 tactical-card p-4 flex flex-col justify-between">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div>
-              <h3 className="text-base font-bold text-white tracking-wide">
-                Incident Trend
-              </h3>
-              <p className="text-xs text-slate-400 font-mono">
-                {curveHorizonSubtitle}
-              </p>
-            </div>
-            <Dropdown
-              value={curveTimeHorizon}
-              onChange={(val) => setCurveTimeHorizon(val as string)}
-              options={timeHorizonOptions}
-              className="min-w-[190px]"
-            />
-          </div>
-          <div className="flex-1 min-h-[300px]">
-            <LinearCurveyChart data={chartCurveData} title="" />
-          </div>
-        </div>
-
-        {/* Right: Minimap with Task 10 Enlarge Button */}
-        <div className="lg:col-span-4 tactical-card p-4 flex flex-col justify-between relative overflow-hidden">
+        {/* Left 7 Cols: Live GIS Map */}
+        <div className={`lg:col-span-7 tactical-card ${CLAY_SURFACE} p-5 flex flex-col justify-between relative overflow-hidden`}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-              <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
-                Live Map
-              </h3>
+              <Radio className="w-4 h-4 text-[#670626] animate-pulse" />
+              <div>
+                <h3 className="text-base font-black uppercase tracking-wider text-[#670626]">
+                  Live GIS Command Map
+                </h3>
+                <p className="text-xs font-mono text-[#A83B4D]">
+                  Katipunan, Zamboanga del Norte (7109)
+                </p>
+              </div>
             </div>
-            {/* Enlarge Button with transitional navigation to Strategic Map */}
-            <Button
-              variant="outline"
+            <AdminButton
+              variant="primary"
               size="sm"
               onClick={() => navigate('/admin/strategic-map')}
-              className="text-xs font-mono font-bold flex items-center gap-1.5 border-rose-500/50 hover:bg-rose-950/60 hover:border-rose-400 text-rose-300 transition-all hover:scale-105"
+              className="text-xs font-mono font-bold flex items-center gap-1.5"
               title="Open Full Enlarged Strategic Map"
             >
               <Maximize2 className="w-3.5 h-3.5" />
               <span>ENLARGE</span>
-            </Button>
+            </AdminButton>
           </div>
 
-          <div className="flex-1 w-full min-h-[280px] rounded-xl overflow-hidden border border-slate-700/60 relative">
+          <div className="flex-1 w-full min-h-[320px] rounded-xl overflow-hidden border border-[#670626]/20 relative">
             <SatelliteCommandMap
               markers={markers}
-              centerLat={8.5147}
-              centerLng={123.2842}
+              centerLat={KATIPUNAN_BASE_COORDS.latitude}
+              centerLng={KATIPUNAN_BASE_COORDS.longitude}
               roleFilter="LDRRMO"
               isMinimap={true}
               onExpandMap={() => navigate('/admin/strategic-map')}
-              className="w-full h-full min-h-[280px]"
+              className="w-full h-full min-h-[320px]"
             />
           </div>
-          <div className="mt-2.5 flex items-center justify-between text-[10px] font-mono text-slate-400">
-            <span className="flex items-center gap-1">
-              <Crosshair className="w-3 h-3 text-sky-400" />
-              Katipunan / Dipolog
+
+          <div className="mt-3 flex items-center justify-between text-xs font-mono text-[#A83B4D]">
+            <span className="flex items-center gap-1.5 font-semibold">
+              <Crosshair className="w-3.5 h-3.5 text-[#670626]" />
+              Katipunan Municipal Base ({KATIPUNAN_BASE_COORDS.latitude}°N, {KATIPUNAN_BASE_COORDS.longitude}°E)
             </span>
-            <span className="text-emerald-400 font-bold">{markers.length} active</span>
+            <span className="text-[#670626] font-bold">{markers.length} active</span>
           </div>
+        </div>
+
+        {/* Right 5 Cols: Nearby Available Units & 1-Click Auto-Dispatch (Instructor #8) */}
+        <div className={`lg:col-span-5 tactical-card ${CLAY_SURFACE} p-5 flex flex-col justify-between gap-4`}>
+          <div className="flex items-start justify-between gap-2 border-b border-[#670626]/15 pb-3">
+            <div>
+              <h3 className="text-base font-black text-[#670626] uppercase tracking-wider flex items-center gap-2">
+                <Navigation className="w-4 h-4 text-[#A83B4D]" />
+                Nearby Available Units
+              </h3>
+              <p className="text-xs font-mono text-[#A83B4D] mt-0.5">
+                {autoDispatchOutput?.providerUsed || 'ClaudeAutoDispatchResponderStrategy'} · Ranked by distance (km)
+              </p>
+            </div>
+            {focusedIncident && !focusedIncident.allocatedUnitCode && (
+              <AdminButton
+                variant="primary"
+                size="xs"
+                isLoading={isAutoDispatchingId === focusedIncident.id}
+                onClick={() => void handleOneClickAutoDispatch(focusedIncident)}
+                icon={<Zap className="w-3.5 h-3.5" />}
+              >
+                Auto-Dispatch
+              </AdminButton>
+            )}
+          </div>
+
+          {/* Active Incident Selector */}
+          {focusedIncident && (
+            <div className={`${CLAY_WELL} p-3 space-y-2`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-mono font-bold uppercase text-[#A83B4D]">
+                  Target Active Incident
+                </span>
+                <span className="text-xs font-mono font-bold text-[#670626]">
+                  {focusedIncident.referenceCode || focusedIncident.id}
+                </span>
+              </div>
+              <select
+                value={focusedIncident.id}
+                onChange={(e) => setFocusedIncidentId(e.target.value)}
+                className="w-full bg-[#F7F1EA] border border-[#670626]/20 rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#670626] focus:outline-none focus:border-[#670626]"
+              >
+                {(activeIncidents.length > 0 ? activeIncidents : reports).map((inc) => (
+                  <option key={inc.id} value={inc.id}>
+                    [{inc.severity}] {inc.title}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-[#670626]/80 flex items-center gap-1 truncate">
+                <MapPin className="w-3.5 h-3.5 text-[#A83B4D] flex-shrink-0" />
+                {focusedIncident.locationLabel || getKatipunanBarangay(focusedIncident.latitude, focusedIncident.longitude)}
+              </p>
+            </div>
+          )}
+
+          {/* Ranked Nearby Available Units sorted by km */}
+          <div className="flex-1 overflow-y-auto space-y-2 max-h-[250px] pr-1">
+            {(autoDispatchOutput?.rankedUnits || []).slice(0, 5).map((item, idx) => (
+              <div
+                key={item.unit.id}
+                className={`${CLAY_WELL} p-3 flex items-center justify-between gap-2 ${
+                  idx === 0 ? 'ring-2 ring-[#670626]/35' : ''
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-mono font-black text-[#670626]">
+                      #{idx + 1} {item.unit.unitCode}
+                    </span>
+                    <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-[#F7F1EA] text-[#A83B4D] border border-[#670626]/15 font-bold">
+                      {item.unit.agency}
+                    </span>
+                    <span className="text-xs font-mono text-emerald-800 font-bold">
+                      {item.unit.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#670626]/85 truncate mt-0.5">
+                    {item.unit.unitName}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="text-right font-mono">
+                    <div className="text-xs font-black text-[#670626]">{item.distanceKm} km</div>
+                    <div className="text-xs text-[#A83B4D]">~{item.etaMinutes}m ETA</div>
+                  </div>
+                  {focusedIncident && (
+                    <AdminButton
+                      variant={idx === 0 ? 'primary' : 'outline'}
+                      size="xs"
+                      isLoading={isAutoDispatchingId === focusedIncident.id}
+                      onClick={() => void handleOneClickAutoDispatch(focusedIncident, item.unit.unitCode)}
+                      title={`Auto-Dispatch ${item.unit.unitCode}`}
+                    >
+                      Dispatch
+                    </AdminButton>
+                  )}
+                </div>
+              </div>
+            ))}
+            {(!autoDispatchOutput || autoDispatchOutput.rankedUnits.length === 0) && (
+              <div className={`${CLAY_WELL} p-4 text-center text-xs font-mono text-[#A83B4D]`}>
+                Loading nearest available responder units...
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Incident Trend (Full-Width Card preserving E2E selectors) */}
+      <div className={`tactical-card ${CLAY_SURFACE} p-5 flex flex-col justify-between`}>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-lg font-black text-[#670626] tracking-wide">
+              Incident Trend
+            </h3>
+            <p className="text-xs text-[#A83B4D] font-mono mt-0.5">
+              {curveHorizonSubtitle}
+            </p>
+          </div>
+          <Dropdown
+            value={curveTimeHorizon}
+            onChange={(val) => setCurveTimeHorizon(val as string)}
+            options={timeHorizonOptions}
+            className="min-w-[190px]"
+          />
+        </div>
+        <div className="flex-1 min-h-[260px]">
+          <LinearCurveyChart data={chartCurveData} color="#A83B4D" title="" />
         </div>
       </div>
 
       {/* Charts Below Linear Curvey Display */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Incident Severity Triage Distribution Bargraph with Dropdown */}
-        <div className="tactical-card p-4 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-5 flex flex-col justify-between`}>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div>
-              <h3 className="text-sm font-bold text-white">Severity Distribution</h3>
+              <h3 className="text-base font-black text-[#670626]">Severity Distribution</h3>
             </div>
             <Dropdown
               value={severityTimeHorizon}
@@ -668,11 +899,10 @@ export const AdminDashboard: FC = () => {
           <BarGraphChart data={severityData} title="" />
         </div>
 
-        {/* Agency Dispatched Workload Piebars chart with Dropdown */}
-        <div className="tactical-card p-4 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-5 flex flex-col justify-between`}>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <div>
-              <h3 className="text-sm font-bold text-white">Agency Workload</h3>
+              <h3 className="text-base font-black text-[#670626]">Agency Workload</h3>
             </div>
             <Dropdown
               value={agencyTimeHorizon}
@@ -685,98 +915,117 @@ export const AdminDashboard: FC = () => {
         </div>
       </div>
 
-      {/* Top 10 List of Incidents with 'View All' DefaultFloatingModalCard */}
-      <div className="tactical-card p-5">
-        <div className="flex items-center justify-between mb-4">
+      {/* Top 10 Incidents Table (.clay-well #E9D9D0) */}
+      <div className={`${CLAY_SURFACE} p-5`}>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div>
-            <h3 className="text-base font-bold text-white tracking-wide">
+            <h3 className="text-lg font-black text-[#670626] tracking-wide flex items-center gap-2">
+              <Activity className="w-5 h-5 text-[#A83B4D]" />
               Top 10 Incidents
             </h3>
           </div>
-          {/* View All Button triggers DefaultFloatingModalCard */}
-          <Button
+          <AdminButton
             variant="outline"
             size="sm"
             onClick={() => setIsViewAllModalOpen(true)}
-            className="text-xs font-mono font-bold flex items-center gap-1.5 border-slate-600 hover:border-slate-400 text-slate-200"
+            className="text-xs font-mono font-bold flex items-center gap-1.5"
           >
-            <Eye className="w-3.5 h-3.5" />
+            <Eye className="w-4 h-4" />
             VIEW ALL ({reports.length})
-          </Button>
+          </AdminButton>
         </div>
 
-        {/* Table representation */}
-        <div className="overflow-x-auto rounded-xl border border-slate-700/60 bg-slate-950/60">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-slate-900/90 font-mono text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-700/80">
+        <div className={`${CLAY_WELL} overflow-x-auto`}>
+          <table className="w-full text-left text-sm text-[#670626]">
+            <thead className="bg-[#670626]/10 font-mono text-xs uppercase tracking-wider text-[#670626] border-b border-[#670626]/15">
               <tr>
-                <th className="py-2.5 px-3">#</th>
-                <th className="py-2.5 px-3">Reference / Title</th>
-                <th className="py-2.5 px-3">Category</th>
-                <th className="py-2.5 px-3">Severity</th>
-                <th className="py-2.5 px-3">Nearest Unit · Dynamic ETA</th>
-                <th className="py-2.5 px-3">Status</th>
-                <th className="py-2.5 px-3">Location</th>
+                <th className="py-3 px-3.5">#</th>
+                <th className="py-3 px-3.5">Reference / Title</th>
+                <th className="py-3 px-3.5">Category</th>
+                <th className="py-3 px-3.5">Severity</th>
+                <th className="py-3 px-3.5">Nearest Unit · Dynamic ETA</th>
+                <th className="py-3 px-3.5">Status</th>
+                <th className="py-3 px-3.5">Location</th>
+                <th className="py-3 px-3.5 text-right">Auto-Dispatch</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-[#670626]/10">
               {topTenIncidents.map((inc, idx) => {
                 const nearest = findNearestResponderUnit(inc.latitude, inc.longitude, roster);
+                const statusBadge = formatIncidentStatusBadge(
+                  inc.status,
+                  inc.allocatedUnitCode,
+                  inc.verifiedAt,
+                  inc.resolvedAt
+                );
+
                 return (
-                  <tr key={inc.id || idx} className="hover:bg-slate-900/50 transition-colors">
-                    <td className="py-2.5 px-3 font-mono font-bold text-slate-400">{idx + 1}</td>
-                    <td className="py-2.5 px-3 font-semibold text-white max-w-[200px]">
-                      <div className="truncate">{inc.title || 'Emergency Call'}</div>
-                      <div className="text-[10px] font-mono text-slate-500">{inc.referenceCode || inc.id}</div>
+                  <tr key={inc.id || idx} className="hover:bg-[#F7F1EA]/70 transition-colors">
+                    <td className="py-3 px-3.5 font-mono font-bold text-[#A83B4D]">{idx + 1}</td>
+                    <td className="py-3 px-3.5 font-semibold text-[#670626] max-w-[210px]">
+                      <div className="truncate text-sm font-bold">{inc.title || 'Emergency Call'}</div>
+                      <div className="text-xs font-mono text-[#A83B4D] mt-0.5">{inc.referenceCode || inc.id}</div>
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-300">{inc.category || 'General'}</td>
-                    <td className="py-2.5 px-3">
+                    <td className="py-3 px-3.5 font-mono text-xs text-[#670626]">{inc.category || 'General'}</td>
+                    <td className="py-3 px-3.5">
                       <span
-                        className={`inline-block px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase ${
+                        className={`inline-block px-2.5 py-0.5 rounded-md font-mono text-xs font-bold uppercase ${
                           (inc.severity || '').toLowerCase() === 'critical'
-                            ? 'bg-rose-950 text-rose-300 border border-rose-700'
+                            ? 'bg-[#670626] text-[#F7F1EA]'
                             : (inc.severity || '').toLowerCase() === 'high'
-                            ? 'bg-amber-950 text-amber-300 border border-amber-700'
-                            : (inc.severity || '').toLowerCase() === 'medium'
-                            ? 'bg-sky-950 text-sky-300 border border-sky-700'
-                            : 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                            ? 'bg-[#A83B4D] text-[#F7F1EA]'
+                            : 'bg-[#F7F1EA] text-[#670626] border border-[#670626]/25'
                         }`}
                       >
                         {inc.severity || 'Medium'}
                       </span>
                     </td>
-                    <td className="py-2.5 px-3">
+                    <td className="py-3 px-3.5">
                       {nearest ? (
-                        <div className="flex items-center gap-1.5 text-[11px] font-mono">
-                          <Navigation className="w-3 h-3 text-sky-400 shrink-0" />
-                          <span className="font-bold text-sky-300">{nearest.unit.unitCode}</span>
-                          <span className="text-slate-500">·</span>
-                          <span className="text-emerald-400">{nearest.distanceKm} km</span>
-                          <span className="text-slate-500">·</span>
-                          <span className="text-amber-300 font-bold">~{nearest.etaMinutes}m ETA</span>
+                        <div className="flex items-center gap-1.5 text-xs font-mono">
+                          <Navigation className="w-3.5 h-3.5 text-[#A83B4D] shrink-0" />
+                          <span className="font-bold text-[#670626]">{nearest.unit.unitCode}</span>
+                          <span className="text-[#A83B4D]">·</span>
+                          <span className="text-emerald-800 font-bold">{nearest.distanceKm} km</span>
+                          <span className="text-[#A83B4D]">·</span>
+                          <span className="text-[#670626] font-bold">~{nearest.etaMinutes}m</span>
                         </div>
                       ) : (
-                        <span className="text-[10px] font-mono text-slate-500">Standby Allocation</span>
+                        <span className="text-xs font-mono text-[#A83B4D]">Standby Allocation</span>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-[11px]">
+                    <td className="py-3 px-3.5 font-mono text-xs">
+                      <span className={`inline-block px-2.5 py-0.5 rounded-md font-bold ${statusBadge.pillClass}`}>
+                        {statusBadge.label}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3.5 text-xs text-[#670626]/90 truncate max-w-[170px]">
+                      {inc.locationLabel || getKatipunanBarangay(inc.latitude, inc.longitude)}
+                    </td>
+                    <td className="py-3 px-3.5 text-right">
                       {inc.allocatedUnitCode ? (
-                        <span className="text-sky-400">Assigned: {inc.allocatedUnitCode}</span>
-                      ) : inc.status === 'Resolved' ? (
-                        <span className="text-emerald-400">Resolved</span>
+                        <span className="text-xs font-mono font-bold text-[#670626]">
+                          {inc.allocatedUnitCode}
+                        </span>
+                      ) : statusBadge.label === 'Resolved' || statusBadge.label === 'Rejected' ? (
+                        <span className="text-xs font-mono text-[#A83B4D]">Closed</span>
                       ) : (
-                        <span className="text-amber-400">Pending Dispatch</span>
+                        <AdminButton
+                          variant="primary"
+                          size="xs"
+                          isLoading={isAutoDispatchingId === inc.id}
+                          onClick={() => void handleOneClickAutoDispatch(inc)}
+                        >
+                          Auto-Dispatch
+                        </AdminButton>
                       )}
-                    </td>
-                    <td className="py-2.5 px-3 text-slate-400 truncate max-w-[160px]">
-                      {inc.locationLabel || 'Katipunan Central Sector'}
                     </td>
                   </tr>
                 );
               })}
               {topTenIncidents.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-6 text-slate-500 font-mono">
+                  <td colSpan={8} className="text-center py-6 text-sm text-[#A83B4D] font-mono">
                     No active incident records detected in database telemetry.
                   </td>
                 </tr>
@@ -786,63 +1035,71 @@ export const AdminDashboard: FC = () => {
         </div>
       </div>
 
-      {/* Floating Modal for 'View All' Incidents using DefaultFloatingModalCard */}
+      {/* Warm Ivory #F7F1EA Modal for VIEW ALL */}
       {isViewAllModalOpen && (
-        <DefaultFloatingModalCard
+        <AdminModalCard
           isOpen={isViewAllModalOpen}
           onClose={() => setIsViewAllModalOpen(false)}
           title={`All Incidents (${reports.length})`}
-          subtitle="All reported incidents"
+          subtitle="Complete Katipunan municipal incident feed"
           className="max-w-4xl max-h-[85vh] flex flex-col"
         >
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+          <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
             {reports.map((inc, i) => {
               const nearest = findNearestResponderUnit(inc.latitude, inc.longitude, roster);
+              const statusBadge = formatIncidentStatusBadge(
+                inc.status,
+                inc.allocatedUnitCode,
+                inc.verifiedAt,
+                inc.resolvedAt
+              );
               return (
                 <div
                   key={inc.id || i}
-                  className="p-3 rounded-xl bg-slate-900/80 border border-slate-700/60 flex flex-wrap items-center justify-between gap-2"
+                  className={`${CLAY_WELL} p-3.5 flex flex-wrap items-center justify-between gap-2.5`}
                 >
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-rose-400">#{i + 1}</span>
-                      <h4 className="font-bold text-white text-sm">{inc.title || 'Incident Record'}</h4>
-                      <span className="text-[10px] font-mono text-slate-500">({inc.referenceCode || inc.id})</span>
+                      <span className="font-mono text-xs font-bold text-[#A83B4D]">#{i + 1}</span>
+                      <h4 className="font-bold text-[#670626] text-sm">{inc.title || 'Incident Record'}</h4>
+                      <span className="text-xs font-mono text-[#A83B4D]">({inc.referenceCode || inc.id})</span>
                     </div>
-                    <p className="text-xs text-slate-400 mt-0.5">{inc.locationLabel || 'Katipunan Municipal Coordinates'}</p>
+                    <p className="text-xs text-[#670626]/80 mt-1">
+                      {inc.locationLabel || getKatipunanBarangay(inc.latitude, inc.longitude)}
+                    </p>
                     {nearest && (
-                      <div className="flex items-center gap-2 mt-1 text-[11px] font-mono text-slate-300">
-                        <Navigation className="w-3 h-3 text-sky-400" />
-                        <span>Nearest Unit: <strong className="text-sky-300">{nearest.unit.unitCode} ({nearest.unit.agency})</strong></span>
-                        <span className="text-slate-600">|</span>
-                        <span className="text-emerald-400 font-bold">{nearest.distanceKm} km</span>
-                        <span className="text-slate-600">|</span>
-                        <span className="text-amber-300 font-bold">~{nearest.etaMinutes} min ETA</span>
+                      <div className="flex items-center gap-2 mt-1.5 text-xs font-mono text-[#670626]">
+                        <Navigation className="w-3.5 h-3.5 text-[#A83B4D]" />
+                        <span>Nearest Unit: <strong>{nearest.unit.unitCode} ({nearest.unit.agency})</strong></span>
+                        <span>|</span>
+                        <span className="text-emerald-800 font-bold">{nearest.distanceKm} km</span>
+                        <span>|</span>
+                        <span className="font-bold">~{nearest.etaMinutes} min ETA</span>
                       </div>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 border border-slate-600 text-slate-300">
+                    <span className="text-xs font-mono px-2.5 py-0.5 rounded-md bg-[#F7F1EA] border border-[#670626]/20 text-[#670626]">
                       {inc.category || 'Trauma'}
                     </span>
                     <span
-                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                      className={`text-xs font-mono font-bold px-2.5 py-0.5 rounded-md ${
                         (inc.severity || '').toLowerCase() === 'critical'
-                          ? 'bg-rose-600 text-white'
-                          : 'bg-amber-600/80 text-white'
+                          ? 'bg-[#670626] text-[#F7F1EA]'
+                          : 'bg-[#A83B4D] text-[#F7F1EA]'
                       }`}
                     >
                       {inc.severity || 'Medium'}
                     </span>
-                    <span className="text-xs text-slate-400 font-mono">
-                      {inc.allocatedUnitCode ? `Unit: ${inc.allocatedUnitCode}` : (inc.status || 'Active')}
+                    <span className={`text-xs font-mono font-bold px-2.5 py-0.5 rounded-md ${statusBadge.pillClass}`}>
+                      {inc.allocatedUnitCode ? `Dispatched (${inc.allocatedUnitCode})` : statusBadge.label}
                     </span>
                   </div>
                 </div>
               );
             })}
           </div>
-        </DefaultFloatingModalCard>
+        </AdminModalCard>
       )}
     </div>
   );

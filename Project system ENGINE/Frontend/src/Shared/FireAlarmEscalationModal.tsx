@@ -80,16 +80,16 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {errorMessage && (
-          <div className="flex items-center gap-2 p-3 bg-rose-950/80 border border-rose-800 rounded text-rose-200 text-xs">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+          <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-300 rounded-xl text-[#991B1B] text-sm font-semibold">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-[#991B1B]" />
             <span>{errorMessage}</span>
           </div>
         )}
 
         {/* Alarm Level Selector Grid */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-2 flex items-center gap-1.5">
-            <Flame className="w-4 h-4 text-amber-500" />
+          <label className="block text-sm font-bold text-[#670626] mb-2 flex items-center gap-1.5">
+            <Flame className="w-4 h-4 text-[#EA580C]" />
             <span>Alarm Level</span>
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -100,15 +100,15 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
                   type="button"
                   key={al.level}
                   onClick={() => setAlarmLevel(al.level)}
-                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-amber-950/80 border-amber-500 text-amber-200 ring-1 ring-amber-500/50'
-                      : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                      ? 'bg-amber-100 border-amber-500 text-amber-950 ring-1 ring-amber-400 shadow-sm'
+                      : 'bg-[#E9D9D0]/55 border-[#D8C1B5] text-[#5C313E] hover:border-[#A83B4D]'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-xs text-slate-100">{al.level}</span>
-                    {isSelected && <Check className="w-3.5 h-3.5 text-amber-400" />}
+                    <span className="font-bold text-sm text-[#3B1722]">{al.level}</span>
+                    {isSelected && <Check className="w-4 h-4 text-amber-700" />}
                   </div>
                 </button>
               );
@@ -117,16 +117,16 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
         </div>
 
         {/* Structural Metrics */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-slate-950/70 border border-amber-950/80 rounded-lg">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-[#E9D9D0]/60 border border-[#D8C1B5] rounded-xl">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1">
-              <Building className="w-3.5 h-3.5 text-slate-400" />
+            <label className="block text-sm font-bold text-[#670626] mb-1 flex items-center gap-1">
+              <Building className="w-3.5 h-3.5 text-[#A83B4D]" />
               <span>Building Type</span>
             </label>
             <select
               value={buildingType}
               onChange={e => setBuildingType(e.target.value)}
-              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             >
               <option value="Residential">Residential Single/Multi</option>
               <option value="Commercial">Commercial / Retail</option>
@@ -136,8 +136,8 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+            <label className="block text-sm font-bold text-[#670626] mb-1 flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5 text-[#991B1B]" />
               <span>Trapped Occupants</span>
             </label>
             <input
@@ -145,12 +145,12 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
               min={0}
               value={trappedOccupants}
               onChange={e => setTrappedOccupants(Number(e.target.value))}
-              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1">
-              <Droplets className="w-3.5 h-3.5 text-cyan-400" />
+            <label className="block text-sm font-bold text-[#670626] mb-1 flex items-center gap-1">
+              <Droplets className="w-3.5 h-3.5 text-sky-700" />
               <span>Water On-Board (Gal)</span>
             </label>
             <input
@@ -159,7 +159,7 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
               step={250}
               value={waterGallons}
               onChange={e => setWaterGallons(Number(e.target.value))}
-              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
         </div>
@@ -167,41 +167,41 @@ export const FireAlarmEscalationModal: FC<FireAlarmEscalationModalProps> = ({
         {/* Field Command Info */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Ground Commander</label>
+            <label className="block text-sm font-bold text-[#670626] mb-1">Ground Commander</label>
             <input
               type="text"
               required
               value={commanderName}
               onChange={e => setCommanderName(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Responding Apparatus</label>
+            <label className="block text-sm font-bold text-[#670626] mb-1">Responding Apparatus</label>
             <input
               type="text"
               required
               value={reportingUnit}
               onChange={e => setReportingUnit(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
         </div>
 
         {/* Remarks */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1">Remarks</label>
+          <label className="block text-sm font-bold text-[#670626] mb-1">Remarks</label>
           <textarea
             rows={2}
             value={remarks}
             onChange={e => setRemarks(e.target.value)}
             placeholder="Scene notes..."
-            className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-amber-500 resize-none"
+            className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626] resize-none"
           />
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+        <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E9D9D0]">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Cancel
           </Button>

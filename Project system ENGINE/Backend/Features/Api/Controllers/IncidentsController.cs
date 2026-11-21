@@ -5,23 +5,45 @@
 using Microsoft.AspNetCore.Mvc;
 using Backend.Features.Api.DTOs;
 using Backend.Features.Data.Enums;
+using Backend.Features.Helpers.Infrastructure;
 using Backend.Features.Services.Interfaces;
 
 namespace Backend.Features.Api.Controllers;
 
 [ApiController]
 [Route("api")]
-public class IncidentsController(ITriageService triageService, IReportService reportService) : ControllerBase
+public class IncidentsController(ITriageService triageService, IReportService reportService, IWebHostEnvironment? env = null) : ControllerBase
 {
+    private string ReportsDirectory =>
+        Path.Combine(env?.ContentRootPath ?? AppContext.BaseDirectory, "server-data", "uploads", "reports");
+
     private bool IsAuthorizedResponderOrAdmin =>
         HttpContext.Items["UserRole"] is UserRole role && (role == UserRole.LDRRMO_Admin || role == UserRole.Responder);
 
     private Guid CurrentUserId =>
         HttpContext.Items["UserId"] is Guid uid ? uid : Guid.Empty;
 
+    [HttpPost("incidents")]
+    public async Task<IActionResult> CreateIncidentAsync([FromBody] CreateReportRequest request, CancellationToken ct) =>
+        await reportService.ResolveReporterIdAsync(HttpContext?.Items["UserId"] as Guid?, ct) is var reporterId
+        && await reportService.CreateReportAsync(reporterId, request, ReportsDirectory, ct, submittedIpAddress: ClientNetworkHelper.ResolveClientIpAddress(HttpContext)) is var report
+            ? StatusCode(StatusCodes.Status201Created, new { message = "Report submitted successfully.", report, @event = "resqtrack:report" })
+            : BadRequest();
+
+    [HttpPost("incidents/analyze-image")]
+    public async Task<IActionResult> AnalyzeIncidentImageAsync([FromBody] AnalyzeIncidentImageRequest request, CancellationToken ct) =>
+        Ok(await reportService.AnalyzeIncidentImageAsync(request, ct));
+
     [HttpGet("incidents")]
     public async Task<IActionResult> GetAllIncidentsAsync(CancellationToken ct) =>
-        Ok(await reportService.GetAllReportsAsync(ct));
+        HttpContext?.Items["UserRole"] switch
+        {
+            UserRole.Civilian => HttpContext.Items["UserId"] is Guid uid && uid != Guid.Empty
+                ? Ok(await reportService.GetMyReportsAsync(uid, ct))
+                : Unauthorized(),
+            UserRole.Responder or UserRole.LDRRMO_Admin => Ok(await reportService.GetAllReportsAsync(ct)),
+            _ => Unauthorized()
+        };
 
     [HttpGet("incidents/fixtures")]
     public async Task<IActionResult> GetFixturesAsync(CancellationToken ct) =>

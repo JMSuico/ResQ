@@ -1,462 +1,75 @@
 // [Layer: UserRoles/Features/Pages/RespondersPanel]
-// Responsibility: Agency-filtered emergency alerts feed for field responders.
-// Tactical mobile dispatch unit HUD with rapid field legibility, severity chips, and quick acknowledge controls.
-// DO NOT hide critical severity alerts from tactical units.
+// Responsibility: Clean Cherry / Warm Ivory redirect notice for legacy /responder/alerts route,
+// directing field responders to /responder/dashboard and the header Notification Bell.
+// Strictly 100% arrow functions (=>), ZERO 'any', ZERO emojis.
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { getAlerts, markAlertRead, AlertItem } from '@/Endpoints/reportsApi';
-import { Button } from '@/Shared/Button';
-import { ImageLightboxModal } from '@/Shared/ImageLightboxModal';
-import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
-import { SearchBar } from '@/Shared/SearchBar';
-import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
-import { formatIsoTimestamp, formatRelativeTime } from '@/Libs/Assets/formatters';
-import {
-  Ambulance,
-  Flame,
-  Shield,
-  AlertTriangle,
-  Zap,
-  CheckCircle2,
-  Volume2,
-  VolumeX,
-  Radio,
-  Clock,
-  Camera,
-  Check
-} from 'lucide-react';
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowRight, Bell, Radio, ShieldCheck } from 'lucide-react';
+import { Button } from '@/Shared';
 
-export const ResponderAlerts: React.FC = () => {
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
-  const [filterMode, setFilterMode] = useState<'ALL' | 'UNREAD' | 'CRITICAL'>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [acknowledgeToast, setAcknowledgeToast] = useState<string | null>(null);
-  const [sirenMuted, setSirenMuted] = useState<boolean>(false);
-  const { viewMode, setViewMode } = useTableCardView('card');
-
-  const loadAlerts = useCallback(async () => {
-    try {
-      const data = await getAlerts();
-      setAlerts(data || []);
-    } catch (err) {
-      console.error('Failed to load responder alerts:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useValueRefreshAuto(loadAlerts, {
-    intervalMs: 6000,
-    enabled: true
-  });
-
-  useEffect(() => {
-    loadAlerts();
-  }, [loadAlerts]);
-
-  const showToast = (msg: string) => {
-    setAcknowledgeToast(msg);
-    setTimeout(() => setAcknowledgeToast(null), 3000);
-  };
-
-  const handleMarkRead = async (reportId: string) => {
-    try {
-      await markAlertRead(reportId);
-      setAlerts((prev) =>
-        prev.map((a) => (a.reportId === reportId ? { ...a, isRead: true } : a))
-      );
-      showToast(`Alert ${reportId.slice(0, 8)} acknowledged`);
-    } catch (err) {
-      console.error('Failed to mark alert as read:', err);
-      showToast('Failed to acknowledge alert');
-    }
-  };
-
-  // Telemetry metric counts
-  const totalAlerts = alerts.length;
-  const unreadCount = useMemo(() => alerts.filter((a) => !a.isRead).length, [alerts]);
-  const criticalCount = useMemo(
-    () => alerts.filter((a) => a.severity === 'Critical' || a.severity === 'High').length,
-    [alerts]
-  );
-  const unreadCriticalCount = useMemo(
-    () => alerts.filter((a) => !a.isRead && (a.severity === 'Critical' || a.severity === 'High')).length,
-    [alerts]
-  );
-
-  // Agency identification helper
-  const inferAgencyBadge = (category: string, title: string) => {
-    const text = `${category} ${title}`.toLowerCase();
-    if (text.includes('medic') || text.includes('casualty') || text.includes('ambulance') || text.includes('trauma')) {
-      return { label: 'RHU MEDICAL', icon: Ambulance, color: 'bg-sky-500/20 text-sky-300 border-sky-500/50' };
-    }
-    if (text.includes('fire') || text.includes('flame') || text.includes('smoke') || text.includes('hazmat')) {
-      return { label: 'BFP FIRE', icon: Flame, color: 'bg-orange-500/20 text-orange-300 border-orange-500/50' };
-    }
-    if (text.includes('police') || text.includes('crime') || text.includes('security') || text.includes('patrol')) {
-      return { label: 'PNP POLICE', icon: Shield, color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50' };
-    }
-    return { label: 'LDRRMO COMMAND', icon: AlertTriangle, color: 'bg-rose-500/20 text-rose-300 border-rose-500/50' };
-  };
-
-  // Filtered Alerts
-  const filteredAlerts = useMemo(() => {
-    return alerts.filter((a) => {
-      if (filterMode === 'UNREAD' && a.isRead) return false;
-      if (filterMode === 'CRITICAL' && a.severity !== 'Critical' && a.severity !== 'High') return false;
-
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const refMatch = a.referenceCode?.toLowerCase().includes(query);
-        const titleMatch = a.title?.toLowerCase().includes(query);
-        const catMatch = a.category?.toLowerCase().includes(query);
-        if (!refMatch && !titleMatch && !catMatch) return false;
-      }
-
-      return true;
-    });
-  }, [alerts, filterMode, searchQuery]);
-
-  return (
-    <div className="flex flex-col gap-6 text-slate-100 select-none pb-8 w-full">
-      {/* Toast Feedback */}
-      {acknowledgeToast && (
-        <div className="fixed top-5 right-5 z-50 px-4 py-2.5 rounded-lg bg-slate-900 border-2 border-sky-400 text-sky-300 font-mono text-xs font-bold shadow-2xl flex items-center gap-2 animate-bounce">
-          <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping" />
-          <span>{acknowledgeToast}</span>
-        </div>
-      )}
-
-      {/* 1. ALERTS HEADER & TELEMETRY */}
-      <div className="tactical-card p-5 bg-slate-900/90 border-2 border-slate-700/80 rounded-xl shadow-2xl">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl md:text-2xl font-black text-white tracking-wide">
-              Alerts
-            </h1>
-          </div>
-
-          {/* Rapid Telemetry Counters */}
-          <div className="flex items-center gap-2 font-mono text-xs">
-            <div className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center">
-              <span className="text-[10px] text-slate-400 font-bold">Total</span>
-              <span className="text-base font-black text-white">{totalAlerts}</span>
-            </div>
-            <div className="px-3 py-1.5 rounded-lg bg-rose-950/60 border border-rose-800 flex flex-col items-center">
-              <span className="text-[10px] text-rose-400 font-bold">Critical</span>
-              <span className="text-base font-black text-rose-400 animate-pulse">{unreadCriticalCount}</span>
-            </div>
-            <div className="px-3 py-1.5 rounded-lg bg-sky-950/60 border border-sky-800 flex flex-col items-center">
-              <span className="text-[10px] text-sky-400 font-bold">Unread</span>
-              <span className="text-base font-black text-sky-300">{unreadCount}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Filter Pills & Search Input */}
-        <div className="mt-4 pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 font-mono text-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setFilterMode('ALL')}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all cursor-pointer ${
-                filterMode === 'ALL'
-                  ? 'bg-sky-500 text-slate-950 border-sky-400 font-bold shadow-[0_0_10px_rgba(14,165,233,0.4)]'
-                  : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
-              }`}
-            >
-              All ({totalAlerts})
-            </button>
-            <button
-              onClick={() => setFilterMode('UNREAD')}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
-                filterMode === 'UNREAD'
-                  ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold shadow-[0_0_10px_rgba(245,158,11,0.4)]'
-                  : 'bg-slate-950 text-amber-400 border-amber-900/60 hover:border-amber-800'
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5" />
-              <span>Unread ({unreadCount})</span>
-            </button>
-            <button
-              onClick={() => setFilterMode('CRITICAL')}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
-                filterMode === 'CRITICAL'
-                  ? 'bg-rose-600 text-white border-rose-400 font-bold shadow-[0_0_10px_rgba(239,68,68,0.4)]'
-                  : 'bg-slate-950 text-rose-400 border-rose-900/60 hover:border-rose-800'
-              }`}
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Critical ({criticalCount})</span>
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => {
-                setSirenMuted((prev) => !prev);
-                showToast(sirenMuted ? 'Siren active' : 'Siren muted');
-              }}
-              className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
-                sirenMuted
-                  ? 'bg-slate-950 text-slate-400 border-slate-800'
-                  : 'bg-rose-950 text-rose-300 border-rose-600/80 shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse'
-              }`}
-            >
-              {sirenMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-              <span>{sirenMuted ? 'Siren Muted' : 'Siren Active'}</span>
-            </button>
-
-            <SearchBar
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search alert code, title..."
-              className="w-full sm:w-56"
-            />
-
-            <TableCardToggle viewMode={viewMode} onChange={setViewMode} />
-          </div>
-        </div>
+export const ResponderAlerts: React.FC = () => (
+  <div className="flex flex-col gap-6 w-full pb-12 select-none">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#F7F1EA]/20 pb-4">
+      <div>
+        <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#E9D9D0]">
+          Katipunan Responder Operations
+        </span>
+        <h1 className="text-2xl md:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
+          Consolidated Dispatch Alerts
+        </h1>
       </div>
-
-      {/* 2. CARD FEED FOR EMERGENCY ALERTS */}
-      <div className="flex flex-col gap-3">
-        {loading ? (
-          <div className="tactical-card p-12 text-center text-sky-400 font-mono text-sm animate-pulse">
-            Loading alerts...
-          </div>
-        ) : filteredAlerts.length === 0 ? (
-          <div className="tactical-card p-12 text-center bg-slate-900/60 border border-slate-800 rounded-xl">
-            <Radio className="w-8 h-8 mx-auto mb-2 text-slate-500" />
-            <h3 className="text-base font-bold text-white font-mono">No alerts</h3>
-            <p className="text-xs text-slate-400 font-mono mt-1">
-              No active alerts match this filter.
-            </p>
-          </div>
-        ) : (
-          filteredAlerts.map((a) => {
-            const agency = inferAgencyBadge(a.category, a.title);
-            const isCritical = a.severity === 'Critical';
-            const isSevere = a.severity === 'High';
-            const isModerate = a.severity === 'Medium';
-
-            // Severity Chip Configuration
-            const severityChip = isCritical ? (
-              <span className="px-2.5 py-0.5 rounded bg-rose-950 text-rose-300 border-2 border-rose-500 text-[10px] font-black uppercase font-mono tracking-wider animate-pulse flex items-center gap-1 shadow-[0_0_8px_rgba(244,63,94,0.4)]">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
-                <span>Critical</span>
-              </span>
-            ) : isSevere ? (
-              <span className="px-2.5 py-0.5 rounded bg-orange-950 text-orange-300 border border-orange-500 text-[10px] font-extrabold font-mono tracking-wider flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" />
-                <span>Severe</span>
-              </span>
-            ) : isModerate ? (
-              <span className="px-2.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500 text-[10px] font-bold font-mono tracking-wider">
-                Moderate
-              </span>
-            ) : (
-              <span className="px-2.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500 text-[10px] font-bold font-mono tracking-wider">
-                Routine
-              </span>
-            );
-
-            // High-contrast night-vision card border styling
-            const cardStyle = !a.isRead
-              ? isCritical
-                ? 'border-2 border-rose-500 bg-gradient-to-r from-rose-950/40 via-slate-900 to-slate-900 shadow-[0_0_18px_rgba(239,68,68,0.3)]'
-                : 'border-2 border-sky-400 bg-gradient-to-r from-sky-950/40 via-slate-900 to-slate-900 shadow-[0_0_18px_rgba(14,165,233,0.3)]'
-              : 'border border-slate-800 bg-slate-950/80 hover:border-slate-700';
-
-            return (
-              <div
-                key={a.reportId}
-                className={`tactical-card p-4 rounded-xl transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${cardStyle}`}
-              >
-                {/* Left: Photographic Evidence & Alert Content */}
-                <div className="flex items-start gap-4">
-                  {/* Photo or Tactical Radar Icon */}
-                  {a.hasImage && a.imageUrl ? (
-                    <div className="relative group flex-shrink-0">
-                      <img
-                        src={a.imageUrl}
-                        alt={a.title}
-                        onClick={() => setLightboxImageUrl(a.imageUrl || null)}
-                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg object-cover border-2 border-slate-700 cursor-pointer group-hover:border-sky-400 transition-colors"
-                      />
-                      <div
-                        onClick={() => setLightboxImageUrl(a.imageUrl || null)}
-                        className="absolute inset-0 bg-slate-950/40 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[10px] font-mono font-bold text-sky-300"
-                      >
-                        ZOOM
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg bg-slate-950 border-2 border-slate-800 flex flex-col items-center justify-center text-slate-500 flex-shrink-0">
-                      <agency.icon className="w-6 h-6 text-slate-400 mb-0.5" />
-                      <span className="text-[9px] font-mono text-slate-400 font-bold">ALARM</span>
-                    </div>
-                  )}
-
-                  {/* Alert Context */}
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                      <span className="font-mono text-xs font-black text-sky-400 bg-sky-950/60 px-2 py-0.5 rounded border border-sky-800">
-                        {a.referenceCode}
-                      </span>
-
-                      {/* Agency Badge */}
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black border uppercase tracking-wider inline-flex items-center gap-1 ${agency.color}`}>
-                        <agency.icon className="w-3 h-3" />
-                        <span>{agency.label}</span>
-                      </span>
-
-                      {/* Severity Chip (CRITICAL, SEVERE, MODERATE) */}
-                      {severityChip}
-
-                      <span className="text-[11px] font-mono text-slate-400 inline-flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-slate-500" />
-                        <span>{formatRelativeTime(a.timestamp)}</span>
-                      </span>
-
-                      {!a.isRead && (
-                        <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-mono text-[10px] font-black uppercase tracking-wider animate-pulse">
-                          NEW UNREAD
-                        </span>
-                      )}
-                    </div>
-
-                    <h2 className="text-base font-bold text-white tracking-wide">
-                      {a.title}
-                    </h2>
-
-                    <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs font-mono text-slate-400">
-                      <span>CATEGORY: <strong className="text-slate-300">{a.category}</strong></span>
-                      <span className="text-slate-600">•</span>
-                      <span>TIME: {formatIsoTimestamp(a.timestamp)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right: Tactical Action Controls */}
-                <div className="flex items-center gap-2.5 self-end md:self-center flex-shrink-0">
-                  {!a.isRead ? (
-                    <button
-                      type="button"
-                      onClick={() => handleMarkRead(a.reportId)}
-                      className="px-4 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono text-xs font-black uppercase tracking-wider border border-white shadow-[0_0_12px_rgba(16,185,129,0.5)] active:scale-95 transition-all flex items-center gap-1.5"
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>ACKNOWLEDGE</span>
-                    </button>
-                  ) : (
-                    <div className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 font-mono text-xs flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      <span>ACKNOWLEDGED</span>
-                    </div>
-                  )}
-
-                  {a.hasImage && (
-                    <button
-                      type="button"
-                      onClick={() => setLightboxImageUrl(a.imageUrl || null)}
-                      className="px-3 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono text-xs font-bold uppercase tracking-wider active:scale-95 transition-all inline-flex items-center gap-1"
-                    >
-                      <Camera className="w-3.5 h-3.5" />
-                      <span>PHOTO</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Structured Tactical Table View when Table Mode is Active */}
-      {viewMode === 'table' && filteredAlerts.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/90 shadow-2xl">
-          <table className="w-full text-left text-xs font-mono">
-            <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
-              <tr>
-                <th className="p-3.5">Ref Code</th>
-                <th className="p-3.5">Agency</th>
-                <th className="p-3.5">Severity</th>
-                <th className="p-3.5">Alert Broadcast Headline</th>
-                <th className="p-3.5">Category</th>
-                <th className="p-3.5">State</th>
-                <th className="p-3.5 text-right">Acknowledge</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 bg-slate-950/40">
-              {filteredAlerts.map((a) => {
-                const agency = inferAgencyBadge(a.category, a.title);
-                return (
-                  <tr key={a.reportId} className="hover:bg-slate-900/60 transition-colors">
-                    <td className="p-3.5 text-sky-400 font-bold whitespace-nowrap">{a.referenceCode}</td>
-                    <td className="p-3.5 whitespace-nowrap">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border inline-flex items-center gap-1 ${agency.color}`}>
-                        <agency.icon className="w-3 h-3" />
-                        <span>{agency.label}</span>
-                      </span>
-                    </td>
-                    <td className="p-3.5 whitespace-nowrap">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          a.severity === 'Critical'
-                            ? 'bg-rose-950 text-rose-300 border border-rose-600'
-                            : 'bg-amber-950 text-amber-300 border border-amber-600'
-                        }`}
-                      >
-                        {a.severity}
-                      </span>
-                    </td>
-                    <td className="p-3.5 text-white font-sans font-medium">{a.title}</td>
-                    <td className="p-3.5 text-slate-300">{a.category}</td>
-                    <td className="p-3.5 whitespace-nowrap">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] ${
-                          a.isRead
-                            ? 'bg-slate-900 text-slate-400 border border-slate-700'
-                            : 'bg-amber-950 text-amber-300 border border-amber-600'
-                        }`}
-                      >
-                        {a.isRead ? 'Acknowledged' : 'Unread'}
-                      </span>
-                    </td>
-                    <td className="p-3.5 text-right whitespace-nowrap">
-                      {!a.isRead ? (
-                        <button
-                          type="button"
-                          onClick={() => handleMarkRead(a.reportId)}
-                          className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-[10px] inline-flex items-center gap-1"
-                        >
-                          <span>Ack</span>
-                          <Check className="w-3 h-3" />
-                        </button>
-                      ) : (
-                        <span className="text-slate-500 text-[10px]">Logged</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Lightbox Modal for Full Alert Photographic Verification */}
-      <ImageLightboxModal
-        isOpen={lightboxImageUrl !== null}
-        onClose={() => setLightboxImageUrl(null)}
-        imageUrl={lightboxImageUrl}
-        title="Tactical Alert Image Evidence Inspection"
-      />
     </div>
-  );
-};
+
+    <div className="clay-surface p-6 sm:p-8 rounded-2xl bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 shadow-[0_14px_34px_rgba(74,4,26,0.22)] flex flex-col gap-5">
+      <div className="flex items-start gap-3.5">
+        <div className="w-11 h-11 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 flex items-center justify-center flex-shrink-0">
+          <Bell className="w-5 h-5 text-[#670626]" />
+        </div>
+        <div>
+          <h2 className="text-lg font-black text-[#670626]">
+            Alerts Consolidated in Dashboard &amp; Notification Bell
+          </h2>
+          <p className="text-sm text-[#A83B4D] font-medium mt-0.5">
+            Live incident dispatches, verification notices, and backup signals are delivered via the Responder Dashboard and top-bar Notification Bell.
+          </p>
+        </div>
+      </div>
+
+      <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm text-[#2B010E]">
+        <div className="flex items-start gap-2.5">
+          <ShieldCheck className="w-5 h-5 text-[#670626] flex-shrink-0 mt-0.5" />
+          <p className="leading-relaxed">
+            Open the <strong className="text-[#670626]">Notification Bell</strong> in the top header bar at any time to acknowledge incoming dispatch alerts, or return to <strong className="text-[#670626]">Responder Dashboard</strong> for live map telemetry.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 pt-1">
+        <Link to="/responder/dashboard">
+          <Button
+            type="button"
+            variant="primary"
+            size="md"
+            icon={<ArrowRight className="w-4 h-4" />}
+            iconPosition="right"
+          >
+            Go to Responder Dashboard
+          </Button>
+        </Link>
+        <Link to="/responder/incidents">
+          <Button
+            type="button"
+            variant="outline"
+            size="md"
+            icon={<Radio className="w-4 h-4" />}
+          >
+            View Unit Dispatches
+          </Button>
+        </Link>
+      </div>
+    </div>
+  </div>
+);
 
 export default ResponderAlerts;

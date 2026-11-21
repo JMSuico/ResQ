@@ -113,25 +113,25 @@ export const FloatingChatModal: FC<FloatingChatModalProps> = ({
 
   return (
     <div
-      className="fixed bottom-6 right-6 z-50 w-96 max-w-[calc(100vw-2rem)] h-[540px] flex flex-col rounded-2xl bg-slate-900 border border-slate-700/80 shadow-2xl overflow-hidden font-mono text-slate-100 animate-in fade-in zoom-in-95 duration-150"
+      className="clay-surface fixed bottom-6 right-6 z-50 w-96 max-w-[calc(100vw-2rem)] h-[540px] flex flex-col rounded-2xl bg-[#F7F1EA] border border-[#E9D9D0] overflow-hidden font-mono text-[#3B1722] animate-in fade-in zoom-in-95 duration-150"
       style={{
-        boxShadow: '0 24px 50px -6px rgba(0, 0, 0, 0.85), 0 0 1px 1px rgba(56, 189, 248, 0.25)'
+        boxShadow: '0 24px 50px -8px rgba(103, 6, 38, 0.28), inset 0 2px 4px rgba(255, 255, 255, 0.9)'
       }}
       role="dialog"
       aria-label="Tactical Comms Channel"
     >
       {/* Tactical Top Bar */}
-      <div className="flex items-center justify-between px-4 py-3 bg-slate-950 border-b border-slate-800">
+      <div className="flex items-center justify-between px-4 py-3 bg-[#EFE5DC] border-b border-[#E9D9D0]">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-sky-950/80 border border-sky-800/60 text-sky-400">
+          <div className="p-1.5 rounded-lg bg-[#670626]/12 border border-[#A83B4D]/40 text-[#670626]">
             <Radio className="w-4 h-4 animate-pulse" />
           </div>
           <div className="flex flex-col">
-            <h3 className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
+            <h3 className="text-sm font-bold text-[#670626] flex items-center gap-1.5">
               <span>Comms &middot; {unitCallsign}</span>
             </h3>
-            <span className="text-[10px] text-slate-400 flex items-center gap-1">
-              <Activity className="w-2.5 h-2.5 text-emerald-400" />
+            <span className="text-xs text-[#7A4E59] flex items-center gap-1">
+              <Activity className="w-3 h-3 text-emerald-700" />
               <span>{channelName}</span>
             </span>
           </div>
@@ -140,7 +140,7 @@ export const FloatingChatModal: FC<FloatingChatModalProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+          className="p-1.5 rounded-lg text-[#7A4E59] hover:text-[#670626] hover:bg-[#E9D9D0] transition-colors cursor-pointer"
           aria-label="Close tactical chat"
         >
           <X className="w-4 h-4" />
@@ -148,42 +148,44 @@ export const FloatingChatModal: FC<FloatingChatModalProps> = ({
       </div>
 
       {activeIncidentId && (
-        <div className="px-3 py-1.5 bg-rose-950/40 border-b border-rose-900/40 text-[10px] text-rose-300 flex items-center gap-1.5">
-          <AlertTriangle className="w-3 h-3 text-rose-400 flex-shrink-0" />
+        <div className="px-3 py-1.5 bg-rose-50 border-b border-rose-200 text-xs font-bold text-[#991B1B] flex items-center gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 text-[#991B1B] flex-shrink-0" />
           <span className="truncate">Incident #{activeIncidentId}</span>
         </div>
       )}
 
       {/* Message Feed */}
-      <div className="flex-1 p-3 overflow-y-auto flex flex-col gap-2.5 bg-slate-900/60">
+      <div className="flex-1 p-3 overflow-y-auto flex flex-col gap-2.5 bg-[#F7F1EA]">
         {messages.map((msg) => {
           const isOwn = msg.unitCallsign === unitCallsign;
           return (
             <div
               key={msg.id}
-              className={`flex flex-col max-w-[85%] rounded-xl p-2.5 text-xs border ${
+              className={`flex flex-col max-w-[85%] rounded-xl p-2.5 text-sm border ${
                 msg.isPriority
-                  ? 'bg-rose-950/50 border-rose-800/80 text-rose-100'
+                  ? 'bg-rose-50 border-rose-300 text-[#991B1B]'
                   : isOwn
-                  ? 'self-end bg-sky-950/50 border-sky-800/80 text-sky-100'
-                  : 'self-start bg-slate-950/90 border-slate-800 text-slate-200'
+                  ? 'self-end bg-[#670626] border-[#670626] text-[#F7F1EA]'
+                  : 'self-start bg-[#E9D9D0]/75 border-[#D8C1B5] text-[#3B1722]'
               }`}
             >
-              <div className="flex items-center justify-between gap-2 mb-1 text-[10px] text-slate-400 border-b border-slate-800/60 pb-1">
+              <div className={`flex items-center justify-between gap-2 mb-1 text-xs border-b pb-1 ${
+                isOwn && !msg.isPriority ? 'text-[#E9D9D0] border-white/20' : 'text-[#7A4E59] border-[#D8C1B5]'
+              }`}>
                 <span className="font-bold flex items-center gap-1">
                   {msg.isPriority ? (
-                    <AlertTriangle className="w-2.5 h-2.5 text-rose-400" />
+                    <AlertTriangle className="w-3 h-3 text-[#991B1B]" />
                   ) : (
-                    <Shield className="w-2.5 h-2.5 text-sky-400" />
+                    <Shield className={`w-3 h-3 ${isOwn ? 'text-[#F7F1EA]' : 'text-[#670626]'}`} />
                   )}
                   <span>{msg.unitCallsign || msg.senderName}</span>
                 </span>
-                <span className="text-[9px] flex items-center gap-0.5">
-                  <Clock className="w-2.5 h-2.5" />
+                <span className="text-xs flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
                   <span>{msg.timestamp}</span>
                 </span>
               </div>
-              <p className="leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
+              <p className="leading-relaxed whitespace-pre-wrap break-words text-sm">{msg.content}</p>
             </div>
           );
         })}
@@ -191,16 +193,16 @@ export const FloatingChatModal: FC<FloatingChatModalProps> = ({
       </div>
 
       {/* Quick Tactical Brevity Toolbar */}
-      <div className="px-2.5 py-1.5 bg-slate-950 border-t border-slate-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+      <div className="px-2.5 py-2 bg-[#EFE5DC] border-t border-[#E9D9D0] flex items-center gap-1.5 overflow-x-auto no-scrollbar">
         {BREVITY_CODES.map((code) => (
           <button
             key={code.label}
             type="button"
             onClick={() => handleApplyBrevity(code.text, code.priority)}
-            className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-colors whitespace-nowrap cursor-pointer ${
+            className={`px-2.5 py-1 rounded-md text-xs font-bold border transition-colors whitespace-nowrap cursor-pointer ${
               code.priority
-                ? 'bg-rose-950/60 border-rose-800/60 text-rose-300 hover:bg-rose-900/60'
-                : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:bg-slate-800'
+                ? 'bg-rose-100 border-rose-300 text-[#991B1B] hover:bg-rose-200'
+                : 'bg-[#F7F1EA] border-[#D4B8AA] text-[#670626] hover:bg-[#E9D9D0]'
             }`}
           >
             {code.label}
@@ -209,34 +211,34 @@ export const FloatingChatModal: FC<FloatingChatModalProps> = ({
       </div>
 
       {/* Input Composer */}
-      <form onSubmit={handleSend} className="p-2.5 bg-slate-950 border-t border-slate-800 flex flex-col gap-2">
+      <form onSubmit={handleSend} className="p-2.5 bg-[#EFE5DC]/85 border-t border-[#E9D9D0] flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <input
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder="Type message..."
-            className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-100 text-xs placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            className="flex-1 px-3 py-2 rounded-xl bg-[#FFFBF7] border border-[#D8C1B5] text-[#3B1722] text-sm placeholder:text-[#9B727D] focus:outline-none focus:ring-2 focus:ring-[#A83B4D]/30 focus:border-[#670626]"
           />
           <button
             type="submit"
             disabled={isSending || !inputText.trim()}
-            className="p-2 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white transition-colors cursor-pointer flex-shrink-0"
+            className="p-2.5 rounded-xl bg-[#670626] hover:bg-[#7D0A30] disabled:opacity-50 text-[#F7F1EA] transition-colors cursor-pointer flex-shrink-0"
             aria-label="Send message"
           >
             <Send className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="flex items-center justify-between text-[10px] text-slate-400">
+        <div className="flex items-center justify-between text-xs text-[#7A4E59]">
           <label className="flex items-center gap-1.5 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={isPriority}
               onChange={(e) => setIsPriority(e.target.checked)}
-              className="w-3.5 h-3.5 rounded border-slate-700 text-rose-600 bg-slate-900 focus:ring-rose-500"
+              className="w-3.5 h-3.5 rounded border-[#D4B8AA] accent-[#991B1B]"
             />
-            <span className={isPriority ? 'text-rose-400 font-bold' : ''}>Priority Flag</span>
+            <span className={isPriority ? 'text-[#991B1B] font-bold' : ''}>Priority Flag</span>
           </label>
         </div>
       </form>

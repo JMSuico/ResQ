@@ -75,6 +75,20 @@ public class BiometricEnrollment
 
     public DateTime EnrolledAtUtc { get; set; } = DateTime.UtcNow;
 
+    [MaxLength(32)]
+    public string TrainingStatus { get; set; } = "READY"; // LEARNING, READY, FAILED
+
+    public DateTime? TrainingStartedAtUtc { get; set; }
+
+    public DateTime? TrainingReadyTargetUtc { get; set; }
+
+    public DateTime? TrainingCompletedAtUtc { get; set; }
+
+    [MaxLength(500)]
+    public string? TrainingNotes { get; set; }
+
+    public int TrainedFrameCount { get; set; } = 0;
+
     public DateTime? RevokedAtUtc { get; set; }
 
     [MaxLength(180)]

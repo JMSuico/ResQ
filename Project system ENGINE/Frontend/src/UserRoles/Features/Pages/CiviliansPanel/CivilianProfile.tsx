@@ -1,22 +1,19 @@
 // [Layer: UserRoles/Features/Pages/CiviliansPanel]
-// Responsibility: Displays citizen profile, verified resident badge, registered barangay,
-// editable next-of-kin emergency contacts, and emergency medical triage profile with localStorage persistence.
-// DO NOT expose raw biometric capture files to unauthorized observers.
+// Responsibility: Displays resident Profile header, verified resident badge, personal contact number
+// (text-only storage, zero tel: links), registered barangay, emergency contacts, and medical profile.
+// Strictly 100% arrow functions (=>), ZERO 'any', and ZERO emojis.
 
 import React, { useState, useEffect } from 'react';
-import {
-  Edit2,
-  CheckCircle2,
-  Camera
-} from 'lucide-react';
+import { Edit2, CheckCircle2, Camera } from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
-import { Button } from '@/Shared/Button';
 import { requestJson } from '@/Endpoints/apiClient';
+import { CivilianButton } from './Shared/CivilianButton';
 
-// Architectural constants - Zero hardcoded static numbers
 const MAX_AVATAR_FILE_SIZE_BYTES = 2 * 1024 * 1024;
 const TOAST_NOTIFICATION_MS = 3500;
 const SAVE_PROFILE_TOAST_MS = 4000;
+const STORAGE_KEY = 'resqtrack_civilian_medical_profile';
+const CONTACT_STORAGE_KEY = 'resqtrack_reporter_contact_number';
 
 export const KATIPUNAN_BARANGAYS = [
   'Balok',
@@ -49,6 +46,7 @@ export const KATIPUNAN_BARANGAYS = [
 ];
 
 export interface EmergencyMedicalProfile {
+  reporterContactNumber: string;
   bloodType: string;
   allergies: string;
   medicalConditions: string;
@@ -62,6 +60,7 @@ export interface EmergencyMedicalProfile {
 }
 
 export interface UpdateOwnProfilePayload {
+  phoneNumber?: string;
   bloodType?: string;
   allergies?: string;
   medicalConditions?: string;
@@ -84,12 +83,19 @@ export const updateOwnProfile = async (
     body: JSON.stringify(payload)
   });
 
-const STORAGE_KEY = 'resqtrack_civilian_medical_profile';
+const getStoredContact = (): string => {
+  try {
+    return localStorage.getItem(CONTACT_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+};
 
 export const CivilianProfile: React.FC = () => {
   const { session, refreshSession } = useSession();
 
-  const [profile, setProfile] = useState<EmergencyMedicalProfile>({
+  const [profile, setProfile] = useState<EmergencyMedicalProfile>(() => ({
+    reporterContactNumber: getStoredContact(),
     bloodType: 'O+',
     allergies: 'None',
     medicalConditions: 'None',
@@ -100,7 +106,7 @@ export const CivilianProfile: React.FC = () => {
     secondaryContactName: '',
     secondaryContactPhone: '',
     barangay: 'Poblacion'
-  });
+  }));
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -161,12 +167,17 @@ export const CivilianProfile: React.FC = () => {
     }
   };
 
-  // Load from localStorage on mount and sync with session
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
+      const storedContact = localStorage.getItem(CONTACT_STORAGE_KEY) || '';
       if (saved) {
-        setProfile((prev) => ({ ...prev, ...JSON.parse(saved) }));
+        const parsed = JSON.parse(saved) as Partial<EmergencyMedicalProfile>;
+        setProfile((prev) => ({
+          ...prev,
+          ...parsed,
+          reporterContactNumber: parsed.reporterContactNumber || storedContact || prev.reporterContactNumber
+        }));
       }
     } catch (err) {
       console.error('Failed to load civilian medical profile:', err);
@@ -177,7 +188,10 @@ export const CivilianProfile: React.FC = () => {
     if (session?.departmentOrBarangay) {
       setProfile((prev) => ({
         ...prev,
-        barangay: prev.barangay === 'Poblacion' && session.departmentOrBarangay ? session.departmentOrBarangay : prev.barangay
+        barangay:
+          prev.barangay === 'Poblacion' && session.departmentOrBarangay
+            ? session.departmentOrBarangay
+            : prev.barangay
       }));
     }
   }, [session?.departmentOrBarangay]);
@@ -186,12 +200,12 @@ export const CivilianProfile: React.FC = () => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      // 1. Save to local storage encrypted vault
       localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+      localStorage.setItem(CONTACT_STORAGE_KEY, profile.reporterContactNumber.trim());
 
-      // 2. Call updateOwnProfile(payload) (PUT /api/profile) to persist in relational Users table
       try {
         await updateOwnProfile({
+          phoneNumber: profile.reporterContactNumber.trim(),
           bloodType: profile.bloodType,
           allergies: profile.allergies,
           medicalConditions: profile.medicalConditions,
@@ -213,7 +227,7 @@ export const CivilianProfile: React.FC = () => {
       }
 
       setIsEditing(false);
-      setSaveSuccessToast('Emergency medical & next-of-kin profile saved to database and local vault.');
+      setSaveSuccessToast('Profile, personal contact, and medical details saved.');
       setTimeout(() => setSaveSuccessToast(null), SAVE_PROFILE_TOAST_MS);
     } catch (err) {
       console.error('Failed to save profile:', err);
@@ -224,36 +238,43 @@ export const CivilianProfile: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 w-full pb-12">
-      {/* 1. Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+      {/* 1. Page Header ("Profile") */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#F7F1EA]/20 pb-4">
         <div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Profile</h1>
-          <p className="text-xs text-slate-400 mt-0.5">Identity & Medical Info</p>
+          <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#E9D9D0]">
+            Resident Account
+          </span>
+          <h1 className="text-2xl md:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
+            Profile
+          </h1>
+          <p className="text-sm text-[#E9D9D0] mt-1">Identity, Contact & Medical Info</p>
         </div>
 
-        <button
+        <CivilianButton
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() => setIsEditing((prev) => !prev)}
-          className="self-start sm:self-auto px-4 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sky-400 hover:text-white text-xs font-mono font-bold flex items-center gap-1.5 transition-colors"
+          icon={<Edit2 className="w-4 h-4" />}
+          className="self-start sm:self-auto"
         >
-          <Edit2 className="w-3.5 h-3.5" />
-          <span>{isEditing ? 'Cancel' : 'Edit Profile'}</span>
-        </button>
+          {isEditing ? 'Cancel' : 'Edit Profile'}
+        </CivilianButton>
       </div>
 
       {/* 2. Success Toast */}
       {saveSuccessToast && (
-        <div className="p-3.5 rounded-xl bg-emerald-950/95 border border-emerald-500 text-emerald-200 text-xs font-medium flex items-center gap-3 shadow-lg shadow-emerald-950/50">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+        <div className="clay-surface p-4 rounded-xl bg-[#F7F1EA] border border-[#670626]/25 text-[#670626] text-sm font-bold flex items-center gap-3 shadow-lg">
+          <CheckCircle2 className="w-5 h-5 text-[#670626] flex-shrink-0" />
           <span>{saveSuccessToast}</span>
         </div>
       )}
 
-      {/* 3. Verified Citizen Card */}
-      <div className="tactical-card p-6 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col gap-6 shadow-xl">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-800/80">
+      {/* 3. Resident Identity Card */}
+      <div className="clay-surface p-6 rounded-2xl bg-[#F7F1EA] text-[#670626] border border-[#670626]/15 flex flex-col gap-6 shadow-[0_16px_38px_rgba(74,4,26,0.24)]">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-[#670626]/15">
           <div className="flex items-center gap-4">
-            <div className="relative group w-16 h-16 rounded-2xl overflow-hidden border border-emerald-400/40 shadow-lg shadow-emerald-950/60 bg-slate-950 flex items-center justify-center flex-shrink-0">
+            <div className="relative group w-20 h-20 rounded-2xl overflow-hidden border-2 border-[#670626]/25 bg-[#E9D9D0] flex items-center justify-center flex-shrink-0">
               {avatarUrl ? (
                 <img
                   src={avatarUrl}
@@ -261,17 +282,16 @@ export const CivilianProfile: React.FC = () => {
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <div className="w-full h-full bg-gradient-to-tr from-emerald-600 via-teal-600 to-cyan-600 flex items-center justify-center text-2xl font-black text-white">
+                <div className="w-full h-full bg-[#670626] flex items-center justify-center text-3xl font-black text-[#F7F1EA]">
                   {session?.fullName?.charAt(0) || 'C'}
                 </div>
               )}
 
-              {/* Photo Upload Overlay Button */}
               <label
-                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white text-[10px] font-mono font-bold"
+                className="absolute inset-0 bg-[#4A041A]/75 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-[#F7F1EA] text-xs font-mono font-bold"
                 title="Upload Photo"
               >
-                <Camera className="w-5 h-5 mb-0.5 text-emerald-400" />
+                <Camera className="w-5 h-5 mb-0.5 text-[#F7F1EA]" />
                 <span>Photo</span>
                 <input
                   type="file"
@@ -283,25 +303,28 @@ export const CivilianProfile: React.FC = () => {
             </div>
 
             <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-bold text-white">{session?.fullName || 'Registered Resident'}</h2>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h2 className="text-xl font-black text-[#670626]">
+                  {session?.fullName || 'Registered Resident'}
+                </h2>
                 {session?.faceVerified ? (
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-600/50 text-[10px] font-mono font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <span className="px-3 py-1 rounded-full bg-[#E9D9D0] text-[#670626] border border-[#670626]/30 text-xs font-mono font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[#670626]" />
                     <span>Verified</span>
                   </span>
                 ) : (
-                  <span className="px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-600/50 text-[10px] font-mono font-bold">
+                  <span className="px-3 py-1 rounded-full bg-[#E9D9D0] text-[#A83B4D] border border-[#A83B4D]/40 text-xs font-mono font-bold">
                     Pending Scan
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-400 mt-0.5 font-mono">{session?.email || 'citizen@katipunan.gov.ph'}</p>
+              <p className="text-sm text-[#A83B4D] mt-0.5 font-mono">
+                {session?.email || 'citizen@katipunan.gov.ph'}
+              </p>
 
-              {/* Upload photo / Reset actions */}
-              <div className="flex items-center gap-3 mt-1.5">
-                <label className="text-[11px] font-mono font-bold text-emerald-400 hover:text-emerald-300 cursor-pointer flex items-center gap-1">
-                  <Camera className="w-3.5 h-3.5" />
+              <div className="flex items-center gap-4 mt-2">
+                <label className="text-xs font-mono font-bold text-[#670626] hover:text-[#4A041A] cursor-pointer flex items-center gap-1.5">
+                  <Camera className="w-4 h-4" />
                   <span>Upload Photo</span>
                   <input
                     type="file"
@@ -314,7 +337,7 @@ export const CivilianProfile: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleResetAvatar}
-                    className="text-[11px] font-mono text-slate-400 hover:text-rose-400 underline transition-colors cursor-pointer"
+                    className="text-xs font-mono text-[#A83B4D] hover:text-[#670626] underline transition-colors cursor-pointer"
                   >
                     Reset Photo
                   </button>
@@ -324,197 +347,250 @@ export const CivilianProfile: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono font-bold text-emerald-400">
+            <span className="px-3.5 py-1.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-sm font-mono font-bold text-[#670626]">
               Civilian
             </span>
           </div>
         </div>
 
-        {/* Identity & Barangay Registry Telemetry */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs font-mono">
-          <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-            <span className="text-slate-500 block text-[10px] font-bold">Status</span>
-            <span className="text-emerald-400 font-extrabold text-sm mt-0.5 block">{session?.status || 'Active Resident'}</span>
+        {/* Identity, Barangay & Personal Contact Telemetry */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm font-mono">
+          <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
+            <span className="text-[#A83B4D] block text-xs font-bold">Status</span>
+            <span className="text-[#670626] font-black text-base mt-1 block">
+              {session?.status || 'Active Resident'}
+            </span>
           </div>
 
-          <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-            <span className="text-slate-500 block text-[10px] font-bold">Resident ID</span>
-            <span className="text-white font-extrabold text-sm mt-0.5 block">{session?.employeeOrResidentId || 'KTN-RES-9281'}</span>
+          <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
+            <span className="text-[#A83B4D] block text-xs font-bold">Resident ID</span>
+            <span className="text-[#670626] font-black text-base mt-1 block">
+              {session?.employeeOrResidentId || 'KTN-RES-9281'}
+            </span>
           </div>
 
-          <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-            <span className="text-slate-500 block text-[10px] font-bold">Barangay</span>
+          <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
+            <span className="text-[#A83B4D] block text-xs font-bold">Barangay</span>
             {isEditing ? (
               <select
                 value={profile.barangay}
                 onChange={(e) => setProfile({ ...profile, barangay: e.target.value })}
-                className="mt-1 w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono font-bold focus:outline-none focus:border-emerald-500"
+                className="mt-1.5 w-full px-3 py-2 bg-[#F7F1EA] border border-[#670626]/25 rounded-lg text-sm text-[#670626] font-mono font-bold focus:outline-none focus:border-[#670626]"
               >
                 {KATIPUNAN_BARANGAYS.map((b) => (
-                  <option key={b} value={b}>{b}</option>
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
                 ))}
               </select>
             ) : (
-              <span className="text-white font-extrabold text-sm mt-0.5 block">{profile.barangay || session?.departmentOrBarangay || 'Poblacion, Katipunan, ZN'}</span>
+              <span className="text-[#670626] font-black text-base mt-1 block">
+                {profile.barangay || session?.departmentOrBarangay || 'Poblacion, Katipunan, ZN'}
+              </span>
+            )}
+          </div>
+
+          <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
+            <span className="text-[#A83B4D] block text-xs font-bold">
+              Personal Contact Number
+            </span>
+            {isEditing ? (
+              <input
+                type="text"
+                value={profile.reporterContactNumber}
+                onChange={(e) =>
+                  setProfile({ ...profile, reporterContactNumber: e.target.value })
+                }
+                placeholder="e.g. 0917 123 4567"
+                className="mt-1.5 w-full px-3 py-2 bg-[#F7F1EA] border border-[#670626]/25 rounded-lg text-sm text-[#670626] font-mono font-bold placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
+              />
+            ) : (
+              <span className="text-[#670626] font-black text-base mt-1 block">
+                {profile.reporterContactNumber || 'Not set'}
+              </span>
             )}
           </div>
         </div>
       </div>
 
-      {/* 4. Emergency Medical Triage Passport & Next-of-Kin Form */}
+      {/* 4. Medical Profile & Emergency Contacts Form */}
       <form onSubmit={handleSaveProfile} className="flex flex-col gap-6">
-        <div className="tactical-card p-6 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col gap-6 shadow-xl">
-          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+        <div className="clay-surface p-6 rounded-2xl bg-[#F7F1EA] text-[#670626] border border-[#670626]/15 flex flex-col gap-6 shadow-[0_14px_34px_rgba(74,4,26,0.22)]">
+          <div className="flex items-center justify-between border-b border-[#670626]/15 pb-3">
             <div className="flex items-center gap-2.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
-              <h2 className="text-sm font-bold text-white">
-                Medical Profile
-              </h2>
+              <span className="w-2.5 h-2.5 rounded-full bg-[#670626]" />
+              <h2 className="text-base font-black text-[#670626]">Medical Profile</h2>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* Blood Type */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-mono font-bold text-slate-300">Blood Type</label>
+              <label className="text-sm font-mono font-bold text-[#670626]">Blood Type</label>
               {isEditing ? (
                 <select
                   value={profile.bloodType}
                   onChange={(e) => setProfile({ ...profile, bloodType: e.target.value })}
-                  className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono font-bold focus:outline-none focus:border-rose-500"
+                  className="px-3.5 py-2.5 bg-[#E9D9D0] border border-[#670626]/25 rounded-xl text-sm text-[#670626] font-mono font-bold focus:outline-none focus:border-[#670626]"
                 >
                   {['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'].map((bt) => (
-                    <option key={bt} value={bt}>{bt}</option>
+                    <option key={bt} value={bt}>
+                      {bt}
+                    </option>
                   ))}
                 </select>
               ) : (
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
-                  <span className="text-sm font-mono font-black text-rose-400">{profile.bloodType}</span>
+                <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
+                  <span className="text-base font-mono font-black text-[#670626]">
+                    {profile.bloodType}
+                  </span>
                 </div>
               )}
             </div>
 
-            {/* Allergies */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-mono font-bold text-slate-300">Allergies</label>
+              <label className="text-sm font-mono font-bold text-[#670626]">Allergies</label>
               {isEditing ? (
                 <input
                   type="text"
                   value={profile.allergies}
                   onChange={(e) => setProfile({ ...profile, allergies: e.target.value })}
                   placeholder="e.g. Penicillin, Aspirin, Latex, None"
-                  className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
+                  className="px-3.5 py-2.5 bg-[#E9D9D0] border border-[#670626]/25 rounded-xl text-sm text-[#670626] placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                 />
               ) : (
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-xs font-mono text-slate-200">{profile.allergies}</span>
+                <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
+                  <span className="text-sm font-mono text-[#670626]">{profile.allergies}</span>
                 </div>
               )}
             </div>
 
-            {/* Chronic Conditions */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-mono font-bold text-slate-300">Medical Conditions</label>
+              <label className="text-sm font-mono font-bold text-[#670626]">
+                Medical Conditions
+              </label>
               {isEditing ? (
                 <input
                   type="text"
                   value={profile.medicalConditions}
-                  onChange={(e) => setProfile({ ...profile, medicalConditions: e.target.value })}
+                  onChange={(e) =>
+                    setProfile({ ...profile, medicalConditions: e.target.value })
+                  }
                   placeholder="e.g. Asthma, Diabetic, Pacemaker, None"
-                  className="px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-rose-500"
+                  className="px-3.5 py-2.5 bg-[#E9D9D0] border border-[#670626]/25 rounded-xl text-sm text-[#670626] placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                 />
               ) : (
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-xs font-mono text-slate-200">{profile.medicalConditions}</span>
+                <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
+                  <span className="text-sm font-mono text-[#670626]">
+                    {profile.medicalConditions}
+                  </span>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* 5. Next-of-Kin Emergency Contacts */}
-        <div className="tactical-card p-6 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col gap-6 shadow-xl">
-          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+        {/* 5. Emergency Contacts (Strictly text only, ZERO tel: links) */}
+        <div className="clay-surface p-6 rounded-2xl bg-[#F7F1EA] text-[#670626] border border-[#670626]/15 flex flex-col gap-6 shadow-[0_14px_34px_rgba(74,4,26,0.22)]">
+          <div className="flex items-center justify-between border-b border-[#670626]/15 pb-3">
             <div className="flex items-center gap-2.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse" />
-              <h2 className="text-sm font-bold text-white">
-                Emergency Contact
-              </h2>
+              <span className="w-2.5 h-2.5 rounded-full bg-[#A83B4D]" />
+              <h2 className="text-base font-black text-[#670626]">Emergency Contact</h2>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Primary Contact */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-3">
-              <span className="text-[11px] font-mono font-bold text-sky-400">Primary Contact</span>
+            <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-3">
+              <span className="text-xs font-mono font-bold text-[#A83B4D]">Primary Contact</span>
               {isEditing ? (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2.5">
                   <input
                     type="text"
                     value={profile.emergencyContactName}
-                    onChange={(e) => setProfile({ ...profile, emergencyContactName: e.target.value })}
+                    onChange={(e) =>
+                      setProfile({ ...profile, emergencyContactName: e.target.value })
+                    }
                     placeholder="Full Name (e.g. Maria Dela Cruz)"
-                    className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-sky-500"
+                    className="px-3.5 py-2.5 bg-[#F7F1EA] border border-[#670626]/20 rounded-lg text-sm text-[#670626] placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                   />
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2.5">
                     <select
                       value={profile.emergencyContactRelation}
-                      onChange={(e) => setProfile({ ...profile, emergencyContactRelation: e.target.value })}
-                      className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-sky-500"
+                      onChange={(e) =>
+                        setProfile({ ...profile, emergencyContactRelation: e.target.value })
+                      }
+                      className="px-3.5 py-2.5 bg-[#F7F1EA] border border-[#670626]/20 rounded-lg text-sm text-[#670626] font-bold focus:outline-none focus:border-[#670626]"
                     >
-                      {['Spouse', 'Parent', 'Sibling', 'Child', 'Guardian', 'Colleague'].map((r) => (
-                        <option key={r} value={r}>{r}</option>
-                      ))}
+                      {['Spouse', 'Parent', 'Sibling', 'Child', 'Guardian', 'Colleague'].map(
+                        (r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        )
+                      )}
                     </select>
                     <input
                       type="text"
                       value={profile.emergencyContactPhone}
-                      onChange={(e) => setProfile({ ...profile, emergencyContactPhone: e.target.value })}
-                      placeholder="Phone (0917-xxx-xxxx)"
-                      className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono focus:outline-none focus:border-sky-500"
+                      onChange={(e) =>
+                        setProfile({ ...profile, emergencyContactPhone: e.target.value })
+                      }
+                      placeholder="Contact Number (Text)"
+                      className="px-3.5 py-2.5 bg-[#F7F1EA] border border-[#670626]/20 rounded-lg text-sm text-[#670626] font-mono placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                     />
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-bold text-white">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-base font-bold text-[#670626]">
                     {profile.emergencyContactName || 'No primary contact registered'}
                   </span>
-                  <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
-                    <span>Relation: <strong className="text-slate-200">{profile.emergencyContactRelation}</strong></span>
-                    <span>•</span>
-                    <span className="text-sky-400 font-bold">{profile.emergencyContactPhone || 'N/A'}</span>
+                  <div className="flex flex-wrap items-center gap-2 text-sm font-mono text-[#A83B4D]">
+                    <span>
+                      Relation:{' '}
+                      <strong className="text-[#670626]">
+                        {profile.emergencyContactRelation}
+                      </strong>
+                    </span>
+                    <span>/</span>
+                    <span className="text-[#670626] font-bold">
+                      {profile.emergencyContactPhone || 'N/A'}
+                    </span>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Secondary Contact */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col gap-3">
-              <span className="text-[11px] font-mono font-bold text-slate-400">Secondary Contact</span>
+            <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-3">
+              <span className="text-xs font-mono font-bold text-[#A83B4D]">
+                Secondary Contact
+              </span>
               {isEditing ? (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2.5">
                   <input
                     type="text"
                     value={profile.secondaryContactName}
-                    onChange={(e) => setProfile({ ...profile, secondaryContactName: e.target.value })}
+                    onChange={(e) =>
+                      setProfile({ ...profile, secondaryContactName: e.target.value })
+                    }
                     placeholder="Full Name (Optional)"
-                    className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-sky-500"
+                    className="px-3.5 py-2.5 bg-[#F7F1EA] border border-[#670626]/20 rounded-lg text-sm text-[#670626] placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                   />
                   <input
                     type="text"
                     value={profile.secondaryContactPhone}
-                    onChange={(e) => setProfile({ ...profile, secondaryContactPhone: e.target.value })}
-                    placeholder="Phone (09xx-xxx-xxxx)"
-                    className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono focus:outline-none focus:border-sky-500"
+                    onChange={(e) =>
+                      setProfile({ ...profile, secondaryContactPhone: e.target.value })
+                    }
+                    placeholder="Contact Number (Text)"
+                    className="px-3.5 py-2.5 bg-[#F7F1EA] border border-[#670626]/20 rounded-lg text-sm text-[#670626] font-mono placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                   />
                 </div>
               ) : (
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-bold text-white">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-base font-bold text-[#670626]">
                     {profile.secondaryContactName || 'No secondary contact specified'}
                   </span>
-                  <span className="text-xs font-mono text-sky-400 font-bold">
+                  <span className="text-sm font-mono text-[#670626] font-bold">
                     {profile.secondaryContactPhone || 'N/A'}
                   </span>
                 </div>
@@ -523,32 +599,32 @@ export const CivilianProfile: React.FC = () => {
           </div>
 
           {isEditing && (
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
-              <Button
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#670626]/15">
+              <CivilianButton
                 type="button"
                 variant="outline"
                 size="md"
                 onClick={() => setIsEditing(false)}
               >
                 Cancel
-              </Button>
-              <Button
+              </CivilianButton>
+              <CivilianButton
                 type="submit"
                 variant="primary"
                 size="md"
                 isLoading={isSubmitting}
-                className="font-bold text-xs"
+                className="text-sm"
               >
-                Save Emergency Profile
-              </Button>
+                Save Profile
+              </CivilianButton>
             </div>
           )}
         </div>
       </form>
 
       {/* 6. Citizen Safety Guarantee */}
-      <div className="px-4 py-3 bg-emerald-950/30 rounded-xl border border-emerald-800/40 text-xs text-slate-300">
-        Identity and medical details are encrypted and shared only with authorized responders during an emergency.
+      <div className="clay-surface px-4 py-3.5 bg-[#F7F1EA] rounded-xl border border-[#670626]/15 text-sm text-[#670626] font-medium">
+        Identity, personal contact, and medical details are stored securely and shared only with authorized responders during an active emergency.
       </div>
     </div>
   );

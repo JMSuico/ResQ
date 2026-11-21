@@ -127,95 +127,61 @@ export const AdminLoginPage: FC = () => {
 
   return (
     <main
-      className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 md:p-8"
+      className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 md:p-8 relative overflow-hidden"
       style={{
-        background: 'radial-gradient(circle at 50% 12%, #340313 0%, #1f030c 35%, #0d0107 70%, #030002 100%)',
-        position: 'relative',
-        overflow: 'hidden'
+        background: 'linear-gradient(145deg, #4A041A 0%, #670626 55%, #3B0315 100%)'
       }}
     >
-      {/* Tactical Glow & Grid Background */}
+      {/* Subtle Cherry Ambient Accents */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-20"
-        style={{
-          backgroundImage: 'radial-gradient(rgba(232, 17, 76, 0.25) 1px, transparent 1px)',
-          backgroundSize: '32px 32px'
-        }}
+        className="pointer-events-none absolute w-[560px] h-[560px] rounded-full blur-[120px] -top-40 -left-40 opacity-25"
+        style={{ background: 'radial-gradient(circle, #A83B4D, transparent 70%)' }}
         aria-hidden="true"
       />
       <div
-        className="pointer-events-none absolute w-[600px] h-[600px] rounded-full blur-[120px] -top-40 -left-40"
-        style={{ background: 'radial-gradient(circle, rgba(232,17,76,0.22), transparent 70%)' }}
-        aria-hidden="true"
-      />
-      <div
-        className="pointer-events-none absolute w-[500px] h-[500px] rounded-full blur-[100px] -bottom-32 -right-32"
-        style={{ background: 'radial-gradient(circle, rgba(255,92,116,0.15), transparent 70%)' }}
+        className="pointer-events-none absolute w-[460px] h-[460px] rounded-full blur-[100px] -bottom-32 -right-32 opacity-20"
+        style={{ background: 'radial-gradient(circle, #F7F1EA, transparent 70%)' }}
         aria-hidden="true"
       />
 
-      <div className="relative w-full max-w-[520px] my-auto z-10">
-        {/* Clean Professional Admin Login Header */}
+      <div className={`relative w-full ${isMobile ? 'max-w-md' : 'max-w-[500px]'} my-auto z-10`}>
+        {/* Admin Login Header */}
         <header className="text-center mb-6">
-          <div className="inline-flex items-center gap-2 mb-3 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/40 shadow-sm backdrop-blur-md">
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_#f43f5e]" />
-            <span className="font-mono text-[11px] font-bold tracking-wider text-rose-300 uppercase">
+          <div className="inline-flex items-center gap-2 mb-3 px-3.5 py-1.5 rounded-full bg-[#F7F1EA]/12 border border-[#F7F1EA]/25 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-[#F7F1EA] animate-pulse" />
+            <span className="font-mono text-xs font-bold tracking-wider text-[#F7F1EA] uppercase">
               Command Portal
             </span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-black tracking-wider text-white font-['Montserrat',sans-serif]">
+          <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-[#F7F1EA] font-['Montserrat',sans-serif]">
             LDRRMO Admin Login
           </h1>
           <div
-            className="w-36 h-[2px] mx-auto mt-3 rounded-full"
-            style={{
-              background: 'linear-gradient(90deg, transparent, #e8114c 30%, #ff5c74 50%, #e8114c 70%, transparent)',
-              boxShadow: '0 0 10px rgba(232, 17, 76, 0.6)'
-            }}
+            className="w-32 h-1 mx-auto mt-3 rounded-full bg-[#A83B4D]"
             aria-hidden="true"
           />
         </header>
 
-        {/* High Security Panel with Tactical Military HUD Corner Brackets */}
+        {/* Elevated Warm Ivory Clay Admin Panel */}
         <section
-          className="relative w-full rounded-2xl bg-gradient-to-b from-[#18030d]/95 via-[#0f0208]/95 to-[#070104]/98 border border-[#e8114c]/40 shadow-2xl shadow-black/90 backdrop-blur-md overflow-hidden"
+          className="clay-surface relative w-full rounded-3xl bg-[#F7F1EA] border border-[#E9D9D0] shadow-[0_28px_64px_-12px_rgba(38,2,14,0.55),inset_0_2px_4px_rgba(255,255,255,0.85)] overflow-hidden text-[#670626]"
           aria-labelledby="admin-panel-title"
-          style={{ boxShadow: '0 25px 60px rgba(0,0,0,0.8), 0 0 25px rgba(232,17,76,0.18)' }}
         >
-          {/* Military HUD Corner Brackets */}
-          <div className="absolute top-0 left-0 w-3.5 h-3.5 border-t-2 border-l-2 border-[#e8114c] pointer-events-none rounded-tl-sm z-20" aria-hidden="true" />
-          <div className="absolute top-0 right-0 w-3.5 h-3.5 border-t-2 border-r-2 border-[#e8114c] pointer-events-none rounded-tr-sm z-20" aria-hidden="true" />
-          <div className="absolute bottom-0 left-0 w-3.5 h-3.5 border-b-2 border-l-2 border-[#e8114c] pointer-events-none rounded-bl-sm z-20" aria-hidden="true" />
-          <div className="absolute bottom-0 right-0 w-3.5 h-3.5 border-b-2 border-r-2 border-[#e8114c] pointer-events-none rounded-br-sm z-20" aria-hidden="true" />
-
-          {/* Top Subtle Scanner Line */}
-          <div
-            className="absolute top-0 left-0 right-0 h-[2px] z-10"
-            style={{ background: 'linear-gradient(90deg, transparent, #e8114c, #ff5c74, #e8114c, transparent)' }}
-            aria-hidden="true"
-          />
           <h2 className="visually-hidden" id="admin-panel-title">LDRRMO Administrator Sign In</h2>
 
-          <form className="p-5 sm:p-7 relative z-10" id="admin-login-form" onSubmit={handleSubmit} noValidate>
+          <form className="p-6 sm:p-8 relative z-10 space-y-4" id="admin-login-form" onSubmit={handleSubmit} noValidate>
             {/* Email Field */}
-            <div className={`field ${emailError ? 'is-invalid' : ''}`} style={{ marginTop: '4px' }}>
+            <div className={emailError ? 'is-invalid' : ''}>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="admin-email">
+                <label className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold" htmlFor="admin-email">
                   Admin Email *
                 </label>
               </div>
-              <div
-                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                style={{
-                  background: 'rgba(32, 6, 15, 0.85)',
-                  border: '1px solid rgba(255, 92, 116, 0.28)',
-                  borderRadius: '6px'
-                }}
-              >
-                <Shield className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+              <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3.5 min-h-[46px]">
+                <Shield className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2.5" />
                 <input
-                  className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                  className="w-full py-2.5 bg-transparent font-sans text-[#670626] text-sm sm:text-base placeholder:text-[#A83B4D]/70 focus:outline-none"
                   id="admin-email"
                   name="email"
                   type="email"
@@ -232,34 +198,26 @@ export const AdminLoginPage: FC = () => {
                   spellCheck={false}
                   aria-describedby="admin-email-error"
                   aria-invalid={!!emailError}
-                  style={{ color: '#ffffff' }}
                 />
               </div>
               {emailError && (
-                <p className="field__error font-mono text-[10.5px]" id="admin-email-error" role="alert">
+                <p className="font-mono text-xs text-[#670626] font-semibold mt-1" id="admin-email-error" role="alert">
                   {emailError}
                 </p>
               )}
             </div>
 
             {/* Password Field */}
-            <div className={`field field--password ${passwordError ? 'is-invalid' : ''}`} style={{ marginTop: '12px' }}>
+            <div className={passwordError ? 'is-invalid' : ''}>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="font-mono text-[11px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="admin-password">
+                <label className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold" htmlFor="admin-password">
                   Password *
                 </label>
               </div>
-              <div
-                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                style={{
-                  background: 'rgba(32, 6, 15, 0.85)',
-                  border: '1px solid rgba(255, 92, 116, 0.28)',
-                  borderRadius: '6px'
-                }}
-              >
-                <Lock className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+              <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3.5 min-h-[46px]">
+                <Lock className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2.5" />
                 <input
-                  className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                  className="w-full py-2.5 bg-transparent font-sans text-[#670626] text-sm sm:text-base placeholder:text-[#A83B4D]/70 focus:outline-none"
                   id="admin-password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
@@ -275,10 +233,9 @@ export const AdminLoginPage: FC = () => {
                   autoComplete="current-password"
                   aria-describedby="admin-password-error"
                   aria-invalid={!!passwordError}
-                  style={{ color: '#ffffff' }}
                 />
                 <button
-                  className="field__toggle hover:text-rose-300 ml-auto p-1"
+                  className="text-[#A83B4D] hover:text-[#670626] ml-auto p-1 cursor-pointer"
                   type="button"
                   id="admin-pw-toggle"
                   aria-pressed={showPassword}
@@ -287,21 +244,21 @@ export const AdminLoginPage: FC = () => {
                   onClick={() => setShowPassword((prev) => !prev)}
                 >
                   {!showPassword ? (
-                    <Eye className="w-4 h-4 text-slate-400" />
+                    <Eye className="w-4 h-4" />
                   ) : (
-                    <EyeOff className="w-4 h-4 text-slate-400" />
+                    <EyeOff className="w-4 h-4" />
                   )}
                 </button>
               </div>
               {passwordError && (
-                <p className="field__error font-mono text-[10.5px]" id="admin-password-error" role="alert">
+                <p className="font-mono text-xs text-[#670626] font-semibold mt-1" id="admin-password-error" role="alert">
                   {passwordError}
                 </p>
               )}
             </div>
 
             {/* Terms Row */}
-            <div className="flex items-center justify-between mt-4 mb-3" style={{ minHeight: '24px' }}>
+            <div className="flex items-center justify-between pt-1" style={{ minHeight: '24px' }}>
               <Checkbox
                 id="admin-consent"
                 checked={consent}
@@ -310,23 +267,23 @@ export const AdminLoginPage: FC = () => {
                   if (val) setConsentError('');
                 }}
                 label={
-                  <span className="text-[11.5px] text-slate-300 font-medium select-none">
+                  <span className="text-xs sm:text-sm text-[#670626] font-semibold select-none">
                     Acknowledge Security Protocol
                   </span>
                 }
               />
             </div>
             {consentError && (
-              <p className="font-mono text-[11px] text-[#ff5c74] font-medium -mt-1 mb-2" id="admin-consent-error" role="alert">
+              <p className="font-mono text-xs text-[#670626] font-semibold -mt-1" id="admin-consent-error" role="alert">
                 {consentError}
               </p>
             )}
 
             {/* Port 1997 Redirect Link if Responder/Civilian */}
-            <div className="font-mono text-[11px] text-center my-3 text-slate-400 border border-slate-700/40 bg-slate-900/40 py-1.5 px-2 rounded">
+            <div className="font-mono text-xs sm:text-sm text-center text-[#7D2B3D] border border-[#D5BEB3] bg-[#EFE4DD] py-2.5 px-3 rounded-xl">
               <a
                 href="http://127.0.0.1:1997/login"
-                className="text-rose-400 hover:text-rose-300 underline font-bold tracking-wide"
+                className="text-[#670626] hover:text-[#A83B4D] underline font-bold tracking-wide"
               >
                 Port 1997 Gateway -&gt;
               </a>
@@ -337,21 +294,21 @@ export const AdminLoginPage: FC = () => {
               <div
                 role="status"
                 aria-live="polite"
-                className="font-mono text-[11px] font-semibold text-center my-2 p-2 rounded border"
-                style={{
-                  background: statusTone === 'ok' ? 'rgba(6, 32, 21, 0.85)' : statusTone === 'bad' ? 'rgba(52, 3, 19, 0.85)' : 'rgba(30, 41, 59, 0.85)',
-                  borderColor: statusTone === 'ok' ? 'rgba(52, 211, 153, 0.4)' : statusTone === 'bad' ? 'rgba(255, 92, 116, 0.5)' : 'rgba(148, 163, 184, 0.3)',
-                  color: statusTone === 'ok' ? '#34d399' : statusTone === 'bad' ? '#ff5c74' : '#e2e8f0',
-                  letterSpacing: '0.02em',
-                  wordBreak: 'break-word'
-                }}
+                className={`font-mono text-xs sm:text-sm font-semibold text-center p-2.5 rounded-xl border ${
+                  statusTone === 'ok'
+                    ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                    : statusTone === 'bad'
+                    ? 'bg-[#670626] border-[#4A041A] text-[#F7F1EA]'
+                    : 'bg-[#E9D9D0] border-[#D5BEB3] text-[#670626]'
+                }`}
+                style={{ wordBreak: 'break-word' }}
               >
                 {statusMessage}
               </div>
             )}
 
-            {/* Submit Button using Shared Atomic Primitive */}
-            <div style={{ marginTop: statusMessage ? '0' : '4px' }} className="space-y-2">
+            {/* Submit & Biometric Buttons */}
+            <div className="space-y-2.5 pt-1">
               <Button
                 type="submit"
                 id="admin-submit"
@@ -365,7 +322,7 @@ export const AdminLoginPage: FC = () => {
                     <ArrowRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
                   )
                 }
-                className="!h-[48px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-black !tracking-widest !uppercase !shadow-lg !shadow-[#e8114c]/40 active:!scale-[0.99] transition-all rounded-lg group cursor-pointer border border-[#ff5c74]/50"
+                className="!h-[48px] !text-sm sm:!text-base !bg-[#670626] hover:!bg-[#4A041A] !text-[#F7F1EA] !font-black !tracking-widest !uppercase !shadow-lg !shadow-[#4A041A]/25 active:!scale-[0.99] transition-all rounded-xl group cursor-pointer !border !border-[#4A041A]"
               >
                 {isLoading ? 'Signing in...' : isSuccess ? 'Access Granted' : 'Sign In'}
               </Button>
@@ -374,9 +331,9 @@ export const AdminLoginPage: FC = () => {
                 type="button"
                 id="admin-biometric-btn"
                 onClick={() => setIsBiometricModalOpen(true)}
-                className="w-full !h-[42px] rounded-lg border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-[0_0_12px_rgba(232,17,76,0.15)] hover:border-rose-400"
+                className="w-full !h-[44px] rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626] font-mono text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm"
               >
-                <Camera className="w-4 h-4 text-[#ff5c74]" />
+                <Camera className="w-4 h-4 text-[#A83B4D]" />
                 <span>1:1 Biometric Login</span>
               </button>
             </div>

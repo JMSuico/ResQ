@@ -1,52 +1,34 @@
 // [Layer: UserRoles/Features/Pages/AdminsPanel]
-// RespondersRosterPage.tsx -- Agency Fleet Roster Management.
-// Conforms to Tasks 20 & 21:
-// - 5 Overview KPI cards dynamically bound to live DB telemetry (RHU Medical, PNP Police, BFP Fire, Off-Duty Shift, Standby/In-Transit)
-// - SearchBar with debounced input, pagination, and draggable wide table
-// - Table-to-Card and Card-to-Table view toggle (TableCardToggle)
-// - On-duty, Off-duty, Dispatched, and Standby filter dropdowns
-// - "View Complete Fleet" DefaultFloatingModalCard drill-down modal
-// - Universal Lucide Migration: zero raw inline <svg>, zero <use href="#i-*"/>
-// - Relational Synchronization: dynamically binds to GET /api/responder-ops/roster
-// - Mutating unit status immediately reflects in relational duty state via PUT /api/responder-ops/units/{id}/status
-// - Universal arrow lambda syntax (=>) with zero 'any' typing and zero hardcoded static numbers
+// RespondersRosterPage.tsx -- Responders (FIX #16).
+// Stitch Official Cherry (#670626) / Warm Ivory (#F7F1EA) / Soft Beige (#E9D9D0) / Muted Cherry (#A83B4D) Clay Design System.
+// REMOVING #11: Zero hotline/tel:/Dipolog displays; displays agency readiness, commander, personnel count, and GPS beacons.
+// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis.
 
 import React, { useState, useEffect, FC, useMemo } from 'react';
 import {
   Users,
   Radio,
-  MapPin,
   Shield,
   HeartPulse,
   Flame,
   Activity,
   Eye,
   RefreshCw,
-  CheckCircle2,
-  Clock,
-  Phone,
-  Filter,
-  ArrowUpDown,
-  UserCheck,
-  Battery,
-  Plus,
-  Search,
-  Check,
-  X,
-  ChevronDown
+  Clock
 } from 'lucide-react';
 import { getDutyRoster, updateUnitDutyStatus, DutyUnit } from '@/Endpoints/responderOpsApi';
 import { requestJson } from '@/Endpoints/apiClient';
 import {
   SearchBar,
   Dropdown,
-  Button,
   TableCardToggle,
-  ViewMode,
-  DefaultFloatingModalCard
+  ViewMode
 } from '@/Shared';
 import { usePagination, useTableDraggable, useDebounce, useValueRefreshAuto } from '@/Hooks';
 import { BASELINE_DUTY_ROSTER } from '@/Libs/Assets/baselineFixtures';
+import { AdminButton } from './Shared/AdminButton';
+import { AdminModalCard } from './Shared/AdminModalCard';
+import { CLAY_SURFACE, CLAY_WELL } from './Shared/adminCommandHelpers';
 
 export interface ExtendedDutyUnit extends DutyUnit {
   badgeNumber?: string;
@@ -75,7 +57,6 @@ export const RespondersRosterPage: FC = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Direct relational binding to GET /api/responder-ops/roster
   const loadData = async (): Promise<void> => {
     try {
       let data: ExtendedDutyUnit[];
@@ -86,7 +67,7 @@ export const RespondersRosterPage: FC = () => {
       }
       setRoster(data && data.length > 0 ? data : (BASELINE_DUTY_ROSTER as ExtendedDutyUnit[]));
     } catch (err) {
-      console.error('[RespondersRosterPage] Error loading roster:', err);
+      console.error('[Responders] Error loading roster:', err);
       setRoster((prev) => (prev.length > 0 ? prev : (BASELINE_DUTY_ROSTER as ExtendedDutyUnit[])));
     }
   };
@@ -99,7 +80,6 @@ export const RespondersRosterPage: FC = () => {
 
   const { containerRef } = useTableDraggable<HTMLDivElement>();
 
-  // Changing unit duty status immediately reflects in relational duty state
   const handleUpdateStatus = async (
     unitId: string,
     newStatus: 'OnDuty' | 'Dispatched' | 'Standby' | 'OffDuty'
@@ -123,8 +103,7 @@ export const RespondersRosterPage: FC = () => {
       } catch {}
       showToast(`Unit duty status updated to ${newStatus}.`);
     } catch (err) {
-      console.error('[RespondersRosterPage] Failed to update unit duty status:', err);
-      // Optimistic local update
+      console.error('[Responders] Failed to update unit duty status:', err);
       setRoster((prev) =>
         prev.map((u) => (u.id === unitId ? { ...u, status: newStatus } : u))
       );
@@ -134,7 +113,6 @@ export const RespondersRosterPage: FC = () => {
     }
   };
 
-  // Filtered roster
   const filteredUnits = useMemo(() => {
     return roster.filter((unit) => {
       if (statusFilter !== 'ALL' && (unit.status || '').toLowerCase() !== statusFilter.toLowerCase()) {
@@ -161,7 +139,6 @@ export const RespondersRosterPage: FC = () => {
     pageSizeOptions
   } = usePagination(filteredUnits, { initialPageSize: 10 });
 
-  // Task 21: Dynamic KPI Counts (Zero Hardcoded Static Numbers)
   const rhuCount = useMemo(
     () => roster.filter((u) => (u.agency || '').toUpperCase() === 'RHU').length,
     [roster]
@@ -171,10 +148,11 @@ export const RespondersRosterPage: FC = () => {
     [roster]
   );
   const bfpCount = useMemo(
-    () => roster.filter((u) => {
-      const a = (u.agency || '').toUpperCase();
-      return a === 'FIRE' || a === 'BFP';
-    }).length,
+    () =>
+      roster.filter((u) => {
+        const a = (u.agency || '').toUpperCase();
+        return a === 'FIRE' || a === 'BFP';
+      }).length,
     [roster]
   );
   const offDutyCount = useMemo(
@@ -189,106 +167,101 @@ export const RespondersRosterPage: FC = () => {
     () => roster.reduce((sum, u) => sum + (u.activePersonnelCount || 1), 0),
     [roster]
   );
-  const onDutyCount = useMemo(
-    () => roster.filter((u) => u.status === 'OnDuty').length,
-    [roster]
-  );
 
   return (
-    <div className="flex flex-col gap-6 w-full">
-      {/* Toast Notification */}
+    <div className="flex flex-col gap-6 w-full pb-10">
       {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 p-3.5 rounded-xl bg-slate-900/95 border border-sky-500/80 text-white text-xs font-mono shadow-2xl flex items-center gap-2 animate-fade-in backdrop-blur-md">
-          <Activity className="w-4 h-4 text-sky-400 animate-spin" />
+        <div className="fixed top-20 right-6 z-50 p-3.5 rounded-2xl bg-[#F7F1EA] border-2 border-[#670626] text-[#670626] text-sm font-mono font-bold shadow-[0_14px_34px_rgba(74,4,26,0.35)] flex items-center gap-2">
+          <Activity className="w-4 h-4 text-[#670626]" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Page Header with Lucide Icons */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/80 border border-slate-700/80 backdrop-blur-md">
+      {/* FIX #16: Renamed Header to Responders */}
+      <div className={`${CLAY_SURFACE} p-5 flex flex-wrap items-center justify-between gap-4`}>
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase flex items-center gap-2.5">
-            <Radio className="w-5 h-5 text-sky-400 animate-pulse" />
-            Responders Roster
+          <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#A83B4D]">
+            LDRRMO Command / Responders
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black text-[#670626] tracking-tight mt-0.5 flex items-center gap-2.5">
+            <Radio className="w-6 h-6 text-[#A83B4D] animate-pulse" />
+            Responders
           </h1>
-          <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Unit readiness across agencies
+          <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
+            Katipunan multi-agency unit readiness and live GPS status
           </p>
         </div>
 
         <div className="flex items-center gap-2.5">
-          <Button
+          <AdminButton
             variant="outline"
             size="sm"
             onClick={() => void loadData()}
-            className="text-xs font-mono font-bold flex items-center gap-1.5 border-slate-600 hover:border-slate-400"
-            title="Refresh Roster"
+            icon={<RefreshCw className="w-3.5 h-3.5" />}
           >
-            <RefreshCw className="w-3.5 h-3.5" />
             Sync
-          </Button>
-          <Button
-            variant="outline"
+          </AdminButton>
+          <AdminButton
+            variant="primary"
             size="sm"
             onClick={() => setIsViewAllModalOpen(true)}
-            className="text-xs font-mono font-bold flex items-center gap-1.5 border-sky-500/60 text-sky-300 hover:bg-sky-950/60"
+            icon={<Eye className="w-4 h-4" />}
           >
-            <Eye className="w-3.5 h-3.5" />
-            View Fleet ({roster.length})
-          </Button>
+            View Responders ({roster.length})
+          </AdminButton>
         </div>
       </div>
 
-      {/* Task 21: 5 KPI Status Cards (Zero Hardcoded Static Numbers) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-        <div className="tactical-card p-3.5 border-l-4 border-l-sky-500 flex flex-col justify-between">
+      {/* 5 KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-[#670626] flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">RHU (Medical)</p>
-            <HeartPulse className="w-4 h-4 text-sky-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">RHU (Medical)</p>
+            <HeartPulse className="w-4 h-4 text-[#670626]" />
           </div>
-          <h3 className="text-2xl font-extrabold text-sky-400 mt-1">{rhuCount} Units</h3>
-          <span className="text-[10px] text-slate-400 font-mono">Emergency Medical</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{rhuCount} Units</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Emergency Medical</span>
         </div>
 
-        <div className="tactical-card p-3.5 border-l-4 border-l-blue-500 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-sky-700 flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">PNP (Police)</p>
-            <Shield className="w-4 h-4 text-blue-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">PNP (Police)</p>
+            <Shield className="w-4 h-4 text-sky-700" />
           </div>
-          <h3 className="text-2xl font-extrabold text-blue-400 mt-1">{pnpCount} Units</h3>
-          <span className="text-[10px] text-slate-400 font-mono">Law Enforcement</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{pnpCount} Units</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Law Enforcement</span>
         </div>
 
-        <div className="tactical-card p-3.5 border-l-4 border-l-orange-500 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-orange-600 flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">BFP (Fire)</p>
-            <Flame className="w-4 h-4 text-orange-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">BFP (Fire)</p>
+            <Flame className="w-4 h-4 text-orange-700" />
           </div>
-          <h3 className="text-2xl font-extrabold text-orange-400 mt-1">{bfpCount} Units</h3>
-          <span className="text-[10px] text-slate-400 font-mono">Fire & Hazmat</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{bfpCount} Units</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Fire & Hazmat</span>
         </div>
 
-        <div className="tactical-card p-3.5 border-l-4 border-l-slate-500 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-[#A83B4D] flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Off-Duty Roster</p>
-            <Clock className="w-4 h-4 text-slate-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Off-Duty Shift</p>
+            <Clock className="w-4 h-4 text-[#A83B4D]" />
           </div>
-          <h3 className="text-2xl font-extrabold text-slate-300 mt-1">{offDutyCount} Units</h3>
-          <span className="text-[10px] text-slate-400 font-mono">Standby Shift</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{offDutyCount} Units</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Reserve Shift</span>
         </div>
 
-        <div className="tactical-card p-3.5 border-l-4 border-l-emerald-500 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-emerald-700 flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">In-Transit / Standby</p>
-            <Activity className="w-4 h-4 text-emerald-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Standby Ready</p>
+            <Activity className="w-4 h-4 text-emerald-700" />
           </div>
-          <h3 className="text-2xl font-extrabold text-emerald-400 mt-1">{standbyCount} Units</h3>
-          <span className="text-[10px] text-slate-400 font-mono">Total Personnel: {totalPersonnelCount}</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{standbyCount} Units</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Personnel: {totalPersonnelCount}</span>
         </div>
       </div>
 
-      {/* Control Bar: SearchBar, TableCardToggle, Status & Agency Dropdown Filters */}
-      <div className="tactical-card p-4 flex flex-wrap items-center justify-between gap-4">
+      {/* Control Bar */}
+      <div className={`${CLAY_SURFACE} p-4 flex flex-wrap items-center justify-between gap-4`}>
         <div className="w-full sm:w-80">
           <SearchBar
             value={searchRaw}
@@ -329,55 +302,52 @@ export const RespondersRosterPage: FC = () => {
         </div>
       </div>
 
-      {/* Main Table or Card Grid View */}
+      {/* Table or Card Grid */}
       {viewMode === 'table' ? (
-        <div className="tactical-card p-0 overflow-hidden">
-          <div ref={containerRef} className="overflow-x-auto w-full select-none cursor-grab">
-            <table className="w-full text-left text-xs text-slate-300 min-w-[950px]">
-              <thead className="bg-slate-900/95 font-mono text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-700/80">
+        <div className={`${CLAY_SURFACE} p-4 overflow-hidden`}>
+          <div ref={containerRef} className={`${CLAY_WELL} overflow-x-auto w-full select-none cursor-grab`}>
+            <table className="w-full text-left text-sm text-[#670626] min-w-[950px]">
+              <thead className="bg-[#670626]/10 font-mono text-xs uppercase tracking-wider text-[#670626] border-b border-[#670626]/15">
                 <tr>
-                  <th className="py-3 px-3">Unit / Code</th>
-                  <th className="py-3 px-3">Commander / Officer</th>
-                  <th className="py-3 px-3">Agency Jurisdiction</th>
-                  <th className="py-3 px-3">Duty Status & Mutation</th>
-                  <th className="py-3 px-3">Personnel & Contact</th>
-                  <th className="py-3 px-3">Telemetry Beacon</th>
+                  <th className="py-3.5 px-4">Unit / Code</th>
+                  <th className="py-3.5 px-4">Commander / Officer</th>
+                  <th className="py-3.5 px-4">Agency Jurisdiction</th>
+                  <th className="py-3.5 px-4">Duty Status</th>
+                  <th className="py-3.5 px-4">Personnel & Shift</th>
+                  <th className="py-3.5 px-4">GPS Beacon</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className="divide-y divide-[#670626]/10">
                 {paginatedItems.map((u, i) => (
-                  <tr key={u.id || i} className="hover:bg-slate-900/50 transition-colors">
-                    {/* Unit / Code */}
-                    <td className="py-3 px-3">
-                      <span className="font-mono font-bold text-sky-400 block">
+                  <tr key={u.id || i} className="hover:bg-[#F7F1EA]/70 transition-colors">
+                    <td className="py-3.5 px-4">
+                      <span className="font-mono text-sm font-black text-[#670626] block">
                         {u.unitCode || u.badgeNumber || u.id || `UNIT-${i + 101}`}
                       </span>
-                      <span className="text-[10px] text-slate-400 font-mono block">
-                        {u.unitName || u.name || 'Tactical Team'}
+                      <span className="text-xs text-[#A83B4D] font-mono block mt-0.5">
+                        {u.unitName || u.name || 'Katipunan Tactical Team'}
                       </span>
                     </td>
 
-                    {/* Officer Name */}
-                    <td className="py-3 px-3">
-                      <span className="font-semibold text-white block">
+                    <td className="py-3.5 px-4">
+                      <span className="font-bold text-sm text-[#670626] block">
                         {u.commanderName || u.name || u.person || 'Field Commander'}
                       </span>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        Shift: {u.shiftSchedule || '24h Standard'}
+                      <span className="text-xs text-[#A83B4D] font-mono mt-0.5 block">
+                        Katipunan Municipal Sector
                       </span>
                     </td>
 
-                    {/* Agency */}
-                    <td className="py-3 px-3">
+                    <td className="py-3.5 px-4">
                       <div className="flex items-center gap-2">
                         {u.agency === 'RHU' ? (
-                          <HeartPulse className="w-3.5 h-3.5 text-sky-400" />
+                          <HeartPulse className="w-4 h-4 text-[#670626]" />
                         ) : u.agency === 'FIRE' || u.agency === 'BFP' ? (
-                          <Flame className="w-3.5 h-3.5 text-orange-400" />
+                          <Flame className="w-4 h-4 text-orange-700" />
                         ) : (
-                          <Shield className="w-3.5 h-3.5 text-blue-400" />
+                          <Shield className="w-4 h-4 text-sky-700" />
                         )}
-                        <span className="font-mono text-xs text-slate-200">
+                        <span className="font-mono text-sm font-bold text-[#670626]">
                           {u.agency === 'RHU'
                             ? 'RHU Medical Corps'
                             : u.agency === 'FIRE' || u.agency === 'BFP'
@@ -387,8 +357,7 @@ export const RespondersRosterPage: FC = () => {
                       </div>
                     </td>
 
-                    {/* Duty Status Mutation Selector (Relational Duty State Sync) */}
-                    <td className="py-3 px-3">
+                    <td className="py-3.5 px-4">
                       <select
                         value={u.status}
                         onChange={(e) =>
@@ -398,14 +367,14 @@ export const RespondersRosterPage: FC = () => {
                           )
                         }
                         disabled={updatingUnitId === u.id}
-                        className={`text-[10px] font-mono font-bold px-2 py-1 rounded cursor-pointer border transition-colors ${
+                        className={`text-xs font-mono font-bold px-2.5 py-1.5 rounded-lg cursor-pointer border transition-colors ${
                           u.status === 'OnDuty'
-                            ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                            ? 'bg-emerald-100 text-emerald-900 border-emerald-700/30'
                             : u.status === 'Dispatched'
-                            ? 'bg-amber-950 text-amber-300 border-amber-700'
+                            ? 'bg-[#670626] text-[#F7F1EA] border-[#670626]'
                             : u.status === 'Standby'
-                            ? 'bg-sky-950 text-sky-300 border-sky-700'
-                            : 'bg-slate-800 text-slate-400 border-slate-700'
+                            ? 'bg-[#F7F1EA] text-[#670626] border-[#670626]/30'
+                            : 'bg-[#E9D9D0] text-[#A83B4D] border-[#670626]/20'
                         }`}
                       >
                         <option value="OnDuty">OnDuty</option>
@@ -415,27 +384,25 @@ export const RespondersRosterPage: FC = () => {
                       </select>
                     </td>
 
-                    {/* Personnel & Contact */}
-                    <td className="py-3 px-3">
-                      <div className="flex flex-col text-xs text-slate-300">
-                        <span className="font-mono text-[11px] flex items-center gap-1">
-                          <Users className="w-3 h-3 text-slate-400" />
+                    <td className="py-3.5 px-4">
+                      <div className="flex flex-col text-sm text-[#670626]">
+                        <span className="font-mono text-xs font-bold flex items-center gap-1.5">
+                          <Users className="w-3.5 h-3.5 text-[#A83B4D]" />
                           {u.activePersonnelCount || 1} Officers
                         </span>
-                        <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
-                          <Phone className="w-3 h-3 text-slate-500" />
-                          {u.contactHotline || 'Dipolog Base (161)'}
+                        <span className="text-xs font-mono text-[#A83B4D] flex items-center gap-1.5 mt-0.5">
+                          <Clock className="w-3.5 h-3.5" />
+                          {u.shiftSchedule || '24h Standard'}
                         </span>
                       </div>
                     </td>
 
-                    {/* Telemetry Beacon */}
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-1.5 text-emerald-400 font-mono text-[10px]">
-                        <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-1.5 text-emerald-800 font-mono text-xs font-bold">
+                        <Radio className="w-3.5 h-3.5 text-emerald-700 animate-pulse" />
                         <span>
                           {u.baseLatitude && u.baseLongitude
-                            ? `${Number(u.baseLatitude).toFixed(3)}°N, ${Number(u.baseLongitude).toFixed(3)}°E`
+                            ? `${Number(u.baseLatitude).toFixed(4)}°N, ${Number(u.baseLongitude).toFixed(4)}°E`
                             : 'GPS LIVE'}
                         </span>
                       </div>
@@ -445,7 +412,7 @@ export const RespondersRosterPage: FC = () => {
 
                 {paginatedItems.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="text-center py-8 text-slate-500 font-mono">
+                    <td colSpan={6} className="text-center py-8 text-sm text-[#A83B4D] font-mono">
                       No matching responders detected.
                     </td>
                   </tr>
@@ -455,19 +422,18 @@ export const RespondersRosterPage: FC = () => {
           </div>
         </div>
       ) : (
-        /* Card Grid View (TableToCard) */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {paginatedItems.map((u, i) => (
             <div
               key={u.id || i}
-              className="tactical-card p-4 flex flex-col justify-between gap-3 border border-slate-700/70 hover:border-sky-500/50 transition-all"
+              className={`tactical-card ${CLAY_SURFACE} p-5 flex flex-col justify-between gap-3.5`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <span className="text-[10px] font-mono font-bold text-sky-400">
+                  <span className="text-xs font-mono font-bold text-[#A83B4D]">
                     {u.unitCode || u.badgeNumber || u.id || `UNIT-${i + 101}`}
                   </span>
-                  <h3 className="font-bold text-white text-sm mt-0.5">{u.unitName || u.name || 'Officer'}</h3>
+                  <h3 className="font-bold text-[#670626] text-base mt-0.5">{u.unitName || u.name || 'Officer'}</h3>
                 </div>
                 <select
                   value={u.status}
@@ -478,13 +444,7 @@ export const RespondersRosterPage: FC = () => {
                     )
                   }
                   disabled={updatingUnitId === u.id}
-                  className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded cursor-pointer border ${
-                    u.status === 'OnDuty'
-                      ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
-                      : u.status === 'Dispatched'
-                      ? 'bg-amber-950 text-amber-300 border-amber-700'
-                      : 'bg-slate-800 text-slate-400 border-slate-700'
-                  }`}
+                  className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg cursor-pointer border bg-[#E9D9D0] text-[#670626] border-[#670626]/25"
                 >
                   <option value="OnDuty">OnDuty</option>
                   <option value="Dispatched">Dispatched</option>
@@ -493,32 +453,33 @@ export const RespondersRosterPage: FC = () => {
                 </select>
               </div>
 
-              <div className="text-xs text-slate-300 space-y-1">
-                <div className="flex items-center gap-1.5 font-semibold text-slate-200">
+              <div className={`${CLAY_WELL} p-3 text-sm text-[#670626] space-y-1.5`}>
+                <div className="flex items-center gap-1.5 font-bold">
                   {u.agency === 'RHU' ? (
-                    <HeartPulse className="w-3.5 h-3.5 text-sky-400" />
+                    <HeartPulse className="w-4 h-4 text-[#670626]" />
                   ) : u.agency === 'FIRE' || u.agency === 'BFP' ? (
-                    <Flame className="w-3.5 h-3.5 text-orange-400" />
+                    <Flame className="w-4 h-4 text-orange-700" />
                   ) : (
-                    <Shield className="w-3.5 h-3.5 text-blue-400" />
+                    <Shield className="w-4 h-4 text-sky-700" />
                   )}
                   <span>{u.agency || 'Emergency Agency'}</span>
                 </div>
-                <p className="text-slate-400 font-mono text-[11px]">
-                  Commander: {u.commanderName || u.person || 'Field Officer'} &bull; Personnel: {u.activePersonnelCount || 1}
+                <p className="text-[#A83B4D] font-mono text-xs">
+                  Commander: {u.commanderName || u.person || 'Field Officer'} · Personnel: {u.activePersonnelCount || 1}
                 </p>
-                <p className="text-slate-400 font-mono text-[10px] flex items-center gap-1">
-                  <Phone className="w-3 h-3 text-slate-500" />
-                  {u.contactHotline || 'Direct Line Active'}
+                <p className="text-[#670626] font-mono text-xs">
+                  Shift: {u.shiftSchedule || '24h Standard'}
                 </p>
               </div>
 
-              <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] font-mono text-emerald-400">
+              <div className="pt-3 border-t border-[#670626]/15 flex items-center justify-between text-xs font-mono text-emerald-800 font-bold">
                 <span className="flex items-center gap-1.5">
-                  <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                  GPS Live
+                  <Radio className="w-3.5 h-3.5 text-emerald-700 animate-pulse" />
+                  {u.baseLatitude && u.baseLongitude
+                    ? `${Number(u.baseLatitude).toFixed(3)}°N, ${Number(u.baseLongitude).toFixed(3)}°E`
+                    : 'GPS Live'}
                 </span>
-                <span className="text-slate-400">Synced</span>
+                <span className="text-[#A83B4D]">Synced</span>
               </div>
             </div>
           ))}
@@ -526,13 +487,13 @@ export const RespondersRosterPage: FC = () => {
       )}
 
       {/* Pagination Footer */}
-      <div className="tactical-card p-3 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-slate-400">
+      <div className={`${CLAY_SURFACE} p-4 flex flex-wrap items-center justify-between gap-3 text-sm font-mono text-[#670626]`}>
         <div className="flex items-center gap-2">
           <span>Show</span>
           <select
             value={pageSize}
             onChange={(e) => setPageSize(Number(e.target.value))}
-            className="bg-slate-900 border border-slate-700 text-slate-200 rounded px-2 py-1"
+            className="bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] font-bold text-sm rounded-lg px-2.5 py-1"
           >
             {pageSizeOptions.map((opt) => (
               <option key={opt} value={opt}>
@@ -543,60 +504,60 @@ export const RespondersRosterPage: FC = () => {
           <span>per page (Total: {totalItems} units)</span>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <Button
+        <div className="flex items-center gap-2">
+          <AdminButton
             variant="outline"
             size="sm"
             onClick={prevPage}
             disabled={currentPage <= 1}
-            className="px-2.5 py-1 text-xs"
+            className="px-3 py-1.5 text-xs"
           >
             PREV
-          </Button>
-          <span className="px-2 font-bold text-white">
+          </AdminButton>
+          <span className="px-2 font-black text-[#670626]">
             Page {currentPage} of {totalPages}
           </span>
-          <Button
+          <AdminButton
             variant="outline"
             size="sm"
             onClick={nextPage}
             disabled={currentPage >= totalPages}
-            className="px-2.5 py-1 text-xs"
+            className="px-3 py-1.5 text-xs"
           >
             NEXT
-          </Button>
+          </AdminButton>
         </div>
       </div>
 
       {/* View All Modal Card */}
       {isViewAllModalOpen && (
-        <DefaultFloatingModalCard
+        <AdminModalCard
           isOpen={isViewAllModalOpen}
           onClose={() => setIsViewAllModalOpen(false)}
-          title={`Responder Fleet (${roster.length})`}
-          subtitle="All units by agency and duty status"
+          title={`Responders (${roster.length})`}
+          subtitle="All municipal units by agency and duty status"
           className="max-w-3xl max-h-[80vh] flex flex-col"
         >
-          <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+          <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
             {roster.map((u, i) => (
               <div
                 key={u.id || i}
-                className="p-3 rounded-xl bg-slate-900/80 border border-slate-700/60 flex items-center justify-between"
+                className={`${CLAY_WELL} p-3.5 flex items-center justify-between gap-3`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-full bg-[#F7F1EA] border border-[#670626]/20 flex items-center justify-center">
                     {u.agency === 'RHU' ? (
-                      <HeartPulse className="w-4 h-4 text-sky-400" />
+                      <HeartPulse className="w-4 h-4 text-[#670626]" />
                     ) : u.agency === 'FIRE' || u.agency === 'BFP' ? (
-                      <Flame className="w-4 h-4 text-orange-400" />
+                      <Flame className="w-4 h-4 text-orange-700" />
                     ) : (
-                      <Shield className="w-4 h-4 text-blue-400" />
+                      <Shield className="w-4 h-4 text-sky-700" />
                     )}
                   </div>
                   <div>
-                    <h4 className="font-bold text-white text-xs">{u.unitName || u.name || 'Emergency Unit'}</h4>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      Code: {u.unitCode || u.badgeNumber || u.id} &bull; {u.agency} &bull; Cmdr: {u.commanderName || 'Officer'}
+                    <h4 className="font-bold text-[#670626] text-sm">{u.unitName || u.name || 'Emergency Unit'}</h4>
+                    <span className="text-xs font-mono text-[#A83B4D]">
+                      Code: {u.unitCode || u.badgeNumber || u.id} · {u.agency} · Cmdr: {u.commanderName || 'Officer'}
                     </span>
                   </div>
                 </div>
@@ -608,13 +569,7 @@ export const RespondersRosterPage: FC = () => {
                       e.target.value as 'OnDuty' | 'Dispatched' | 'Standby' | 'OffDuty'
                     )
                   }
-                  className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded cursor-pointer border ${
-                    u.status === 'OnDuty'
-                      ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
-                      : u.status === 'Dispatched'
-                      ? 'bg-amber-950 text-amber-300 border-amber-700'
-                      : 'bg-slate-800 text-slate-400 border-slate-700'
-                  }`}
+                  className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg cursor-pointer border bg-[#F7F1EA] text-[#670626] border-[#670626]/25"
                 >
                   <option value="OnDuty">OnDuty</option>
                   <option value="Dispatched">Dispatched</option>
@@ -624,7 +579,7 @@ export const RespondersRosterPage: FC = () => {
               </div>
             ))}
           </div>
-        </DefaultFloatingModalCard>
+        </AdminModalCard>
       )}
     </div>
   );

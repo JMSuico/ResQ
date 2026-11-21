@@ -31,7 +31,9 @@ public class SessionVerificationMiddleware(RequestDelegate next)
         "/api/identity/ai-status",
         "/api/standby-ai/status",
         "/api/standby-ai/auto-approve-gov-id",
-        "/api/standby-ai/auto-dispatch-responder"
+        "/api/standby-ai/auto-dispatch-responder",
+        "/api/reports/analyze-image",
+        "/api/incidents/analyze-image"
     };
 
     private static bool IsAdminPortRequest(HttpRequest request)

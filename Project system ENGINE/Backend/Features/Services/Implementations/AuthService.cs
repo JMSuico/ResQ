@@ -23,7 +23,8 @@ public class AuthService(
     IFacialVerificationProvider? facialProvider = null,
     IBiometricLoginValidationStrategy? biometricLoginStrategy = null,
     IAccountAutoApprovalStrategy? autoApprovalStrategy = null,
-    IVerificationTokenCacheStrategy? tokenCacheStrategy = null) : IAuthService
+    IVerificationTokenCacheStrategy? tokenCacheStrategy = null,
+    IBiometricTrainingQueue? biometricTrainingQueue = null) : IAuthService
 {
     private readonly IIdentityVerificationProvider _identityProvider =
         identityProvider ?? VerificationProviderResolver.CreateDefaultIdentityProvider();
@@ -312,6 +313,11 @@ public class AuthService(
             return (false, "An account with this email address already exists.", 409, "EMAIL_CONFLICT", null, null);
         }
 
+        DateTime now = DateTime.UtcNow;
+        int trainedFrameCount = BiometricTrainingBackgroundService.CountPoseFrames(request.PoseFramesJson);
+        DateTime readyTarget = now.AddMinutes(5);
+        Guid? queuedEnrollmentId = null;
+
         if (db != null)
         {
             string noticeVersion = !string.IsNullOrWhiteSpace(request.ConsentNoticeVersion)
@@ -327,7 +333,7 @@ public class AuthService(
                     : "EMERGENCY_DISPATCH_AND_MANUAL_IDENTITY_REVIEW",
                 UserAction = "EXPLICIT_OPT_IN",
                 LegalBasis = "RA_10173_SEC12_CONSENT_AND_VITAL_INTERESTS",
-                ConsentedAtUtc = DateTime.UtcNow
+                ConsentedAtUtc = now
             });
 
             byte[]? templateBytes = facialSubmissionResult.EnrolledTemplateBytes;
@@ -341,7 +347,7 @@ public class AuthService(
                 || !string.IsNullOrWhiteSpace(request.GeometricSignatureJson)
                 || !string.IsNullOrWhiteSpace(request.PoseFramesJson))
             {
-                db.BiometricEnrollments.Add(new BiometricEnrollment
+                var enrollment = new BiometricEnrollment
                 {
                     UserId = user.Id,
                     EncryptedTemplateData = templateBytes ?? [],
@@ -354,8 +360,15 @@ public class AuthService(
                     ModelVersion = "v1.0.0",
                     EnrollmentQualityScore = 0.95,
                     EnrollmentStatus = "ACTIVE",
-                    EnrolledAtUtc = DateTime.UtcNow
-                });
+                    EnrolledAtUtc = now,
+                    TrainingStatus = "LEARNING",
+                    TrainingStartedAtUtc = now,
+                    TrainingReadyTargetUtc = readyTarget,
+                    TrainedFrameCount = trainedFrameCount,
+                    TrainingNotes = "Queued for asynchronous multi-frame AI facial learning."
+                };
+                db.BiometricEnrollments.Add(enrollment);
+                queuedEnrollmentId = enrollment.Id;
             }
 
             db.IdentityVerificationRecords.Add(new IdentityVerificationRecord
@@ -379,15 +392,27 @@ public class AuthService(
                 AuthenticityVerdict = decision.ShouldAutoApprove ? "GENUINE_PHYSICAL_ID" : null,
                 FaceToIdMatchScore = persistedFaceToIdMatchScore,
                 AutoApproved = decision.ShouldAutoApprove,
-                CreatedAtUtc = DateTime.UtcNow
+                CreatedAtUtc = now
             });
 
+            List<LoginAttempt> staleFailedAttempts = await db.LoginAttempts
+                .Where(a => a.AccountIdentifier.ToLower() == normalizedEmail && !a.Success)
+                .ToListAsync(ct);
+            if (staleFailedAttempts.Count > 0)
+            {
+                db.LoginAttempts.RemoveRange(staleFailedAttempts);
+            }
+
             await db.SaveChangesAsync(ct);
+
+            if (queuedEnrollmentId.HasValue && biometricTrainingQueue != null)
+            {
+                await biometricTrainingQueue.QueueAsync(queuedEnrollmentId.Value, ct);
+            }
         }
 
         // Append SHA-256 hash-chained audit log
         string prevHash = await auditRepo.GetLatestHashAsync(ct);
-        DateTime now = DateTime.UtcNow;
         string action = decision.ShouldAutoApprove ? "ACCOUNT_AUTO_APPROVED_AI" : "USER_REGISTERED";
         string payload = decision.ShouldAutoApprove
             ? $"User: {user.Email}, DisplayName: {user.DisplayName}, Role: {user.Role}, Unit: {user.Unit}, Status: {user.Status}, IdTokenId: {user.IdVerificationTokenId}, FacialTokenId: {user.FacialVerificationTokenId}, MatchScore: {decision.FaceToIdMatchScore?.ToString("F4") ?? "N/A"}"
@@ -428,7 +453,10 @@ public class AuthService(
             HasFaceCapture: !string.IsNullOrWhiteSpace(user.FaceCapturePath),
             CreatedAt: user.CreatedAt,
             AutoApprovedByAi: user.AutoApprovedByAi,
-            AutoApprovalReason: decision.Reason);
+            AutoApprovalReason: decision.Reason,
+            BiometricTrainingStatus: queuedEnrollmentId.HasValue ? "LEARNING" : "NONE",
+            BiometricTrainingReadyTargetUtc: queuedEnrollmentId.HasValue ? readyTarget : null,
+            TrainedFrameCount: trainedFrameCount);
 
         return (true, null, 201, null, user, registrationResponse);
     }
@@ -637,15 +665,9 @@ public class AuthService(
             if (!normalizedEmail.Contains('@'))
                 return (false, "Invalid credentials. Email address is the sole login identifier.", null, null);
 
-            if (await GetLockoutErrorMessageAsync(normalizedEmail, ct) is string lockoutError)
-                return (false, lockoutError, null, null);
-
             user = await userRepo.GetByEmailAsync(normalizedEmail, ct);
             if (user == null)
-            {
-                await RecordLoginAttemptAsync(normalizedEmail, "BIOMETRIC_1TO1", ipAddress, userAgent, false, "USER_NOT_FOUND", ct);
                 return (false, "Invalid credentials.", null, null);
-            }
         }
 
         var activeStrategy = biometricLoginStrategy ?? (db != null ? new MultiLayerBiometricLoginStrategy(db) : null);
@@ -674,26 +696,14 @@ public class AuthService(
             }
 
             if (!evalResult.IsValidated || !evalResult.MatchedUserId.HasValue)
-            {
-                string attemptIdentifier = hasEmail ? request.Email.Trim().ToLowerInvariant() : "ANONYMOUS_1TON_SCAN";
-                string attemptType = hasEmail ? "BIOMETRIC_1TO1" : "BIOMETRIC_1TON";
-                string reasonTag = evalResult.FailureReason.Contains("mismatch", StringComparison.OrdinalIgnoreCase)
-                    ? $"BIOMETRIC_MISMATCH (Similarity: {evalResult.CosineSimilarity:F2})"
-                    : evalResult.FailureReason;
-
-                await RecordLoginAttemptAsync(attemptIdentifier, attemptType, ipAddress, userAgent, false, reasonTag, ct);
                 return (false, evalResult.FailureReason, null, null);
-            }
 
             user ??= await userRepo.GetByIdAsync(evalResult.MatchedUserId.Value, ct);
             if (user == null)
                 return (false, "Invalid credentials.", null, null);
 
             if (user.Status == AccountStatus.Pending)
-            {
-                await RecordLoginAttemptAsync(user.Email, hasEmail ? "BIOMETRIC_1TO1" : "BIOMETRIC_1TON", ipAddress, userAgent, false, "ACCOUNT_PENDING_REVIEW", ct);
                 return (false, "Your account is pending administrative verification by LDRRMO Administration.", null, null);
-            }
 
             if (!user.FaceVerified)
             {

@@ -204,12 +204,23 @@ public class ClaudeMessagesClient(
             ? PrimaryModel
             : modelOverride.Trim();
 
+        string primaryModel = PrimaryModel;
         string fallbackModel = FallbackModel;
-        var models = new List<string>(2);
+        var models = new List<string>(3);
 
         if (!string.IsNullOrWhiteSpace(firstModel))
         {
             models.Add(firstModel);
+        }
+
+        if (!string.IsNullOrWhiteSpace(modelOverride) &&
+            (firstModel.Equals("claude-haiku-4-5-20251001", StringComparison.OrdinalIgnoreCase) ||
+             firstModel.Equals("claude-haiku-4-5", StringComparison.OrdinalIgnoreCase) ||
+             firstModel.Contains("haiku", StringComparison.OrdinalIgnoreCase)) &&
+            !string.IsNullOrWhiteSpace(primaryModel) &&
+            !models.Any(m => string.Equals(m, primaryModel, StringComparison.OrdinalIgnoreCase)))
+        {
+            models.Add(primaryModel);
         }
 
         if (!string.IsNullOrWhiteSpace(fallbackModel) &&

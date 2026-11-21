@@ -18,14 +18,25 @@ public class ReportsController(IReportService reportService, IWebHostEnvironment
 
     [HttpPost]
     public async Task<IActionResult> CreateReportAsync([FromBody] CreateReportRequest request, CancellationToken ct) =>
-        await reportService.ResolveReporterIdAsync(HttpContext.Items["UserId"] as Guid?, ct) is var reporterId
-        && await reportService.CreateReportAsync(reporterId, request, ReportsDirectory, ct) is var report
+        await reportService.ResolveReporterIdAsync(HttpContext?.Items["UserId"] as Guid?, ct) is var reporterId
+        && await reportService.CreateReportAsync(reporterId, request, ReportsDirectory, ct, submittedIpAddress: ClientNetworkHelper.ResolveClientIpAddress(HttpContext)) is var report
             ? StatusCode(StatusCodes.Status201Created, new { message = "Report submitted successfully.", report, @event = "resqtrack:report" })
             : BadRequest();
 
+    [HttpPost("analyze-image")]
+    public async Task<IActionResult> AnalyzeIncidentImageAsync([FromBody] AnalyzeIncidentImageRequest request, CancellationToken ct) =>
+        Ok(await reportService.AnalyzeIncidentImageAsync(request, ct));
+
     [HttpGet]
     public async Task<IActionResult> GetAllReportsAsync(CancellationToken ct) =>
-        Ok(await reportService.GetAllReportsAsync(ct));
+        HttpContext?.Items["UserRole"] switch
+        {
+            UserRole.Civilian => HttpContext.Items["UserId"] is Guid uid && uid != Guid.Empty
+                ? Ok(await reportService.GetMyReportsAsync(uid, ct))
+                : Unauthorized(),
+            UserRole.Responder or UserRole.LDRRMO_Admin => Ok(await reportService.GetAllReportsAsync(ct)),
+            _ => Unauthorized()
+        };
 
     [HttpGet("mine")]
     public async Task<IActionResult> GetMyReportsAsync(CancellationToken ct) =>
@@ -40,10 +51,12 @@ public class ReportsController(IReportService reportService, IWebHostEnvironment
             : StatusCode(StatusCodes.Status403Forbidden, new { message = $"Access denied. Only {agency} personnel or LDRRMO Administrators may view {agency} agency reports." });
 
     [HttpGet("{id:guid}/image")]
-    public async Task<IActionResult> GetReportImageAsync(Guid id, CancellationToken ct) =>
-        await reportService.GetReportImagePathAsync(id, ct) is { } path && System.IO.File.Exists(path)
-            ? File(await System.IO.File.ReadAllBytesAsync(path, ct), "image/png")
-            : File(CaptureStorageHelper.GenerateSyntheticFallbackPng(), "image/png");
+    public async Task<IActionResult> GetReportImageAsync(Guid id, CancellationToken ct)
+    {
+        string? path = await reportService.GetReportImagePathAsync(id, ct);
+        var (bytes, contentType) = await CaptureStorageHelper.ReadCaptureFileAsync(path, ct);
+        return MediaStreamResponseHelper.CreateBytesOrRangeResponse(HttpContext, bytes, contentType);
+    }
 
     [HttpPost("{id:guid}/beacon")]
     public async Task<IActionResult> PostDistressBeaconAsync(Guid id, [FromBody] DistressBeaconRequest beacon, CancellationToken ct) =>

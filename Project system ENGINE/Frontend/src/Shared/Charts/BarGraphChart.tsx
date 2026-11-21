@@ -44,6 +44,8 @@ const computeSeverityBadge = (color?: string, label?: string): SeverityBadge => 
     c.includes('ef4444') ||
     c.includes('f43f5e') ||
     c.includes('e11d48') ||
+    c.includes('991b1b') ||
+    c.includes('670626') ||
     c.includes('red') ||
     c.includes('rose') ||
     l.includes('crit') ||
@@ -51,10 +53,10 @@ const computeSeverityBadge = (color?: string, label?: string): SeverityBadge => 
   ) {
     return {
       text: 'CRITICAL CODE RED',
-      badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-500/50 shadow-[0_0_8px_rgba(244,63,94,0.3)]',
-      dotClass: 'bg-rose-500 animate-pulse',
-      textColor: 'text-rose-400',
-      glowColor: '#ef4444'
+      badgeClass: 'bg-rose-100 text-[#991B1B] border-rose-300 shadow-sm',
+      dotClass: 'bg-[#991B1B] animate-pulse',
+      textColor: 'text-[#991B1B]',
+      glowColor: '#991B1B'
     };
   }
 
@@ -72,10 +74,10 @@ const computeSeverityBadge = (color?: string, label?: string): SeverityBadge => 
   ) {
     return {
       text: 'HIGH PRIORITY',
-      badgeClass: 'bg-amber-950/90 text-amber-300 border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.25)]',
-      dotClass: 'bg-amber-400',
-      textColor: 'text-amber-400',
-      glowColor: '#f59e0b'
+      badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 shadow-sm',
+      dotClass: 'bg-amber-600',
+      textColor: 'text-amber-800',
+      glowColor: '#d97706'
     };
   }
 
@@ -93,19 +95,19 @@ const computeSeverityBadge = (color?: string, label?: string): SeverityBadge => 
   ) {
     return {
       text: 'STANDARD CADENCE',
-      badgeClass: 'bg-sky-950/90 text-sky-300 border-sky-500/50 shadow-[0_0_8px_rgba(56,189,248,0.25)]',
-      dotClass: 'bg-sky-400',
-      textColor: 'text-sky-400',
-      glowColor: '#38bdf8'
+      badgeClass: 'bg-sky-100 text-sky-900 border-sky-300 shadow-sm',
+      dotClass: 'bg-sky-700',
+      textColor: 'text-sky-800',
+      glowColor: '#0284c7'
     };
   }
 
-  // Slate / Green: LOW IMPACT
+  // Green: LOW IMPACT
   return {
     text: 'LOW IMPACT',
-    badgeClass: 'bg-emerald-950/90 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.25)]',
-    dotClass: 'bg-emerald-400',
-    textColor: 'text-emerald-400',
+    badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300 shadow-sm',
+    dotClass: 'bg-emerald-600',
+    textColor: 'text-emerald-800',
     glowColor: '#10b981'
   };
 };
@@ -164,18 +166,18 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
   }
 
   return (
-    <div className="relative flex flex-col gap-2 p-4 bg-slate-900/55 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_12px_32px_-8px_rgba(2,6,23,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] select-none">
+    <div className="clay-surface relative flex flex-col gap-2 p-4 bg-[#F7F1EA] border border-[#E9D9D0] rounded-2xl shadow-[0_14px_32px_-10px_rgba(103,6,38,0.14),inset_0_2px_4px_rgba(255,255,255,0.85)] select-none text-[#3B1722]">
       {/* Header with live category telemetry */}
-      <div className="flex items-center justify-between min-h-[22px]">
+      <div className="flex items-center justify-between min-h-[24px]">
         {title && (
           <div className="flex items-center gap-1.5">
-            <BarChart2 className="w-3.5 h-3.5 text-sky-400" />
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">{title}</h4>
+            <BarChart2 className="w-4 h-4 text-[#670626]" />
+            <h4 className="text-sm font-extrabold text-[#670626] uppercase tracking-wider">{title}</h4>
           </div>
         )}
         {hoveredBar && hoveredSeverity && (
-          <div className="flex items-center gap-2 text-[11px] font-mono transition-opacity duration-150">
-            <span className="text-slate-400">{hoveredBar.label}:</span>
+          <div className="flex items-center gap-2 text-xs font-mono transition-opacity duration-150">
+            <span className="text-[#7A4E59]">{hoveredBar.label}:</span>
             <span className={`font-bold ${hoveredSeverity.textColor}`}>
               {hoveredBar.value} ({((hoveredBar.value / total) * 100).toFixed(1)}%)
             </span>
@@ -191,14 +193,14 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
             const y = height - 25 - barHeight;
             const isHovered = hoveredBarIndex === i;
             const isDimmed = hoveredBarIndex !== null && !isHovered;
-            const barColor = d.color || '#38bdf8';
+            const barColor = d.color || '#670626';
 
             return (
               <g
                 key={i}
                 className="cursor-pointer"
                 style={{
-                  opacity: isDimmed ? 0.4 : 1,
+                  opacity: isDimmed ? 0.45 : 1,
                   transition: 'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
                 }}
                 onMouseEnter={() => setHoveredBarIndex(i)}
@@ -210,7 +212,7 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
                     transform: isHovered ? `translateY(-${BAR_ELEVATION_OFFSET}px)` : 'translateY(0)',
                     transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                     filter: isHovered
-                      ? `drop-shadow(0 0 10px ${barColor}) drop-shadow(0 0 3px ${barColor})`
+                      ? `drop-shadow(0 6px 10px ${barColor}55)`
                       : 'none'
                   }}
                 >
@@ -219,19 +221,19 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
                     y={y}
                     width={barWidth}
                     height={barHeight}
-                    rx="5"
+                    rx="6"
                     fill={barColor}
-                    stroke={isHovered ? '#ffffff' : barColor}
+                    stroke={isHovered ? '#670626' : barColor}
                     strokeWidth={isHovered ? 1.5 : 0}
-                    strokeOpacity={isHovered ? 0.95 : 0}
+                    strokeOpacity={isHovered ? 0.9 : 0}
                     className="transition-all duration-150"
                   />
                   <text
                     x={x + barWidth / 2}
                     y={y - 6}
                     textAnchor="middle"
-                    fill={isHovered ? '#ffffff' : '#f8fafc'}
-                    fontSize={isHovered ? '12' : '11'}
+                    fill={isHovered ? '#670626' : '#3B1722'}
+                    fontSize={isHovered ? '13' : '12'}
                     fontWeight="bold"
                     className="transition-all duration-150 select-none font-mono"
                   >
@@ -244,8 +246,8 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
                   x={x + barWidth / 2}
                   y={height - 8}
                   textAnchor="middle"
-                  fill={isHovered ? '#f1f5f9' : '#94a3b8'}
-                  fontSize="10"
+                  fill={isHovered ? '#670626' : '#7A4E59'}
+                  fontSize="11"
                   fontWeight={isHovered ? 'bold' : 'normal'}
                   className="transition-all duration-150 select-none font-sans"
                 >
@@ -266,7 +268,7 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
           })}
         </svg>
 
-        {/* Floating Tactical HUD Tooltip */}
+        {/* Floating Claymorphic Tooltip */}
         {hoveredBar && hoveredSeverity && (
           <div
             className="absolute pointer-events-none z-30 transition-all duration-150 ease-out"
@@ -275,32 +277,32 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
               ...tooltipLeftStyle
             }}
           >
-            <div className="bg-slate-950/95 border border-slate-700/90 rounded-xl p-2.5 shadow-2xl backdrop-blur-md min-w-[175px] text-xs font-mono flex flex-col gap-1.5 ring-1 ring-white/10">
+            <div className="clay-surface bg-[#F7F1EA] border border-[#E9D9D0] rounded-xl p-3 shadow-xl min-w-[185px] text-xs font-mono flex flex-col gap-1.5 text-[#3B1722]">
               {/* Category Label (X-axis) */}
-              <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 pb-1">
-                <span className="text-[10px] text-slate-400 uppercase tracking-wider">Category</span>
-                <span className="text-white font-bold">{hoveredBar.label}</span>
+              <div className="flex items-center justify-between gap-3 border-b border-[#E9D9D0] pb-1">
+                <span className="text-xs text-[#7A4E59] uppercase tracking-wider">Category</span>
+                <span className="text-[#670626] font-bold">{hoveredBar.label}</span>
               </div>
 
               {/* Numerical Value & Percentage Share */}
               <div className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Total Count:</span>
-                <span className="text-white font-extrabold text-sm flex items-center gap-1">
+                <span className="text-[#7A4E59]">Total Count:</span>
+                <span className="text-[#3B1722] font-extrabold text-sm flex items-center gap-1">
                   <span className={hoveredSeverity.textColor}>{hoveredBar.value}</span>
-                  <span className="text-[10px] text-slate-400 font-normal">incidents</span>
+                  <span className="text-xs text-[#7A4E59] font-normal">incidents</span>
                 </span>
               </div>
 
               <div className="flex items-center justify-between gap-3">
-                <span className="text-slate-400">Share of Total:</span>
-                <span className="text-slate-200 font-semibold text-xs">
+                <span className="text-[#7A4E59]">Share of Total:</span>
+                <span className="text-[#3B1722] font-semibold text-xs">
                   {((hoveredBar.value / total) * 100).toFixed(1)}%
                 </span>
               </div>
 
               {/* Severity Status Badge */}
               <div
-                className={`mt-0.5 inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors duration-150 ${hoveredSeverity.badgeClass}`}
+                className={`mt-0.5 inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition-colors duration-150 ${hoveredSeverity.badgeClass}`}
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${hoveredSeverity.dotClass}`} />
                 <span>{hoveredSeverity.text}</span>
@@ -309,7 +311,7 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
 
             {/* Caret arrow pointing to bar */}
             <div
-              className={`w-2.5 h-2.5 bg-slate-950 border-slate-700/90 transform rotate-45 shadow-md ${
+              className={`w-2.5 h-2.5 bg-[#F7F1EA] border-[#E9D9D0] transform rotate-45 shadow-md ${
                 isNearTop
                   ? 'border-l border-t -mt-[5px] mx-auto'
                   : 'border-r border-b -mt-[5px] mx-auto'

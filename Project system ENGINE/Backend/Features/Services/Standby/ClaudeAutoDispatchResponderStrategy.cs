@@ -32,18 +32,24 @@ public class ClaudeAutoDispatchResponderStrategy(
 
     public string StrategyKey => "ClaudeStandbyAutoDispatchResponders";
 
+    private sealed record ReportDispatchAllocationRow(Guid? AllocatedUnitId, string? AllocatedUnitCode);
+
     public async Task<StandbyAutoDispatchResult> SelectAndDispatchOptimalUnitAsync(
         StandbyAutoDispatchRequest request,
         CancellationToken ct = default)
     {
         var units = await LoadOrInitializeCandidateUnitsAsync(ct);
-        var reports = await db.Reports.AsNoTracking().ToListAsync(ct);
+        var reportAllocations = await db.Reports
+            .AsNoTracking()
+            .Where(r => r.AllocatedUnitId != null || r.AllocatedUnitCode != null)
+            .Select(r => new ReportDispatchAllocationRow(r.AllocatedUnitId, r.AllocatedUnitCode))
+            .ToListAsync(ct);
 
         var filteredUnits = FilterByRequiredAgency(units, request.RequiredAgencyType);
         var candidatePool = filteredUnits.Count > 0 ? filteredUnits : units;
 
         var scoredCandidates = candidatePool
-            .Select((unit, idx) => ScoreCandidateUnit(unit, idx + 1, request.IncidentLat, request.IncidentLng, reports))
+            .Select((unit, idx) => ScoreCandidateUnit(unit, idx + 1, request.IncidentLat, request.IncidentLng, reportAllocations))
             .OrderByDescending(c => c.CompositeScore)
             .ThenByDescending(c => c.NeverChosenBefore)
             .ThenBy(c => c.DistanceKm)
@@ -85,7 +91,7 @@ public class ClaudeAutoDispatchResponderStrategy(
         int responderUnitId,
         double incidentLat,
         double incidentLng,
-        IReadOnlyList<Report> allReports)
+        IReadOnlyList<ReportDispatchAllocationRow> allReports)
     {
         double distanceKm = ComputeHaversineKm(incidentLat, incidentLng, unit.BaseLatitude, unit.BaseLongitude);
         int historicalCount = CountHistoricalDispatches(unit, allReports);
@@ -127,7 +133,7 @@ public class ClaudeAutoDispatchResponderStrategy(
             SelectionReason: reason);
     }
 
-    private static int CountHistoricalDispatches(DutyUnit unit, IReadOnlyList<Report> allReports) =>
+    private static int CountHistoricalDispatches(DutyUnit unit, IReadOnlyList<ReportDispatchAllocationRow> allReports) =>
         allReports.Count(r =>
             (r.AllocatedUnitId.HasValue && r.AllocatedUnitId.Value == unit.Id) ||
             (!string.IsNullOrWhiteSpace(r.AllocatedUnitCode) &&
@@ -202,7 +208,7 @@ public class ClaudeAutoDispatchResponderStrategy(
             Status = DutyStatus.OnDuty,
             BaseLatitude = 8.5142,
             BaseLongitude = 123.2862,
-            ContactHotline = "(065) 212-0112",
+            ContactHotline = string.Empty,
             ActivePersonnelCount = 6
         },
         new DutyUnit
@@ -214,7 +220,7 @@ public class ClaudeAutoDispatchResponderStrategy(
             Status = DutyStatus.Standby,
             BaseLatitude = 8.5150,
             BaseLongitude = 123.2870,
-            ContactHotline = "(065) 212-0113",
+            ContactHotline = string.Empty,
             ActivePersonnelCount = 5
         },
         new DutyUnit
@@ -226,7 +232,7 @@ public class ClaudeAutoDispatchResponderStrategy(
             Status = DutyStatus.Standby,
             BaseLatitude = 8.5128,
             BaseLongitude = 123.2848,
-            ContactHotline = "160 / (065) 212-0160",
+            ContactHotline = string.Empty,
             ActivePersonnelCount = 8
         },
         new DutyUnit
@@ -238,7 +244,7 @@ public class ClaudeAutoDispatchResponderStrategy(
             Status = DutyStatus.OnDuty,
             BaseLatitude = 8.5160,
             BaseLongitude = 123.2835,
-            ContactHotline = "117 / (065) 212-0117",
+            ContactHotline = string.Empty,
             ActivePersonnelCount = 10
         },
         new DutyUnit
@@ -250,10 +256,17 @@ public class ClaudeAutoDispatchResponderStrategy(
             Status = DutyStatus.OnDuty,
             BaseLatitude = 8.5136,
             BaseLongitude = 123.2856,
-            ContactHotline = "911 / (065) 212-0001",
+            ContactHotline = string.Empty,
             ActivePersonnelCount = 12
         }
     ];
+
+    private static string SanitizePromptValue(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value)
+            ? fallback
+            : value.Replace("<", string.Empty, StringComparison.Ordinal)
+                   .Replace(">", string.Empty, StringComparison.Ordinal)
+                   .Trim();
 
     private async Task<(string ProviderUsed, string Reasoning)> GenerateTacticalReasoningAsync(
         StandbyAutoDispatchRequest request,
@@ -282,9 +295,14 @@ public class ClaudeAutoDispatchResponderStrategy(
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(8));
 
+            string safeIncidentType = SanitizePromptValue(request.IncidentType, "Emergency");
+            string safeSeverity = SanitizePromptValue(request.Severity, "High");
+            string safeAgency = SanitizePromptValue(request.RequiredAgencyType, selected.AgencyType);
+
             string prompt =
                 $"Explain in 1 concise tactical sentence why responder unit {selected.UnitCode} ({selected.AgencyType}) " +
-                $"was auto-selected for Incident #{request.IncidentId} ({request.IncidentType ?? "Emergency"}, Severity: {request.Severity ?? "High"}). " +
+                $"was auto-selected for Incident #{request.IncidentId}. " +
+                $"<untrusted_user_query>IncidentType={safeIncidentType}; Severity={safeSeverity}; RequestedAgency={safeAgency}</untrusted_user_query> " +
                 $"Metrics: Distance={selected.DistanceKm:F2}km, ProximityScore={selected.ProximityScore:F2}, " +
                 $"FairnessRotationScore={selected.FairnessRotationScore:F2} (NeverChosenBefore={selected.NeverChosenBefore}, HistoricalCount={selected.HistoricalDispatchCount}), " +
                 $"CompositeScore={selected.CompositeScore:F2}.";

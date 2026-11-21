@@ -243,10 +243,10 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Multi-Casualty Switcher & "+ Add Casualty" Bar */}
-        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+        <div className="p-3.5 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5] space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-xs font-bold text-sky-300">
-              <Users className="w-4 h-4 text-sky-400" />
+            <div className="flex items-center gap-2 text-sm font-bold text-[#670626]">
+              <Users className="w-4 h-4 text-[#A83B4D]" />
               <span>
                 Casualties ({casualties.length})
               </span>
@@ -270,8 +270,8 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
                   key={c.id}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono border transition-all ${
                     isSelected
-                      ? 'bg-rose-950/90 border-rose-500 text-rose-200 font-bold shadow'
-                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+                      ? 'bg-[#670626] border-[#670626] text-[#F7F1EA] font-bold shadow-sm'
+                      : 'bg-[#FFFBF7] border-[#D8C1B5] text-[#5C313E] hover:border-[#A83B4D]'
                   }`}
                 >
                   <button
@@ -288,10 +288,10 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleRemoveCasualty(idx)}
-                      className="text-slate-400 hover:text-rose-400 ml-1 cursor-pointer"
+                      className={`ml-1 cursor-pointer ${isSelected ? 'text-[#E9D9D0] hover:text-white' : 'text-[#7A4E59] hover:text-[#991B1B]'}`}
                       title="Remove casualty entry"
                     >
-                      <Trash2 className="w-3 h-3" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>
@@ -301,15 +301,15 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
         </div>
 
         {addedBannerMessage && (
-          <div className="flex items-center gap-2 p-2.5 bg-emerald-950/80 border border-emerald-700 rounded-lg text-emerald-200 text-xs">
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+          <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-sm font-semibold">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-700" />
             <span>{addedBannerMessage}</span>
           </div>
         )}
 
         {errorMessage && (
-          <div className="flex items-center gap-2 p-3 bg-rose-950/80 border border-rose-800 rounded text-rose-200 text-xs">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+          <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-300 rounded-xl text-[#991B1B] text-sm font-semibold">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-[#991B1B]" />
             <span>{errorMessage}</span>
           </div>
         )}
@@ -317,7 +317,7 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
         {/* Patient Demographics */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="sm:col-span-2">
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
+            <label className="block text-sm font-bold text-[#670626] mb-1">
               Patient Full Name / Identity (Casualty #{activeCasualtyIndex + 1})
             </label>
             <input
@@ -326,18 +326,18 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
               value={currentCasualty.patientName}
               onChange={(e) => updateCurrentCasualty({ patientName: e.target.value })}
               placeholder="e.g. Juan dela Cruz (or John Doe / Trauma 01)"
-              className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Age</label>
+            <label className="block text-sm font-bold text-[#670626] mb-1">Age</label>
             <input
               type="number"
               min={0}
               max={150}
               value={currentCasualty.age}
               onChange={(e) => updateCurrentCasualty({ age: Number(e.target.value) })}
-              className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
         </div>
@@ -345,11 +345,11 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
         {/* Gender, Consciousness & Receiving Hospital */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Gender</label>
+            <label className="block text-sm font-bold text-[#670626] mb-1">Gender</label>
             <select
               value={currentCasualty.gender}
               onChange={(e) => updateCurrentCasualty({ gender: e.target.value })}
-              className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             >
               <option value="Male">Male</option>
               <option value="Female">Female</option>
@@ -357,13 +357,13 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
+            <label className="block text-sm font-bold text-[#670626] mb-1">
               Level of Consciousness (AVPU)
             </label>
             <select
               value={currentCasualty.levelOfConsciousness}
               onChange={(e) => updateCurrentCasualty({ levelOfConsciousness: e.target.value })}
-              className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             >
               <option value="Alert">Alert (Spontaneous Eye & Speech)</option>
               <option value="Verbal">Verbal (Responds to Voice)</option>
@@ -372,8 +372,8 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
             </select>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1">
-              <Building2 className="w-3 h-3 text-sky-400" />
+            <label className="block text-sm font-bold text-[#670626] mb-1 flex items-center gap-1">
+              <Building2 className="w-3.5 h-3.5 text-[#A83B4D]" />
               <span>Receiving Hospital / Facility</span>
             </label>
             <input
@@ -381,70 +381,70 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
               value={currentCasualty.receivingHospital}
               onChange={(e) => updateCurrentCasualty({ receivingHospital: e.target.value })}
               placeholder="e.g. Zamboanga del Norte Medical Center"
-              className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
         </div>
 
         {/* Vitals Matrix */}
-        <div className="p-3 bg-slate-950/70 border border-rose-950/80 rounded-lg">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <div className="flex items-center gap-2 text-rose-400 text-xs font-semibold uppercase tracking-wider">
-              <Activity className="w-3.5 h-3.5" />
+        <div className="p-3.5 bg-[#E9D9D0]/60 border border-[#D8C1B5] rounded-xl">
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <div className="flex items-center gap-2 text-[#670626] text-sm font-bold uppercase tracking-wider">
+              <Activity className="w-4 h-4 text-[#A83B4D]" />
               <span>Vitals (Person #{activeCasualtyIndex + 1})</span>
             </div>
-            <span className="text-[10px] font-mono text-slate-400">
+            <span className="text-xs font-mono text-[#7A4E59]">
               {currentCasualty.recordedAt}
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <div>
-              <label className="block text-[11px] text-slate-400 mb-0.5">BP (mmHg)</label>
+              <label className="block text-xs font-semibold text-[#5C313E] mb-1">BP (mmHg)</label>
               <div className="flex items-center gap-1">
                 <input
                   type="number"
                   value={currentCasualty.bpSystolic}
                   onChange={(e) => updateCurrentCasualty({ bpSystolic: Number(e.target.value) })}
-                  className="w-1/2 px-2 py-1 bg-slate-900 border border-slate-700 rounded text-center text-xs text-slate-100"
+                  className="w-1/2 px-2 py-1.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-lg text-center text-sm text-[#3B1722]"
                   placeholder="SYS"
                 />
-                <span className="text-slate-500">/</span>
+                <span className="text-[#7A4E59]">/</span>
                 <input
                   type="number"
                   value={currentCasualty.bpDiastolic}
                   onChange={(e) => updateCurrentCasualty({ bpDiastolic: Number(e.target.value) })}
-                  className="w-1/2 px-2 py-1 bg-slate-900 border border-slate-700 rounded text-center text-xs text-slate-100"
+                  className="w-1/2 px-2 py-1.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-lg text-center text-sm text-[#3B1722]"
                   placeholder="DIA"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-[11px] text-slate-400 mb-0.5">Heart Rate (BPM)</label>
+              <label className="block text-xs font-semibold text-[#5C313E] mb-1">Heart Rate (BPM)</label>
               <input
                 type="number"
                 value={currentCasualty.heartRate}
                 onChange={(e) => updateCurrentCasualty({ heartRate: Number(e.target.value) })}
-                className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded text-center text-xs text-slate-100"
+                className="w-full px-2 py-1.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-lg text-center text-sm text-[#3B1722]"
               />
             </div>
             <div>
-              <label className="block text-[11px] text-slate-400 mb-0.5">SpO2 (%)</label>
+              <label className="block text-xs font-semibold text-[#5C313E] mb-1">SpO2 (%)</label>
               <input
                 type="number"
                 value={currentCasualty.spO2}
                 onChange={(e) => updateCurrentCasualty({ spO2: Number(e.target.value) })}
-                className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded text-center text-xs text-slate-100"
+                className="w-full px-2 py-1.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-lg text-center text-sm text-[#3B1722]"
               />
             </div>
             <div>
-              <label className="block text-[11px] text-slate-400 mb-0.5">Resp Rate (/min)</label>
+              <label className="block text-xs font-semibold text-[#5C313E] mb-1">Resp Rate (/min)</label>
               <input
                 type="number"
                 value={currentCasualty.respiratoryRate}
                 onChange={(e) =>
                   updateCurrentCasualty({ respiratoryRate: Number(e.target.value) })
                 }
-                className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded text-center text-xs text-slate-100"
+                className="w-full px-2 py-1.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-lg text-center text-sm text-[#3B1722]"
               />
             </div>
           </div>
@@ -452,7 +452,7 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
 
         {/* Interventions Checkchips */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+          <label className="block text-sm font-bold text-[#670626] mb-1.5">
             Interventions Administered
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -463,14 +463,14 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
                   type="button"
                   key={item}
                   onClick={toggleIntervention(item)}
-                  className={`px-2.5 py-1 text-xs rounded transition-colors flex items-center gap-1.5 border cursor-pointer ${
+                  className={`px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center gap-1.5 border cursor-pointer font-semibold ${
                     isSelected
-                      ? 'bg-rose-950/80 border-rose-700 text-rose-200'
-                      : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                      ? 'bg-[#670626] border-[#670626] text-[#F7F1EA]'
+                      : 'bg-[#E9D9D0]/55 border-[#D8C1B5] text-[#5C313E] hover:text-[#670626] hover:border-[#A83B4D]'
                   }`}
                 >
                   <Check
-                    className={`w-3 h-3 ${isSelected ? 'opacity-100 text-rose-400' : 'opacity-20'}`}
+                    className={`w-3.5 h-3.5 ${isSelected ? 'opacity-100 text-[#F7F1EA]' : 'opacity-25'}`}
                   />
                   <span>{item}</span>
                 </button>
@@ -480,9 +480,9 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
         </div>
 
         {/* Narrative & Chief Complaint */}
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
+            <label className="block text-sm font-bold text-[#670626] mb-1">
               Chief Complaint
             </label>
             <input
@@ -490,11 +490,11 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
               value={currentCasualty.chiefComplaint}
               onChange={(e) => updateCurrentCasualty({ chiefComplaint: e.target.value })}
               placeholder="e.g. Lacerations, chest trauma"
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
+            <label className="block text-sm font-bold text-[#670626] mb-1">
               Field Narrative
             </label>
             <textarea
@@ -502,13 +502,13 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
               value={currentCasualty.narrative}
               onChange={(e) => updateCurrentCasualty({ narrative: e.target.value })}
               placeholder="Pre-hospital timeline and patient status..."
-              className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-rose-500 resize-none"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626] resize-none"
             />
           </div>
         </div>
 
         {/* Action Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[#E9D9D0]">
           <Button
             type="button"
             variant="soft-blue"

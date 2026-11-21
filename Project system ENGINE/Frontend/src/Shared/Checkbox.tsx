@@ -64,15 +64,15 @@ export const Checkbox: FC<CheckboxProps> = ({
           style={{ width: '16px', height: '16px', minWidth: '16px', minHeight: '16px', flexShrink: 0 }}
           className={`w-4 h-4 rounded border transition-all duration-150 flex items-center justify-center ${
             isActive
-              ? 'bg-sky-600 border-sky-500 text-white shadow-sm shadow-sky-950/40 ring-1 ring-sky-500/30'
-              : 'bg-slate-900 border-slate-600 hover:border-sky-500 text-transparent'
-          } ${disabled ? 'bg-slate-800 border-slate-700' : ''}`}
+              ? 'bg-[#670626] border-[#670626] text-[#F7F1EA] shadow-sm ring-1 ring-[#A83B4D]/35'
+              : 'bg-[#FFFBF7] border-[#D4B8AA] hover:border-[#670626] text-transparent'
+          } ${disabled ? 'bg-[#E9D9D0] border-[#D4B8AA]' : ''}`}
         >
           {indeterminate ? (
-            <Minus className="w-2.5 h-2.5 text-white stroke-[2.5]" />
+            <Minus className="w-2.5 h-2.5 text-[#F7F1EA] stroke-[2.5]" />
           ) : (
             <Check
-              className={`w-3 h-3 text-white stroke-[2.5] transition-transform duration-150 ${
+              className={`w-3 h-3 text-[#F7F1EA] stroke-[2.5] transition-transform duration-150 ${
                 checked ? 'scale-100' : 'scale-0'
               }`}
             />
@@ -80,7 +80,7 @@ export const Checkbox: FC<CheckboxProps> = ({
         </div>
       </div>
       {label && (
-        <span className="text-xs text-slate-200 leading-tight">
+        <span className="text-sm text-[#3B1722] leading-tight">
           {label}
         </span>
       )}

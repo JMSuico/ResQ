@@ -10,8 +10,10 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Backend.Features.Api.DTOs;
+using Backend.Features.Data;
 using Backend.Features.Services.Interfaces;
 using Backend.Features.Services.Verification;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -30,6 +32,7 @@ public class IdentityAiService : IIdentityAiService
     private readonly IGovIdAuthenticityEvaluator _authenticityEvaluator;
     private readonly IFaceToGovIdMatchStrategy _faceToIdMatchStrategy;
     private readonly bool _hasInjectedAuthenticityEvaluator;
+    private readonly AppDbContext? _db;
 
     public IdentityAiService(
         IHttpClientFactory httpClientFactory,
@@ -38,11 +41,13 @@ public class IdentityAiService : IIdentityAiService
         IClaudeMessagesClient? claudeMessagesClient = null,
         IVerificationTokenCacheStrategy? tokenCacheStrategy = null,
         IGovIdAuthenticityEvaluator? authenticityEvaluator = null,
-        IFaceToGovIdMatchStrategy? faceToIdMatchStrategy = null)
+        IFaceToGovIdMatchStrategy? faceToIdMatchStrategy = null,
+        AppDbContext? db = null)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
         _logger = logger;
+        _db = db;
         _claudeClient = claudeMessagesClient
             ?? new ClaudeMessagesClient(
                 httpClientFactory?.CreateClient("ClaudeMessages") ?? new HttpClient(),
@@ -824,6 +829,99 @@ public class IdentityAiService : IIdentityAiService
         IdentityDocumentAnalyzeRequestDto request,
         CancellationToken ct = default) =>
         Task.FromResult(ExecuteDeterministicDocumentAnalysis(request));
+
+    public async Task<BiometricTrainingStatusDto> GetBiometricTrainingStatusAsync(
+        string? email,
+        CancellationToken ct = default)
+    {
+        string normalizedEmail = email?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalizedEmail) || _db == null)
+        {
+            return new BiometricTrainingStatusDto(
+                Email: normalizedEmail,
+                Exists: false,
+                Found: false,
+                HasBiometricEnrollment: false,
+                TrainingStatus: "NONE",
+                BiometricTrainingStatus: "NONE",
+                IsReady: false,
+                Ready: false,
+                ReadyTargetUtc: null,
+                BiometricTrainingReadyTargetUtc: null,
+                CompletedAtUtc: null,
+                RemainingSeconds: 0,
+                RemainingMinutes: 0,
+                TrainedFrameCount: 0,
+                Message: "No active biometric enrollment found for this account.");
+        }
+
+        var latest = await _db.BiometricEnrollments
+            .AsNoTracking()
+            .Where(b =>
+                b.RevokedAtUtc == null &&
+                b.EnrollmentStatus == "ACTIVE" &&
+                b.User != null &&
+                !b.User.IsDeleted &&
+                b.User.Email.ToLower() == normalizedEmail)
+            .OrderByDescending(b => b.EnrolledAtUtc)
+            .Select(b => new
+            {
+                b.TrainingStatus,
+                b.TrainingReadyTargetUtc,
+                b.TrainingCompletedAtUtc,
+                b.TrainedFrameCount
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (latest == null)
+        {
+            return new BiometricTrainingStatusDto(
+                Email: normalizedEmail,
+                Exists: false,
+                Found: false,
+                HasBiometricEnrollment: false,
+                TrainingStatus: "NONE",
+                BiometricTrainingStatus: "NONE",
+                IsReady: false,
+                Ready: false,
+                ReadyTargetUtc: null,
+                BiometricTrainingReadyTargetUtc: null,
+                CompletedAtUtc: null,
+                RemainingSeconds: 0,
+                RemainingMinutes: 0,
+                TrainedFrameCount: 0,
+                Message: "No active biometric enrollment found for this account.");
+        }
+
+        int remainingSeconds =
+            string.Equals(latest.TrainingStatus, "LEARNING", StringComparison.OrdinalIgnoreCase) &&
+            latest.TrainingReadyTargetUtc.HasValue
+                ? Math.Max(0, (int)Math.Ceiling((latest.TrainingReadyTargetUtc.Value - DateTime.UtcNow).TotalSeconds))
+                : 0;
+
+        bool isReady = !string.Equals(latest.TrainingStatus, "LEARNING", StringComparison.OrdinalIgnoreCase) || remainingSeconds <= 0;
+        string effectiveStatus = isReady ? "READY" : "LEARNING";
+        int remainingMinutes = isReady ? 0 : Math.Max(1, (int)Math.Ceiling(remainingSeconds / 60.0));
+
+        return new BiometricTrainingStatusDto(
+            Email: normalizedEmail,
+            Exists: true,
+            Found: true,
+            HasBiometricEnrollment: true,
+            TrainingStatus: effectiveStatus,
+            BiometricTrainingStatus: effectiveStatus,
+            IsReady: isReady,
+            Ready: isReady,
+            ReadyTargetUtc: latest.TrainingReadyTargetUtc,
+            BiometricTrainingReadyTargetUtc: latest.TrainingReadyTargetUtc,
+            CompletedAtUtc: latest.TrainingCompletedAtUtc,
+            RemainingSeconds: remainingSeconds,
+            RemainingMinutes: remainingMinutes,
+            TrainedFrameCount: latest.TrainedFrameCount,
+            Message: isReady
+                ? "Biometric template training is complete and ready for facial login."
+                : $"Biometric template training in progress ({remainingMinutes} min remaining).");
+    }
 
     private static List<double> NormalizeOrGenerateDescriptor128D(
         List<double>? clientVector,

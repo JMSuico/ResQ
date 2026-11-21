@@ -1,37 +1,29 @@
 // [Layer: UserRoles/Features/Pages/AdminsPanel]
 // SettingsPage.tsx -- LDRRMO Administrative Profile, Cross-Portal Platform Settings, & Cryptographic Audit Trails.
-// Conforms to Squad 5:
-// - Universal Lucide Migration: No raw inline SVGs.
-// - Relational Synchronization: Configuration updates connect to PUT /api/settings/{key} and audit trails to GET /api/settings/audit.
-// - Strict Katipuneros architecture, Universal Lambdas (=>), Zero 'any' typing, Zero hardcoded static numbers.
+// Stitch Official Cherry (#670626) / Warm Ivory (#F7F1EA) / Soft Beige (#E9D9D0) / Muted Cherry (#A83B4D) Clay Design System.
+// Preserves E2E contracts: #tab-profile-radio, #tab-platform-radio, #tab-audit-radio, #audit-pagination-controls.
+// REMOVING #11: Katipunan, Zamboanga del Norte (7109) municipality/barangay defaults.
+// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis.
 
 import React, { useState, useEffect, FC, useCallback, ChangeEvent, FormEvent } from 'react';
 import {
   Settings,
   Sliders,
-  Database,
   Save,
   RefreshCw,
-  Lock,
   Terminal,
   CheckCircle2,
-  Shield,
   ShieldAlert,
   Volume2,
   Clock,
   User,
-  AlertTriangle,
-  Check,
   Activity,
-  FileText,
-  Key,
-  Users,
   Eye,
   Radio,
   ChevronLeft,
-  ChevronRight,
+  ChevronRight
 } from 'lucide-react';
-import { Button, RadioButton } from '@/Shared';
+import { RadioButton } from '@/Shared';
 import { usePagination } from '@/Hooks';
 import { useSession } from '@/Hooks/useSession';
 import {
@@ -39,10 +31,11 @@ import {
   updateSystemSetting,
   getAuditLogs,
   updateUser,
-  SystemSetting,
-  AuditLog,
+  SystemSetting
 } from '@/Endpoints/adminGovernanceApi';
 import { BASELINE_AUDIT_LOGS } from '@/Libs/Assets/baselineFixtures';
+import { AdminButton } from './Shared/AdminButton';
+import { CLAY_SURFACE, CLAY_WELL, CLAY_INPUT, CLAY_SELECT } from './Shared/adminCommandHelpers';
 
 export interface CryptographicAuditItem {
   id: string;
@@ -58,9 +51,8 @@ export interface CryptographicAuditItem {
   details?: string;
 }
 
-// Architectural Telemetry Constants (Zero hardcoded static numbers)
 const TOAST_DURATION_MS = 3500;
-const MAX_AVATAR_FILE_BYTES = 2 * 1024 * 1024; // 2MB max
+const MAX_AVATAR_FILE_BYTES = 2 * 1024 * 1024;
 const MIN_LAPLACIAN_THRESHOLD = 40;
 const MAX_LAPLACIAN_THRESHOLD = 95;
 const STEP_LAPLACIAN_THRESHOLD = 5;
@@ -74,7 +66,6 @@ export const SettingsPage: FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  // Profile Form State
   const [fullName, setFullName] = useState<string>('Commander Carlos Mendez');
   const [email, setEmail] = useState<string>('ldrrmo.admin@resqtrack.gov.ph');
   const [phone, setPhone] = useState<string>('+63 917 889 4432');
@@ -82,7 +73,6 @@ export const SettingsPage: FC = () => {
   const [employeeId, setEmployeeId] = useState<string>('EMP-LDRRMO-001');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
 
-  // Platform Settings State (cross-portal effect)
   const [broadcastRadius, setBroadcastRadius] = useState<string>('15km');
   const [laplacianThreshold, setLaplacianThreshold] = useState<number>(DEFAULT_LAPLACIAN_VALUE);
   const [autoDispatchMode, setAutoDispatchMode] = useState<boolean>(true);
@@ -90,7 +80,6 @@ export const SettingsPage: FC = () => {
   const [refreshIntervalSec, setRefreshIntervalSec] = useState<number>(DEFAULT_REFRESH_RATE_SEC);
   const [highContrastHud, setHighContrastHud] = useState<boolean>(true);
 
-  // Relational Audit Trail State (GET /api/settings/audit)
   const [auditLogs, setAuditLogs] = useState<CryptographicAuditItem[]>([]);
   const [isLoadingAudit, setIsLoadingAudit] = useState<boolean>(false);
 
@@ -107,11 +96,11 @@ export const SettingsPage: FC = () => {
     nextPage: auditNextPage,
     prevPage: auditPrevPage,
     setPageSize: setAuditPageSize,
-    pageSizeOptions: auditPageSizeOptions,
+    pageSizeOptions: auditPageSizeOptions
   } = usePagination(auditLogs, {
     initialPage: 1,
     initialPageSize: 10,
-    pageSizeOptions: [10, 25, 50, 100],
+    pageSizeOptions: [10, 25, 50, 100]
   });
 
   const showToast = useCallback((msg: string) => {
@@ -119,21 +108,19 @@ export const SettingsPage: FC = () => {
     setTimeout(() => setToastMessage(null), TOAST_DURATION_MS);
   }, []);
 
-  // Relational Cryptographic Audit Trail Ingestion (GET /api/settings/audit)
   const loadAuditTrail = useCallback(async () => {
     setIsLoadingAudit(true);
     try {
       const logs = (await getAuditLogs()) as unknown as CryptographicAuditItem[];
       setAuditLogs(Array.isArray(logs) && logs.length > 0 ? logs : (BASELINE_AUDIT_LOGS as unknown as CryptographicAuditItem[]));
     } catch (err: unknown) {
-      console.warn('[SettingsPage] Could not load cryptographic audit trail from backend:', err);
+      console.warn('[SettingsPage] Could not load cryptographic audit trail:', err);
       setAuditLogs((prev) => (prev.length > 0 ? prev : (BASELINE_AUDIT_LOGS as unknown as CryptographicAuditItem[])));
     } finally {
       setIsLoadingAudit(false);
     }
   }, []);
 
-  // Relational System Settings Ingestion (GET /api/settings)
   const loadPlatformSettings = useCallback(async () => {
     try {
       const settings = await getSystemSettings();
@@ -148,7 +135,6 @@ export const SettingsPage: FC = () => {
         });
       }
     } catch {
-      // Fallback to local storage if API is initializing
       const storedSettings = localStorage.getItem('resqtrack_platform_settings');
       if (storedSettings) {
         try {
@@ -159,14 +145,11 @@ export const SettingsPage: FC = () => {
           if (parsed.audioChimesEnabled !== undefined) setAudioChimesEnabled(parsed.audioChimesEnabled);
           if (parsed.refreshIntervalSec) setRefreshIntervalSec(parsed.refreshIntervalSec);
           if (parsed.highContrastHud !== undefined) setHighContrastHud(parsed.highContrastHud);
-        } catch {
-          // ignore parsing error
-        }
+        } catch {}
       }
     }
   }, []);
 
-  // Initialize from session and backend
   useEffect(() => {
     if (session) {
       if (session.fullName) setFullName(session.fullName);
@@ -178,11 +161,10 @@ export const SettingsPage: FC = () => {
       localStorage.getItem('resqtrack_admin_avatar');
     if (storedAvatar) setAvatarUrl(storedAvatar);
 
-    loadPlatformSettings();
-    loadAuditTrail();
+    void loadPlatformSettings();
+    void loadAuditTrail();
   }, [session, loadPlatformSettings, loadAuditTrail]);
 
-  // Handle Avatar Upload
   const handleAvatarChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -199,9 +181,7 @@ export const SettingsPage: FC = () => {
       try {
         localStorage.setItem('resqtrack_admin_avatar', result);
         localStorage.setItem('resqtrack_user_avatar', result);
-        window.dispatchEvent(
-          new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: result } })
-        );
+        window.dispatchEvent(new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: result } }));
         showToast('Profile photo updated.');
       } catch {
         showToast('Avatar set for current session.');
@@ -210,7 +190,6 @@ export const SettingsPage: FC = () => {
     reader.readAsDataURL(file);
   };
 
-  // Helper to persist profile changes to backend via updateUser so changes persist to relational database
   const updateOwnProfile = async (payload: {
     fullName: string;
     email: string;
@@ -233,68 +212,52 @@ export const SettingsPage: FC = () => {
       unit: 'None',
       status: 'Verified',
       province: 'Zamboanga del Norte',
-      cityOrMunicipality: 'Dipolog City',
-      barangay: 'Barra'
+      cityOrMunicipality: 'Katipunan',
+      barangay: 'Barangay Uno (Poblacion)'
     });
   };
 
-  // Save Personal Profile with backend relational database persistence
   const handleSaveProfile = async (e: FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    const payload = {
-      fullName,
-      email,
-      phone,
-      rank,
-      employeeId,
-    };
+    const payload = { fullName, email, phone, rank, employeeId };
 
     try {
-      // Persist profile to relational database via updateUser
       await updateOwnProfile(payload);
-
       const existingUser = localStorage.getItem('resqtrack_user');
       const parsedUser = existingUser ? (JSON.parse(existingUser) as Record<string, unknown>) : {};
-      const updatedUser = {
-        ...parsedUser,
-        ...payload,
-      };
+      const updatedUser = { ...parsedUser, ...payload };
       localStorage.setItem('resqtrack_user', JSON.stringify(updatedUser));
 
-      // Sync active session if available
       const existingSession = localStorage.getItem('resqtrack_session');
       if (existingSession) {
         try {
           const sess = JSON.parse(existingSession) as Record<string, unknown>;
-          localStorage.setItem('resqtrack_session', JSON.stringify({
-            ...sess,
-            fullName,
-            email,
-            rankOrTitle: rank,
-            employeeOrResidentId: employeeId
-          }));
+          localStorage.setItem(
+            'resqtrack_session',
+            JSON.stringify({
+              ...sess,
+              fullName,
+              email,
+              rankOrTitle: rank,
+              employeeOrResidentId: employeeId
+            })
+          );
         } catch {}
       }
 
       window.dispatchEvent(new CustomEvent('resqtrack:profile_updated', { detail: updatedUser }));
       showToast('Settings saved.');
-    } catch (err: unknown) {
-      console.warn('[SettingsPage] Backend profile persistence warning:', err);
+    } catch {
       const existingUser = localStorage.getItem('resqtrack_user');
       const parsedUser = existingUser ? (JSON.parse(existingUser) as Record<string, unknown>) : {};
-      const updatedUser = {
-        ...parsedUser,
-        ...payload,
-      };
-      localStorage.setItem('resqtrack_user', JSON.stringify(updatedUser));
+      localStorage.setItem('resqtrack_user', JSON.stringify({ ...parsedUser, ...payload }));
       showToast('Settings saved.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Relational Configuration Updates with backend upsert handling
   const handleSavePlatformSettings = async (e: FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -305,28 +268,23 @@ export const SettingsPage: FC = () => {
       audioChimesEnabled,
       refreshIntervalSec,
       highContrastHud,
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
     try {
-      // Connect configuration updates directly to PUT /api/settings/{key} with upsert resilience
-      const updates = [
+      await Promise.allSettled([
         updateSystemSetting('broadcastRadius', broadcastRadius),
         updateSystemSetting('laplacianThreshold', String(laplacianThreshold)),
         updateSystemSetting('autoDispatchMode', String(autoDispatchMode)),
         updateSystemSetting('audioChimesEnabled', String(audioChimesEnabled)),
         updateSystemSetting('refreshIntervalSec', String(refreshIntervalSec)),
-        updateSystemSetting('highContrastHud', String(highContrastHud)),
-      ];
-
-      await Promise.allSettled(updates);
-
+        updateSystemSetting('highContrastHud', String(highContrastHud))
+      ]);
       localStorage.setItem('resqtrack_platform_settings', JSON.stringify(payload));
       window.dispatchEvent(new CustomEvent('resqtrack:settings_updated', { detail: payload }));
       showToast('Settings saved.');
       await loadAuditTrail();
-    } catch (err: unknown) {
-      // Fallback
+    } catch {
       localStorage.setItem('resqtrack_platform_settings', JSON.stringify(payload));
       window.dispatchEvent(new CustomEvent('resqtrack:settings_updated', { detail: payload }));
       showToast('Settings saved.');
@@ -336,91 +294,90 @@ export const SettingsPage: FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full text-slate-100">
-      {/* Toast Alert */}
+    <div className="flex flex-col gap-6 w-full pb-10">
       {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 p-3.5 rounded-xl bg-slate-900/95 border border-rose-500/80 text-white text-xs font-mono shadow-2xl flex items-center gap-2 animate-fade-in backdrop-blur-md">
-          <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse" />
+        <div className="fixed top-20 right-6 z-50 p-3.5 rounded-2xl bg-[#F7F1EA] border-2 border-[#670626] text-[#670626] text-sm font-mono font-bold shadow-[0_14px_34px_rgba(74,4,26,0.35)] flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-[#670626]" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/55 border border-white/10 backdrop-blur-xl shadow-[0_12px_32px_-8px_rgba(2,6,23,0.6),inset_0_1px_0_rgba(255,255,255,0.08)]">
+      <div className={`${CLAY_SURFACE} p-5 flex flex-wrap items-center justify-between gap-4`}>
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase flex items-center gap-2">
-            <Settings className="w-6 h-6 text-rose-500 animate-pulse" />
+          <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#A83B4D]">
+            LDRRMO Command / System Settings
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black text-[#670626] tracking-tight mt-0.5 flex items-center gap-2.5">
+            <Settings className="w-6 h-6 text-[#A83B4D]" />
             System Settings
           </h1>
-          <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Configuration and audit log
+          <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
+            Configuration, profile governance, and cryptographic audit log
           </p>
         </div>
 
-        {/* Tab Selectors for Profile, Platform Settings, and Audit */}
-        <div className="inline-flex items-center gap-3 bg-slate-950/60 p-1.5 rounded-xl border border-white/10 backdrop-blur-md shadow-inner flex-wrap">
+        {/* Tab Selectors preserving IDs */}
+        <div className={`${CLAY_WELL} inline-flex items-center gap-3 p-2 flex-wrap`}>
           <RadioButton
             id="tab-profile-radio"
             name="settings-view-radio"
             checked={activeTab === 'profile'}
             onChange={() => setActiveTab('profile')}
-            label={<span className="text-xs font-mono font-bold text-slate-200">Profile</span>}
+            label={<span className="text-sm font-mono font-bold text-[#670626]">Profile</span>}
           />
           <RadioButton
             id="tab-platform-radio"
             name="settings-view-radio"
             checked={activeTab === 'platform'}
             onChange={() => setActiveTab('platform')}
-            label={<span className="text-xs font-mono font-bold text-slate-200">Platform</span>}
+            label={<span className="text-sm font-mono font-bold text-[#670626]">Platform</span>}
           />
           <RadioButton
             id="tab-audit-radio"
             name="settings-view-radio"
             checked={activeTab === 'audit'}
             onChange={() => setActiveTab('audit')}
-            label={<span className="text-xs font-mono font-bold text-slate-200">Audit</span>}
+            label={<span className="text-sm font-mono font-bold text-[#670626]">Audit</span>}
           />
         </div>
       </div>
 
-      {/* TAB 1: Profile Management */}
+      {/* TAB 1: Profile */}
       {activeTab === 'profile' && (
-        <form onSubmit={handleSaveProfile} className="tactical-card p-6 space-y-6">
-          <div className="flex items-center justify-between border-b border-white/10 pb-4">
+        <form onSubmit={handleSaveProfile} className={`tactical-card ${CLAY_SURFACE} p-6 space-y-6`}>
+          <div className="flex items-center justify-between border-b border-[#670626]/15 pb-4">
             <div>
-              <h2 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <User className="w-4 h-4 text-rose-400" />
+              <h2 className="text-lg font-black text-[#670626] uppercase tracking-wider flex items-center gap-2">
+                <User className="w-5 h-5 text-[#A83B4D]" />
                 Admin Profile
               </h2>
-              <p className="text-xs text-slate-400 font-mono">
+              <p className="text-xs text-[#A83B4D] font-mono mt-0.5">
                 Port 1996 clearance
               </p>
             </div>
-            <Button variant="primary" size="sm" type="submit" icon={<Save className="w-3.5 h-3.5" />}>
-              Save Changes
-            </Button>
+            <AdminButton variant="primary" size="sm" type="submit" disabled={isSaving} icon={<Save className="w-3.5 h-3.5" />}>
+              {isSaving ? 'Saving…' : 'Save Changes'}
+            </AdminButton>
           </div>
 
-          {/* Profile Photo / Avatar with Lucide fallback */}
-          <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl bg-slate-950/50 border border-white/10 backdrop-blur-md">
-            <div className="relative w-20 h-20 rounded-2xl overflow-hidden border-2 border-rose-500/70 shadow-lg bg-slate-900 flex items-center justify-center flex-shrink-0">
+          <div className={`${CLAY_WELL} flex flex-wrap items-center gap-6 p-4`}>
+            <div className="relative w-20 h-20 rounded-2xl overflow-hidden border-2 border-[#670626] shadow-md bg-[#F7F1EA] flex items-center justify-center flex-shrink-0">
               {avatarUrl ? (
                 <img src={avatarUrl} alt="Administrator Avatar" className="w-full h-full object-cover" />
               ) : (
-                <div className="flex flex-col items-center justify-center text-slate-400">
-                  <User className="w-10 h-10 text-rose-400" />
-                  <span className="text-[9px] font-mono text-slate-500">DEFAULT</span>
+                <div className="flex flex-col items-center justify-center text-[#A83B4D]">
+                  <User className="w-10 h-10 text-[#670626]" />
+                  <span className="text-xs font-mono font-bold">DEFAULT</span>
                 </div>
               )}
             </div>
 
             <div className="space-y-1.5 flex-1">
-              <h3 className="text-sm font-bold text-white">Profile Photo</h3>
-              <p className="text-xs text-slate-400">
-                PNG or JPG, max 2MB.
-              </p>
+              <h3 className="text-base font-bold text-[#670626]">Profile Photo</h3>
+              <p className="text-xs text-[#A83B4D]">PNG or JPG, max 2MB.</p>
               <div className="flex items-center gap-3 pt-1">
-                <label className="cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800/70 hover:bg-slate-700/80 border border-white/15 text-xs font-mono font-bold text-white transition-all inline-block">
+                <label className="cursor-pointer px-3.5 py-2 rounded-xl bg-[#670626] hover:bg-[#4A041A] text-xs font-mono font-bold text-[#F7F1EA] transition-all inline-block">
                   Upload Photo
                   <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
                 </label>
@@ -431,12 +388,10 @@ export const SettingsPage: FC = () => {
                       setAvatarUrl('');
                       localStorage.removeItem('resqtrack_admin_avatar');
                       localStorage.removeItem('resqtrack_user_avatar');
-                      window.dispatchEvent(
-                        new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } })
-                      );
+                      window.dispatchEvent(new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } }));
                       showToast('Reverted to default static avatar.');
                     }}
-                    className="text-xs text-slate-400 hover:text-rose-400 font-mono transition-colors"
+                    className="text-xs text-[#A83B4D] hover:text-[#670626] font-mono font-bold cursor-pointer"
                   >
                     Reset to Default
                   </button>
@@ -445,75 +400,45 @@ export const SettingsPage: FC = () => {
             </div>
           </div>
 
-          {/* Form Fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="font-mono text-xs text-slate-300 font-bold block mb-1">Full Legal Name</label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-rose-500"
-              />
+              <label className="font-mono text-xs text-[#670626] font-bold block mb-1.5 uppercase tracking-wider">Full Legal Name</label>
+              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className={CLAY_INPUT} />
             </div>
-
             <div>
-              <label className="font-mono text-xs text-slate-300 font-bold block mb-1">Command Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-rose-500"
-              />
+              <label className="font-mono text-xs text-[#670626] font-bold block mb-1.5 uppercase tracking-wider">Command Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={CLAY_INPUT} />
             </div>
-
             <div>
-              <label className="font-mono text-xs text-slate-300 font-bold block mb-1">Official Contact Phone</label>
-              <input
-                type="text"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-rose-500"
-              />
+              <label className="font-mono text-xs text-[#670626] font-bold block mb-1.5 uppercase tracking-wider">Personal Contact Phone</label>
+              <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className={CLAY_INPUT} />
             </div>
-
             <div>
-              <label className="font-mono text-xs text-slate-300 font-bold block mb-1">Executive Rank / Position</label>
-              <input
-                type="text"
-                value={rank}
-                onChange={(e) => setRank(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-rose-500"
-              />
+              <label className="font-mono text-xs text-[#670626] font-bold block mb-1.5 uppercase tracking-wider">Executive Rank / Position</label>
+              <input type="text" value={rank} onChange={(e) => setRank(e.target.value)} className={CLAY_INPUT} />
             </div>
-
             <div className="sm:col-span-2">
-              <label className="font-mono text-xs text-slate-300 font-bold block mb-1">Employee / Plantilla Clearance ID</label>
-              <input
-                type="text"
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-rose-500"
-              />
+              <label className="font-mono text-xs text-[#670626] font-bold block mb-1.5 uppercase tracking-wider">Employee / Plantilla Clearance ID</label>
+              <input type="text" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className={CLAY_INPUT} />
             </div>
           </div>
         </form>
       )}
 
-      {/* TAB 2: Cross-Portal Platform Settings */}
+      {/* TAB 2: Platform Settings */}
       {activeTab === 'platform' && (
-        <form onSubmit={handleSavePlatformSettings} className="tactical-card p-6 space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+        <form onSubmit={handleSavePlatformSettings} className={`tactical-card ${CLAY_SURFACE} p-6 space-y-6`}>
+          <div className="flex items-center justify-between border-b border-[#670626]/15 pb-4">
             <div>
-              <h2 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-rose-400" />
+              <h2 className="text-lg font-black text-[#670626] uppercase tracking-wider flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-[#A83B4D]" />
                 Platform Settings
               </h2>
-              <p className="text-xs text-slate-400 font-mono">
-                Shared parameters across all portals
+              <p className="text-xs text-[#A83B4D] font-mono mt-0.5">
+                Shared parameters across all Katipunan portals
               </p>
             </div>
-            <Button
+            <AdminButton
               variant="primary"
               size="sm"
               type="submit"
@@ -521,50 +446,44 @@ export const SettingsPage: FC = () => {
               icon={isSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             >
               {isSaving ? 'Saving…' : 'Save Settings'}
-            </Button>
+            </AdminButton>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Setting 1: Broadcast Radius */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div className={`${CLAY_WELL} p-4 space-y-2.5`}>
               <div className="flex items-center justify-between">
-                <label className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
-                  <Radio className="w-3.5 h-3.5 text-rose-400" />
+                <label className="font-mono text-sm text-[#670626] font-bold flex items-center gap-1.5">
+                  <Radio className="w-4 h-4 text-[#A83B4D]" />
                   Emergency Broadcast Radius
                 </label>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-950 text-rose-300 font-bold">
+                <span className="text-xs font-mono px-2.5 py-0.5 rounded-md bg-[#670626] text-[#F7F1EA] font-bold">
                   {broadcastRadius}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">
-                Filters alert pushes sent to resident feeds.
-              </p>
+              <p className="text-xs text-[#A83B4D]">Filters advisory pushes sent to resident Notification Bells.</p>
               <select
                 value={broadcastRadius}
                 onChange={(e) => setBroadcastRadius(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                className={CLAY_SELECT}
               >
                 <option value="5km">Local Sector (5 km radius)</option>
-                <option value="15km">Municipal Urban (15 km radius)</option>
-                <option value="30km">Metro & Coast (30 km radius)</option>
+                <option value="15km">Katipunan Urban (15 km radius)</option>
+                <option value="30km">Municipal & Coast (30 km radius)</option>
                 <option value="wide">Province Wide (All Registered Civilians)</option>
               </select>
             </div>
 
-            {/* Setting 2: Laplacian Blur Sensitivity Base */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div className={`${CLAY_WELL} p-4 space-y-2.5`}>
               <div className="flex items-center justify-between">
-                <label className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
-                  <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
+                <label className="font-mono text-sm text-[#670626] font-bold flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4 text-emerald-700" />
                   Blur Threshold
                 </label>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 font-bold">
+                <span className="text-xs font-mono px-2.5 py-0.5 rounded-md bg-emerald-100 border border-emerald-700/30 text-emerald-900 font-bold">
                   {laplacianThreshold}.0 Min
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">
-                Minimum sharpness required for live camera photo uploads.
-              </p>
+              <p className="text-xs text-[#A83B4D]">Minimum sharpness required for live camera photo uploads.</p>
               <input
                 type="range"
                 min={MIN_LAPLACIAN_THRESHOLD}
@@ -572,23 +491,22 @@ export const SettingsPage: FC = () => {
                 step={STEP_LAPLACIAN_THRESHOLD}
                 value={laplacianThreshold}
                 onChange={(e) => setLaplacianThreshold(Number(e.target.value))}
-                className="w-full accent-rose-500"
+                className="w-full accent-[#670626]"
               />
-              <div className="flex justify-between text-[10px] font-mono text-slate-500">
+              <div className="flex justify-between text-xs font-mono text-[#A83B4D]">
                 <span>Tolerant ({MIN_LAPLACIAN_THRESHOLD}.0)</span>
                 <span>Standard ({DEFAULT_LAPLACIAN_VALUE}.0)</span>
                 <span>Strict ({MAX_LAPLACIAN_THRESHOLD}.0)</span>
               </div>
             </div>
 
-            {/* Setting 3: Auto-Dispatch AI Mode */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-4">
+            <div className={`${CLAY_WELL} p-4 flex items-center justify-between gap-4`}>
               <div>
-                <h4 className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5 text-sky-400" />
+                <h4 className="font-mono text-sm text-[#670626] font-bold flex items-center gap-1.5">
+                  <Activity className="w-4 h-4 text-[#A83B4D]" />
                   Auto-Dispatch Mode
                 </h4>
-                <p className="text-[11px] text-slate-400 mt-0.5">
+                <p className="text-xs text-[#A83B4D] mt-1">
                   Assigns the nearest available unit upon report verification.
                 </p>
               </div>
@@ -596,25 +514,24 @@ export const SettingsPage: FC = () => {
                 type="button"
                 onClick={() => setAutoDispatchMode(!autoDispatchMode)}
                 className={`w-12 h-6 rounded-full transition-colors relative p-0.5 flex items-center cursor-pointer flex-shrink-0 ${
-                  autoDispatchMode ? 'bg-emerald-500' : 'bg-slate-700'
+                  autoDispatchMode ? 'bg-[#670626]' : 'bg-[#A83B4D]/40'
                 }`}
               >
                 <div
-                  className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                  className={`w-5 h-5 rounded-full bg-[#F7F1EA] shadow-md transition-transform duration-200 ${
                     autoDispatchMode ? 'translate-x-6' : 'translate-x-0'
                   }`}
                 />
               </button>
             </div>
 
-            {/* Setting 4: Audio Siren & Chimes */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-4">
+            <div className={`${CLAY_WELL} p-4 flex items-center justify-between gap-4`}>
               <div>
-                <h4 className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
-                  <Volume2 className="w-3.5 h-3.5 text-rose-400" />
+                <h4 className="font-mono text-sm text-[#670626] font-bold flex items-center gap-1.5">
+                  <Volume2 className="w-4 h-4 text-[#A83B4D]" />
                   Alert Audio Chime
                 </h4>
-                <p className="text-[11px] text-slate-400 mt-0.5">
+                <p className="text-xs text-[#A83B4D] mt-1">
                   Plays an audio alert when critical dispatches arrive.
                 </p>
               </div>
@@ -622,35 +539,32 @@ export const SettingsPage: FC = () => {
                 type="button"
                 onClick={() => setAudioChimesEnabled(!audioChimesEnabled)}
                 className={`w-12 h-6 rounded-full transition-colors relative p-0.5 flex items-center cursor-pointer flex-shrink-0 ${
-                  audioChimesEnabled ? 'bg-rose-500' : 'bg-slate-700'
+                  audioChimesEnabled ? 'bg-[#670626]' : 'bg-[#A83B4D]/40'
                 }`}
               >
                 <div
-                  className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                  className={`w-5 h-5 rounded-full bg-[#F7F1EA] shadow-md transition-transform duration-200 ${
                     audioChimesEnabled ? 'translate-x-6' : 'translate-x-0'
                   }`}
                 />
               </button>
             </div>
 
-            {/* Setting 5: Telemetry Polling Rate */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div className={`${CLAY_WELL} p-4 space-y-2.5`}>
               <div className="flex items-center justify-between">
-                <label className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-sky-400" />
+                <label className="font-mono text-sm text-[#670626] font-bold flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-[#A83B4D]" />
                   Polling Rate
                 </label>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-950 text-sky-300 font-bold">
+                <span className="text-xs font-mono px-2.5 py-0.5 rounded-md bg-[#F7F1EA] border border-[#670626]/20 text-[#670626] font-bold">
                   {refreshIntervalSec} Seconds
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">
-                Refresh interval for background data updates.
-              </p>
+              <p className="text-xs text-[#A83B4D]">Refresh interval for background telemetry updates.</p>
               <select
                 value={refreshIntervalSec}
                 onChange={(e) => setRefreshIntervalSec(Number(e.target.value))}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                className={CLAY_SELECT}
               >
                 <option value={3}>High Velocity (Every 3s)</option>
                 <option value={6}>Standard (Every 6s)</option>
@@ -658,14 +572,13 @@ export const SettingsPage: FC = () => {
               </select>
             </div>
 
-            {/* Setting 6: High Contrast Tactical Theme */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-4">
+            <div className={`${CLAY_WELL} p-4 flex items-center justify-between gap-4`}>
               <div>
-                <h4 className="font-mono text-xs text-white font-bold flex items-center gap-1.5">
-                  <Eye className="w-3.5 h-3.5 text-sky-400" />
+                <h4 className="font-mono text-sm text-[#670626] font-bold flex items-center gap-1.5">
+                  <Eye className="w-4 h-4 text-[#A83B4D]" />
                   High-Contrast HUD
                 </h4>
-                <p className="text-[11px] text-slate-400 mt-0.5">
+                <p className="text-xs text-[#A83B4D] mt-1">
                   Increases border and text contrast for field visibility.
                 </p>
               </div>
@@ -673,11 +586,11 @@ export const SettingsPage: FC = () => {
                 type="button"
                 onClick={() => setHighContrastHud(!highContrastHud)}
                 className={`w-12 h-6 rounded-full transition-colors relative p-0.5 flex items-center cursor-pointer flex-shrink-0 ${
-                  highContrastHud ? 'bg-sky-500' : 'bg-slate-700'
+                  highContrastHud ? 'bg-[#670626]' : 'bg-[#A83B4D]/40'
                 }`}
               >
                 <div
-                  className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                  className={`w-5 h-5 rounded-full bg-[#F7F1EA] shadow-md transition-transform duration-200 ${
                     highContrastHud ? 'translate-x-6' : 'translate-x-0'
                   }`}
                 />
@@ -687,52 +600,52 @@ export const SettingsPage: FC = () => {
         </form>
       )}
 
-      {/* TAB 3: Cryptographic Audit Trail (GET /api/settings/audit) */}
+      {/* TAB 3: Audit Trail (Preserving #audit-pagination-controls) */}
       {activeTab === 'audit' && (
-        <div className="tactical-card p-6 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+        <div className={`tactical-card ${CLAY_SURFACE} p-6 space-y-4`}>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#670626]/15 pb-4">
             <div>
-              <h2 className="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-emerald-400" />
+              <h2 className="text-lg font-black text-[#670626] uppercase tracking-wider flex items-center gap-2">
+                <Terminal className="w-5 h-5 text-[#A83B4D]" />
                 Audit Log
               </h2>
-              <p className="text-xs text-slate-400 font-mono mt-0.5">
+              <p className="text-xs text-[#A83B4D] font-mono mt-0.5">
                 {auditTotalItems} recorded entries
               </p>
             </div>
-            <Button
+            <AdminButton
               variant="outline"
               size="sm"
-              onClick={loadAuditTrail}
+              onClick={() => void loadAuditTrail()}
               disabled={isLoadingAudit}
               icon={<RefreshCw className={`w-3.5 h-3.5 ${isLoadingAudit ? 'animate-spin' : ''}`} />}
             >
               Refresh
-            </Button>
+            </AdminButton>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-white/10 bg-slate-950/45 backdrop-blur-md">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-900/75 font-mono text-[10px] uppercase tracking-wider text-slate-400 border-b border-white/10">
+          <div className={`${CLAY_WELL} overflow-x-auto`}>
+            <table className="w-full text-left text-sm text-[#670626]">
+              <thead className="bg-[#670626]/10 font-mono text-xs uppercase tracking-wider text-[#670626] border-b border-[#670626]/15">
                 <tr>
-                  <th className="py-2.5 px-2.5">Timestamp</th>
-                  <th className="py-2.5 px-2.5">Operator</th>
-                  <th className="py-2.5 px-2.5">Action</th>
-                  <th className="py-2.5 px-2.5">Details & Audit Hash</th>
-                  <th className="py-2.5 px-2.5 text-right">Status</th>
+                  <th className="py-3 px-3.5">Timestamp</th>
+                  <th className="py-3 px-3.5">Operator</th>
+                  <th className="py-3 px-3.5">Action</th>
+                  <th className="py-3 px-3.5">Details & Audit Hash</th>
+                  <th className="py-3 px-3.5 text-right">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5 font-mono">
+              <tbody className="divide-y divide-[#670626]/10 font-mono">
                 {isLoadingAudit ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-slate-400">
-                      <RefreshCw className="w-5 h-5 text-sky-400 animate-spin mx-auto mb-2" />
+                    <td colSpan={5} className="py-8 text-center text-sm text-[#A83B4D]">
+                      <RefreshCw className="w-5 h-5 text-[#670626] animate-spin mx-auto mb-2" />
                       Loading audit records…
                     </td>
                   </tr>
                 ) : auditLogs.length === EMPTY_COUNT ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-slate-500">
+                    <td colSpan={5} className="py-8 text-center text-sm text-[#A83B4D]">
                       No audit records.
                     </td>
                   </tr>
@@ -744,34 +657,34 @@ export const SettingsPage: FC = () => {
                     const payloadDisplay = log.payload || log.details || 'State verified';
 
                     return (
-                      <tr key={log.id} className="hover:bg-white/[0.04] transition-colors">
-                        <td className="py-3 px-2.5 text-[11px] text-slate-400 whitespace-nowrap">
+                      <tr key={log.id} className="hover:bg-[#F7F1EA]/70 transition-colors">
+                        <td className="py-3.5 px-3.5 text-xs text-[#A83B4D] whitespace-nowrap">
                           {log.timestamp ? new Date(log.timestamp).toLocaleString('en-PH') : 'Live'}
                         </td>
-                        <td className="py-3 px-2.5">
-                          <span className="text-white font-bold block truncate max-w-[190px]">{actorDisplay}</span>
-                          <span className="text-[10px] text-slate-500 font-mono truncate block max-w-[190px]">
+                        <td className="py-3.5 px-3.5">
+                          <span className="text-[#670626] text-sm font-bold block truncate max-w-[190px]">{actorDisplay}</span>
+                          <span className="text-xs text-[#A83B4D] font-mono truncate block max-w-[190px] mt-0.5">
                             {log.targetEntity ? log.targetEntity : uidDisplay}
                           </span>
                         </td>
-                        <td className="py-3 px-2.5 whitespace-nowrap">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-sky-950/70 text-sky-300 border border-sky-500/30">
+                        <td className="py-3.5 px-3.5 whitespace-nowrap">
+                          <span className="px-2.5 py-1 rounded-md text-xs font-bold uppercase bg-[#F7F1EA] text-[#670626] border border-[#670626]/20">
                             {log.action}
                           </span>
                         </td>
-                        <td className="py-3 px-2.5 text-[11px] text-slate-300">
-                          <div className="truncate max-w-[180px] xl:max-w-[230px]" title={`${targetDisplay}${payloadDisplay}`}>
+                        <td className="py-3.5 px-3.5 text-xs text-[#670626]">
+                          <div className="truncate max-w-[200px] xl:max-w-[250px]" title={`${targetDisplay}${payloadDisplay}`}>
                             {targetDisplay}{payloadDisplay}
                           </div>
                           {log.currentHash && (
-                            <div className="text-[9px] font-mono text-emerald-400/90 mt-0.5 truncate max-w-[180px] xl:max-w-[230px]" title={log.currentHash}>
+                            <div className="text-xs font-mono text-emerald-800 mt-0.5 truncate max-w-[200px] xl:max-w-[250px]" title={log.currentHash}>
                               {log.currentHash}
                             </div>
                           )}
                         </td>
-                        <td className="py-3 px-2.5 text-right whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-950/70 text-emerald-300 border border-emerald-500/30">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <td className="py-3.5 px-3.5 text-right whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase bg-emerald-100 text-emerald-900 border border-emerald-700/30">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-800" />
                             VERIFIED
                           </span>
                         </td>
@@ -783,10 +696,9 @@ export const SettingsPage: FC = () => {
             </table>
           </div>
 
-          {/* Audit Pagination Footer (usePagination Hook) */}
           <div
             id="audit-pagination-controls"
-            className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/10 text-xs font-mono text-slate-400"
+            className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#670626]/15 text-sm font-mono text-[#670626]"
           >
             <div className="flex items-center gap-2">
               <span>Show</span>
@@ -794,7 +706,7 @@ export const SettingsPage: FC = () => {
                 aria-label="Audit rows per page"
                 value={auditPageSize}
                 onChange={(e) => setAuditPageSize(Number(e.target.value))}
-                className="bg-slate-900/80 border border-white/15 text-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-rose-500"
+                className="bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] font-bold text-sm rounded-lg px-2.5 py-1 focus:outline-none focus:border-[#670626]"
               >
                 {auditPageSizeOptions.map((opt) => (
                   <option key={opt} value={opt}>
@@ -807,29 +719,29 @@ export const SettingsPage: FC = () => {
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <Button
+            <div className="flex items-center gap-2">
+              <AdminButton
                 variant="outline"
                 size="sm"
                 onClick={auditPrevPage}
                 disabled={!auditCanPrev}
-                className="px-2.5 py-1 text-xs"
-                icon={<ChevronLeft className="w-3 h-3" />}
+                className="px-3 py-1.5 text-xs"
+                icon={<ChevronLeft className="w-3.5 h-3.5" />}
               >
                 Prev
-              </Button>
-              <span className="px-2 font-bold text-white">
+              </AdminButton>
+              <span className="px-2 font-black text-[#670626]">
                 Page {auditPage} / {auditTotalPages}
               </span>
-              <Button
+              <AdminButton
                 variant="outline"
                 size="sm"
                 onClick={auditNextPage}
                 disabled={!auditCanNext}
-                className="px-2.5 py-1 text-xs"
+                className="px-3 py-1.5 text-xs"
               >
-                Next <ChevronRight className="w-3 h-3 inline ml-1" />
-              </Button>
+                Next <ChevronRight className="w-3.5 h-3.5 inline ml-1" />
+              </AdminButton>
             </div>
           </div>
         </div>

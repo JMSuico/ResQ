@@ -55,7 +55,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasQueryFilter(u => !u.IsDeleted);
 
             entity.Property(u => u.Province).HasDefaultValue("Zamboanga del Norte");
-            entity.Property(u => u.CityOrMunicipality).HasDefaultValue("Dipolog City");
+            entity.Property(u => u.CityOrMunicipality).HasDefaultValue("Katipunan");
             entity.Property(u => u.IsDeleted).HasDefaultValue(false);
             entity.Property(u => u.DisplayName).HasDefaultValue(string.Empty);
             entity.Property(u => u.IdentityVerificationStatus).HasDefaultValue("PendingReview");

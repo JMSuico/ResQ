@@ -41,8 +41,8 @@ export const getAuthToken = (): string | null => {
 
     // 3. Port-scoped local storage
     const port = window.location.port;
-    if (port === '5174' || port === '1996') {
-      const adminToken = localStorage.getItem(`resqtrack_token_${port}`) || localStorage.getItem('resqtrack_token_5174');
+    if (port === '1996') {
+      const adminToken = localStorage.getItem(`resqtrack_token_${port}`) || localStorage.getItem('resqtrack_token_1996');
       if (adminToken && adminToken.trim() !== '') {
         return adminToken;
       }

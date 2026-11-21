@@ -55,7 +55,12 @@ import {
 } from '@/Hooks/useBackgroundIdVerification';
 import { IdVerificationBanner } from './IdVerificationBanner';
 import { ManualFacialCapturePanel } from './ManualFacialCapturePanel';
-import { generateDeterministicBiometricVector } from '@/Libs/Cache/biometricFrameCache';
+import {
+  biometricFrameCache,
+  extractBiometricFeatureVector,
+  generateDeterministicBiometricVector,
+  synthesizeMultiPoseTrainedProfile
+} from '@/Libs/Cache/biometricFrameCache';
 import {
   sanitizeVisibleOcrFields,
   mergeVisibleOcrFields,
@@ -124,6 +129,9 @@ const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 const MIN_IMAGE_DIM = 64;
 const MAX_IMAGE_DIM = 8192;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const POST_REGISTER_LEARNING_STORAGE_KEY = 'resqtrack_post_register_learning_notice';
+const AI_LEARNING_REMINDER_TEXT =
+  'Account and facial frames saved to database. AI is studying your oval, forward, left, right, and blink poses with your ID details — please wait up to 5 minutes before signing in via Biometric Login.';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -237,6 +245,12 @@ export const RegisterPage: React.FC = () => {
   const [statusTone, setStatusTone] = useState<'ok' | 'bad' | ''>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  const [learningToastMessage, setLearningToastMessage] = useState<string>('');
+  const [persistenceConfirmation, setPersistenceConfirmation] = useState<{
+    biometricTrainingStatus?: string;
+    biometricTrainingReadyTargetUtc?: string;
+    trainedFrameCount?: number;
+  } | null>(null);
 
   const visibleGovernmentIdOptions = GOVERNMENT_ID_OPTIONS.filter(
     (opt) => !opt.responderOnly || selectedRole === 'Responder'
@@ -950,6 +964,29 @@ export const RegisterPage: React.FC = () => {
 
     try {
       const isCivilian = selectedRole === 'Civilian';
+      const isSyntheticCapture = Boolean(faceMeta?.metadata?.isSyntheticTestRecord);
+      let finalDescriptorVector: number[] | undefined =
+        biometricDescriptorVector && biometricDescriptorVector.length === 128
+          ? biometricDescriptorVector
+          : undefined;
+
+      // Never fall back silently to generateDeterministicBiometricVector(email) when real webcam frames are present.
+      if (!finalDescriptorVector && !isSyntheticCapture) {
+        if (biometricFrameCache.getTotalCount() > 0) {
+          const synthesized = await synthesizeMultiPoseTrainedProfile(biometricFrameCache);
+          if (synthesized.descriptorVector.length === 128) {
+            finalDescriptorVector = synthesized.descriptorVector;
+          }
+        } else if (faceShot) {
+          const extracted = await extractBiometricFeatureVector(faceShot);
+          if (extracted.length === 128) {
+            finalDescriptorVector = extracted;
+          }
+        }
+      } else if (!finalDescriptorVector && faceConfirmed && isSyntheticCapture) {
+        finalDescriptorVector = generateDeterministicBiometricVector(email.trim());
+      }
+
       const payload: RegisterSubmissionPayload = {
         role: isCivilian ? 'Civilian' : 'Responder',
         unit: isCivilian ? 'Security' : (agencyUnit as ResponderUnit),
@@ -988,12 +1025,7 @@ export const RegisterPage: React.FC = () => {
         facialVerificationToken: isAiAutoApproveReady
           ? facialVerificationToken || undefined
           : undefined,
-        biometricDescriptorVector:
-          biometricDescriptorVector && biometricDescriptorVector.length === 128
-            ? biometricDescriptorVector
-            : faceConfirmed
-            ? generateDeterministicBiometricVector(email.trim())
-            : undefined,
+        biometricDescriptorVector: finalDescriptorVector,
         geometricSignatureJson:
           facialGeometricSignatureJson || faceMeta?.metadata?.geometricSignatureJson || undefined,
         poseFramesJson: facialPoseFramesJson || faceMeta?.metadata?.poseFramesJson || undefined,
@@ -1009,12 +1041,24 @@ export const RegisterPage: React.FC = () => {
       };
 
       const res = (await registerUser(payload)) as RegisterResponseWithAutoApproval;
+      biometricFrameCache.clear();
       idVerification.clearStandbyToken();
       setFacialVerificationToken(null);
       clearStandbyRegistrationTokens();
 
       setIsLoading(false);
       setIsSuccess(true);
+      setLearningToastMessage(AI_LEARNING_REMINDER_TEXT);
+      setPersistenceConfirmation({
+        biometricTrainingStatus: res.biometricTrainingStatus,
+        biometricTrainingReadyTargetUtc: res.biometricTrainingReadyTargetUtc,
+        trainedFrameCount: res.trainedFrameCount
+      });
+      try {
+        sessionStorage.setItem(POST_REGISTER_LEARNING_STORAGE_KEY, AI_LEARNING_REMINDER_TEXT);
+      } catch {
+        // Storage safeguard
+      }
 
       const summaryMsg =
         res.message ||
@@ -1026,8 +1070,10 @@ export const RegisterPage: React.FC = () => {
       setStatusTone('ok');
 
       setTimeout(() => {
-        navigate('/login');
-      }, 1800);
+        navigate('/login', {
+          state: { postRegisterLearningNotice: AI_LEARNING_REMINDER_TEXT }
+        });
+      }, 2800);
     } catch (err: unknown) {
       setIsLoading(false);
       const errMsg =
@@ -1041,153 +1087,150 @@ export const RegisterPage: React.FC = () => {
 
   const resolveSlotBadge = (hasImage: boolean): { text: string; className: string } => {
     if (!hasImage) {
-      return { text: 'REQUIRED', className: 'text-slate-400' };
+      return { text: 'REQUIRED', className: 'text-[#A83B4D]' };
     }
     if (idVerification.status === 'VERIFIED_GENUINE') {
-      return { text: 'AI VERIFIED', className: 'text-[#5fe0a4] font-bold' };
+      return { text: 'AI VERIFIED', className: 'text-emerald-700 font-bold' };
     }
     if (idVerification.status === 'VERIFYING') {
-      return { text: 'VERIFYING...', className: 'text-rose-300 font-bold' };
+      return { text: 'VERIFYING...', className: 'text-[#A83B4D] font-bold' };
     }
     if (idVerification.status === 'REJECTED_LOCAL' || idVerification.status === 'REJECTED_AI') {
-      return { text: 'ACTION REQUIRED', className: 'text-[#ff5c74] font-bold' };
+      return { text: 'ACTION REQUIRED', className: 'text-[#670626] font-bold' };
     }
     if (idVerification.status === 'PENDING_MANUAL_REVIEW') {
-      return { text: 'PENDING REVIEW', className: 'text-amber-300 font-bold' };
+      return { text: 'PENDING REVIEW', className: 'text-amber-700 font-bold' };
     }
-    return { text: 'UPLOADED', className: 'text-rose-200 font-bold' };
+    return { text: 'UPLOADED', className: 'text-[#670626] font-bold' };
   };
 
   const frontSlotBadge = resolveSlotBadge(Boolean(idFrontShot));
   const backSlotBadge = resolveSlotBadge(Boolean(idBackShot));
 
   return (
-    <main className="scene page-register min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 w-full overflow-y-auto">
-      <div
-        className="stage w-full max-w-4xl mx-auto flex flex-col items-center justify-center my-auto"
-        style={{
-          maxWidth: 'min(960px, 96vw)',
-          width: '100%',
-          height: 'auto',
-          position: 'relative',
-          margin: '0 auto',
-          left: 'auto',
-          top: 'auto',
-          transform: 'none'
-        }}
-      >
-        <div className="bg" aria-hidden="true">
-          <span className="bg__strip"></span>
-          <span className="bg__disc"></span>
-          <span className="bg__wedge"></span>
-        </div>
-
-        <header
-          className="brand text-center mb-4 w-full"
-          style={{ position: 'relative', margin: '0 auto 16px', left: 'auto', top: 'auto' }}
+    <main
+      className="min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 w-full overflow-y-auto relative"
+      style={{ background: 'linear-gradient(145deg, #4A041A 0%, #670626 55%, #3B0315 100%)' }}
+    >
+      {/* Prominent 5-Minute AI Learning Toast Notification */}
+      {learningToastMessage && (
+        <div
+          id="registration-ai-learning-toast"
+          role="alert"
+          aria-live="assertive"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[min(680px,94vw)] rounded-2xl bg-[#F7F1EA] border-2 border-[#670626] p-4 shadow-[0_24px_48px_-10px_rgba(38,2,14,0.65)] text-[#670626] flex items-start gap-3"
         >
-          <h1 className="brand__mark">RESQTRACK</h1>
-          <p className="brand__lead">Account Registration</p>
+          <div className="p-2 rounded-xl bg-[#670626] text-[#F7F1EA] shrink-0">
+            <Cpu className="w-5 h-5" />
+          </div>
+          <div className="flex-1 space-y-1">
+            <div className="font-mono text-xs font-bold uppercase tracking-wider text-[#A83B4D]">
+              Biometric Enrollment Persisted // 5-Minute AI Study Active
+            </div>
+            <p className="font-sans text-xs sm:text-sm font-semibold text-[#670626] leading-relaxed m-0">
+              {learningToastMessage}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="w-full max-w-[940px] mx-auto flex flex-col items-center justify-center my-auto relative z-10">
+        <header className="text-center mb-5 w-full">
+          <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-[#F7F1EA] font-['Montserrat',sans-serif]">
+            RESQTRACK
+          </h1>
+          <p className="text-sm sm:text-base font-bold text-[#E9D9D0] mt-1 tracking-wide">
+            Account Registration
+          </p>
         </header>
 
         <section
-          className="panel panel--register w-full"
+          className="clay-surface relative w-full rounded-3xl bg-[#F7F1EA] border border-[#E9D9D0] p-5 sm:p-8 text-[#670626] shadow-[0_28px_64px_-12px_rgba(38,2,14,0.55),inset_0_2px_4px_rgba(255,255,255,0.85)]"
           aria-labelledby="panel-title"
-          style={{
-            position: 'relative',
-            left: 'auto',
-            top: 'auto',
-            width: '100%',
-            maxWidth: isMobile ? '100%' : '940px',
-            margin: '0 auto',
-            transform: 'none',
-            height: 'auto',
-            border: '1px solid rgba(255, 92, 116, 0.22)',
-            boxShadow: '0 24px 60px rgba(0,0,0,0.65), 0 0 20px rgba(232,17,76,0.15)',
-            paddingBottom: '20px'
-          }}
+          style={{ maxWidth: isMobile ? '100%' : '940px' }}
         >
-          {/* Military HUD Corner Brackets */}
-          <div
-            className="absolute top-0 left-0 w-3.5 h-3.5 border-t-2 border-l-2 border-[#ff5c74]/70 pointer-events-none rounded-tl-[3px] z-20"
-            aria-hidden="true"
-          />
-          <div
-            className="absolute top-0 right-0 w-3.5 h-3.5 border-t-2 border-r-2 border-[#ff5c74]/70 pointer-events-none rounded-tr-[3px] z-20"
-            aria-hidden="true"
-          />
-          <div
-            className="absolute bottom-0 left-0 w-3.5 h-3.5 border-b-2 border-l-2 border-[#ff5c74]/70 pointer-events-none rounded-bl-[3px] z-20"
-            aria-hidden="true"
-          />
-          <div
-            className="absolute bottom-0 right-0 w-3.5 h-3.5 border-b-2 border-r-2 border-[#ff5c74]/70 pointer-events-none rounded-br-[3px] z-20"
-            aria-hidden="true"
-          />
-
-          <span className="panel__rule" aria-hidden="true"></span>
           <h2 className="visually-hidden" id="panel-title">
             Create account
           </h2>
 
-          <form className="panel__body" id="register-form" onSubmit={handleSubmit} noValidate>
+          <form id="register-form" onSubmit={handleSubmit} noValidate>
             {/* Live Telemetry Status Header */}
-            <div className="flex items-center justify-between font-mono text-[9px] tracking-wider text-rose-300/80 border-b border-rose-500/20 pb-2 mb-2">
-              <span className="flex items-center gap-1.5 font-bold">
-                <span className="inline-block w-2 h-2 rounded-full bg-[#ff5c74] animate-pulse shadow-[0_0_8px_#ff5c74]" />
+            <div className="flex items-center justify-between font-mono text-xs sm:text-sm tracking-wider text-[#670626] border-b border-[#D5BEB3] pb-3 mb-4">
+              <span className="flex items-center gap-2 font-bold">
+                <span className="inline-block w-2 h-2 rounded-full bg-[#670626] animate-pulse" />
                 5-PHASE REGISTRATION
               </span>
-              <span className="text-slate-400 tracking-widest hidden sm:inline">
+              <span className="text-[#A83B4D] tracking-widest hidden sm:inline text-xs font-bold">
                 {isAiAutoApproveReady ? 'AI AUTO-APPROVE' : 'MANUAL REVIEW'}
               </span>
             </div>
 
             {/* 5-Phase Navigation Stepper with Layered Progress Line */}
             <div
-              className="relative w-full my-3 px-1 sm:px-2"
+              className="relative w-full my-4 px-1 sm:px-2"
               aria-label="Account creation 5-phase progress"
             >
               {/* Background connector line spanning from first circle to last circle */}
               <div
-                className="absolute top-[14px] h-[2px] -translate-y-1/2 z-0 pointer-events-none"
+                className="absolute top-[16px] h-[2px] -translate-y-1/2 z-0 pointer-events-none"
                 style={{
                   left: 'calc(100% / 10)',
                   right: 'calc(100% / 10)'
                 }}
                 aria-hidden="true"
               >
-                <div className="w-full h-full bg-[rgba(255,92,116,0.2)] rounded-full" />
+                <div className="w-full h-full bg-[#D5BEB3] rounded-full" />
                 <div
-                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-[#ff5c74] to-rose-600 rounded-full transition-all duration-300 ease-out shadow-[0_0_8px_rgba(255,92,116,0.6)]"
+                  className="absolute top-0 left-0 h-full bg-[#670626] rounded-full transition-all duration-300 ease-out"
                   style={{ width: `${(Math.min(Math.max(step, 0), 4) / 4) * 100}%` }}
                 />
               </div>
 
               {/* 5 Evenly Distributed Step Columns */}
-              <ol className="steps relative z-10 grid grid-cols-5 gap-1 w-full m-0 p-0 list-none">
-                {STEPS.map((phase) => (
-                  <li
-                    key={phase.idx}
-                    className={`steps__item ${
-                      step === phase.idx ? 'is-active' : step > phase.idx ? 'is-done' : ''
-                    }`}
-                    data-step-item={phase.idx}
-                    aria-current={step === phase.idx ? 'step' : undefined}
-                    onClick={() => handleNavigatePhase(phase.idx)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <span className="steps__dot font-mono bg-[#1a080d] z-10">
-                      {step > phase.idx ? (
-                        <Check className="w-3.5 h-3.5 text-white stroke-[2.5]" />
-                      ) : (
-                        phase.idx + 1
-                      )}
-                    </span>
-                    <span className="steps__label font-mono text-[9px] sm:text-[10px]">
-                      {phase.label}
-                    </span>
-                  </li>
-                ))}
+              <ol className="relative z-10 grid grid-cols-5 gap-1 w-full m-0 p-0 list-none">
+                {STEPS.map((phase) => {
+                  const isActive = step === phase.idx;
+                  const isDone = step > phase.idx;
+                  return (
+                    <li
+                      key={phase.idx}
+                      className={`flex flex-col items-center justify-start text-center gap-1.5 min-w-0 select-none ${
+                        isActive ? 'is-active' : isDone ? 'is-done' : ''
+                      }`}
+                      data-step-item={phase.idx}
+                      aria-current={isActive ? 'step' : undefined}
+                      onClick={() => handleNavigatePhase(phase.idx)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <span
+                        className={`w-8 h-8 rounded-full flex items-center justify-center font-mono text-xs sm:text-sm font-bold z-10 transition-all border-2 ${
+                          isDone
+                            ? 'bg-[#670626] border-[#670626] text-[#F7F1EA]'
+                            : isActive
+                            ? 'bg-[#F7F1EA] border-[#670626] text-[#670626] ring-4 ring-[#670626]/15'
+                            : 'bg-[#E9D9D0] border-[#D5BEB3] text-[#7D2B3D]'
+                        }`}
+                      >
+                        {isDone ? (
+                          <Check className="w-4 h-4 text-[#F7F1EA] stroke-[2.5]" />
+                        ) : (
+                          phase.idx + 1
+                        )}
+                      </span>
+                      <span
+                        className={`font-mono text-xs sm:text-sm leading-tight ${
+                          isActive
+                            ? 'text-[#670626] font-extrabold'
+                            : isDone
+                            ? 'text-[#670626] font-bold'
+                            : 'text-[#A83B4D] font-semibold'
+                        }`}
+                      >
+                        {phase.label}
+                      </span>
+                    </li>
+                  );
+                })}
               </ol>
             </div>
 
@@ -1197,22 +1240,20 @@ export const RegisterPage: React.FC = () => {
             {step === 0 && (
               <div className="step" data-step="0" id="phase-1-role">
                 <div className="text-center mb-5">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/30 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-2">
-                    <Shield className="w-3.5 h-3.5 text-[#ff5c74]" />
+                  <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-[#E9D9D0] border border-[#D5BEB3] font-mono text-xs text-[#670626] font-bold uppercase tracking-widest mb-2">
+                    <Shield className="w-4 h-4 text-[#A83B4D]" />
                     PHASE 1/5 // ROLE
                   </div>
-                  <h3 className="font-mono text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-                    Select Role <span className="text-[#ff5c74]">*</span>
+                  <h3 className="font-mono text-base sm:text-lg font-bold text-[#670626] uppercase tracking-wider">
+                    Select Role <span className="text-[#A83B4D]">*</span>
                   </h3>
                 </div>
 
                 {/* Sliding Role Selector Segmented Bar */}
-                <div className="relative p-1 bg-black/50 backdrop-blur-md rounded-xl border border-rose-500/25 mb-6 max-w-md mx-auto">
+                <div className="relative p-1 bg-[#E9D9D0] rounded-2xl border border-[#D5BEB3] mb-6 max-w-md mx-auto">
                   <div
-                    className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-lg transition-all duration-300 ease-out pointer-events-none shadow-lg ${
-                      selectedRole === 'Responder'
-                        ? 'left-1 bg-gradient-to-r from-[#a5002e] via-[#d9093e] to-[#ff2b4a] border border-[#ff5c74] shadow-[0_0_16px_rgba(232,17,76,0.4)]'
-                        : 'left-[calc(50%+2px)] bg-gradient-to-r from-[#a5002e] via-[#d9093e] to-[#ff2b4a] border border-rose-500/60 shadow-[0_0_16px_rgba(232,17,76,0.4)]'
+                    className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl transition-all duration-300 ease-out pointer-events-none shadow-md bg-[#670626] ${
+                      selectedRole === 'Responder' ? 'left-1' : 'left-[calc(50%+2px)]'
                     }`}
                   />
                   <div className="grid grid-cols-2 relative z-10">
@@ -1220,10 +1261,10 @@ export const RegisterPage: React.FC = () => {
                       type="button"
                       id="role-btn-responder"
                       onClick={() => handleSelectRole('Responder')}
-                      className={`py-2 px-3 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      className={`py-2.5 px-3 rounded-xl font-mono text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
                         selectedRole === 'Responder'
-                          ? 'text-white'
-                          : 'text-slate-400 hover:text-slate-200'
+                          ? 'text-[#F7F1EA]'
+                          : 'text-[#670626] hover:text-[#4A041A]'
                       }`}
                     >
                       <Shield className="w-4 h-4 shrink-0" />
@@ -1233,10 +1274,10 @@ export const RegisterPage: React.FC = () => {
                       type="button"
                       id="role-btn-civilian"
                       onClick={() => handleSelectRole('Civilian')}
-                      className={`py-2 px-3 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      className={`py-2.5 px-3 rounded-xl font-mono text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
                         selectedRole === 'Civilian'
-                          ? 'text-white'
-                          : 'text-slate-400 hover:text-slate-200'
+                          ? 'text-[#F7F1EA]'
+                          : 'text-[#670626] hover:text-[#4A041A]'
                       }`}
                     >
                       <User className="w-4 h-4 shrink-0" />
@@ -1250,50 +1291,50 @@ export const RegisterPage: React.FC = () => {
                   {/* Card 1: RESPONDERS */}
                   <div
                     onClick={() => handleSelectRole('Responder')}
-                    className={`group relative rounded-xl p-4 transition-all duration-200 cursor-pointer flex flex-col justify-between ${
+                    className={`group relative rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between ${
                       selectedRole === 'Responder'
-                        ? 'bg-[#1e0710]/90 border-2 border-rose-500 shadow-[0_0_24px_rgba(232,17,76,0.3)] ring-1 ring-rose-400/50'
-                        : 'bg-[#0f1420]/80 border border-slate-700/60 hover:border-rose-500/50 hover:bg-[#180a14]/60'
+                        ? 'bg-[#EFE4DD] border-2 border-[#670626] shadow-md ring-2 ring-[#A83B4D]/25'
+                        : 'bg-[#F7F1EA] border border-[#D5BEB3] hover:border-[#A83B4D] hover:bg-[#EFE4DD]/70'
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between mb-3">
                         <div
-                          className={`p-2.5 rounded-lg border ${
+                          className={`p-2.5 rounded-xl border ${
                             selectedRole === 'Responder'
-                              ? 'bg-rose-950/80 border-rose-500/60 text-[#ff5c74]'
-                              : 'bg-slate-800/80 border-slate-700 text-slate-400 group-hover:text-rose-400'
+                              ? 'bg-[#670626] border-[#4A041A] text-[#F7F1EA]'
+                              : 'bg-[#E9D9D0] border-[#D5BEB3] text-[#670626]'
                           }`}
                         >
                           <Shield className="w-5 h-5" />
                         </div>
-                        <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider font-bold">
-                          <span className="px-2 py-0.5 rounded border bg-rose-950 border-rose-500/50 text-rose-300">
+                        <div className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider font-bold">
+                          <span className="px-2.5 py-0.5 rounded-md border bg-[#E9D9D0] border-[#D5BEB3] text-[#670626]">
                             TIER-1 DISPATCH
                           </span>
                           {selectedRole === 'Responder' && (
-                            <span className="w-4 h-4 rounded-full bg-rose-500 text-white flex items-center justify-center">
-                              <Check className="w-3 h-3 stroke-[3]" />
+                            <span className="w-5 h-5 rounded-full bg-[#670626] text-[#F7F1EA] flex items-center justify-center">
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
                             </span>
                           )}
                         </div>
                       </div>
 
-                      <h4 className="font-mono text-sm font-bold text-white uppercase tracking-wider mb-2">
+                      <h4 className="font-mono text-base font-bold text-[#670626] uppercase tracking-wider mb-2.5">
                         Responders
                       </h4>
 
-                      <div className="space-y-1.5 pt-2 border-t border-rose-500/20 font-mono text-[10px]">
-                        <div className="flex items-center gap-2 text-slate-300">
-                          <HeartPulse className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      <div className="space-y-2 pt-2.5 border-t border-[#D5BEB3] font-mono text-xs sm:text-sm">
+                        <div className="flex items-center gap-2 text-[#591529]">
+                          <HeartPulse className="w-4 h-4 text-[#A83B4D] shrink-0" />
                           <span>RHU &middot; Medical</span>
                         </div>
-                        <div className="flex items-center gap-2 text-slate-300">
-                          <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <div className="flex items-center gap-2 text-[#591529]">
+                          <Flame className="w-4 h-4 text-[#A83B4D] shrink-0" />
                           <span>BFP &middot; Fire</span>
                         </div>
-                        <div className="flex items-center gap-2 text-slate-300">
-                          <Siren className="w-3.5 h-3.5 text-[#ff5c74] shrink-0" />
+                        <div className="flex items-center gap-2 text-[#591529]">
+                          <Siren className="w-4 h-4 text-[#A83B4D] shrink-0" />
                           <span>PNP &middot; Police</span>
                         </div>
                       </div>
@@ -1301,26 +1342,26 @@ export const RegisterPage: React.FC = () => {
 
                     {selectedRole === 'Responder' && (
                       <div
-                        className="mt-4 pt-3 border-t border-rose-500/30"
+                        className="mt-4 pt-3 border-t border-[#D5BEB3]"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <label
-                          className="block font-mono text-[10px] uppercase tracking-wider text-rose-200 font-bold mb-1.5"
+                          className="block font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold mb-2"
                           htmlFor="phase1-agency-unit"
                         >
-                          Unit <span className="text-[#ff5c74]">*</span>
+                          Unit <span className="text-[#A83B4D]">*</span>
                         </label>
-                        <div className="grid grid-cols-3 gap-1.5">
+                        <div className="grid grid-cols-3 gap-2">
                           {(['FIRE', 'RHU', 'PNP'] as const).map((u) => (
                             <button
                               key={u}
                               type="button"
                               id={`unit-btn-${u.toLowerCase()}`}
                               onClick={() => handleAgencyUnitChange(u)}
-                              className={`py-1.5 px-2 rounded font-mono text-[10px] font-bold uppercase border cursor-pointer transition-all ${
+                              className={`py-2 px-2 rounded-xl font-mono text-xs font-bold uppercase border cursor-pointer transition-all ${
                                 agencyUnit === u
-                                  ? 'bg-rose-600 text-white border-rose-300 shadow'
-                                  : 'bg-slate-900/90 text-slate-300 border-slate-700 hover:border-rose-400'
+                                  ? 'bg-[#670626] text-[#F7F1EA] border-[#4A041A] shadow-sm'
+                                  : 'bg-[#E9D9D0] text-[#670626] border-[#D5BEB3] hover:border-[#670626]'
                               }`}
                             >
                               {u === 'FIRE' ? 'BFP FIRE' : u === 'RHU' ? 'RHU MEDIC' : 'PNP POLICE'}
@@ -1334,58 +1375,58 @@ export const RegisterPage: React.FC = () => {
                   {/* Card 2: CIVILIANS */}
                   <div
                     onClick={() => handleSelectRole('Civilian')}
-                    className={`group relative rounded-xl p-4 transition-all duration-200 cursor-pointer flex flex-col justify-between ${
+                    className={`group relative rounded-2xl p-5 transition-all duration-200 cursor-pointer flex flex-col justify-between ${
                       selectedRole === 'Civilian'
-                        ? 'bg-[#16030b]/90 border-2 border-rose-500 shadow-[0_0_24px_rgba(232,17,76,0.3)] ring-1 ring-rose-400/50'
-                        : 'bg-[#14020a]/80 border border-rose-950/60 hover:border-rose-500/50 hover:bg-[#16030b]/60'
+                        ? 'bg-[#EFE4DD] border-2 border-[#670626] shadow-md ring-2 ring-[#A83B4D]/25'
+                        : 'bg-[#F7F1EA] border border-[#D5BEB3] hover:border-[#A83B4D] hover:bg-[#EFE4DD]/70'
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between mb-3">
                         <div
-                          className={`p-2.5 rounded-lg border ${
+                          className={`p-2.5 rounded-xl border ${
                             selectedRole === 'Civilian'
-                              ? 'bg-rose-950/80 border-rose-500/60 text-rose-300'
-                              : 'bg-[#14020a] border-rose-950/60 text-rose-400 group-hover:text-rose-300'
+                              ? 'bg-[#670626] border-[#4A041A] text-[#F7F1EA]'
+                              : 'bg-[#E9D9D0] border-[#D5BEB3] text-[#670626]'
                           }`}
                         >
-                          <Users className="w-5 h-5 text-[#ff5c74]" />
+                          <Users className="w-5 h-5" />
                         </div>
-                        <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider font-bold">
-                          <span className="px-2 py-0.5 rounded border bg-rose-950 border-rose-500/50 text-rose-300">
+                        <div className="flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider font-bold">
+                          <span className="px-2.5 py-0.5 rounded-md border bg-[#E9D9D0] border-[#D5BEB3] text-[#670626]">
                             TIER-3 CITIZEN
                           </span>
                           {selectedRole === 'Civilian' && (
-                            <span className="w-4 h-4 rounded-full bg-[#ff5c74] text-white flex items-center justify-center">
-                              <Check className="w-3 h-3 stroke-[3]" />
+                            <span className="w-5 h-5 rounded-full bg-[#670626] text-[#F7F1EA] flex items-center justify-center">
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
                             </span>
                           )}
                         </div>
                       </div>
 
-                      <h4 className="font-mono text-sm font-bold text-white uppercase tracking-wider">
+                      <h4 className="font-mono text-base font-bold text-[#670626] uppercase tracking-wider">
                         Civilians
                       </h4>
-                      <p className="font-mono text-[10px] text-rose-300/90 font-medium mb-2">
+                      <p className="font-mono text-xs sm:text-sm text-[#A83B4D] font-semibold mb-2 mt-1">
                         Community Resident
                       </p>
                     </div>
 
-                    <div className="mt-4 pt-2.5 border-t border-rose-500/20 font-mono text-[9px] text-rose-300/80 flex items-center justify-between">
+                    <div className="mt-4 pt-2.5 border-t border-[#D5BEB3] font-mono text-xs sm:text-sm text-[#7D2B3D] flex items-center justify-between">
                       <span>Req: Gov ID &middot; Profile &middot; Face Match</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="step-actions mt-6">
+                <div className="mt-6">
                   <button
-                    className="btn w-full !h-[46px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2"
+                    className="w-full !h-[48px] text-sm sm:text-base bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-bold tracking-wider uppercase rounded-xl shadow-lg shadow-[#4A041A]/25 cursor-pointer flex items-center justify-center gap-2 transition-all"
                     type="button"
                     id="btn-phase1-next"
                     data-next="1"
                     onClick={() => handleNavigatePhase(1)}
                   >
-                    <span className="btn__label">
+                    <span>
                       Continue ({selectedRole === 'Responder' ? `Responder · ${agencyUnit}` : 'Civilian'})
                     </span>
                     <ArrowRight className="w-4 h-4 ml-1" />
@@ -1400,9 +1441,9 @@ export const RegisterPage: React.FC = () => {
             {step === 1 && (
               <div className="step" data-step="1" data-phase="id-identity" id="phase-2-id-identity">
                 {/* Active Role Ribbon */}
-                <div className="flex items-center justify-between p-2.5 rounded-lg border mb-4 font-mono text-[10.5px] bg-rose-950/40 border-rose-500/30 text-rose-200">
+                <div className="flex items-center justify-between p-3 rounded-xl border mb-4 font-mono text-xs sm:text-sm bg-[#EFE4DD] border-[#D5BEB3] text-[#670626]">
                   <div className="flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-[#ff5c74] shrink-0" />
+                    <Shield className="w-4 h-4 text-[#A83B4D] shrink-0" />
                     <span>
                       Active Role:{' '}
                       <strong>
@@ -1415,47 +1456,40 @@ export const RegisterPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleNavigatePhase(0)}
-                    className="underline text-[10px] hover:text-white cursor-pointer ml-2"
+                    className="underline text-xs sm:text-sm font-bold text-[#670626] hover:text-[#A83B4D] cursor-pointer ml-2"
                   >
                     Change
                   </button>
                 </div>
 
                 <div className="text-center mb-4">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/30 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-1.5">
-                    <CreditCard className="w-3.5 h-3.5 text-[#ff5c74]" />
+                  <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-[#E9D9D0] border border-[#D5BEB3] font-mono text-xs text-[#670626] font-bold uppercase tracking-widest mb-1.5">
+                    <CreditCard className="w-4 h-4 text-[#A83B4D]" />
                     PHASE 2/5 // GOV ID &amp; PROFILE
                   </div>
-                  <p className="font-sans text-xs text-slate-300/80 mt-1 max-w-xl mx-auto">
+                  <p className="font-sans text-sm text-[#591529] mt-1 max-w-xl mx-auto">
                     Upload Front &amp; Back ID photos (PNG/JPG/WebP, max 5 MB).
                   </p>
                 </div>
 
                 {/* Government ID Document Type Selector */}
                 <div
-                  className={`field p-4 rounded-xl bg-black/50 border mb-5 ${
-                    errors.idType ? 'is-invalid border-rose-500/70' : 'border-rose-500/30'
+                  className={`p-4 rounded-2xl bg-[#EFE4DD] border mb-5 ${
+                    errors.idType ? 'is-invalid border-[#670626]' : 'border-[#D5BEB3]'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center justify-between mb-2">
                     <label
-                      className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                      className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                       htmlFor="id-type"
                     >
-                      Government ID Type <span className="req text-[#ff5c74]">*</span>
+                      Government ID Type <span className="text-[#A83B4D]">*</span>
                     </label>
                   </div>
-                  <div
-                    className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                    style={{
-                      background: 'rgba(46, 10, 22, 0.85)',
-                      border: '1px solid rgba(255, 92, 116, 0.22)',
-                      borderRadius: '6px'
-                    }}
-                  >
-                    <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                  <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[46px]">
+                    <CreditCard className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                     <select
-                      className="field__input field__select select__input font-sans text-white text-[13px]"
+                      className="w-full py-2.5 bg-transparent font-sans text-[#670626] text-sm font-medium appearance-none cursor-pointer focus:outline-none"
                       id="id-type"
                       name="idType"
                       aria-invalid={Boolean(errors.idType)}
@@ -1463,22 +1497,22 @@ export const RegisterPage: React.FC = () => {
                       value={idType}
                       onChange={(e) => handleIdTypeChange(e.target.value)}
                     >
-                      <option value="">Choose ID Type</option>
+                      <option value="" className="bg-[#F7F1EA] text-[#670626]">Choose ID Type</option>
                       {visibleGovernmentIdOptions.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
+                        <option key={opt.value} value={opt.value} className="bg-[#F7F1EA] text-[#670626]">
                           {opt.label}
                         </option>
                       ))}
                     </select>
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+                    <ChevronDown className="w-4 h-4 text-[#A83B4D] ml-auto shrink-0 pointer-events-none" />
                   </div>
                   {errors.idType && (
                     <p
-                      className="field__error font-mono text-[10px] mt-2 text-[#ff5c74] flex items-center gap-1.5"
+                      className="font-mono text-xs mt-2 text-[#670626] font-semibold flex items-center gap-1.5"
                       id="id-type-error"
                       role="alert"
                     >
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <AlertCircle className="w-4 h-4 shrink-0" />
                       <span>{errors.idType}</span>
                     </p>
                   )}
@@ -1490,17 +1524,17 @@ export const RegisterPage: React.FC = () => {
                     id="id-upload-locked-notice"
                     role="status"
                     aria-live="polite"
-                    className="id-upload-locked-notice rounded-xl border p-4 sm:p-5 flex items-start gap-3"
+                    className="id-upload-locked-notice rounded-2xl bg-[#EFE4DD] border border-[#D5BEB3] p-5 flex items-start gap-3.5"
                   >
-                    <div className="id-upload-locked-notice__icon p-2 rounded-lg border shrink-0">
-                      <ShieldAlert className="w-5 h-5 text-[#ff5c74]" />
+                    <div className="p-2.5 rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] shrink-0">
+                      <ShieldAlert className="w-5 h-5 text-[#670626]" />
                     </div>
                     <div className="space-y-1">
-                      <div className="font-mono text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                        <Lock className="w-3.5 h-3.5 text-[#ff5c74] shrink-0" />
+                      <div className="font-mono text-sm font-bold uppercase tracking-wider text-[#670626] flex items-center gap-1.5">
+                        <Lock className="w-4 h-4 text-[#A83B4D] shrink-0" />
                         <span>ID Upload Locked</span>
                       </div>
-                      <p className="font-sans text-xs text-slate-300/90 leading-relaxed m-0">
+                      <p className="font-sans text-sm text-[#591529] leading-relaxed m-0">
                         Select an ID type above to enable upload.
                       </p>
                     </div>
@@ -1508,17 +1542,17 @@ export const RegisterPage: React.FC = () => {
                 ) : (
                   <section id="id-upload-section" aria-label="Government ID Upload">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
-                        Front &amp; Back ID <span className="text-[#ff5c74]">*</span>
+                      <span className="font-mono text-sm font-bold text-[#670626] uppercase tracking-wider">
+                        Front &amp; Back ID <span className="text-[#A83B4D]">*</span>
                       </span>
                       {(idFrontShot || idBackShot) && (
                         <button
                           type="button"
                           id="btn-clear-both-ids"
                           onClick={handleClearBothIds}
-                          className="font-mono text-[10px] text-rose-300 hover:text-white px-2.5 py-1 rounded border border-rose-500/30 bg-rose-950/40 hover:bg-rose-900/60 cursor-pointer flex items-center gap-1"
+                          className="font-mono text-xs text-[#670626] hover:text-[#4A041A] px-3 py-1.5 rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] cursor-pointer flex items-center gap-1.5 font-semibold"
                         >
-                          <RefreshCw className="w-3 h-3" />
+                          <RefreshCw className="w-3.5 h-3.5 text-[#A83B4D]" />
                           <span>Clear Both</span>
                         </button>
                       )}
@@ -1541,16 +1575,16 @@ export const RegisterPage: React.FC = () => {
                             e.target.value = '';
                           }}
                         />
-                        <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
-                          <span className="font-bold uppercase tracking-wider text-slate-200">
-                            Front ID <span className="text-[#ff5c74]">*</span>
+                        <div className="flex items-center justify-between mb-1.5 font-mono text-xs">
+                          <span className="font-bold uppercase tracking-wider text-[#670626]">
+                            Front ID <span className="text-[#A83B4D]">*</span>
                           </span>
                           <span className={frontSlotBadge.className}>{frontSlotBadge.text}</span>
                         </div>
 
                         {idFrontShot ? (
-                          <div className="relative rounded-xl overflow-hidden border border-rose-500/50 bg-[#14020a] p-3 flex flex-col items-center">
-                            <div className="relative w-full overflow-hidden rounded border border-rose-500/30">
+                          <div className="relative rounded-2xl overflow-hidden border border-[#D5BEB3] bg-[#EFE4DD] p-3 flex flex-col items-center">
+                            <div className="relative w-full overflow-hidden rounded-xl border border-[#D5BEB3]">
                               <img
                                 src={idFrontShot}
                                 alt="Front Government ID Preview"
@@ -1560,7 +1594,7 @@ export const RegisterPage: React.FC = () => {
                               />
                             </div>
                             {idFrontMeta && (
-                              <div className="mt-1.5 w-full font-mono text-[9px] text-slate-400 flex items-center justify-between">
+                              <div className="mt-2 w-full font-mono text-xs text-[#7D2B3D] flex items-center justify-between">
                                 <span className="truncate max-w-[160px]">{idFrontMeta.name}</span>
                                 <span>
                                   {idFrontMeta.width}x{idFrontMeta.height}px &bull;{' '}
@@ -1568,31 +1602,31 @@ export const RegisterPage: React.FC = () => {
                                 </span>
                               </div>
                             )}
-                            <div className="mt-2.5 w-full flex items-center justify-between gap-2 font-mono text-[10px]">
+                            <div className="mt-2.5 w-full flex items-center justify-between gap-2 font-mono text-xs">
                               <span
-                                className={`px-2 py-0.5 rounded border font-bold flex items-center gap-1 ${
+                                className={`px-2.5 py-0.5 rounded-md border font-bold flex items-center gap-1 ${
                                   idVerification.status === 'VERIFIED_GENUINE'
-                                    ? 'bg-emerald-950/80 border-emerald-500/45 text-[#5fe0a4]'
-                                    : 'bg-rose-950/80 border-rose-500/40 text-rose-200'
+                                    ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                                    : 'bg-[#F7F1EA] border-[#D5BEB3] text-[#670626]'
                                 }`}
                               >
-                                <Check className="w-3 h-3 stroke-[3]" /> {frontSlotBadge.text}
+                                <Check className="w-3.5 h-3.5 stroke-[3]" /> {frontSlotBadge.text}
                               </span>
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
                                   id="btn-replace-front-id"
                                   onClick={() => frontFileInputRef.current?.click()}
-                                  className="text-[#ff5c74] hover:text-rose-300 underline cursor-pointer text-[10px]"
+                                  className="text-[#670626] hover:text-[#A83B4D] font-semibold underline cursor-pointer text-xs"
                                 >
                                   Replace
                                 </button>
-                                <span className="text-slate-600">&bull;</span>
+                                <span className="text-[#A83B4D]">&bull;</span>
                                 <button
                                   type="button"
                                   id="btn-remove-front-id"
                                   onClick={() => handleRemoveSingleIdSide('front')}
-                                  className="text-rose-400 hover:text-rose-300 underline cursor-pointer text-[10px]"
+                                  className="text-[#A83B4D] hover:text-[#670626] font-semibold underline cursor-pointer text-xs"
                                 >
                                   Remove
                                 </button>
@@ -1609,19 +1643,19 @@ export const RegisterPage: React.FC = () => {
                             onDragLeave={() => setIsDraggingFront(false)}
                             onDrop={(e) => handleDrop('front', e)}
                             onClick={() => frontFileInputRef.current?.click()}
-                            className={`relative rounded-xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[168px] ${
+                            className={`relative rounded-2xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[172px] ${
                               isDraggingFront
-                                ? 'border-[#ff5c74] bg-rose-950/30'
-                                : 'border-rose-500/30 bg-[#16070d]/60 hover:border-rose-400 hover:bg-[#1f0a13]/70'
+                                ? 'border-[#670626] bg-[#E9D9D0]'
+                                : 'border-[#A83B4D]/50 bg-[#EFE4DD] hover:border-[#670626] hover:bg-[#E9D9D0]'
                             }`}
                           >
-                            <div className="p-2.5 rounded-full bg-rose-950/60 border border-rose-500/30 text-[#ff5c74] mb-2">
+                            <div className="p-3 rounded-full bg-[#F7F1EA] border border-[#D5BEB3] text-[#670626] mb-2">
                               <Upload className="w-5 h-5" />
                             </div>
-                            <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
-                              Front ID <span className="text-[#ff5c74]">*</span>
+                            <span className="font-mono text-sm font-bold text-[#670626] uppercase tracking-wider">
+                              Front ID <span className="text-[#A83B4D]">*</span>
                             </span>
-                            <span className="font-sans text-[11px] text-slate-400 mt-1">
+                            <span className="font-sans text-xs text-[#7D2B3D] mt-1">
                               Drop or click (PNG/JPG/WebP, &lt;= 5 MB)
                             </span>
                           </div>
@@ -1644,16 +1678,16 @@ export const RegisterPage: React.FC = () => {
                             e.target.value = '';
                           }}
                         />
-                        <div className="flex items-center justify-between mb-1.5 font-mono text-[10px]">
-                          <span className="font-bold uppercase tracking-wider text-slate-200">
-                            Back ID <span className="text-[#ff5c74]">*</span>
+                        <div className="flex items-center justify-between mb-1.5 font-mono text-xs">
+                          <span className="font-bold uppercase tracking-wider text-[#670626]">
+                            Back ID <span className="text-[#A83B4D]">*</span>
                           </span>
                           <span className={backSlotBadge.className}>{backSlotBadge.text}</span>
                         </div>
 
                         {idBackShot ? (
-                          <div className="relative rounded-xl overflow-hidden border border-rose-500/50 bg-[#14020a] p-3 flex flex-col items-center">
-                            <div className="relative w-full overflow-hidden rounded border border-rose-500/30">
+                          <div className="relative rounded-2xl overflow-hidden border border-[#D5BEB3] bg-[#EFE4DD] p-3 flex flex-col items-center">
+                            <div className="relative w-full overflow-hidden rounded-xl border border-[#D5BEB3]">
                               <img
                                 src={idBackShot}
                                 alt="Back Government ID Preview"
@@ -1663,7 +1697,7 @@ export const RegisterPage: React.FC = () => {
                               />
                             </div>
                             {idBackMeta && (
-                              <div className="mt-1.5 w-full font-mono text-[9px] text-slate-400 flex items-center justify-between">
+                              <div className="mt-2 w-full font-mono text-xs text-[#7D2B3D] flex items-center justify-between">
                                 <span className="truncate max-w-[160px]">{idBackMeta.name}</span>
                                 <span>
                                   {idBackMeta.width}x{idBackMeta.height}px &bull;{' '}
@@ -1671,31 +1705,31 @@ export const RegisterPage: React.FC = () => {
                                 </span>
                               </div>
                             )}
-                            <div className="mt-2.5 w-full flex items-center justify-between gap-2 font-mono text-[10px]">
+                            <div className="mt-2.5 w-full flex items-center justify-between gap-2 font-mono text-xs">
                               <span
-                                className={`px-2 py-0.5 rounded border font-bold flex items-center gap-1 ${
+                                className={`px-2.5 py-0.5 rounded-md border font-bold flex items-center gap-1 ${
                                   idVerification.status === 'VERIFIED_GENUINE'
-                                    ? 'bg-emerald-950/80 border-emerald-500/45 text-[#5fe0a4]'
-                                    : 'bg-rose-950/80 border-rose-500/40 text-rose-200'
+                                    ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                                    : 'bg-[#F7F1EA] border-[#D5BEB3] text-[#670626]'
                                 }`}
                               >
-                                <Check className="w-3 h-3 stroke-[3]" /> {backSlotBadge.text}
+                                <Check className="w-3.5 h-3.5 stroke-[3]" /> {backSlotBadge.text}
                               </span>
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
                                   id="btn-replace-back-id"
                                   onClick={() => backFileInputRef.current?.click()}
-                                  className="text-[#ff5c74] hover:text-rose-300 underline cursor-pointer text-[10px]"
+                                  className="text-[#670626] hover:text-[#A83B4D] font-semibold underline cursor-pointer text-xs"
                                 >
                                   Replace
                                 </button>
-                                <span className="text-slate-600">&bull;</span>
+                                <span className="text-[#A83B4D]">&bull;</span>
                                 <button
                                   type="button"
                                   id="btn-remove-back-id"
                                   onClick={() => handleRemoveSingleIdSide('back')}
-                                  className="text-rose-400 hover:text-rose-300 underline cursor-pointer text-[10px]"
+                                  className="text-[#A83B4D] hover:text-[#670626] font-semibold underline cursor-pointer text-xs"
                                 >
                                   Remove
                                 </button>
@@ -1712,19 +1746,19 @@ export const RegisterPage: React.FC = () => {
                             onDragLeave={() => setIsDraggingBack(false)}
                             onDrop={(e) => handleDrop('back', e)}
                             onClick={() => backFileInputRef.current?.click()}
-                            className={`relative rounded-xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[168px] ${
+                            className={`relative rounded-2xl border-2 border-dashed p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[172px] ${
                               isDraggingBack
-                                ? 'border-[#ff5c74] bg-rose-950/30'
-                                : 'border-rose-500/30 bg-[#16070d]/60 hover:border-rose-400 hover:bg-[#1f0a13]/70'
+                                ? 'border-[#670626] bg-[#E9D9D0]'
+                                : 'border-[#A83B4D]/50 bg-[#EFE4DD] hover:border-[#670626] hover:bg-[#E9D9D0]'
                             }`}
                           >
-                            <div className="p-2.5 rounded-full bg-rose-950/60 border border-rose-500/30 text-[#ff5c74] mb-2">
+                            <div className="p-3 rounded-full bg-[#F7F1EA] border border-[#D5BEB3] text-[#670626] mb-2">
                               <Upload className="w-5 h-5" />
                             </div>
-                            <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
-                              Back ID <span className="text-[#ff5c74]">*</span>
+                            <span className="font-mono text-sm font-bold text-[#670626] uppercase tracking-wider">
+                              Back ID <span className="text-[#A83B4D]">*</span>
                             </span>
-                            <span className="font-sans text-[11px] text-slate-400 mt-1">
+                            <span className="font-sans text-xs text-[#7D2B3D] mt-1">
                               Drop or click (PNG/JPG/WebP, &lt;= 5 MB)
                             </span>
                           </div>
@@ -1734,7 +1768,7 @@ export const RegisterPage: React.FC = () => {
 
                     {errors.idCard && (
                       <p
-                        className="field__error font-mono text-[10.5px] mt-3 text-rose-400 flex items-center gap-1.5"
+                        className="font-mono text-xs mt-3 text-[#670626] font-semibold flex items-center gap-1.5"
                         role="alert"
                       >
                         <AlertCircle className="w-4 h-4 shrink-0" />
@@ -1763,9 +1797,9 @@ export const RegisterPage: React.FC = () => {
                   <section
                     id="personal-info-section"
                     aria-label="Personal and Residential Information"
-                    className="mt-5 pt-4 border-t border-rose-500/25"
+                    className="mt-5 pt-4 border-t border-[#D5BEB3]"
                   >
-                    <div className="p-3.5 rounded-xl bg-black/55 border border-rose-500/25 mb-4 font-mono text-[10.5px] text-slate-200">
+                    <div className="p-3.5 rounded-xl bg-[#EFE4DD] border border-[#D5BEB3] mb-4 font-mono text-xs sm:text-sm text-[#670626] font-semibold">
                       {idVerification.status === 'VERIFIED_GENUINE'
                         ? 'Visible ID fields auto-filled. Complete required (*) fields.'
                         : 'AI unavailable — enter details for manual review.'}
@@ -1773,27 +1807,20 @@ export const RegisterPage: React.FC = () => {
 
                     <div className="form-grid">
                       {/* ID / Document Serial Number */}
-                      <div className="field md:col-span-2">
-                        <div className="flex items-center justify-between mb-1">
+                      <div className="md:col-span-2">
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="license-number"
                           >
                             ID / Document Number{' '}
-                            <span className="text-slate-400 text-[9px]">(Optional)</span>
+                            <span className="text-[#A83B4D] text-xs">(Optional)</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <CreditCard className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="license-number"
                             name="licenseNumber"
                             type="text"
@@ -1805,26 +1832,19 @@ export const RegisterPage: React.FC = () => {
                       </div>
 
                       {/* First Name */}
-                      <div className={`field ${errors.firstName ? 'is-invalid' : ''}`}>
-                        <div className="flex items-center justify-between mb-1">
+                      <div className={errors.firstName ? 'is-invalid' : ''}>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="first-name"
                           >
-                            First Name <span className="req">*</span>
+                            First Name <span className="text-[#A83B4D]">*</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <User className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="first-name"
                             name="firstName"
                             type="text"
@@ -1836,7 +1856,7 @@ export const RegisterPage: React.FC = () => {
                         </div>
                         {errors.firstName && (
                           <p
-                            className="field__error font-mono text-[10px]"
+                            className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                             id="first-name-error"
                             role="alert"
                           >
@@ -1846,27 +1866,20 @@ export const RegisterPage: React.FC = () => {
                       </div>
 
                       {/* Middle Name */}
-                      <div className="field">
-                        <div className="flex items-center justify-between mb-1">
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="middle-name"
                           >
                             Middle Name{' '}
-                            <span className="text-slate-400 text-[9px]">(Optional)</span>
+                            <span className="text-[#A83B4D] text-xs">(Optional)</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <User className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="middle-name"
                             name="middleName"
                             type="text"
@@ -1879,26 +1892,19 @@ export const RegisterPage: React.FC = () => {
                       </div>
 
                       {/* Last Name / Surname */}
-                      <div className={`field ${errors.lastName ? 'is-invalid' : ''}`}>
-                        <div className="flex items-center justify-between mb-1">
+                      <div className={errors.lastName ? 'is-invalid' : ''}>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="last-name"
                           >
-                            Last Name / Surname <span className="req">*</span>
+                            Last Name / Surname <span className="text-[#A83B4D]">*</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <User className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="last-name"
                             name="lastName"
                             type="text"
@@ -1910,7 +1916,7 @@ export const RegisterPage: React.FC = () => {
                         </div>
                         {errors.lastName && (
                           <p
-                            className="field__error font-mono text-[10px]"
+                            className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                             id="last-name-error"
                             role="alert"
                           >
@@ -1920,26 +1926,19 @@ export const RegisterPage: React.FC = () => {
                       </div>
 
                       {/* Suffix */}
-                      <div className="field">
-                        <div className="flex items-center justify-between mb-1">
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="suffix"
                           >
-                            Suffix <span className="text-slate-400 text-[9px]">(Optional)</span>
+                            Suffix <span className="text-[#A83B4D] text-xs">(Optional)</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <User className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="suffix"
                             name="suffix"
                             type="text"
@@ -1951,41 +1950,34 @@ export const RegisterPage: React.FC = () => {
                       </div>
 
                       {/* Sex */}
-                      <div className={`field ${errors.sex ? 'is-invalid' : ''}`}>
-                        <div className="flex items-center justify-between mb-1">
+                      <div className={errors.sex ? 'is-invalid' : ''}>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="sex"
                           >
-                            Sex <span className="req">*</span>
+                            Sex <span className="text-[#A83B4D]">*</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <Users className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <Users className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <select
-                            className="field__input select__input font-sans text-white text-[13px]"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm appearance-none cursor-pointer focus:outline-none"
                             id="sex"
                             name="sex"
                             value={sex}
                             onChange={(e) => setSex(e.target.value)}
                           >
-                            <option value="">Select Sex</option>
-                            <option value="Male">Male</option>
-                            <option value="Female">Female</option>
-                            <option value="Other">Other</option>
+                            <option value="" className="bg-[#F7F1EA] text-[#670626]">Select Sex</option>
+                            <option value="Male" className="bg-[#F7F1EA] text-[#670626]">Male</option>
+                            <option value="Female" className="bg-[#F7F1EA] text-[#670626]">Female</option>
+                            <option value="Other" className="bg-[#F7F1EA] text-[#670626]">Other</option>
                           </select>
-                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+                          <ChevronDown className="w-4 h-4 text-[#A83B4D] ml-auto shrink-0 pointer-events-none" />
                         </div>
                         {errors.sex && (
                           <p
-                            className="field__error font-mono text-[10px]"
+                            className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                             id="sex-error"
                             role="alert"
                           >
@@ -1995,26 +1987,19 @@ export const RegisterPage: React.FC = () => {
                       </div>
 
                       {/* Date of Birth */}
-                      <div className={`field ${errors.dateOfBirth ? 'is-invalid' : ''}`}>
-                        <div className="flex items-center justify-between mb-1">
+                      <div className={errors.dateOfBirth ? 'is-invalid' : ''}>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="dob"
                           >
-                            Date of Birth <span className="req">*</span>
+                            Date of Birth <span className="text-[#A83B4D]">*</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <Calendar className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <Calendar className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="dob"
                             name="dateOfBirth"
                             type="date"
@@ -2029,7 +2014,7 @@ export const RegisterPage: React.FC = () => {
                         </div>
                         {errors.dateOfBirth && (
                           <p
-                            className="field__error font-mono text-[10px]"
+                            className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                             id="dob-error"
                             role="alert"
                           >
@@ -2039,26 +2024,19 @@ export const RegisterPage: React.FC = () => {
                       </div>
 
                       {/* Age */}
-                      <div className={`field ${errors.age ? 'is-invalid' : ''}`}>
-                        <div className="flex items-center justify-between mb-1">
+                      <div className={errors.age ? 'is-invalid' : ''}>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="age"
                           >
-                            Age (18&ndash;100) <span className="req">*</span>
+                            Age (18&ndash;100) <span className="text-[#A83B4D]">*</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <Calendar className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <Calendar className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px]"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="age"
                             name="age"
                             type="number"
@@ -2071,7 +2049,7 @@ export const RegisterPage: React.FC = () => {
                         </div>
                         {errors.age && (
                           <p
-                            className="field__error font-mono text-[10px]"
+                            className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                             id="age-error"
                             role="alert"
                           >
@@ -2081,26 +2059,19 @@ export const RegisterPage: React.FC = () => {
                       </div>
 
                       {/* Contact Number */}
-                      <div className={`field ${errors.phoneNumber ? 'is-invalid' : ''}`}>
-                        <div className="flex items-center justify-between mb-1">
+                      <div className={errors.phoneNumber ? 'is-invalid' : ''}>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="phone-number"
                           >
-                            Contact Number <span className="req">*</span>
+                            Contact Number <span className="text-[#A83B4D]">*</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <Phone className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <Phone className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="phone-number"
                             name="phoneNumber"
                             type="tel"
@@ -2112,7 +2083,7 @@ export const RegisterPage: React.FC = () => {
                         </div>
                         {errors.phoneNumber && (
                           <p
-                            className="field__error font-mono text-[10px]"
+                            className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                             id="phone-error"
                             role="alert"
                           >
@@ -2122,26 +2093,19 @@ export const RegisterPage: React.FC = () => {
                       </div>
 
                       {/* Province */}
-                      <div className={`field ${errors.province ? 'is-invalid' : ''}`}>
-                        <div className="flex items-center justify-between mb-1">
+                      <div className={errors.province ? 'is-invalid' : ''}>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="province"
                           >
-                            Province <span className="req">*</span>
+                            Province <span className="text-[#A83B4D]">*</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <MapPin className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <MapPin className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px]"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="province"
                             name="province"
                             type="text"
@@ -2151,33 +2115,26 @@ export const RegisterPage: React.FC = () => {
                           />
                         </div>
                         {errors.province && (
-                          <p className="field__error font-mono text-[10px]" role="alert">
+                          <p className="font-mono text-xs mt-1 text-[#670626] font-semibold" role="alert">
                             {errors.province}
                           </p>
                         )}
                       </div>
 
                       {/* City / Municipality */}
-                      <div className={`field ${errors.cityOrMunicipality ? 'is-invalid' : ''}`}>
-                        <div className="flex items-center justify-between mb-1">
+                      <div className={errors.cityOrMunicipality ? 'is-invalid' : ''}>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="city"
                           >
-                            City / Municipality <span className="req">*</span>
+                            City / Municipality <span className="text-[#A83B4D]">*</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <MapPin className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <MapPin className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px]"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="city"
                             name="cityOrMunicipality"
                             type="text"
@@ -2187,33 +2144,26 @@ export const RegisterPage: React.FC = () => {
                           />
                         </div>
                         {errors.cityOrMunicipality && (
-                          <p className="field__error font-mono text-[10px]" role="alert">
+                          <p className="font-mono text-xs mt-1 text-[#670626] font-semibold" role="alert">
                             {errors.cityOrMunicipality}
                           </p>
                         )}
                       </div>
 
                       {/* Barangay */}
-                      <div className={`field ${errors.barangay ? 'is-invalid' : ''}`}>
-                        <div className="flex items-center justify-between mb-1">
+                      <div className={errors.barangay ? 'is-invalid' : ''}>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="barangay"
                           >
-                            Barangay <span className="req">*</span>
+                            Barangay <span className="text-[#A83B4D]">*</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <MapPin className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <MapPin className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="barangay"
                             name="barangay"
                             type="text"
@@ -2224,7 +2174,7 @@ export const RegisterPage: React.FC = () => {
                         </div>
                         {errors.barangay && (
                           <p
-                            className="field__error font-mono text-[10px]"
+                            className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                             id="barangay-error"
                             role="alert"
                           >
@@ -2234,26 +2184,19 @@ export const RegisterPage: React.FC = () => {
                       </div>
 
                       {/* Street / Purok */}
-                      <div className={`field ${errors.streetOrPurok ? 'is-invalid' : ''}`}>
-                        <div className="flex items-center justify-between mb-1">
+                      <div className={errors.streetOrPurok ? 'is-invalid' : ''}>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="street-purok"
                           >
-                            Street / Purok <span className="req">*</span>
+                            Street / Purok <span className="text-[#A83B4D]">*</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <MapPin className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                          <MapPin className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                           <input
-                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="street-purok"
                             name="streetOrPurok"
                             type="text"
@@ -2264,7 +2207,7 @@ export const RegisterPage: React.FC = () => {
                         </div>
                         {errors.streetOrPurok && (
                           <p
-                            className="field__error font-mono text-[10px]"
+                            className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                             id="street-error"
                             role="alert"
                           >
@@ -2274,25 +2217,18 @@ export const RegisterPage: React.FC = () => {
                       </div>
 
                       {/* Optional Weight & Height */}
-                      <div className="field">
-                        <div className="flex items-center justify-between mb-1">
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="weight"
                           >
-                            Weight <span className="text-slate-400 text-[9px]">(Optional)</span>
+                            Weight <span className="text-[#A83B4D] text-xs">(Optional)</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
                           <input
-                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="weight"
                             name="weight"
                             type="text"
@@ -2303,25 +2239,18 @@ export const RegisterPage: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="field">
-                        <div className="flex items-center justify-between mb-1">
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
                           <label
-                            className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                            className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                             htmlFor="height"
                           >
-                            Height <span className="text-slate-400 text-[9px]">(Optional)</span>
+                            Height <span className="text-[#A83B4D] text-xs">(Optional)</span>
                           </label>
                         </div>
-                        <div
-                          className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                          style={{
-                            background: 'rgba(46, 10, 22, 0.85)',
-                            border: '1px solid rgba(255, 92, 116, 0.22)',
-                            borderRadius: '6px'
-                          }}
-                        >
+                        <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
                           <input
-                            className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                            className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                             id="height"
                             name="height"
                             type="text"
@@ -2335,60 +2264,46 @@ export const RegisterPage: React.FC = () => {
                       {/* Responder-Specific Required Fields */}
                       {selectedRole === 'Responder' && (
                         <>
-                          <div className="field">
-                            <div className="flex items-center justify-between mb-1">
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
                               <label
-                                className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                                className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                                 htmlFor="agency-unit"
                               >
-                                Agency Unit <span className="req">*</span>
+                                Agency Unit <span className="text-[#A83B4D]">*</span>
                               </label>
                             </div>
-                            <div
-                              className="field__box select focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                              style={{
-                                background: 'rgba(46, 10, 22, 0.85)',
-                                border: '1px solid rgba(255, 92, 116, 0.22)',
-                                borderRadius: '6px'
-                              }}
-                            >
-                              <Shield className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                            <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                              <Shield className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                               <select
-                                className="field__input select__input font-sans text-white text-[13px]"
+                                className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm appearance-none cursor-pointer focus:outline-none"
                                 id="agency-unit"
                                 value={agencyUnit}
                                 onChange={(e) =>
                                   handleAgencyUnitChange(e.target.value as 'RHU' | 'FIRE' | 'PNP')
                                 }
                               >
-                                <option value="RHU">RHU Medical</option>
-                                <option value="FIRE">BFP Fire</option>
-                                <option value="PNP">PNP Police</option>
+                                <option value="RHU" className="bg-[#F7F1EA] text-[#670626]">RHU Medical</option>
+                                <option value="FIRE" className="bg-[#F7F1EA] text-[#670626]">BFP Fire</option>
+                                <option value="PNP" className="bg-[#F7F1EA] text-[#670626]">PNP Police</option>
                               </select>
-                              <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-auto shrink-0" />
+                              <ChevronDown className="w-4 h-4 text-[#A83B4D] ml-auto shrink-0 pointer-events-none" />
                             </div>
                           </div>
 
-                          <div className={`field ${errors.employeeId ? 'is-invalid' : ''}`}>
-                            <div className="flex items-center justify-between mb-1">
+                          <div className={errors.employeeId ? 'is-invalid' : ''}>
+                            <div className="flex items-center justify-between mb-1.5">
                               <label
-                                className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                                className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                                 htmlFor="employee-id"
                               >
-                                Badge / Employee ID <span className="req">*</span>
+                                Badge / Employee ID <span className="text-[#A83B4D]">*</span>
                               </label>
                             </div>
-                            <div
-                              className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                              style={{
-                                background: 'rgba(46, 10, 22, 0.85)',
-                                border: '1px solid rgba(255, 92, 116, 0.22)',
-                                borderRadius: '6px'
-                              }}
-                            >
-                              <CreditCard className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                            <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                              <CreditCard className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                               <input
-                                className="field__input font-sans text-white text-[13px]"
+                                className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                                 id="employee-id"
                                 type="text"
                                 value={employeeId}
@@ -2398,7 +2313,7 @@ export const RegisterPage: React.FC = () => {
                             </div>
                             {errors.employeeId && (
                               <p
-                                className="field__error font-mono text-[10px]"
+                                className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                                 id="employee-error"
                                 role="alert"
                               >
@@ -2407,30 +2322,19 @@ export const RegisterPage: React.FC = () => {
                             )}
                           </div>
 
-                          <div
-                            className={`field md:col-span-2 ${
-                              errors.rankOrTitle ? 'is-invalid' : ''
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1">
+                          <div className={`md:col-span-2 ${errors.rankOrTitle ? 'is-invalid' : ''}`}>
+                            <div className="flex items-center justify-between mb-1.5">
                               <label
-                                className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                                className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                                 htmlFor="rank-title"
                               >
-                                Rank / Position <span className="req">*</span>
+                                Rank / Position <span className="text-[#A83B4D]">*</span>
                               </label>
                             </div>
-                            <div
-                              className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                              style={{
-                                background: 'rgba(46, 10, 22, 0.85)',
-                                border: '1px solid rgba(255, 92, 116, 0.22)',
-                                borderRadius: '6px'
-                              }}
-                            >
-                              <Award className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                            <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                              <Award className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                               <input
-                                className="field__input font-sans text-white text-[13px]"
+                                className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                                 id="rank-title"
                                 type="text"
                                 value={rankOrTitle}
@@ -2440,7 +2344,7 @@ export const RegisterPage: React.FC = () => {
                             </div>
                             {errors.rankOrTitle && (
                               <p
-                                className="field__error font-mono text-[10px]"
+                                className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                                 id="rank-error"
                                 role="alert"
                               >
@@ -2454,20 +2358,20 @@ export const RegisterPage: React.FC = () => {
                   </section>
                 )}
 
-                <div className="step-actions flex gap-2.5 mt-6">
+                <div className="flex gap-2.5 mt-6">
                   <button
-                    className="btn btn--ghost !h-[44px] !w-28 font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-1"
+                    className="!h-[46px] !w-32 font-mono text-sm font-semibold rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] text-[#670626] hover:bg-[#DFC9BE] cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
                     type="button"
                     id="btn-phase2-back"
                     onClick={() => handleNavigatePhase(0)}
                   >
-                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <ArrowLeft className="w-4 h-4" />
                     <span>Back</span>
                   </button>
                   <button
-                    className={`btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 flex items-center justify-center gap-2 transition-all ${
+                    className={`flex-1 !h-[46px] text-sm sm:text-base bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-bold tracking-wider uppercase rounded-xl shadow-md shadow-[#4A041A]/25 flex items-center justify-center gap-2 transition-all ${
                       isPhase2ReadyForNext
-                        ? 'hover:!brightness-110 cursor-pointer'
+                        ? 'cursor-pointer'
                         : 'opacity-45 saturate-50 cursor-not-allowed'
                     }`}
                     type="button"
@@ -2475,7 +2379,7 @@ export const RegisterPage: React.FC = () => {
                     disabled={!isPhase2ReadyForNext}
                     onClick={() => handleNavigatePhase(2)}
                   >
-                    <span className="btn__label">Continue</span>
+                    <span>Continue</span>
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
                 </div>
@@ -2488,11 +2392,11 @@ export const RegisterPage: React.FC = () => {
             {step === 2 && (
               <div className="step" data-step="2" id="phase-3-facial-record">
                 <div className="text-center mb-4">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/30 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-1.5">
-                    <Camera className="w-3.5 h-3.5 text-[#ff5c74]" />
+                  <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-[#E9D9D0] border border-[#D5BEB3] font-mono text-xs text-[#670626] font-bold uppercase tracking-widest mb-1.5">
+                    <Camera className="w-4 h-4 text-[#A83B4D]" />
                     PHASE 3/5 // FACIAL RECORD
                   </div>
-                  <h3 className="font-mono text-sm sm:text-base font-bold text-white uppercase tracking-wider">
+                  <h3 className="font-mono text-base sm:text-lg font-bold text-[#670626] uppercase tracking-wider">
                     Face Scan &amp; ID Match
                   </h3>
                 </div>
@@ -2571,25 +2475,25 @@ export const RegisterPage: React.FC = () => {
                   errorMessage={errors.facial || errors.facialConsent}
                 />
 
-                <div className="step-actions flex gap-2.5 mt-6">
+                <div className="flex gap-2.5 mt-6">
                   <button
-                    className="btn btn--ghost !h-[44px] !w-28 font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-1"
+                    className="!h-[46px] !w-32 font-mono text-sm font-semibold rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] text-[#670626] hover:bg-[#DFC9BE] cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
                     type="button"
                     id="btn-phase3-back"
                     onClick={() => handleNavigatePhase(1)}
                   >
-                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <ArrowLeft className="w-4 h-4" />
                     <span>Back</span>
                   </button>
                   <button
-                    className={`btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2 transition-all ${
+                    className={`flex-1 !h-[46px] text-sm sm:text-base bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-bold tracking-wider uppercase rounded-xl shadow-md shadow-[#4A041A]/25 cursor-pointer flex items-center justify-center gap-2 transition-all ${
                       faceConfirmed && faceConsentAccepted ? '' : 'opacity-50 saturate-50'
                     }`}
                     type="button"
                     id="btn-phase3-next"
                     onClick={() => handleNavigatePhase(3)}
                   >
-                    <span className="btn__label">Continue</span>
+                    <span>Continue</span>
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
                 </div>
@@ -2602,37 +2506,30 @@ export const RegisterPage: React.FC = () => {
             {step === 3 && (
               <div className="step" data-step="3" id="phase-4-credentials">
                 <div className="text-center mb-4">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/30 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-1.5">
-                    <Lock className="w-3.5 h-3.5 text-[#ff5c74]" />
+                  <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-[#E9D9D0] border border-[#D5BEB3] font-mono text-xs text-[#670626] font-bold uppercase tracking-widest mb-1.5">
+                    <Lock className="w-4 h-4 text-[#A83B4D]" />
                     PHASE 4/5 // CREDENTIALS
                   </div>
-                  <h3 className="font-mono text-sm sm:text-base font-bold text-white uppercase tracking-wider">
+                  <h3 className="font-mono text-base sm:text-lg font-bold text-[#670626] uppercase tracking-wider">
                     Display Name, Login Email &amp; Password
                   </h3>
                 </div>
 
                 <div className="form-grid">
                   {/* Display Name / Username (Presentation Only) */}
-                  <div className={`field ${errors.displayName ? 'is-invalid' : ''}`}>
-                    <div className="flex items-center justify-between mb-1">
+                  <div className={errors.displayName ? 'is-invalid' : ''}>
+                    <div className="flex items-center justify-between mb-1.5">
                       <label
-                        className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                        className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                         htmlFor="display-name"
                       >
-                        Display Name <span className="req">*</span>
+                        Display Name <span className="text-[#A83B4D]">*</span>
                       </label>
                     </div>
-                    <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                    <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                      <User className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                       <input
-                        className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                        className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                         id="display-name"
                         name="displayName"
                         type="text"
@@ -2644,7 +2541,7 @@ export const RegisterPage: React.FC = () => {
                     </div>
                     {errors.displayName && (
                       <p
-                        className="field__error font-mono text-[10px]"
+                        className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                         id="display-name-error"
                         role="alert"
                       >
@@ -2654,26 +2551,19 @@ export const RegisterPage: React.FC = () => {
                   </div>
 
                   {/* Email Address (Sole Login Identifier) */}
-                  <div className={`field ${errors.email ? 'is-invalid' : ''}`}>
-                    <div className="flex items-center justify-between mb-1">
+                  <div className={errors.email ? 'is-invalid' : ''}>
+                    <div className="flex items-center justify-between mb-1.5">
                       <label
-                        className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                        className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                         htmlFor="email"
                       >
-                        Login Email <span className="req">*</span>
+                        Login Email <span className="text-[#A83B4D]">*</span>
                       </label>
                     </div>
-                    <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <Mail className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                    <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                      <Mail className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                       <input
-                        className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                        className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                         id="email"
                         name="email"
                         type="email"
@@ -2685,7 +2575,7 @@ export const RegisterPage: React.FC = () => {
                     </div>
                     {errors.email && (
                       <p
-                        className="field__error font-mono text-[10px]"
+                        className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                         id="email-error"
                         role="alert"
                       >
@@ -2695,26 +2585,19 @@ export const RegisterPage: React.FC = () => {
                   </div>
 
                   {/* Password */}
-                  <div className={`field field--password ${errors.password ? 'is-invalid' : ''}`}>
-                    <div className="flex items-center justify-between mb-1">
+                  <div className={errors.password ? 'is-invalid' : ''}>
+                    <div className="flex items-center justify-between mb-1.5">
                       <label
-                        className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                        className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                         htmlFor="password"
                       >
-                        Password (Min 12 Chars) <span className="req">*</span>
+                        Password (Min 12 Chars) <span className="text-[#A83B4D]">*</span>
                       </label>
                     </div>
-                    <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <Lock className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                    <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                      <Lock className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                       <input
-                        className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                        className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                         id="password"
                         name="password"
                         type={showPassword ? 'text' : 'password'}
@@ -2724,22 +2607,28 @@ export const RegisterPage: React.FC = () => {
                         autoComplete="new-password"
                       />
                       <button
-                        className="field__toggle hover:text-rose-300 ml-auto p-1 cursor-pointer"
+                        className="text-[#A83B4D] hover:text-[#670626] ml-auto p-1 cursor-pointer"
                         type="button"
                         id="pw-toggle"
                         onClick={() => setShowPassword((p) => !p)}
                         aria-label={showPassword ? 'Hide password' : 'Show password'}
                       >
                         {!showPassword ? (
-                          <Eye className="w-4 h-4 text-slate-400" />
+                          <Eye className="w-4 h-4" />
                         ) : (
-                          <EyeOff className="w-4 h-4 text-slate-400" />
+                          <EyeOff className="w-4 h-4" />
                         )}
                       </button>
                     </div>
                     {password && (
                       <p
-                        className="strength font-mono text-[9px] mt-1.5"
+                        className={`font-mono text-xs mt-1.5 font-bold ${
+                          strengthTone === 'ok'
+                            ? 'text-emerald-700'
+                            : strengthTone === 'warn'
+                            ? 'text-amber-700'
+                            : 'text-[#670626]'
+                        }`}
                         id="strength"
                         data-tone={strengthTone}
                       >
@@ -2748,7 +2637,7 @@ export const RegisterPage: React.FC = () => {
                     )}
                     {errors.password && (
                       <p
-                        className="field__error font-mono text-[10px]"
+                        className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                         id="password-error"
                         role="alert"
                       >
@@ -2758,26 +2647,19 @@ export const RegisterPage: React.FC = () => {
                   </div>
 
                   {/* Confirm Password */}
-                  <div className={`field field--password ${errors.confirm ? 'is-invalid' : ''}`}>
-                    <div className="flex items-center justify-between mb-1">
+                  <div className={errors.confirm ? 'is-invalid' : ''}>
+                    <div className="flex items-center justify-between mb-1.5">
                       <label
-                        className="font-mono text-[10px] uppercase tracking-wider text-slate-200 font-semibold"
+                        className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold"
                         htmlFor="confirm"
                       >
-                        Confirm Password <span className="req">*</span>
+                        Confirm Password <span className="text-[#A83B4D]">*</span>
                       </label>
                     </div>
-                    <div
-                      className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                      style={{
-                        background: 'rgba(46, 10, 22, 0.85)',
-                        border: '1px solid rgba(255, 92, 116, 0.22)',
-                        borderRadius: '6px'
-                      }}
-                    >
-                      <Lock className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+                    <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3 min-h-[44px]">
+                      <Lock className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2" />
                       <input
-                        className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                        className="w-full py-2 bg-transparent font-sans text-[#670626] text-sm placeholder:text-[#A83B4D]/70 focus:outline-none"
                         id="confirm"
                         name="confirmPassword"
                         type={showPassword ? 'text' : 'password'}
@@ -2789,7 +2671,7 @@ export const RegisterPage: React.FC = () => {
                     </div>
                     {errors.confirm && (
                       <p
-                        className="field__error font-mono text-[10px]"
+                        className="font-mono text-xs mt-1 text-[#670626] font-semibold"
                         id="confirm-error"
                         role="alert"
                       >
@@ -2800,9 +2682,9 @@ export const RegisterPage: React.FC = () => {
                 </div>
 
                 {/* Show Password Checkbox Control */}
-                <div className="mt-3 flex items-center">
+                <div className="mt-3.5 flex items-center">
                   <label
-                    className="inline-flex items-center gap-2 cursor-pointer font-mono text-[11px] text-slate-300"
+                    className="inline-flex items-center gap-2 cursor-pointer font-mono text-xs sm:text-sm text-[#670626] font-semibold"
                     htmlFor="show-password-check"
                   >
                     <input
@@ -2810,7 +2692,7 @@ export const RegisterPage: React.FC = () => {
                       id="show-password-check"
                       checked={showPassword}
                       onChange={(e) => setShowPassword(e.target.checked)}
-                      className="accent-[#ff5c74] cursor-pointer"
+                      className="w-4 h-4 accent-[#670626] cursor-pointer"
                     />
                     <span>Show password</span>
                   </label>
@@ -2818,12 +2700,12 @@ export const RegisterPage: React.FC = () => {
 
                 {/* Required Legal Certifications */}
                 <div
-                  className="mt-5 p-4 rounded-xl bg-black/60 border border-rose-500/30 space-y-3"
+                  className="mt-5 p-4 rounded-2xl bg-[#EFE4DD] border border-[#D5BEB3] space-y-3"
                   id="phase4-legal-certifications"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-[11px] text-rose-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                      <Shield className="w-3.5 h-3.5 text-[#ff5c74]" />
+                    <span className="font-mono text-xs sm:text-sm text-[#670626] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-[#A83B4D]" />
                       <span>Legal Certifications</span>
                     </span>
                     <button
@@ -2842,7 +2724,7 @@ export const RegisterPage: React.FC = () => {
                           setStatusMessage('');
                         }
                       }}
-                      className="px-2.5 py-1 rounded border border-rose-500/40 bg-rose-950/50 hover:bg-rose-900/60 active:scale-[0.98] text-rose-200 font-mono text-[10px] font-bold cursor-pointer transition-colors"
+                      className="px-3 py-1.5 rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] active:scale-[0.98] text-[#670626] font-mono text-xs font-bold cursor-pointer transition-colors"
                     >
                       {consent1 && consent2 ? 'Deselect All' : 'Accept Both'}
                     </button>
@@ -2851,10 +2733,10 @@ export const RegisterPage: React.FC = () => {
                   {/* Certification 1: Affidavit */}
                   <label
                     htmlFor="consent-1"
-                    className={`flex items-start gap-3 p-3 rounded-lg border transition-all cursor-pointer select-none ${
+                    className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer select-none ${
                       consent1
-                        ? 'bg-rose-950/40 border-rose-500/60 shadow-sm shadow-rose-950/50'
-                        : 'bg-black/40 border-rose-500/25 hover:border-rose-500/40 hover:bg-rose-950/20'
+                        ? 'bg-[#E9D9D0] border-[#670626] shadow-sm'
+                        : 'bg-[#F7F1EA] border-[#D5BEB3] hover:border-[#A83B4D]'
                     }`}
                   >
                     <input
@@ -2872,10 +2754,10 @@ export const RegisterPage: React.FC = () => {
                           setStatusMessage('');
                         }
                       }}
-                      className="mt-0.5 w-4 h-4 rounded accent-[#ff5c74] cursor-pointer shrink-0"
+                      className="mt-0.5 w-4 h-4 rounded accent-[#670626] cursor-pointer shrink-0"
                     />
-                    <span className="font-mono text-[11px] leading-relaxed text-rose-100">
-                      <strong className="text-white">[AFFIDAVIT]</strong> Information and IDs are
+                    <span className="font-mono text-xs sm:text-sm leading-relaxed text-[#591529]">
+                      <strong className="text-[#670626]">[AFFIDAVIT]</strong> Information and IDs are
                       genuine.
                     </span>
                   </label>
@@ -2883,10 +2765,10 @@ export const RegisterPage: React.FC = () => {
                   {/* Certification 2: Emergency Protocol */}
                   <label
                     htmlFor="consent-2"
-                    className={`flex items-start gap-3 p-3 rounded-lg border transition-all cursor-pointer select-none ${
+                    className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer select-none ${
                       consent2
-                        ? 'bg-rose-950/40 border-rose-500/60 shadow-sm shadow-rose-950/50'
-                        : 'bg-black/40 border-rose-500/25 hover:border-rose-500/40 hover:bg-rose-950/20'
+                        ? 'bg-[#E9D9D0] border-[#670626] shadow-sm'
+                        : 'bg-[#F7F1EA] border-[#D5BEB3] hover:border-[#A83B4D]'
                     }`}
                   >
                     <input
@@ -2904,42 +2786,42 @@ export const RegisterPage: React.FC = () => {
                           setStatusMessage('');
                         }
                       }}
-                      className="mt-0.5 w-4 h-4 rounded accent-[#ff5c74] cursor-pointer shrink-0"
+                      className="mt-0.5 w-4 h-4 rounded accent-[#670626] cursor-pointer shrink-0"
                     />
-                    <span className="font-mono text-[11px] leading-relaxed text-rose-100">
-                      <strong className="text-white">[PROTOCOL]</strong> Agree to emergency dispatch
+                    <span className="font-mono text-xs sm:text-sm leading-relaxed text-[#591529]">
+                      <strong className="text-[#670626]">[PROTOCOL]</strong> Agree to emergency dispatch
                       &amp; RA 10173 privacy terms.
                     </span>
                   </label>
 
                   {errors.consent && (
                     <p
-                      className="font-mono text-[10.5px] text-[#ff5c74] font-semibold flex items-center gap-1.5 pt-1"
+                      className="font-mono text-xs sm:text-sm text-[#670626] font-semibold flex items-center gap-1.5 pt-1"
                       role="alert"
                     >
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <AlertCircle className="w-4 h-4 shrink-0" />
                       <span>{errors.consent}</span>
                     </p>
                   )}
                 </div>
 
-                <div className="step-actions flex gap-2.5 mt-6">
+                <div className="flex gap-2.5 mt-6">
                   <button
-                    className="btn btn--ghost !h-[44px] !w-28 font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-1"
+                    className="!h-[46px] !w-32 font-mono text-sm font-semibold rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] text-[#670626] hover:bg-[#DFC9BE] cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
                     type="button"
                     id="btn-phase4-back"
                     onClick={() => handleNavigatePhase(2)}
                   >
-                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <ArrowLeft className="w-4 h-4" />
                     <span>Back</span>
                   </button>
                   <button
-                    className="btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2"
+                    className="flex-1 !h-[46px] text-sm sm:text-base bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-bold tracking-wider uppercase rounded-xl shadow-md shadow-[#4A041A]/25 cursor-pointer flex items-center justify-center gap-2 transition-all"
                     type="button"
                     id="btn-phase4-next"
                     onClick={() => handleNavigatePhase(4)}
                   >
-                    <span className="btn__label">Review &amp; Submit</span>
+                    <span>Review &amp; Submit</span>
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </button>
                 </div>
@@ -2952,20 +2834,20 @@ export const RegisterPage: React.FC = () => {
             {step === 4 && (
               <div className="step" data-step="4" id="phase-5-review">
                 <div className="text-center mb-4">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 border border-rose-500/40 font-mono text-[10px] text-rose-300 font-bold uppercase tracking-widest mb-1.5">
-                    <FileCheck className="w-3.5 h-3.5 text-[#ff5c74]" />
+                  <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-[#E9D9D0] border border-[#D5BEB3] font-mono text-xs text-[#670626] font-bold uppercase tracking-widest mb-1.5">
+                    <FileCheck className="w-4 h-4 text-[#A83B4D]" />
                     PHASE 5/5 // REVIEW
                   </div>
-                  <h3 className="font-mono text-sm sm:text-base font-bold text-white uppercase tracking-wider">
+                  <h3 className="font-mono text-base sm:text-lg font-bold text-[#670626] uppercase tracking-wider">
                     Review Summary
                   </h3>
                 </div>
 
-                <div className="space-y-4 font-mono text-xs">
+                <div className="space-y-4 font-mono text-sm">
                   {/* Section 1: Role & Account Credentials Summary */}
-                  <div className="p-4 rounded-xl bg-black/50 border border-rose-500/30">
-                    <div className="flex items-center justify-between border-b border-rose-500/20 pb-2 mb-3">
-                      <span className="font-bold uppercase tracking-wider text-rose-300">
+                  <div className="p-4 rounded-2xl bg-[#EFE4DD] border border-[#D5BEB3]">
+                    <div className="flex items-center justify-between border-b border-[#D5BEB3] pb-2.5 mb-3">
+                      <span className="font-bold uppercase tracking-wider text-[#670626] text-sm">
                         1. Role &amp; Account
                       </span>
                       <div className="flex items-center gap-2">
@@ -2973,51 +2855,51 @@ export const RegisterPage: React.FC = () => {
                           type="button"
                           id="review-edit-phase1"
                           onClick={() => handleNavigatePhase(0)}
-                          className="px-2.5 py-1 rounded border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 text-[10px] cursor-pointer flex items-center gap-1"
+                          className="px-3 py-1 rounded-lg border border-[#D5BEB3] bg-[#F7F1EA] hover:bg-[#E9D9D0] text-[#670626] text-xs font-semibold cursor-pointer flex items-center gap-1"
                         >
-                          <Edit3 className="w-3 h-3" />
+                          <Edit3 className="w-3.5 h-3.5 text-[#A83B4D]" />
                           <span>Edit Role</span>
                         </button>
                         <button
                           type="button"
                           id="review-edit-phase4"
                           onClick={() => handleNavigatePhase(3)}
-                          className="px-2.5 py-1 rounded border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 text-[10px] cursor-pointer flex items-center gap-1"
+                          className="px-3 py-1 rounded-lg border border-[#D5BEB3] bg-[#F7F1EA] hover:bg-[#E9D9D0] text-[#670626] text-xs font-semibold cursor-pointer flex items-center gap-1"
                         >
-                          <Edit3 className="w-3 h-3" />
+                          <Edit3 className="w-3.5 h-3.5 text-[#A83B4D]" />
                           <span>Edit Auth</span>
                         </button>
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                       <div>
-                        <span className="text-slate-400">Role:</span>{' '}
-                        <strong className="text-white" id="review-role">
+                        <span className="text-[#7D2B3D]">Role:</span>{' '}
+                        <strong className="text-[#670626]" id="review-role">
                           {selectedRole === 'Responder'
                             ? `Responder (${agencyUnit})`
                             : 'Civilian'}
                         </strong>
                       </div>
                       <div>
-                        <span className="text-slate-400">Display Name:</span>{' '}
-                        <strong className="text-rose-200" id="review-display-name">
+                        <span className="text-[#7D2B3D]">Display Name:</span>{' '}
+                        <strong className="text-[#670626]" id="review-display-name">
                           {displayName}
                         </strong>
                       </div>
                       <div>
-                        <span className="text-slate-400">Login Email:</span>{' '}
-                        <strong className="text-rose-200" id="review-email">
+                        <span className="text-[#7D2B3D]">Login Email:</span>{' '}
+                        <strong className="text-[#670626]" id="review-email">
                           {email}
                         </strong>
                       </div>
                       <div>
-                        <span className="text-slate-400">Mode:</span>{' '}
+                        <span className="text-[#7D2B3D]">Mode:</span>{' '}
                         <span
                           id="review-verification-mode"
-                          className={`px-2 py-0.5 rounded border text-[9.5px] font-bold ${
+                          className={`px-2.5 py-0.5 rounded-md border text-xs font-bold ${
                             isAiAutoApproveReady
-                              ? 'bg-emerald-950 border-emerald-500/45 text-[#5fe0a4]'
-                              : 'bg-amber-950 border-amber-500/40 text-amber-300'
+                              ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                              : 'bg-amber-50 border-amber-600/40 text-amber-800'
                           }`}
                         >
                           {isAiAutoApproveReady
@@ -3029,38 +2911,38 @@ export const RegisterPage: React.FC = () => {
                   </div>
 
                   {/* Section 2: Government ID & Personal Information Summary (Unified Phase 2) */}
-                  <div className="p-4 rounded-xl bg-black/50 border border-rose-500/30">
-                    <div className="flex items-center justify-between border-b border-rose-500/20 pb-2 mb-3">
-                      <span className="font-bold uppercase tracking-wider text-rose-300">
+                  <div className="p-4 rounded-2xl bg-[#EFE4DD] border border-[#D5BEB3]">
+                    <div className="flex items-center justify-between border-b border-[#D5BEB3] pb-2.5 mb-3">
+                      <span className="font-bold uppercase tracking-wider text-[#670626] text-sm">
                         2. Gov ID &amp; Profile
                       </span>
                       <button
                         type="button"
                         id="review-edit-phase2"
                         onClick={() => handleNavigatePhase(1)}
-                        className="px-2.5 py-1 rounded border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 text-[10px] cursor-pointer flex items-center gap-1"
+                        className="px-3 py-1 rounded-lg border border-[#D5BEB3] bg-[#F7F1EA] hover:bg-[#E9D9D0] text-[#670626] text-xs font-semibold cursor-pointer flex items-center gap-1"
                       >
-                        <Edit3 className="w-3 h-3" />
+                        <Edit3 className="w-3.5 h-3.5 text-[#A83B4D]" />
                         <span>Edit ID</span>
                       </button>
                     </div>
 
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
                       <div>
-                        <span className="text-slate-400">ID Type:</span>{' '}
-                        <strong className="text-white" id="review-id-type">
+                        <span className="text-[#7D2B3D]">ID Type:</span>{' '}
+                        <strong className="text-[#670626]" id="review-id-type">
                           {selectedIdLabel || 'Not Selected'}
                         </strong>
                         {licenseNumber && (
-                          <span className="text-slate-300 ml-2">({licenseNumber})</span>
+                          <span className="text-[#591529] ml-2">({licenseNumber})</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-[9.5px]">
+                      <div className="flex items-center gap-2 text-xs">
                         <span
-                          className={`px-2 py-0.5 rounded border font-bold ${
+                          className={`px-2.5 py-0.5 rounded-md border font-bold ${
                             idVerification.idVerificationToken
-                              ? 'bg-emerald-950 border-emerald-500/45 text-[#5fe0a4]'
-                              : 'bg-amber-950 border-amber-500/40 text-amber-300'
+                              ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                              : 'bg-amber-50 border-amber-600/40 text-amber-800'
                           }`}
                         >
                           {idVerification.idVerificationToken
@@ -3071,8 +2953,8 @@ export const RegisterPage: React.FC = () => {
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                      <div className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-center">
-                        <div className="text-[9.5px] text-slate-300 font-bold uppercase mb-1">
+                      <div className="rounded-xl border border-[#D5BEB3] bg-[#F7F1EA] p-2.5 text-center">
+                        <div className="text-xs text-[#670626] font-bold uppercase mb-1.5">
                           Front ID
                         </div>
                         {idFrontShot && (
@@ -3080,12 +2962,12 @@ export const RegisterPage: React.FC = () => {
                             src={idFrontShot}
                             alt="Review Front ID"
                             id="review-front-id-img"
-                            className="w-full h-28 object-cover rounded border border-slate-800"
+                            className="w-full h-28 object-cover rounded-lg border border-[#D5BEB3]"
                           />
                         )}
                       </div>
-                      <div className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-center">
-                        <div className="text-[9.5px] text-slate-300 font-bold uppercase mb-1">
+                      <div className="rounded-xl border border-[#D5BEB3] bg-[#F7F1EA] p-2.5 text-center">
+                        <div className="text-xs text-[#670626] font-bold uppercase mb-1.5">
                           Back ID
                         </div>
                         {idBackShot && (
@@ -3093,42 +2975,42 @@ export const RegisterPage: React.FC = () => {
                             src={idBackShot}
                             alt="Review Back ID"
                             id="review-back-id-img"
-                            className="w-full h-28 object-cover rounded border border-slate-800"
+                            className="w-full h-28 object-cover rounded-lg border border-[#D5BEB3]"
                           />
                         )}
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px] pt-3 border-t border-rose-500/20">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm pt-3 border-t border-[#D5BEB3]">
                       <div>
-                        <span className="text-slate-400">Name:</span>{' '}
-                        <strong className="text-white" id="review-fullname">
+                        <span className="text-[#7D2B3D]">Name:</span>{' '}
+                        <strong className="text-[#670626]" id="review-fullname">
                           {fullname}
                         </strong>
                       </div>
                       <div>
-                        <span className="text-slate-400">Sex / DOB / Age:</span>{' '}
-                        <strong className="text-white">
+                        <span className="text-[#7D2B3D]">Sex / DOB / Age:</span>{' '}
+                        <strong className="text-[#670626]">
                           {sex} &bull; {dateOfBirth} ({age} yrs)
                         </strong>
                       </div>
                       <div>
-                        <span className="text-slate-400">Contact:</span>{' '}
-                        <strong className="text-white" id="review-phone">
+                        <span className="text-[#7D2B3D]">Contact:</span>{' '}
+                        <strong className="text-[#670626]" id="review-phone">
                           {phoneNumber}
                         </strong>
                       </div>
                       {selectedRole === 'Responder' && (
                         <div>
-                          <span className="text-slate-400">Badge / Rank:</span>{' '}
-                          <strong className="text-white">
+                          <span className="text-[#7D2B3D]">Badge / Rank:</span>{' '}
+                          <strong className="text-[#670626]">
                             {employeeId} &bull; {rankOrTitle}
                           </strong>
                         </div>
                       )}
                       <div className="sm:col-span-2">
-                        <span className="text-slate-400">Address:</span>{' '}
-                        <strong className="text-white" id="review-address">
+                        <span className="text-[#7D2B3D]">Address:</span>{' '}
+                        <strong className="text-[#670626]" id="review-address">
                           {fullAddressPreview}
                         </strong>
                       </div>
@@ -3136,36 +3018,36 @@ export const RegisterPage: React.FC = () => {
                   </div>
 
                   {/* Section 3: Facial Biometric Record Summary */}
-                  <div className="p-4 rounded-xl bg-black/50 border border-rose-500/30">
-                    <div className="flex items-center justify-between border-b border-rose-500/20 pb-2 mb-3">
-                      <span className="font-bold uppercase tracking-wider text-rose-300">
+                  <div className="p-4 rounded-2xl bg-[#EFE4DD] border border-[#D5BEB3]">
+                    <div className="flex items-center justify-between border-b border-[#D5BEB3] pb-2.5 mb-3">
+                      <span className="font-bold uppercase tracking-wider text-[#670626] text-sm">
                         3. Facial Record
                       </span>
                       <button
                         type="button"
                         id="review-edit-phase3"
                         onClick={() => handleNavigatePhase(2)}
-                        className="px-2.5 py-1 rounded border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 text-[10px] cursor-pointer flex items-center gap-1"
+                        className="px-3 py-1 rounded-lg border border-[#D5BEB3] bg-[#F7F1EA] hover:bg-[#E9D9D0] text-[#670626] text-xs font-semibold cursor-pointer flex items-center gap-1"
                       >
-                        <Edit3 className="w-3 h-3" />
+                        <Edit3 className="w-3.5 h-3.5 text-[#A83B4D]" />
                         <span>Edit Face</span>
                       </button>
                     </div>
 
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                      <div className="text-slate-300">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <div className="text-[#591529]">
                         Capture {faceMeta ? `(${faceMeta.width}x${faceMeta.height})` : ''}
                         {faceToIdSimilarity !== null && (
-                          <span className="ml-2 text-emerald-300">
+                          <span className="ml-2 text-emerald-700 font-bold">
                             (Match: {Math.round(faceToIdSimilarity * 100)}%)
                           </span>
                         )}
                       </div>
                       <span
-                        className={`px-2 py-0.5 rounded border font-bold text-[9.5px] ${
+                        className={`px-2.5 py-0.5 rounded-md border font-bold text-xs ${
                           facialVerificationToken && isFaceMatchedToId
-                            ? 'bg-emerald-950 border-emerald-500/45 text-[#5fe0a4]'
-                            : 'bg-amber-950 border-amber-500/40 text-amber-300'
+                            ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                            : 'bg-amber-50 border-amber-600/40 text-amber-800'
                         }`}
                       >
                         {facialVerificationToken && isFaceMatchedToId
@@ -3175,14 +3057,14 @@ export const RegisterPage: React.FC = () => {
                     </div>
 
                     {facialStatusMessage && (
-                      <div className="mb-3 text-[10.5px] text-rose-200/85">
+                      <div className="mb-3 text-xs sm:text-sm text-[#670626]">
                         {facialStatusMessage}
                       </div>
                     )}
 
                     <div className="grid grid-cols-1 gap-3 max-w-xs">
-                      <div className="rounded-lg border border-slate-700 bg-slate-950 p-2 text-center">
-                        <div className="text-[9.5px] text-slate-300 font-bold uppercase mb-1">
+                      <div className="rounded-xl border border-[#D5BEB3] bg-[#F7F1EA] p-2.5 text-center">
+                        <div className="text-xs text-[#670626] font-bold uppercase mb-1.5">
                           Facial Capture {faceMeta ? `(${faceMeta.width}x${faceMeta.height})` : ''}
                         </div>
                         {faceShot && (
@@ -3190,7 +3072,7 @@ export const RegisterPage: React.FC = () => {
                             src={faceShot}
                             alt="Review Facial Capture"
                             id="review-face-img"
-                            className="w-full h-28 object-cover rounded border border-slate-800"
+                            className="w-full h-28 object-cover rounded-lg border border-[#D5BEB3]"
                           />
                         )}
                       </div>
@@ -3198,18 +3080,18 @@ export const RegisterPage: React.FC = () => {
 
                     {(biometricDescriptorVector || faceConfirmed) && (
                       <div
-                        className="mt-3 p-2.5 rounded-lg bg-rose-950/40 border border-rose-500/40 flex items-center justify-between text-[11px] text-rose-300 font-mono"
+                        className="mt-3 p-3 rounded-xl bg-[#F7F1EA] border border-[#D5BEB3] flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm text-[#670626] font-mono"
                         id="review-biometric-training-status"
                       >
                         <span className="flex items-center gap-1.5 font-bold uppercase tracking-wider">
-                          <Cpu className="w-3.5 h-3.5 text-[#ff5c74]" />
+                          <Cpu className="w-4 h-4 text-[#A83B4D]" />
                           <span>
                             {facialRequiresPendingManualReview
                               ? 'Biometric Staged · Pending Review'
                               : 'Biometric Ready · 4-Pose Cached'}
                           </span>
                         </span>
-                        <span className="text-rose-300 font-bold">
+                        <span className="text-[#670626] font-bold">
                           128-D Vector Ready for 1:1 Login
                         </span>
                       </div>
@@ -3218,26 +3100,26 @@ export const RegisterPage: React.FC = () => {
                 </div>
 
                 {/* Phase 5 Submit & Back Buttons */}
-                <div className="step-actions flex gap-2.5 mt-6">
+                <div className="flex gap-2.5 mt-6">
                   <button
-                    className="btn btn--ghost !h-[44px] !w-28 font-mono text-xs rounded-lg border border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800 cursor-pointer flex items-center justify-center gap-1"
+                    className="!h-[46px] !w-32 font-mono text-sm font-semibold rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] text-[#670626] hover:bg-[#DFC9BE] cursor-pointer flex items-center justify-center gap-1.5 transition-colors"
                     type="button"
                     id="btn-phase5-back"
                     onClick={() => handleNavigatePhase(3)}
                   >
-                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <ArrowLeft className="w-4 h-4" />
                     <span>Back</span>
                   </button>
 
                   <button
-                    className={`btn flex-1 !h-[44px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-bold !tracking-wider !uppercase rounded-lg shadow-lg shadow-[#e8114c]/30 cursor-pointer flex items-center justify-center gap-2 ${
-                      isLoading ? 'is-loading' : ''
-                    } ${isSuccess ? 'is-ok' : ''}`}
+                    className={`flex-1 !h-[46px] text-sm sm:text-base bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-bold tracking-wider uppercase rounded-xl shadow-md shadow-[#4A041A]/25 cursor-pointer flex items-center justify-center gap-2 transition-all ${
+                      isLoading ? 'opacity-80 cursor-progress' : ''
+                    } ${isSuccess ? '!bg-emerald-700' : ''}`}
                     type="submit"
                     id="submit"
                     disabled={isLoading}
                   >
-                    <span className="btn__label">
+                    <span>
                       {isLoading
                         ? 'Submitting…'
                         : isSuccess
@@ -3251,16 +3133,47 @@ export const RegisterPage: React.FC = () => {
                     ) : (
                       <ArrowRight className="w-4 h-4 ml-1" />
                     )}
-                    <span className="btn__spinner" aria-hidden="true"></span>
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Multi-Frame Persistence Confirmation & 5-Min AI Learning Banner */}
+            {isSuccess && persistenceConfirmation && (
+              <div
+                id="registration-persistence-banner"
+                role="status"
+                aria-live="polite"
+                className="mt-4 p-4 rounded-2xl bg-[#EFE4DD] border-2 border-[#670626] text-[#670626] space-y-2 shadow-sm"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-xs font-bold uppercase tracking-wider">
+                  <span className="flex items-center gap-1.5">
+                    <Cpu className="w-4 h-4 text-[#A83B4D]" />
+                    <span>Multi-Frame Biometric Persistence Confirmed</span>
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-md bg-[#670626] text-[#F7F1EA]">
+                    {persistenceConfirmation.biometricTrainingStatus || 'AI_LEARNING_5MIN'}
+                    {typeof persistenceConfirmation.trainedFrameCount === 'number'
+                      ? ` · ${persistenceConfirmation.trainedFrameCount} frames`
+                      : ''}
+                  </span>
+                </div>
+                <p className="font-sans text-xs sm:text-sm font-medium text-[#591529] leading-relaxed m-0">
+                  {AI_LEARNING_REMINDER_TEXT}
+                </p>
               </div>
             )}
 
             {/* Status Messages */}
             {statusMessage && (
               <p
-                className="status font-mono text-[11px] font-semibold my-2.5 text-center"
+                className={`font-mono text-xs sm:text-sm font-semibold my-3 text-center p-2.5 rounded-xl border ${
+                  statusTone === 'ok'
+                    ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                    : statusTone === 'bad'
+                    ? 'bg-[#670626] border-[#4A041A] text-[#F7F1EA]'
+                    : 'bg-[#E9D9D0] border-[#D5BEB3] text-[#670626]'
+                }`}
                 id="status"
                 role="status"
                 aria-live="polite"
@@ -3270,15 +3183,11 @@ export const RegisterPage: React.FC = () => {
               </p>
             )}
 
-            <div
-              className="row font-mono text-[11.5px]"
-              style={{ marginTop: '14px', justifyContent: 'center' }}
-            >
-              <span className="check__text text-slate-400">Already have an emergency account?</span>
+            <div className="mt-4 pt-3 border-t border-[#D5BEB3] flex items-center justify-center font-mono text-xs sm:text-sm">
+              <span className="text-[#7D2B3D]">Already have an emergency account?</span>
               <Link
-                className="link text-rose-400 hover:text-rose-300 font-bold"
+                className="text-[#670626] hover:text-[#A83B4D] font-bold underline underline-offset-4 ml-1.5"
                 to="/login"
-                style={{ marginLeft: '6px' }}
               >
                 Sign in here &rarr;
               </Link>
