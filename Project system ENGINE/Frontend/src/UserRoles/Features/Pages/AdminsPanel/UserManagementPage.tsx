@@ -90,6 +90,10 @@ export const UserManagementPage: React.FC = () => {
   }, [loadUsers]);
 
   const handleStatusTransition = async (user: UserSummary, nextStatus: AccountStatus) => {
+    if (user.isCliProtectedSuperAdmin) {
+      addToast('CLI-created Superadmin accounts cannot be suspended, restricted, or modified from the Frontend/UI. Use Docker CLI (useredit / userdelete).', 'error');
+      return;
+    }
     try {
       await updateUserStatus(user.id, nextStatus);
       const labelMap: Record<AccountStatus, string> = {
@@ -555,61 +559,73 @@ export const UserManagementPage: React.FC = () => {
                             <Eye className="w-4 h-4" />
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => setEditUserTarget(u)}
-                            className="p-2 rounded-lg bg-[#F7F1EA] hover:bg-[#670626] text-[#670626] hover:text-[#F7F1EA] border border-[#670626]/20 transition-all cursor-pointer"
-                            title="Edit Official Credentials"
-                            aria-label={`Edit ${u.fullName}`}
-                          >
-                            <Sliders className="w-4 h-4" />
-                          </button>
-
-                          {!isVerified && (
-                            <AdminButton
-                              type="button"
-                              variant="success"
-                              size="xs"
-                              onClick={() => void handleStatusTransition(u, 'Verified')}
-                              icon={<UserCheck className="w-3.5 h-3.5" />}
+                          {u.isCliProtectedSuperAdmin ? (
+                            <span
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#670626]/10 border border-[#670626]/30 text-[#670626] text-[10px] font-bold uppercase tracking-wider select-none"
+                              title="CLI-created Superadmin: Locked from UI edit, suspension, or deletion. Manage via Docker CLI (useredit / userdelete)."
                             >
-                              Approve
-                            </AdminButton>
-                          )}
+                              <Lock className="w-3.5 h-3.5 text-[#670626]" />
+                              CLI Protected
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setEditUserTarget(u)}
+                                className="p-2 rounded-lg bg-[#F7F1EA] hover:bg-[#670626] text-[#670626] hover:text-[#F7F1EA] border border-[#670626]/20 transition-all cursor-pointer"
+                                title="Edit Official Credentials"
+                                aria-label={`Edit ${u.fullName}`}
+                              >
+                                <Sliders className="w-4 h-4" />
+                              </button>
 
-                          {isVerified && (
-                            <AdminButton
-                              type="button"
-                              variant="danger"
-                              size="xs"
-                              onClick={() => void handleStatusTransition(u, 'Suspended')}
-                              icon={<UserX className="w-3.5 h-3.5" />}
-                            >
-                              Suspend
-                            </AdminButton>
-                          )}
+                              {!isVerified && (
+                                <AdminButton
+                                  type="button"
+                                  variant="success"
+                                  size="xs"
+                                  onClick={() => void handleStatusTransition(u, 'Verified')}
+                                  icon={<UserCheck className="w-3.5 h-3.5" />}
+                                >
+                                  Approve
+                                </AdminButton>
+                              )}
 
-                          {!isPending && (
-                            <AdminButton
-                              type="button"
-                              variant="outline"
-                              size="xs"
-                              onClick={() => void handleStatusTransition(u, 'Pending')}
-                              icon={<Lock className="w-3.5 h-3.5" />}
-                            >
-                              Restrict
-                            </AdminButton>
-                          )}
+                              {isVerified && (
+                                <AdminButton
+                                  type="button"
+                                  variant="danger"
+                                  size="xs"
+                                  onClick={() => void handleStatusTransition(u, 'Suspended')}
+                                  icon={<UserX className="w-3.5 h-3.5" />}
+                                >
+                                  Suspend
+                                </AdminButton>
+                              )}
 
-                          <button
-                            type="button"
-                            onClick={() => setDeleteUserTarget(u)}
-                            className="p-2 rounded-lg bg-[#F7F1EA] hover:bg-[#670626] text-[#670626] hover:text-[#F7F1EA] border border-[#670626]/20 transition-all cursor-pointer"
-                            title="Soft-Delete Official"
-                            aria-label={`Delete ${u.fullName}`}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                              {!isPending && (
+                                <AdminButton
+                                  type="button"
+                                  variant="outline"
+                                  size="xs"
+                                  onClick={() => void handleStatusTransition(u, 'Pending')}
+                                  icon={<Lock className="w-3.5 h-3.5" />}
+                                >
+                                  Restrict
+                                </AdminButton>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => setDeleteUserTarget(u)}
+                                className="p-2 rounded-lg bg-[#F7F1EA] hover:bg-[#670626] text-[#670626] hover:text-[#F7F1EA] border border-[#670626]/20 transition-all cursor-pointer"
+                                title="Soft-Delete Official"
+                                aria-label={`Delete ${u.fullName}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -405,25 +405,31 @@ function Select-UserInteractive {
 # --- User Management Handlers ---
 function Create-SuperadminAccount {
     Write-Header "CREATE SUPERADMIN ACCOUNT (BYPASS TERMINAL CREATION)"
-    Write-Host "Reminder: Enter email and password only. Default verified profile attributes are assigned.`n" -ForegroundColor Yellow
-
-    Write-Host "  [1] Create Default Superadmin (admin@resqtrack.gov.ph / Admin123456!)"
-    Write-Host "  [2] Create Custom Superadmin (Specify Email & Password)"
+    Write-Host "CHOOSE TO CREATE:" -ForegroundColor Yellow
+    Write-Host "  [1] CREATE DEFAULT SUPERADMIN (INPUT EMAIL & PASSWORD - NO STATICS)"
+    Write-Host "  [2] CREATE CUSTOM SUPERADMIN (INPUT EMAIL, PASSWORD & CONFIRM PASSWORD)"
     Write-Host "  [0] Cancel`n"
 
-    $choice = Read-Host "Select Option (0-2)"
+    $choice = (Read-Host "Select Option (0-2)").Trim()
     if ($choice -eq "1") {
-        Write-Info "Creating default superadmin account..."
-        $res = Run-BackendCli -CliArgs @("createsuperadmin", "admin@resqtrack.gov.ph", "Admin123456!")
-        Write-Host ($res -join "`n") -ForegroundColor Green
-    } elseif ($choice -eq "2") {
-        $email = Read-Host "Enter Superadmin Email"
+        $email = (Read-Host "INPUT EMAIL").Trim()
         if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return }
-        $pass = Read-Host "Enter Superadmin Password (min 12 chars)"
+        $pass = Read-Host "INPUT PASSWORD"
         if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) { Write-Warn "Password too short (must be at least 12 characters)."; return }
 
-        Write-Info "Creating superadmin '$email'..."
-        $res = Run-BackendCli -CliArgs @("createsuperadmin", $email, $pass)
+        Write-Info "Creating default superadmin '$email'..."
+        $res = Run-BackendCli -CliArgs @("createsuperadmin", "1", $email, $pass)
+        Write-Host ($res -join "`n") -ForegroundColor Green
+    } elseif ($choice -eq "2") {
+        $email = (Read-Host "INPUT EMAIL").Trim()
+        if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return }
+        $pass = Read-Host "INPUT PASSWORD"
+        if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) { Write-Warn "Password too short (must be at least 12 characters)."; return }
+        $confirmPass = Read-Host "INPUT CONFIRM PASSWORD"
+        if ($pass -ne $confirmPass) { Write-Warn "Passwords do not match."; return }
+
+        Write-Info "Creating custom superadmin '$email'..."
+        $res = Run-BackendCli -CliArgs @("createsuperadmin", "2", $email, $pass, $confirmPass)
         Write-Host ($res -join "`n") -ForegroundColor Green
     }
 }
@@ -472,28 +478,36 @@ function Delete-SuperadminAccount {
 
 function Create-ResponderAccount {
     Write-Header "CREATE RESPONDER ACCOUNT"
-    Write-Host "Select Agency Branch, then enter Email and Password only.`n" -ForegroundColor Yellow
+    Write-Host "CHOOSE OPTION RESPONDERS:" -ForegroundColor Yellow
+    Write-Host "  1. RHU/MEDICS"
+    Write-Host "  2. BFP/FIRE"
+    Write-Host "  3. PNP/POLICE"
+    Write-Host "  0. Cancel`n"
 
-    Write-Host "  [1] RHU  (Rural Health Unit / Medical)"
-    Write-Host "  [2] FIRE (Bureau of Fire Protection)"
-    Write-Host "  [3] PNP  (Philippine National Police)"
-    Write-Host "  [0] Cancel`n"
-
-    $unitChoice = Read-Host "Choose Branch (1-3)"
-    $unit = switch ($unitChoice) {
-        "1" { "RHU" }
-        "2" { "FIRE" }
-        "3" { "PNP" }
-        default { return }
+    $unitChoice = (Read-Host "Choose Option (1-3)").Trim()
+    $unit = switch ($unitChoice.ToUpperInvariant()) {
+        "1"      { "1" }
+        "RHU"    { "1" }
+        "MEDICS" { "1" }
+        "MEDIC"  { "1" }
+        "2"      { "2" }
+        "BFP"    { "2" }
+        "FIRE"   { "2" }
+        "3"      { "3" }
+        "PNP"    { "3" }
+        "POLICE" { "3" }
+        default  { return }
     }
 
-    $email = Read-Host "Enter $unit Responder Email"
+    $email = (Read-Host "INPUT EMAIL").Trim()
     if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return }
-    $pass = Read-Host "Enter Password (min 12 chars)"
+    $pass = Read-Host "INPUT PASSWORD"
     if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) { Write-Warn "Password too short (must be at least 12 characters)."; return }
+    $confirmPass = Read-Host "INPUT CONFIRM PASSWORD"
+    if ($pass -ne $confirmPass) { Write-Warn "Passwords do not match."; return }
 
-    Write-Info "Creating $unit responder '$email'..."
-    $res = Run-BackendCli -CliArgs @("createresponder", $email, $pass, $unit)
+    Write-Info "Creating responder '$email'..."
+    $res = Run-BackendCli -CliArgs @("createresponders", $unit, $email, $pass, $confirmPass)
     Write-Host ($res -join "`n") -ForegroundColor Green
 }
 
@@ -571,15 +585,17 @@ function Delete-ResponderAccount {
 
 function Create-CivilianAccount {
     Write-Header "CREATE CIVILIAN ACCOUNT"
-    Write-Host "Enter Email and Password only. Resident account is created with Verified status.`n" -ForegroundColor Yellow
+    Write-Host "Enter Email, Password, and Confirm Password. Resident account is created with Verified status.`n" -ForegroundColor Yellow
 
-    $email = Read-Host "Enter Civilian Email"
+    $email = (Read-Host "INPUT EMAIL").Trim()
     if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return }
-    $pass = Read-Host "Enter Password (min 12 chars)"
+    $pass = Read-Host "INPUT PASSWORD"
     if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) { Write-Warn "Password too short (must be at least 12 characters)."; return }
+    $confirmPass = Read-Host "INPUT CONFIRM PASSWORD"
+    if ($pass -ne $confirmPass) { Write-Warn "Passwords do not match."; return }
 
     Write-Info "Creating civilian account '$email'..."
-    $res = Run-BackendCli -CliArgs @("createcivilian", $email, $pass)
+    $res = Run-BackendCli -CliArgs @("createcivilians", $email, $pass, $confirmPass)
     Write-Host ($res -join "`n") -ForegroundColor Green
 }
 
@@ -800,43 +816,90 @@ function Invoke-UpdateDatabase {
 function Prompt-DockerAccountArgs {
     param([string]$CommandName)
 
-    switch ($CommandName) {
-        { $_ -in @("createresponder", "createresponders", "customcreateresponderuser", "createcustomresponderuser", "customcreateresponder", "createcustomresponder") } {
-            Write-Host "First Phase select Responders (1. RHU/MEDIC, 2. FIRE/BFP, 3. PNP/POLICE)" -ForegroundColor Yellow
-            $unitChoice = Read-Host "Select Responder (1-3)"
-            $unit = switch ($unitChoice.Trim().ToUpper()) {
-                "1"     { "RHU" }
-                "RHU"   { "RHU" }
-                "MEDIC" { "RHU" }
-                "2"     { "FIRE" }
-                "FIRE"  { "FIRE" }
-                "BFP"   { "FIRE" }
-                "3"     { "PNP" }
-                "PNP"   { "PNP" }
-                "POLICE"{ "PNP" }
+    switch ($CommandName.ToLowerInvariant()) {
+        { $_ -in @("createsuperadmin", "customcreatesuperadmin", "createcustomsuperadmin") } {
+            Write-Host "CHOOSE TO CREATE:" -ForegroundColor Yellow
+            Write-Host "  [1] CREATE DEFAULT SUPERADMIN (INPUT EMAIL & PASSWORD - NO STATICS)"
+            Write-Host "  [2] CREATE CUSTOM SUPERADMIN (INPUT EMAIL, PASSWORD & CONFIRM PASSWORD)"
+            $modeChoice = (Read-Host "Select Option (1-2)").Trim()
+            if ($modeChoice -eq "1") {
+                $email = (Read-Host "INPUT EMAIL").Trim()
+                if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return @() }
+                $pass = Read-Host "INPUT PASSWORD"
+                if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) {
+                    Write-Warn "Password must be at least 12 characters."
+                    return @()
+                }
+                return @("1", $email, $pass)
+            } elseif ($modeChoice -eq "2") {
+                $email = (Read-Host "INPUT EMAIL").Trim()
+                if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return @() }
+                $pass = Read-Host "INPUT PASSWORD"
+                if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) {
+                    Write-Warn "Password must be at least 12 characters."
+                    return @()
+                }
+                $confirmPass = Read-Host "INPUT CONFIRM PASSWORD"
+                if ($pass -ne $confirmPass) {
+                    Write-Warn "Passwords do not match."
+                    return @()
+                }
+                return @("2", $email, $pass, $confirmPass)
+            } else {
+                Write-Warn "Invalid selection. Choose 1 or 2."
+                return @()
+            }
+        }
+        { $_ -in @("createresponders", "createresponder", "customcreateresponders", "customcreateresponderuser", "createcustomresponderuser", "customcreateresponder", "createcustomresponder") } {
+            Write-Host "CHOOSE OPTION RESPONDERS:" -ForegroundColor Yellow
+            Write-Host "  1. RHU/MEDICS"
+            Write-Host "  2. BFP/FIRE"
+            Write-Host "  3. PNP/POLICE"
+            $unitChoice = (Read-Host "Select Responder (1-3)").Trim()
+            $unit = switch ($unitChoice.ToUpperInvariant()) {
+                "1"      { "1" }
+                "RHU"    { "1" }
+                "MEDICS" { "1" }
+                "MEDIC"  { "1" }
+                "2"      { "2" }
+                "BFP"    { "2" }
+                "FIRE"   { "2" }
+                "3"      { "3" }
+                "PNP"    { "3" }
+                "POLICE" { "3" }
                 default {
-                    Write-Warn "Invalid selection. Choose 1 (RHU/MEDIC), 2 (FIRE/BFP), or 3 (PNP/POLICE)."
+                    Write-Warn "Invalid selection. Choose 1 (RHU/MEDICS), 2 (BFP/FIRE), or 3 (PNP/POLICE)."
                     return @()
                 }
             }
-            $email = Read-Host "Input Email"
-            if ([string]::IsNullOrWhiteSpace($email)) { return @() }
-            $pass = Read-Host "Input Password"
+            $email = (Read-Host "INPUT EMAIL").Trim()
+            if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return @() }
+            $pass = Read-Host "INPUT PASSWORD"
             if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) {
                 Write-Warn "Password must be at least 12 characters."
                 return @()
             }
-            return @($unit, $email.Trim(), $pass)
+            $confirmPass = Read-Host "INPUT CONFIRM PASSWORD"
+            if ($pass -ne $confirmPass) {
+                Write-Warn "Passwords do not match."
+                return @()
+            }
+            return @($unit, $email, $pass, $confirmPass)
         }
         default {
-            $email = Read-Host "Input Email"
-            if ([string]::IsNullOrWhiteSpace($email)) { return @() }
-            $pass = Read-Host "Input Password"
+            $email = (Read-Host "INPUT EMAIL").Trim()
+            if ([string]::IsNullOrWhiteSpace($email)) { Write-Warn "Email cannot be empty."; return @() }
+            $pass = Read-Host "INPUT PASSWORD"
             if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) {
                 Write-Warn "Password must be at least 12 characters."
                 return @()
             }
-            return @($email.Trim(), $pass)
+            $confirmPass = Read-Host "INPUT CONFIRM PASSWORD"
+            if ($pass -ne $confirmPass) {
+                Write-Warn "Passwords do not match."
+                return @()
+            }
+            return @($email, $pass, $confirmPass)
         }
     }
 }
@@ -852,7 +915,18 @@ function Invoke-DockerBackendCli {
         return
     }
 
-    $needsArgs = $CommandName -ne "updatedatabase" -and $CommandName -ne "listcliusers" -and $CommandName -ne "deleteallcliusers"
+    $interactiveDirectCommands = @(
+        "createsuperadmin",
+        "createresponders",
+        "createcivilians",
+        "useredit",
+        "edituser",
+        "userdelete",
+        "deleteuser"
+    )
+    $isInteractiveDirect = $CommandName.ToLowerInvariant() -in $interactiveDirectCommands
+
+    $needsArgs = (-not $isInteractiveDirect) -and $CommandName -ne "updatedatabase" -and $CommandName -ne "listcliusers" -and $CommandName -ne "deleteallcliusers"
     if ($needsArgs -and $CliArgs.Count -eq 0) {
         $CliArgs = Prompt-DockerAccountArgs -CommandName $CommandName
         if ($CliArgs.Count -eq 0) {
@@ -866,10 +940,22 @@ function Invoke-DockerBackendCli {
         $runningId = (& docker compose ps -q resqtrack-backend --status running 2>$null)
         if (-not [string]::IsNullOrWhiteSpace(($runningId -join "").Trim())) {
             Write-Info "Executing 'dotnet Backend.dll $CommandName' inside running resqtrack-backend container..."
-            & docker compose exec resqtrack-backend dotnet Backend.dll $CommandName @CliArgs
+            if ($isInteractiveDirect -and $CliArgs.Count -eq 0) {
+                if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+                    & docker compose exec -it resqtrack-backend dotnet Backend.dll $CommandName
+                } else {
+                    & docker compose exec resqtrack-backend dotnet Backend.dll $CommandName
+                }
+            } else {
+                & docker compose exec resqtrack-backend dotnet Backend.dll $CommandName @CliArgs
+            }
         } else {
             Write-Info "Container not running; executing one-shot 'docker compose run --rm resqtrack-backend dotnet Backend.dll $CommandName'..."
-            & docker compose run --rm resqtrack-backend dotnet Backend.dll $CommandName @CliArgs
+            if ($isInteractiveDirect -and $CliArgs.Count -eq 0) {
+                & docker compose run --rm resqtrack-backend dotnet Backend.dll $CommandName
+            } else {
+                & docker compose run --rm resqtrack-backend dotnet Backend.dll $CommandName @CliArgs
+            }
         }
 
         if ($LASTEXITCODE -ne 0 -and $Action) {
@@ -885,25 +971,23 @@ function Show-DockerCliMenu {
     Write-Host "  [1] Docker Up & Build (docker compose up -d --build)"
     Write-Host "  [2] Docker Clean Build (down -> build --no-cache -> up -d)"
     Write-Host "  [3] Docker Update Database (dotnet Backend.dll updatedatabase)"
-    Write-Host "  [4] Docker Create Superadmin (createsuperadmin)"
-    Write-Host "  [5] Docker Create Custom Superadmin (createcustomsuperadmin)"
-    Write-Host "  [6] Docker Create Responder (createresponder)"
-    Write-Host "  [7] Docker Create Custom Responder (createcustomresponder)"
-    Write-Host "  [8] Docker Create Civilian (createcivilian)"
-    Write-Host "  [9] Docker Create Custom Civilian (createcustomcivilian)"
+    Write-Host "  [4] Docker Create Superadmin (createsuperadmin - Option 1 Default / Option 2 Custom)"
+    Write-Host "  [5] Docker Create Responders (createresponders - 1. RHU/MEDICS, 2. BFP/FIRE, 3. PNP/POLICE)"
+    Write-Host "  [6] Docker Create Civilians (createcivilians)"
+    Write-Host "  [7] Docker User Edit (useredit - 1. Admin User, 2. Responders, 3. Civilians + Search)"
+    Write-Host "  [8] Docker User Delete (userdelete - 1. Admin User, 2. Responders, 3. Civilians + Search / Delete All)"
     Write-Host "  [0] Return to Main Menu`n"
 
-    $subChoice = Read-Host "Select Docker CLI Action (0-9)"
+    $subChoice = Read-Host "Select Docker CLI Action (0-8)"
     switch ($subChoice) {
         "1" { Invoke-DockerUpBuild }
         "2" { Invoke-DockerRebuild }
         "3" { Invoke-DockerBackendCli -CommandName "updatedatabase" }
         "4" { Invoke-DockerBackendCli -CommandName "createsuperadmin" }
-        "5" { Invoke-DockerBackendCli -CommandName "createcustomsuperadmin" }
-        "6" { Invoke-DockerBackendCli -CommandName "createresponder" }
-        "7" { Invoke-DockerBackendCli -CommandName "createcustomresponder" }
-        "8" { Invoke-DockerBackendCli -CommandName "createcivilian" }
-        "9" { Invoke-DockerBackendCli -CommandName "createcustomcivilian" }
+        "5" { Invoke-DockerBackendCli -CommandName "createresponders" }
+        "6" { Invoke-DockerBackendCli -CommandName "createcivilians" }
+        "7" { Invoke-DockerBackendCli -CommandName "useredit" }
+        "8" { Invoke-DockerBackendCli -CommandName "userdelete" }
         default { return }
     }
 }
@@ -917,18 +1001,18 @@ function Show-MainMenu {
         Write-Host "  [2]  Stop all Engines & Release Ports"
         Write-Host "  [3]  Database Migrations (Add Migration / Update Database / Auto-detect)"
         Write-Host ""
-        Write-Host " SUPERADMIN MANAGEMENT (Email & Password Only)" -ForegroundColor Yellow
-        Write-Host "  [4]  Create Superadmin (Default or Custom)"
+        Write-Host " SUPERADMIN MANAGEMENT (Email & Password Only - Zero Statics)" -ForegroundColor Yellow
+        Write-Host "  [4]  Create Superadmin (createsuperadmin - Option 1 Default / Option 2 Custom)"
         Write-Host "  [5]  Edit Superadmin (Search list, Email & Password only)"
         Write-Host "  [6]  Delete Superadmin (Search list)"
         Write-Host ""
-        Write-Host " RESPONDER MANAGEMENT (Choose RHU / FIRE / PNP - Email & Password Only)" -ForegroundColor Cyan
-        Write-Host "  [7]  Create Responder (Choose RHU / FIRE / PNP)"
+        Write-Host " RESPONDER MANAGEMENT (1. RHU/MEDICS, 2. BFP/FIRE, 3. PNP/POLICE)" -ForegroundColor Cyan
+        Write-Host "  [7]  Create Responders (createresponders - Email, Password & Confirm Password)"
         Write-Host "  [8]  Edit Responder (Choose Unit, Search list, Email & Password only)"
         Write-Host "  [9]  Delete Responder (Choose Unit, Search list)"
         Write-Host ""
-        Write-Host " CIVILIAN MANAGEMENT (Email & Password Only)" -ForegroundColor Magenta
-        Write-Host "  [10] Create Civilian (Email & Password only)"
+        Write-Host " CIVILIAN MANAGEMENT (Email, Password & Confirm Password)" -ForegroundColor Magenta
+        Write-Host "  [10] Create Civilians (createcivilians - Email, Password & Confirm Password)"
         Write-Host "  [11] Edit Civilian (Search list, Email & Password only)"
         Write-Host "  [12] Delete Civilian (Search list)"
         Write-Host ""
@@ -938,7 +1022,7 @@ function Show-MainMenu {
         Write-Host "  [15] DOCKER CLEAN BUILD / REBUILD (Compose down, build --no-cache, up -d)"
         Write-Host "  [16] AUTO-INSTALL ALL REQUIREMENTS (.NET 10, Node.js, SSMS/PG, npm modules)" -ForegroundColor Yellow
         Write-Host "  [17] DOCKER UP & BUILD (docker compose up -d --build)" -ForegroundColor DarkCyan
-        Write-Host "  [18] DOCKER CLI OPERATIONS (Superadmin / Responder / Civilian / DB Migrate)" -ForegroundColor DarkCyan
+        Write-Host "  [18] DOCKER CLI OPERATIONS (createsuperadmin / createresponders / createcivilians / DB Migrate)" -ForegroundColor DarkCyan
         Write-Host ""
         Write-Host "  [0]  Exit Console"
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
@@ -999,47 +1083,63 @@ function Show-SystemStatus {
 # --- CLI Dispatcher Entrypoint ---
 if ($Action) {
     switch ($Action.ToLowerInvariant()) {
-        "start"                         { Start-AllEngines }
-        "-start"                        { Start-AllEngines }
-        "dev"                           { Start-AllEngines }
-        "-dev"                          { Start-AllEngines }
-        "stop"                          { Stop-PortProcesses }
-        "status"                        { Show-SystemStatus }
-        "migrate"                       { Manage-DatabaseMigrations }
-        "addmigration"                  { Invoke-AddMigration -MigrationArgs $RemainingArgs }
-        "updatedatabase"                { Invoke-UpdateDatabase }
-        "superadmin"                    { Create-SuperadminAccount }
-        "createsuperadmin"              { Invoke-DockerBackendCli -CommandName "customcreatesuperadmin" -CliArgs $RemainingArgs }
-        "customcreatesuperadmin"        { Invoke-DockerBackendCli -CommandName "customcreatesuperadmin" -CliArgs $RemainingArgs }
-        "createcustomsuperadmin"        { Invoke-DockerBackendCli -CommandName "customcreatesuperadmin" -CliArgs $RemainingArgs }
-        "createresponder"               { Invoke-DockerBackendCli -CommandName "customcreateresponderuser" -CliArgs $RemainingArgs }
-        "customcreateresponderuser"     { Invoke-DockerBackendCli -CommandName "customcreateresponderuser" -CliArgs $RemainingArgs }
-        "createcustomresponder"         { Invoke-DockerBackendCli -CommandName "customcreateresponderuser" -CliArgs $RemainingArgs }
-        "createcivilian"                { Invoke-DockerBackendCli -CommandName "customercreatecivilianuser" -CliArgs $RemainingArgs }
-        "customercreatecivilianuser"    { Invoke-DockerBackendCli -CommandName "customercreatecivilianuser" -CliArgs $RemainingArgs }
-        "customcreatecivilianuser"      { Invoke-DockerBackendCli -CommandName "customercreatecivilianuser" -CliArgs $RemainingArgs }
-        "createcustomcivilian"          { Invoke-DockerBackendCli -CommandName "customercreatecivilianuser" -CliArgs $RemainingArgs }
-        "refresh"                       { Invoke-HardHotRefresh }
-        "rebuild"                       { Invoke-CleanRebuild }
-        "cleanbuild"                    { Invoke-DockerRebuild }
-        "docker"                        { Invoke-DockerRebuild }
-        "docker-cleanbuild"             { Invoke-DockerRebuild }
-        "docker-rebuild"                { Invoke-DockerRebuild }
-        "docker-up"                     { Invoke-DockerUpBuild }
-        "docker-build"                  { Invoke-DockerUpBuild }
-        "docker-down"                   { Push-Location $RootDir; try { docker compose down } finally { Pop-Location } }
-        "docker-status"                 { Push-Location $RootDir; try { docker compose ps } finally { Pop-Location } }
-        "docker-updatedatabase"         { Invoke-DockerBackendCli -CommandName "updatedatabase" }
-        "docker-createsuperadmin"       { Invoke-DockerBackendCli -CommandName "customcreatesuperadmin" -CliArgs $RemainingArgs }
-        "docker-customcreatesuperadmin" { Invoke-DockerBackendCli -CommandName "customcreatesuperadmin" -CliArgs $RemainingArgs }
-        "docker-createcustomsuperadmin" { Invoke-DockerBackendCli -CommandName "customcreatesuperadmin" -CliArgs $RemainingArgs }
-        "docker-createresponder"        { Invoke-DockerBackendCli -CommandName "customcreateresponderuser" -CliArgs $RemainingArgs }
-        "docker-customcreateresponderuser" { Invoke-DockerBackendCli -CommandName "customcreateresponderuser" -CliArgs $RemainingArgs }
-        "docker-createcustomresponder"  { Invoke-DockerBackendCli -CommandName "customcreateresponderuser" -CliArgs $RemainingArgs }
-        "docker-createcivilian"         { Invoke-DockerBackendCli -CommandName "customercreatecivilianuser" -CliArgs $RemainingArgs }
-        "docker-customercreatecivilianuser" { Invoke-DockerBackendCli -CommandName "customercreatecivilianuser" -CliArgs $RemainingArgs }
-        "docker-customcreatecivilianuser" { Invoke-DockerBackendCli -CommandName "customercreatecivilianuser" -CliArgs $RemainingArgs }
-        "docker-createcustomcivilian"   { Invoke-DockerBackendCli -CommandName "customercreatecivilianuser" -CliArgs $RemainingArgs }
+        "start"                             { Start-AllEngines }
+        "-start"                            { Start-AllEngines }
+        "dev"                               { Start-AllEngines }
+        "-dev"                              { Start-AllEngines }
+        "stop"                              { Stop-PortProcesses }
+        "status"                            { Show-SystemStatus }
+        "migrate"                           { Manage-DatabaseMigrations }
+        "addmigration"                      { Invoke-AddMigration -MigrationArgs $RemainingArgs }
+        "updatedatabase"                    { Invoke-UpdateDatabase }
+        "superadmin"                        { Create-SuperadminAccount }
+        "createsuperadmin"                  { Invoke-DockerBackendCli -CommandName "createsuperadmin" -CliArgs $RemainingArgs }
+        "customcreatesuperadmin"            { Invoke-DockerBackendCli -CommandName "createsuperadmin" -CliArgs $RemainingArgs }
+        "createcustomsuperadmin"            { Invoke-DockerBackendCli -CommandName "createsuperadmin" -CliArgs $RemainingArgs }
+        "createresponders"                  { Invoke-DockerBackendCli -CommandName "createresponders" -CliArgs $RemainingArgs }
+        "createresponder"                   { Invoke-DockerBackendCli -CommandName "createresponders" -CliArgs $RemainingArgs }
+        "customcreateresponders"            { Invoke-DockerBackendCli -CommandName "createresponders" -CliArgs $RemainingArgs }
+        "customcreateresponderuser"         { Invoke-DockerBackendCli -CommandName "createresponders" -CliArgs $RemainingArgs }
+        "createcustomresponder"             { Invoke-DockerBackendCli -CommandName "createresponders" -CliArgs $RemainingArgs }
+        "createcivilians"                   { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "createcivilian"                    { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "customcreatecivilians"             { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "customercreatecivilianuser"        { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "customcreatecivilianuser"          { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "createcustomcivilian"              { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "refresh"                           { Invoke-HardHotRefresh }
+        "rebuild"                           { Invoke-CleanRebuild }
+        "cleanbuild"                        { Invoke-DockerRebuild }
+        "docker"                            { Invoke-DockerRebuild }
+        "docker-cleanbuild"                 { Invoke-DockerRebuild }
+        "docker-rebuild"                    { Invoke-DockerRebuild }
+        "docker-up"                         { Invoke-DockerUpBuild }
+        "docker-build"                      { Invoke-DockerUpBuild }
+        "docker-down"                       { Push-Location $RootDir; try { docker compose down } finally { Pop-Location } }
+        "docker-status"                     { Push-Location $RootDir; try { docker compose ps } finally { Pop-Location } }
+        "docker-updatedatabase"             { Invoke-DockerBackendCli -CommandName "updatedatabase" }
+        "docker-createsuperadmin"           { Invoke-DockerBackendCli -CommandName "createsuperadmin" -CliArgs $RemainingArgs }
+        "docker-customcreatesuperadmin"     { Invoke-DockerBackendCli -CommandName "createsuperadmin" -CliArgs $RemainingArgs }
+        "docker-createcustomsuperadmin"     { Invoke-DockerBackendCli -CommandName "createsuperadmin" -CliArgs $RemainingArgs }
+        "docker-createresponders"           { Invoke-DockerBackendCli -CommandName "createresponders" -CliArgs $RemainingArgs }
+        "docker-createresponder"            { Invoke-DockerBackendCli -CommandName "createresponders" -CliArgs $RemainingArgs }
+        "docker-customcreateresponders"     { Invoke-DockerBackendCli -CommandName "createresponders" -CliArgs $RemainingArgs }
+        "docker-customcreateresponderuser"  { Invoke-DockerBackendCli -CommandName "createresponders" -CliArgs $RemainingArgs }
+        "docker-createcustomresponder"      { Invoke-DockerBackendCli -CommandName "createresponders" -CliArgs $RemainingArgs }
+        "docker-createcivilians"            { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "docker-createcivilian"             { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "docker-customcreatecivilians"      { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "docker-customercreatecivilianuser" { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "docker-customcreatecivilianuser"   { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "docker-createcustomcivilian"       { Invoke-DockerBackendCli -CommandName "createcivilians" -CliArgs $RemainingArgs }
+        "useredit"                          { Invoke-DockerBackendCli -CommandName "useredit" -CliArgs $RemainingArgs }
+        "edituser"                          { Invoke-DockerBackendCli -CommandName "useredit" -CliArgs $RemainingArgs }
+        "docker-useredit"                   { Invoke-DockerBackendCli -CommandName "useredit" -CliArgs $RemainingArgs }
+        "docker-edituser"                   { Invoke-DockerBackendCli -CommandName "useredit" -CliArgs $RemainingArgs }
+        "userdelete"                        { Invoke-DockerBackendCli -CommandName "userdelete" -CliArgs $RemainingArgs }
+        "deleteuser"                        { Invoke-DockerBackendCli -CommandName "userdelete" -CliArgs $RemainingArgs }
+        "docker-userdelete"                 { Invoke-DockerBackendCli -CommandName "userdelete" -CliArgs $RemainingArgs }
+        "docker-deleteuser"                 { Invoke-DockerBackendCli -CommandName "userdelete" -CliArgs $RemainingArgs }
         "install"       { 
             $installScript = Join-Path $PSScriptRoot "install_requirements.ps1"
             & $installScript

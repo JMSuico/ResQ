@@ -46,6 +46,7 @@ interface AdminProfileDto {
   employeeOrResidentId?: string;
   avatarDataUrl?: string | null;
   avatarUrl?: string | null;
+  isCliProtectedSuperAdmin?: boolean;
 }
 
 export interface CryptographicAuditItem {
@@ -83,6 +84,7 @@ export const SettingsPage: FC = () => {
   const [rank, setRank] = useState<string>('');
   const [employeeId, setEmployeeId] = useState<string>('');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [isCliProtectedSuperAdmin, setIsCliProtectedSuperAdmin] = useState<boolean>(false);
 
   const [broadcastRadius, setBroadcastRadius] = useState<string>('15km');
   const [laplacianThreshold, setLaplacianThreshold] = useState<number>(DEFAULT_LAPLACIAN_VALUE);
@@ -166,6 +168,7 @@ export const SettingsPage: FC = () => {
         if (profile.phoneNumber !== undefined) setPhone(profile.phoneNumber || '');
         if (profile.rankOrTitle !== undefined) setRank(profile.rankOrTitle || '');
         if (profile.employeeOrResidentId !== undefined) setEmployeeId(profile.employeeOrResidentId || '');
+        setIsCliProtectedSuperAdmin(Boolean(profile.isCliProtectedSuperAdmin));
         const resolvedAvatar = profile.avatarDataUrl || profile.avatarUrl || '';
         setAvatarUrl(resolvedAvatar);
       }
@@ -181,6 +184,10 @@ export const SettingsPage: FC = () => {
   }, [loadProfile, loadPlatformSettings, loadAuditTrail]);
 
   const handleAvatarChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (isCliProtectedSuperAdmin) {
+      showToast('CLI-created Superadmin accounts cannot be edited in the UI. Use Docker CLI (useredit).');
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -216,6 +223,10 @@ export const SettingsPage: FC = () => {
   };
 
   const handleResetAvatar = async (): Promise<void> => {
+    if (isCliProtectedSuperAdmin) {
+      showToast('CLI-created Superadmin accounts cannot be edited in the UI. Use Docker CLI (useredit).');
+      return;
+    }
     setIsSaving(true);
     try {
       await requestJson<{ message?: string }>('/api/profile', {
@@ -236,6 +247,10 @@ export const SettingsPage: FC = () => {
 
   const handleSaveProfile = async (e: FormEvent) => {
     e.preventDefault();
+    if (isCliProtectedSuperAdmin) {
+      showToast('CLI-created Superadmin accounts cannot be edited in the UI. Use Docker CLI (useredit).');
+      return;
+    }
     setIsSaving(true);
     const trimmedName = fullName.trim();
     const parts = trimmedName ? trimmedName.split(/\s+/) : [];
@@ -375,10 +390,23 @@ export const SettingsPage: FC = () => {
                 Port 1996 clearance
               </p>
             </div>
-            <AdminButton variant="primary" size="sm" type="submit" disabled={isSaving} icon={<Save className="w-3.5 h-3.5" />}>
-              {isSaving ? 'Saving…' : 'Save Changes'}
+            <AdminButton variant="primary" size="sm" type="submit" disabled={isSaving || isCliProtectedSuperAdmin} icon={<Save className="w-3.5 h-3.5" />}>
+              {isCliProtectedSuperAdmin ? 'CLI-Protected (Read-Only)' : isSaving ? 'Saving…' : 'Save Changes'}
             </AdminButton>
           </div>
+
+          {isCliProtectedSuperAdmin && (
+            <div className="p-4 rounded-xl bg-[#670626]/10 border border-[#670626]/30 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-[#670626]">
+                  CLI-Created Superadmin Account (Read-Only in Frontend/UI)
+                </p>
+                <p className="text-xs text-[#670626]/80 mt-0.5">
+                  This Superadmin account was provisioned via Docker CLI and cannot be edited, suspended, or deleted from the web UI. Use <code className="font-mono font-bold">docker compose exec -it resqtrack-backend dotnet Backend.dll useredit</code> to modify credentials.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className={`${CLAY_WELL} flex flex-wrap items-center gap-6 p-4`}>
             <div className="relative w-20 h-20 rounded-2xl overflow-hidden border-2 border-[#670626] shadow-md bg-[#F7F1EA] flex items-center justify-center flex-shrink-0">
@@ -396,19 +424,27 @@ export const SettingsPage: FC = () => {
               <h3 className="text-base font-bold text-[#670626]">Profile Photo</h3>
               <p className="text-xs text-[#A83B4D]">PNG or JPG, max 2MB.</p>
               <div className="flex items-center gap-3 pt-1">
-                <label className="cursor-pointer px-3.5 py-2 rounded-xl bg-[#670626] hover:bg-[#4A041A] text-xs font-mono font-bold text-[#F7F1EA] transition-all inline-block">
-                  Upload Photo
-                  <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
-                </label>
-                {avatarUrl && (
-                  <button
-                    type="button"
-                    onClick={() => void handleResetAvatar()}
-                    disabled={isSaving}
-                    className="text-xs text-[#A83B4D] hover:text-[#670626] font-mono font-bold cursor-pointer"
-                  >
-                    Reset to Default
-                  </button>
+                {!isCliProtectedSuperAdmin ? (
+                  <>
+                    <label className="cursor-pointer px-3.5 py-2 rounded-xl bg-[#670626] hover:bg-[#4A041A] text-xs font-mono font-bold text-[#F7F1EA] transition-all inline-block">
+                      Upload Photo
+                      <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+                    </label>
+                    {avatarUrl && (
+                      <button
+                        type="button"
+                        onClick={() => void handleResetAvatar()}
+                        disabled={isSaving}
+                        className="text-xs text-[#A83B4D] hover:text-[#670626] font-mono font-bold cursor-pointer"
+                      >
+                        Reset to Default
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-xs font-mono font-bold text-[#670626]">
+                    Locked by CLI Governance Policy
+                  </span>
                 )}
               </div>
             </div>
@@ -417,23 +453,23 @@ export const SettingsPage: FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="font-mono text-xs text-[#670626] font-bold block mb-1.5 uppercase tracking-wider">Full Legal Name</label>
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className={CLAY_INPUT} />
+              <input type="text" value={fullName} disabled={isCliProtectedSuperAdmin} onChange={(e) => setFullName(e.target.value)} className={`${CLAY_INPUT} disabled:opacity-60 disabled:cursor-not-allowed`} />
             </div>
             <div>
               <label className="font-mono text-xs text-[#670626] font-bold block mb-1.5 uppercase tracking-wider">Command Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={CLAY_INPUT} />
+              <input type="email" value={email} disabled={isCliProtectedSuperAdmin} onChange={(e) => setEmail(e.target.value)} className={`${CLAY_INPUT} disabled:opacity-60 disabled:cursor-not-allowed`} />
             </div>
             <div>
               <label className="font-mono text-xs text-[#670626] font-bold block mb-1.5 uppercase tracking-wider">Personal Contact Phone</label>
-              <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} className={CLAY_INPUT} />
+              <input type="text" value={phone} disabled={isCliProtectedSuperAdmin} onChange={(e) => setPhone(e.target.value)} className={`${CLAY_INPUT} disabled:opacity-60 disabled:cursor-not-allowed`} />
             </div>
             <div>
               <label className="font-mono text-xs text-[#670626] font-bold block mb-1.5 uppercase tracking-wider">Executive Rank / Position</label>
-              <input type="text" value={rank} onChange={(e) => setRank(e.target.value)} className={CLAY_INPUT} />
+              <input type="text" value={rank} disabled={isCliProtectedSuperAdmin} onChange={(e) => setRank(e.target.value)} className={`${CLAY_INPUT} disabled:opacity-60 disabled:cursor-not-allowed`} />
             </div>
             <div className="sm:col-span-2">
               <label className="font-mono text-xs text-[#670626] font-bold block mb-1.5 uppercase tracking-wider">Employee / Plantilla Clearance ID</label>
-              <input type="text" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className={CLAY_INPUT} />
+              <input type="text" value={employeeId} disabled={isCliProtectedSuperAdmin} onChange={(e) => setEmployeeId(e.target.value)} className={`${CLAY_INPUT} disabled:opacity-60 disabled:cursor-not-allowed`} />
             </div>
           </div>
         </form>

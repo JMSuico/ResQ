@@ -23,6 +23,7 @@ export interface UserSummary {
   createdAt: string;
   fullAddress?: string;
   phoneNumber?: string;
+  isCliProtectedSuperAdmin?: boolean;
 }
 
 export interface UserDetail extends UserSummary {

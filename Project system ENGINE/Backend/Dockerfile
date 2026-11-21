@@ -18,10 +18,7 @@ RUN dotnet publish Backend.csproj -c Release -o /app/publish /p:UseAppHost=false
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 python3 python3-venv libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
-RUN python3 -m venv /opt/roboflow-venv \
-    && /opt/roboflow-venv/bin/pip install --no-cache-dir "inference-sdk>=1.5.0"
-ENV PATH="/opt/roboflow-venv/bin:${PATH}"
+RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/publish .
 RUN mkdir -p /app/server-data/uploads/captures /app/server-data/uploads/reports /app/LocalConfig

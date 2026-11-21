@@ -386,7 +386,7 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
           <AdminButton type="button" variant="outline" size="sm" onClick={onClose}>
             Close
           </AdminButton>
-          {user && onEdit && (
+          {user && onEdit && !user.isCliProtectedSuperAdmin && (
             <AdminButton
               type="button"
               variant="primary"
@@ -399,6 +399,11 @@ export const ViewUserDetailModal: React.FC<ViewUserDetailModalProps> = ({
             >
               Edit Profile
             </AdminButton>
+          )}
+          {user?.isCliProtectedSuperAdmin && (
+            <span className="px-3 py-2 rounded-lg bg-[#670626]/10 border border-[#670626]/30 text-[#670626] text-[11px] font-bold uppercase tracking-wider">
+              CLI-Protected Superadmin (Manage via Docker CLI)
+            </span>
           )}
         </div>
       </AdminModalCard>

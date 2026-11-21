@@ -172,7 +172,8 @@ public record UserDetailResponse(
     bool IsOrganDonor = false,
     string? SecondaryContactName = null,
     string? SecondaryContactPhone = null,
-    string? AvatarUrl = null
+    string? AvatarUrl = null,
+    bool IsCliProtectedSuperAdmin = false
 );
 
 public record PagedResult<T>(

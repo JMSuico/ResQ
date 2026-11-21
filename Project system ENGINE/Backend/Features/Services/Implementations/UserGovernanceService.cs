@@ -144,6 +144,8 @@ public class UserGovernanceService(
     {
         var user = await userRepo.GetByIdAsync(id, ct);
         if (user == null) return (false, "User not found.");
+        if (IsCliCreatedSuperAdmin(user))
+            return (false, "CLI-created Superadmin accounts cannot be edited from the Frontend/UI. Use Docker CLI (useredit).");
 
         user.FirstName = InputSanitizer.Sanitize(request.FirstName);
         user.MiddleName = InputSanitizer.Sanitize(request.MiddleName);
@@ -240,6 +242,8 @@ public class UserGovernanceService(
     {
         var user = await userRepo.GetByIdAsync(userId, ct);
         if (user == null) return (false, "User not found.");
+        if (IsCliCreatedSuperAdmin(user))
+            return (false, "CLI-created Superadmin accounts cannot be edited from the Frontend/UI. Use Docker CLI (useredit).");
 
         if (!string.IsNullOrWhiteSpace(request.FirstName)) user.FirstName = InputSanitizer.Sanitize(request.FirstName);
         if (request.MiddleName != null) user.MiddleName = InputSanitizer.Sanitize(request.MiddleName);
@@ -320,6 +324,8 @@ public class UserGovernanceService(
     {
         var user = await userRepo.GetByIdAsync(id, ct);
         if (user == null) return (false, "User not found.");
+        if (IsCliCreatedSuperAdmin(user))
+            return (false, "CLI-created Superadmin accounts cannot be deleted from the Frontend/UI. Use Docker CLI (userdelete).");
 
         if (id == adminId) return (false, "Administrators cannot delete their own account.");
 
@@ -368,6 +374,8 @@ public class UserGovernanceService(
     {
         var targetUser = await userRepo.GetByIdAsync(targetUserId, ct);
         if (targetUser == null) return (false, "User not found.");
+        if (IsCliCreatedSuperAdmin(targetUser))
+            return (false, "CLI-created Superadmin accounts cannot be suspended, restricted, or modified from the Frontend/UI. Use Docker CLI (useredit / userdelete).");
 
         targetUser.Status = status;
         if (status == AccountStatus.Verified)
@@ -422,6 +430,10 @@ public class UserGovernanceService(
     public async Task<string?> GetUserAvatarCapturePathAsync(Guid userId, CancellationToken ct = default) =>
         (await userRepo.GetByIdWithDeletedAsync(userId, ct))?.AvatarCapturePath;
 
+    public static bool IsCliCreatedSuperAdmin(User u) =>
+        u.Role == UserRole.LDRRMO_Admin &&
+        !string.Equals(u.IdentityVerificationProvider, "AdminProvisioned", StringComparison.OrdinalIgnoreCase);
+
     private static UserResponse MapToUserResponse(User u) => new(
         u.Id,
         u.FullName,
@@ -441,7 +453,8 @@ public class UserGovernanceService(
         u.EffectiveDisplayName,
         u.IdentityVerificationStatus,
         u.FacialVerificationStatus,
-        !string.IsNullOrWhiteSpace(u.IdBackCapturePath)
+        !string.IsNullOrWhiteSpace(u.IdBackCapturePath),
+        IsCliCreatedSuperAdmin(u)
     );
 
     private static UserDetailResponse MapToUserDetailResponse(User u) => new(
@@ -512,6 +525,7 @@ public class UserGovernanceService(
         u.IsOrganDonor,
         u.SecondaryContactName,
         u.SecondaryContactPhone,
-        !string.IsNullOrWhiteSpace(u.AvatarCapturePath) ? $"/api/users/{u.Id}/captures/avatar" : null
+        !string.IsNullOrWhiteSpace(u.AvatarCapturePath) ? $"/api/users/{u.Id}/captures/avatar" : null,
+        IsCliCreatedSuperAdmin(u)
     );
 }

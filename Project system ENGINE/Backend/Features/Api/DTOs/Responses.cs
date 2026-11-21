@@ -112,7 +112,8 @@ public record UserResponse(
     string DisplayName = "",
     string IdentityVerificationStatus = "PendingReview",
     string FacialVerificationStatus = "PendingReview",
-    bool HasIdBackCapture = false
+    bool HasIdBackCapture = false,
+    bool IsCliProtectedSuperAdmin = false
 );
 
 public record ReportResponse(
