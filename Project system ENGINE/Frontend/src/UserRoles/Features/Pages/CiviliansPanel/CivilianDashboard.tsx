@@ -28,7 +28,6 @@ import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { useDistressBeacon } from '@/Hooks/useDistressBeacon';
-import { BASELINE_INCIDENT_FIXTURES } from '@/Libs/Assets/baselineFixtures';
 import { CivilianButton } from './Shared/CivilianButton';
 
 const REFRESH_INTERVAL_MS = 8000;
@@ -107,7 +106,7 @@ export const CivilianDashboard: React.FC = () => {
         getMyReports().catch(() => [])
       ]);
 
-      setFixtures(Array.isArray(f) && f.length > 0 ? f : BASELINE_INCIDENT_FIXTURES);
+      setFixtures(Array.isArray(f) ? f : []);
 
       const safeMine = Array.isArray(myRepList) ? (myRepList as ExtendedReportItem[]) : [];
       const filteredMine = safeMine.filter((r) => {
@@ -125,7 +124,7 @@ export const CivilianDashboard: React.FC = () => {
       setMyReports(filteredMine);
     } catch (err) {
       console.error('Error refreshing civilian dashboard feeds:', err);
-      setFixtures((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_FIXTURES));
+      setFixtures([]);
     }
   }, [session?.userId]);
 

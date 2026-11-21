@@ -169,38 +169,9 @@ export const PatientCareRecordModal: FC<PatientCareRecordModalProps> = ({
           }`.trim()
         };
 
-        try {
-          const res = await submitPcrRecord(payload);
-          if (res.data) {
-            lastSavedRecord = res.data;
-          }
-        } catch {
-          // Fallback local synthetic record if backend endpoint is offline
-          lastSavedRecord = {
-            id: c.id,
-            pcrReference: `PCR-${Date.now().toString().slice(-6)}`,
-            reportId: reportId || null,
-            responderUserId: 'RHU-MEDIC-01',
-            medicName: 'Duty Paramedic',
-            unitCode: 'RHU-ALPHA-1',
-            patientName: c.patientName.trim(),
-            age: Number(c.age) || 0,
-            gender: c.gender,
-            weightKg: 65,
-            levelOfConsciousness: c.levelOfConsciousness,
-            bloodPressureSystolic: Number(c.bpSystolic) || 120,
-            bloodPressureDiastolic: Number(c.bpDiastolic) || 80,
-            heartRateBpm: Number(c.heartRate) || 80,
-            respiratoryRate: Number(c.respiratoryRate) || 16,
-            spO2Percent: Number(c.spO2) || 98,
-            bloodGlucoseMgDl: Number(c.glucose) || 100,
-            temperatureCelsius: Number(c.temp) || 36.5,
-            interventions: c.interventions,
-            anatomicalInjuries: [],
-            chiefComplaint: c.chiefComplaint.trim(),
-            narrative: c.narrative.trim(),
-            createdAt: c.recordedAt
-          };
+        const res = await submitPcrRecord(payload);
+        if (res.data) {
+          lastSavedRecord = res.data;
         }
       }
 

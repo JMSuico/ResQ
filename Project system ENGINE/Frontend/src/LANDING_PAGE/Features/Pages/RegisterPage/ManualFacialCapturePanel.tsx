@@ -292,7 +292,7 @@ const computeLaplacianVariance = (
       }
     }
 
-    if (sampleCount === 0) return { variance: 548.6, meanLuminance: 128 };
+    if (sampleCount === 0) return { variance: 0, meanLuminance: 0 };
     const mean = sum / sampleCount;
     const variance = sumSq / sampleCount - mean * mean;
     return {
@@ -300,7 +300,7 @@ const computeLaplacianVariance = (
       meanLuminance: Math.round(meanLuminance * 10) / 10
     };
   } catch {
-    return { variance: 548.6, meanLuminance: 128 };
+    return { variance: 0, meanLuminance: 0 };
   }
 };
 
@@ -326,13 +326,13 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
   const [cameraState, setCameraState] = useState<'idle' | 'requesting' | 'streaming' | 'denied' | 'error'>('idle');
   const [isFaceDetected, setIsFaceDetected] = useState<boolean>(false);
   const [currentPose, setCurrentPose] = useState<BiometricPose>('CENTER');
-  const [measuredFps, setMeasuredFps] = useState<number>(30);
-  const [fpsBracket, setFpsBracket] = useState<string>('30-60 FPS');
+  const [measuredFps, setMeasuredFps] = useState<number>(0);
+  const [fpsBracket, setFpsBracket] = useState<string>('STANDBY');
   const lastFrameTimestampRef = useRef<number>(performance.now());
   const lastUiUpdateRef = useRef<number>(0);
   const lastDetectedFaceRef = useRef<boolean>(false);
-  const smoothedVarRef = useRef<number>(548.6);
-  const smoothedFpsRef = useRef<number>(60);
+  const smoothedVarRef = useRef<number>(0);
+  const smoothedFpsRef = useRef<number>(0);
   const poseStartTimeRef = useRef<number>(performance.now());
   const prevGrayRef = useRef<Float32Array | undefined>(undefined);
   const poseAdvanceLockRef = useRef<boolean>(false);
@@ -361,7 +361,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     UP: '',
     BLINK: ''
   });
-  const [lastLaplacian, setLastLaplacian] = useState<number>(548.6);
+  const [lastLaplacian, setLastLaplacian] = useState<number>(0);
   const [draftDataUrl, setDraftDataUrl] = useState<string | null>(capturedDataUrl);
   const [draftDimensions, setDraftDimensions] = useState<{ width: number; height: number; byteSize: number }>({
     width: 800,
@@ -490,7 +490,10 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     if (delta > 0 && delta < 1000) {
       const instantFps = Math.round(1000 / delta);
       // EMA smoothing on FPS to eliminate rapid number flicker
-      smoothedFpsRef.current = Math.round(smoothedFpsRef.current * 0.85 + instantFps * 0.15);
+      smoothedFpsRef.current =
+        smoothedFpsRef.current === 0
+          ? instantFps
+          : Math.round(smoothedFpsRef.current * 0.85 + instantFps * 0.15);
     }
 
     const width = 320;
@@ -522,9 +525,12 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
 
     const { variance } = computeLaplacianVariance(ctx, width, height);
 
-    const effectiveVar = variance > 0 ? variance : 548.6;
-    // Exponential smoothing on variance to prevent wild visual spikes (e.g. 1100, 2100, 3110) from thrashing text layout
-    smoothedVarRef.current = Math.round(smoothedVarRef.current * 0.75 + effectiveVar * 0.25);
+    const effectiveVar = variance > 0 ? variance : 0;
+    // Exponential smoothing on variance to prevent wild visual spikes from thrashing text layout
+    smoothedVarRef.current =
+      smoothedVarRef.current === 0
+        ? Math.round(effectiveVar)
+        : Math.round(smoothedVarRef.current * 0.75 + effectiveVar * 0.25);
 
     const trackedYaw = skinRes
       ? Math.round(skinRes.yawDegrees * 10) / 10
@@ -542,7 +548,14 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     // Gate frame ingestion by genuine tracked face presence so empty background frames never poison bestFrames
     if (skinRes?.isValidFace) {
       const frameDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      biometricFrameCache.addFrame(currentPose, frameDataUrl, effectiveVar, trackedYaw, trackedPitch);
+      biometricFrameCache.addFrame(
+        currentPose,
+        frameDataUrl,
+        effectiveVar,
+        trackedYaw,
+        trackedPitch,
+        true
+      );
     }
 
     const elapsed = Math.max(0, (now - poseStartTimeRef.current) / 1000);
@@ -684,10 +697,14 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     poseAdvanceLockRef.current = true;
     setLocalError('');
 
-    // Ensure at least 60 frames are buffered for the current pose if locked rapidly during live/headless stream
     const currentCounts = biometricFrameCache.getPoseCounts();
     if ((currentCounts[currentPose] || 0) === 0) {
       let fallbackFrameUrl = '';
+      let measuredVar = 0;
+      let trackedRealFace = false;
+      let trackedYaw = 0;
+      let trackedPitch = 0;
+
       if (videoRef.current && samplingCanvasRef.current && videoRef.current.readyState >= 2) {
         const canvas = samplingCanvasRef.current;
         canvas.width = 320;
@@ -695,6 +712,20 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+          const imgData = ctx.getImageData(0, 0, 320, 240);
+          const skinRes = trackSkinFace(
+            imgData.data,
+            320,
+            240,
+            { cx: 160, cy: 120, rx: 84, ry: 102 },
+            prevGrayRef.current
+          );
+          trackedRealFace = Boolean(skinRes?.isValidFace);
+          if (skinRes) {
+            trackedYaw = Math.round(skinRes.yawDegrees * 10) / 10;
+            trackedPitch = Math.round(skinRes.pitchDegrees * 10) / 10;
+          }
+          measuredVar = computeLaplacianVariance(ctx, 320, 240).variance;
           fallbackFrameUrl = canvas.toDataURL('image/jpeg', 0.85);
         }
       }
@@ -711,13 +742,19 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           tCtx.beginPath();
           tCtx.ellipse(160, 120, 70, 90, 0, 0, Math.PI * 2);
           tCtx.stroke();
+          measuredVar = computeLaplacianVariance(tCtx, 320, 240).variance;
           fallbackFrameUrl = tempCanvas.toDataURL('image/jpeg', 0.85);
         }
       }
-      const fallbackYaw = currentPose === 'RIGHT' ? 26.5 : currentPose === 'LEFT' ? -26.4 : 0;
-      for (let i = 0; i < 60; i++) {
-        biometricFrameCache.addFrame(currentPose, fallbackFrameUrl, 548.6, fallbackYaw, 0);
-      }
+      biometricFrameCache.addFrame(
+        currentPose,
+        fallbackFrameUrl,
+        measuredVar,
+        trackedYaw,
+        trackedPitch,
+        trackedRealFace
+      );
+      setLastLaplacian(measuredVar);
     }
 
     // Flush pose counts and best frames to state immediately upon locking
@@ -819,11 +856,12 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     ctx.fillStyle = '#0e0106';
     ctx.fillRect(0, 0, 800, 600);
 
+    const liveCounts = biometricFrameCache.getPoseCounts();
     const quadrants: { pose: BiometricPose; title: string; subtitle: string; x: number; y: number; w: number; h: number }[] = [
-      { pose: 'CENTER', title: 'POSE 01 // CENTER LOCK (0°) [30-60 FPS STREAM]', subtitle: 'PUPIL CROSSHAIR ALIGNED // 60 FRAMES CACHED', x: 12, y: 12, w: 382, h: 260 },
-      { pose: 'RIGHT', title: 'POSE 02 // RIGHT PROFILE (+25°) [30-60 FPS STREAM]', subtitle: 'YAW +25.0° VERIFIED // 60 FRAMES CACHED', x: 406, y: 12, w: 382, h: 260 },
-      { pose: 'LEFT', title: 'POSE 03 // LEFT PROFILE (-25°) [30-60 FPS STREAM]', subtitle: 'YAW -25.0° VERIFIED // 60 FRAMES CACHED', x: 12, y: 284, w: 382, h: 260 },
-      { pose: 'BLINK', title: 'POSE 04 // EYE BLINK LIVENESS [30-60 FPS STREAM]', subtitle: 'EYELID LIVENESS CONFIRMED // 60 FRAMES CACHED', x: 406, y: 284, w: 382, h: 260 }
+      { pose: 'CENTER', title: 'POSE 01 // CENTER LOCK (0°)', subtitle: `PUPIL CROSSHAIR ALIGNED // ${liveCounts.CENTER} FRAMES CACHED`, x: 12, y: 12, w: 382, h: 260 },
+      { pose: 'RIGHT', title: 'POSE 02 // RIGHT PROFILE (+25°)', subtitle: `YAW +25.0° // ${liveCounts.RIGHT} FRAMES CACHED`, x: 406, y: 12, w: 382, h: 260 },
+      { pose: 'LEFT', title: 'POSE 03 // LEFT PROFILE (-25°)', subtitle: `YAW -25.0° // ${liveCounts.LEFT} FRAMES CACHED`, x: 12, y: 284, w: 382, h: 260 },
+      { pose: 'BLINK', title: 'POSE 04 // EYE BLINK LIVENESS', subtitle: `EYELID LIVENESS // ${liveCounts.BLINK} FRAMES CACHED`, x: 406, y: 284, w: 382, h: 260 }
     ];
 
     const loadImage = (src: string): Promise<HTMLImageElement | null> => {
@@ -905,12 +943,15 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     }
     biometricFrameCache.clear();
 
-    const generateSyntheticFrame = (pose: BiometricPose, frameIndex: number): string => {
+    const generateSyntheticFrame = (
+      pose: BiometricPose,
+      frameIndex: number
+    ): { dataUrl: string; variance: number } => {
       const canvas = document.createElement('canvas');
       canvas.width = 640;
       canvas.height = 480;
       const ctx = canvas.getContext('2d');
-      if (!ctx) return '';
+      if (!ctx) return { dataUrl: '', variance: 0 };
 
       // Dark tactical canvas
       ctx.fillStyle = '#0e0106';
@@ -972,31 +1013,32 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       ctx.fillStyle = '#ff5c74';
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(`SYNTHETIC RESQTRACK RECORD // ${pose} (FRAME ${frameIndex + 1}/60 // 30-60 FPS)`, 320, 442);
+      ctx.fillText(`SYNTHETIC TEST RECORD // ${pose} (FRAME ${frameIndex + 1})`, 320, 442);
+
+      const { variance } = computeLaplacianVariance(ctx, 640, 480);
 
       ctx.fillStyle = '#ffb4ab';
       ctx.font = '10px monospace';
-      ctx.fillText('ANTI-SPOOFING LAPLACIAN TEXTURE VERIFIED // SCORE: 548.6 VAR', 320, 462);
+      ctx.fillText(`MEASURED LAPLACIAN TEXTURE // ${variance.toFixed(1)} VAR`, 320, 462);
 
-      return canvas.toDataURL('image/jpeg', 0.85);
+      return { dataUrl: canvas.toDataURL('image/jpeg', 0.85), variance };
     };
 
-    // Populate cache with 60 frames for each of the 4 poses (simulating 30-60 FPS stream)
+    let lastMeasuredVariance = 0;
     for (const pose of ORDERED_POSES) {
-      for (let f = 0; f < 60; f++) {
-        const frameDataUrl = generateSyntheticFrame(pose, f);
-        const yaw = pose === 'RIGHT' ? 25 : pose === 'LEFT' ? -25 : 0;
-        biometricFrameCache.addFrame(pose, frameDataUrl, 548.6, yaw, 0);
-      }
+      const { dataUrl: frameDataUrl, variance } = generateSyntheticFrame(pose, 0);
+      lastMeasuredVariance = variance;
+      const yaw = pose === 'RIGHT' ? 25 : pose === 'LEFT' ? -25 : 0;
+      biometricFrameCache.addFrame(pose, frameDataUrl, variance, yaw, 0, false);
     }
 
     const updatedCounts = biometricFrameCache.getPoseCounts();
     const updatedBestFrames = biometricFrameCache.getBestFrames();
     setPoseCounts(updatedCounts);
     setBestFrames(updatedBestFrames);
-    setLastLaplacian(548.6);
-    setMeasuredFps(60);
-    setFpsBracket('30-60 FPS HIGH-SPEED');
+    setLastLaplacian(lastMeasuredVariance);
+    setMeasuredFps(0);
+    setFpsBracket('SYNTHETIC RECORD');
     stopCameraStream();
     setCameraState('idle');
     setIsSynthesizing(false);
@@ -1067,20 +1109,30 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           statusMessage: staticFallbackNotice
         });
 
-        // Populate CENTER pose and provide placeholder multi-angle frames (60 frames per pose to simulate 30-60 FPS video buffer)
+        const offscreen = document.createElement('canvas');
+        const targetW = Math.min(320, Math.max(64, img.naturalWidth));
+        const targetH = Math.min(240, Math.max(64, img.naturalHeight));
+        offscreen.width = targetW;
+        offscreen.height = targetH;
+        const offCtx = offscreen.getContext('2d');
+        let measuredVar = 0;
+        if (offCtx) {
+          offCtx.drawImage(img, 0, 0, targetW, targetH);
+          measuredVar = computeLaplacianVariance(offCtx, targetW, targetH).variance;
+        }
+
         biometricFrameCache.clear();
         for (const pose of ORDERED_POSES) {
-          for (let i = 0; i < 60; i++) {
-            biometricFrameCache.addFrame(pose, resultUrl, 500, 0, 0);
-          }
+          biometricFrameCache.addFrame(pose, resultUrl, measuredVar, 0, 0, false);
         }
 
         const counts = biometricFrameCache.getPoseCounts();
         const best = biometricFrameCache.getBestFrames();
         setPoseCounts(counts);
         setBestFrames(best);
-        setMeasuredFps(60);
-        setFpsBracket('30-60 FPS HIGH-SPEED');
+        setLastLaplacian(measuredVar);
+        setMeasuredFps(0);
+        setFpsBracket('STATIC UPLOAD');
       };
       img.onerror = () => {
         setLocalError('Unable to decode facial photograph image.');
@@ -1166,7 +1218,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
         buildAlignedGeometricSignature(trainedProfile.descriptorVector, {
           strategy: claudeFacialBiometricStrategy.strategyName,
           version: '2.0',
-          samplingFps: measuredFps || 60,
+          samplingFps: measuredFps,
           yawRightDeg: computeAverageTrackedYaw(rightFrames, 0),
           yawLeftDeg: computeAverageTrackedYaw(leftFrames, 0),
           vectorNorm,
@@ -1187,7 +1239,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
             LEFT: poseSamples.LEFT,
             BLINK: poseSamples.BLINK
           },
-          fps: measuredFps || 60,
+          fps: measuredFps,
           targetFpsRange: '30-60 FPS',
           frameCounts: liveCounts
         },
@@ -1199,7 +1251,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           idVerificationToken,
           geometricSignatureJson: localGeometricSignatureJson,
           totalCachedFrames: liveCounts.total,
-          samplingFps: measuredFps || 60,
+          samplingFps: measuredFps,
           skipRemoteGeometryCall: !options?.callRemoteFaceToId
         }
       );
@@ -1350,10 +1402,11 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           descriptorVector: resolvedDescriptorVector,
           modelIdentifier: 'ResQTrack_Hybrid_CSLBP_Gabor_Haar',
           trainingStatus: resolvedTrainingStatus,
-          hasTrackedRealFace: true,
+          hasTrackedRealFace:
+            claudePkg.hasTrackedRealFace && !isSyntheticRecord && !isStaticFileUpload,
           isSyntheticTestRecord: isSyntheticRecord,
-          recordingFps: 60,
-          frameRateBracket: '30-60 FPS HIGH-SPEED',
+          recordingFps: measuredFps,
+          frameRateBracket: fpsBracket,
           targetFpsRange: '30-60 FPS',
           geometricSignatureJson: finalGeometricSignatureJson,
           poseFramesJson: finalPoseFramesJson,
@@ -1983,7 +2036,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                     textAnchor="middle"
                     letterSpacing="0.5"
                   >
-                    {`60 FPS BIOMETRIC BUFFER // ${Math.round(lastLaplacian)} VAR`}
+                    {measuredFps > 0
+                      ? `${measuredFps} FPS BIOMETRIC BUFFER // ${Math.round(lastLaplacian)} VAR`
+                      : `BIOMETRIC BUFFER // ${Math.round(lastLaplacian)} VAR`}
                   </text>
                 </svg>
               )}

@@ -788,5 +788,56 @@ public static class DatabaseSeeder
                 await db.SaveChangesAsync();
             }
         }
+
+        // Seed Initial Inter-Agency Dispatch Requests
+        if (!await db.DispatchRequests.AnyAsync())
+        {
+            var ldrrmoAdmin = await db.Users.FirstOrDefaultAsync(u => u.Email == "ldrrmo.admin@resqtrack.gov.ph");
+            var pnpOfficer = await db.Users.FirstOrDefaultAsync(u => u.Email == "pnp.patrol@resqtrack.gov.ph");
+
+            var dispatchRequests = new List<DispatchRequestRecord>
+            {
+                new()
+                {
+                    RequestCode = "DRQ-20261122-001",
+                    Direction = "INBOUND",
+                    TargetUnit = "RHU",
+                    OriginUnit = "LDRRMO",
+                    Title = "Medical Standby Request - Brgy. Uno Highway",
+                    Description = "LDRRMO Central Command requests RHU Katipunan ambulance standby near Katipunan Public Market during heavy monsoon traffic.",
+                    Severity = "High",
+                    Status = "PENDING",
+                    LocationLabel = "Barangay Uno, Katipunan, Zamboanga del Norte (7109)",
+                    Latitude = 8.5144,
+                    Longitude = 123.2851,
+                    RequestedByUserId = ldrrmoAdmin?.Id,
+                    RequestedByName = ldrrmoAdmin?.FullName ?? "Director Alejandro Ramos",
+                    CreatedAtUtc = DateTime.UtcNow.AddMinutes(-20),
+                    UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-20)
+                },
+                new()
+                {
+                    RequestCode = "DRQ-20261122-002",
+                    Direction = "OUTBOUND",
+                    TargetUnit = "FIRE",
+                    OriginUnit = "PNP",
+                    Title = "HazMat & Roadway Washdown Support - Brgy. Barra",
+                    Description = "PNP Patrol Sector 1 requests BFP Katipunan Engine Company 1 for fuel spill containment along National Highway.",
+                    Severity = "Medium",
+                    Status = "APPROVED",
+                    LocationLabel = "Barangay Barra, Katipunan, Zamboanga del Norte (7109)",
+                    Latitude = 8.5129,
+                    Longitude = 123.2845,
+                    RequestedByUserId = pnpOfficer?.Id,
+                    RequestedByName = pnpOfficer?.FullName ?? "Patrolman Ricardo Dalisay",
+                    RespondedByName = "Capt. Gabriel Mendoza",
+                    CreatedAtUtc = DateTime.UtcNow.AddMinutes(-15),
+                    UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-10)
+                }
+            };
+
+            await db.DispatchRequests.AddRangeAsync(dispatchRequests);
+            await db.SaveChangesAsync();
+        }
     }
 }

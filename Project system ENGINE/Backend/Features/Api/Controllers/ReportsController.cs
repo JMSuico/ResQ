@@ -5,6 +5,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Backend.Features.Api.DTOs;
 using Backend.Features.Data.Enums;
+using Backend.Features.Data.Models;
 using Backend.Features.Helpers.Infrastructure;
 using Backend.Features.Services.Interfaces;
 
@@ -15,6 +16,7 @@ namespace Backend.Features.Api.Controllers;
 public class ReportsController(IReportService reportService, IWebHostEnvironment env) : ControllerBase
 {
     private string ReportsDirectory => Path.Combine(env.ContentRootPath, "server-data", "uploads", "reports");
+    private string EvidencesDirectory => Path.Combine(ReportsDirectory, "evidences");
 
     [HttpPost]
     public async Task<IActionResult> CreateReportAsync([FromBody] CreateReportRequest request, CancellationToken ct) =>
@@ -58,6 +60,50 @@ public class ReportsController(IReportService reportService, IWebHostEnvironment
         return MediaStreamResponseHelper.CreateBytesOrRangeResponse(HttpContext, bytes, contentType);
     }
 
+    [HttpGet("{id:guid}/evidences")]
+    public async Task<IActionResult> GetReportEvidencesAsync(Guid id, CancellationToken ct) =>
+        Ok(await reportService.GetReportEvidencesAsync(id, ct));
+
+    [HttpPost("{id:guid}/evidences")]
+    public async Task<IActionResult> AddReportEvidenceAsync(Guid id, [FromBody] CreateReportEvidenceRequest request, CancellationToken ct) =>
+        await reportService.AddReportEvidenceAsync(
+            id,
+            request,
+            CurrentUserId == Guid.Empty ? null : CurrentUserId,
+            CurrentUserName,
+            EvidencesDirectory,
+            ct) switch
+        {
+            { NotFound: true, Error: var err } => NotFound(new { message = err }),
+            { Success: false, Error: var err } => BadRequest(new { message = err }),
+            { Evidence: var evidence } => StatusCode(StatusCodes.Status201Created, evidence)
+        };
+
+    [HttpGet("{reportId:guid}/evidences/{evidenceId:guid}")]
+    public async Task<IActionResult> GetReportEvidenceFileAsync(Guid reportId, Guid evidenceId, CancellationToken ct)
+    {
+        ReportEvidenceRecord? evidence = await reportService.GetReportEvidenceRecordAsync(reportId, evidenceId, ct);
+        if (evidence is null) return NotFound(new { message = "Evidence record not found." });
+
+        var (bytes, contentType) = await CaptureStorageHelper.ReadCaptureFileAsync(evidence.FilePath, ct);
+        return MediaStreamResponseHelper.CreateBytesOrRangeResponse(HttpContext, bytes, contentType);
+    }
+
+    [HttpGet("{id:guid}/feedback")]
+    public async Task<IActionResult> GetReportFeedbackAsync(Guid id, CancellationToken ct) =>
+        Ok(await reportService.GetReportFeedbackAsync(id, ct));
+
+    [HttpPost("{id:guid}/feedback")]
+    public async Task<IActionResult> SubmitReportFeedbackAsync(Guid id, [FromBody] SubmitReportFeedbackRequest request, CancellationToken ct) =>
+        CurrentUserId == Guid.Empty
+            ? Unauthorized(new { message = "Authentication required to submit feedback." })
+            : await reportService.SubmitReportFeedbackAsync(id, CurrentUserId, request, ct) switch
+            {
+                { NotFound: true, Error: var err } => NotFound(new { message = err }),
+                { Success: false, Error: var err } => BadRequest(new { message = err }),
+                { Feedback: var feedback } => Ok(feedback)
+            };
+
     [HttpPost("{id:guid}/beacon")]
     public async Task<IActionResult> PostDistressBeaconAsync(Guid id, [FromBody] DistressBeaconRequest beacon, CancellationToken ct) =>
         await reportService.RecordDistressBeaconAsync(id, beacon, ct)
@@ -92,4 +138,9 @@ public class ReportsController(IReportService reportService, IWebHostEnvironment
 
     private Guid CurrentUserId =>
         HttpContext?.Items["UserId"] is Guid uid ? uid : Guid.Empty;
+
+    private string? CurrentUserName =>
+        HttpContext?.Items["User"] is User user && !string.IsNullOrWhiteSpace(user.FullName)
+            ? user.FullName
+            : null;
 }

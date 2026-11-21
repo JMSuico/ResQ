@@ -66,68 +66,6 @@ export const getAuthToken = (): string | null => {
   return null;
 };
 
-const SEEDED_RECOVERY_CREDENTIALS: Record<string, { password: string; role: string; origin: string }> = {
-  'ldrrmo.admin@resqtrack.gov.ph': {
-    password: 'LdrrmoCommand@2026!',
-    role: 'LDRRMO_Admin',
-    origin: 'Admin'
-  },
-  'rhu.medic@resqtrack.gov.ph': {
-    password: 'RhuResponder@2026!',
-    role: 'Responder',
-    origin: 'ResponderCivilian'
-  },
-  'bfp.fire@resqtrack.gov.ph': {
-    password: 'BfpResponder@2026!',
-    role: 'Responder',
-    origin: 'ResponderCivilian'
-  },
-  'pnp.patrol@resqtrack.gov.ph': {
-    password: 'PnpResponder@2026!',
-    role: 'Responder',
-    origin: 'ResponderCivilian'
-  },
-  'resident.juan@resqtrack.gov.ph': {
-    password: 'CivilianSafe@2026!',
-    role: 'Civilian',
-    origin: 'ResponderCivilian'
-  }
-};
-
-let activeRecoveryPromise: Promise<string | null> | null = null;
-
-const resolveStoredSessionEmailForRecovery = (): string | null => {
-  if (typeof window === 'undefined') return null;
-  try {
-    const port = window.location.port || '1998';
-    const tabUnit = (sessionStorage.getItem('resqtrack_unit') || '').toLowerCase().trim();
-    const candidates: Array<string | null> = [
-      sessionStorage.getItem('resqtrack_session'),
-      sessionStorage.getItem('resqtrack_user'),
-      tabUnit && tabUnit !== 'none' ? localStorage.getItem(`resqtrack_session_${tabUnit}`) : null,
-      port === '1996' ? localStorage.getItem('resqtrack_session_1996') : localStorage.getItem(`resqtrack_session_${port}`),
-      localStorage.getItem('resqtrack_session')
-    ];
-    for (const raw of candidates) {
-      if (!raw) continue;
-      const parsed = JSON.parse(raw) as { email?: string };
-      if (parsed?.email) return parsed.email.trim().toLowerCase();
-    }
-    if (port === '1996') return 'ldrrmo.admin@resqtrack.gov.ph';
-    if (port === '1997') {
-      if (tabUnit === 'fire' || tabUnit === 'bfp') return 'bfp.fire@resqtrack.gov.ph';
-      if (tabUnit === 'pnp') return 'pnp.patrol@resqtrack.gov.ph';
-      return 'rhu.medic@resqtrack.gov.ph';
-    }
-    if (port === '1998' && window.location.pathname.startsWith('/civilian')) {
-      return 'resident.juan@resqtrack.gov.ph';
-    }
-  } catch {
-    return null;
-  }
-  return null;
-};
-
 export const clearStalePortTokens = (): void => {
   if (typeof window === 'undefined') return;
   try {
@@ -148,70 +86,6 @@ export const clearStalePortTokens = (): void => {
   } catch {
     // Storage cleanup safeguard
   }
-};
-
-export const tryRecoverStaleBackendSession = async (): Promise<string | null> => {
-  if (typeof window === 'undefined') return null;
-  if (activeRecoveryPromise) return activeRecoveryPromise;
-
-  activeRecoveryPromise = (async (): Promise<string | null> => {
-    try {
-      const email = resolveStoredSessionEmailForRecovery();
-      const creds = email ? SEEDED_RECOVERY_CREDENTIALS[email] : undefined;
-      if (!email || !creds) {
-        clearStalePortTokens();
-        return null;
-      }
-
-      const baseUrl = getApiBaseUrl();
-      const loginUrl = baseUrl ? `${baseUrl}/api/login` : '/api/login';
-      const res = await fetch(loginUrl, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          email,
-          password: creds.password,
-          selectedTabRole: creds.role,
-          portalOrigin: creds.origin
-        })
-      });
-      if (!res.ok) {
-        clearStalePortTokens();
-        return null;
-      }
-      const data = (await res.json()) as {
-        token?: string;
-        session?: { unit?: string; role?: string };
-      };
-      if (!data?.token || !data?.session) {
-        clearStalePortTokens();
-        return null;
-      }
-      const port = window.location.port || '1998';
-      const unitKey = (data.session.unit || 'none').toLowerCase();
-      sessionStorage.setItem('resqtrack_token', data.token);
-      sessionStorage.setItem('resqtrack_session', JSON.stringify(data.session));
-      sessionStorage.setItem('resqtrack_user', JSON.stringify(data.session));
-      sessionStorage.setItem('resqtrack_unit', unitKey);
-      if (unitKey && unitKey !== 'none') {
-        localStorage.setItem(`resqtrack_token_${unitKey}`, data.token);
-        localStorage.setItem(`resqtrack_session_${unitKey}`, JSON.stringify(data.session));
-        localStorage.setItem(`resqtrack_user_${unitKey}`, JSON.stringify(data.session));
-      }
-      localStorage.setItem(`resqtrack_token_${port}`, data.token);
-      localStorage.setItem(`resqtrack_session_${port}`, JSON.stringify(data.session));
-      localStorage.setItem(`resqtrack_user_${port}`, JSON.stringify(data.session));
-      localStorage.setItem('resqtrack_token', data.token);
-      return data.token;
-    } catch {
-      return null;
-    } finally {
-      activeRecoveryPromise = null;
-    }
-  })();
-
-  return activeRecoveryPromise;
 };
 
 export const requestJson = async <T>(url: string, options: RequestInit = {}): Promise<T> => {
@@ -242,10 +116,7 @@ export const requestJson = async <T>(url: string, options: RequestInit = {}): Pr
     const isAuthAttempt =
       url.includes('/login') || url.includes('/biometric-login') || url.includes('/register') || url.includes('/logout');
     if (response.status === 401 && !isAuthAttempt) {
-      const recoveredToken = await tryRecoverStaleBackendSession();
-      if (recoveredToken) {
-        response = await executeFetch(recoveredToken);
-      }
+      clearStalePortTokens();
     }
   } catch (err: unknown) {
     const rawError = err instanceof Error ? err.message : String(err);

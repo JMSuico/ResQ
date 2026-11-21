@@ -3,17 +3,20 @@
 // (text-only storage, zero tel: links), registered barangay, emergency contacts, and medical profile.
 // Strictly 100% arrow functions (=>), ZERO 'any', and ZERO emojis.
 
-import React, { useState, useEffect } from 'react';
-import { Edit2, CheckCircle2, Camera } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Edit2, CheckCircle2, Camera, AlertTriangle } from 'lucide-react';
 import { useSession } from '@/Hooks/useSession';
-import { requestJson } from '@/Endpoints/apiClient';
+import {
+  getOwnProfile,
+  updateOwnProfile,
+  type OwnProfileDto,
+  type UpdateOwnProfilePayload
+} from '@/Endpoints/usersApi';
 import { CivilianButton } from './Shared/CivilianButton';
 
 const MAX_AVATAR_FILE_SIZE_BYTES = 2 * 1024 * 1024;
 const TOAST_NOTIFICATION_MS = 3500;
 const SAVE_PROFILE_TOAST_MS = 4000;
-const STORAGE_KEY = 'resqtrack_civilian_medical_profile';
-const CONTACT_STORAGE_KEY = 'resqtrack_reporter_contact_number';
 
 export const KATIPUNAN_BARANGAYS = [
   'Balok',
@@ -59,178 +62,203 @@ export interface EmergencyMedicalProfile {
   barangay: string;
 }
 
-export interface UpdateOwnProfilePayload {
-  phoneNumber?: string;
-  bloodType?: string;
-  allergies?: string;
-  medicalConditions?: string;
-  isOrganDonor?: boolean;
-  emergencyContactName?: string;
-  emergencyContactRelation?: string;
-  emergencyContactRelationship?: string;
-  emergencyContactPhone?: string;
-  secondaryContactName?: string;
-  secondaryContactPhone?: string;
-  barangay?: string;
-  departmentOrBarangay?: string;
+interface AccountIdentityMeta {
+  fullName: string;
+  email: string;
+  employeeOrResidentId: string;
+  status: string;
+  faceVerified: boolean;
+  departmentOrBarangay: string;
 }
 
-export const updateOwnProfile = async (
-  payload: UpdateOwnProfilePayload
-): Promise<{ message?: string; success?: boolean }> =>
-  requestJson<{ message?: string; success?: boolean }>('/api/profile', {
-    method: 'PUT',
-    body: JSON.stringify(payload)
-  });
-
-const getStoredContact = (): string => {
-  try {
-    return localStorage.getItem(CONTACT_STORAGE_KEY) || '';
-  } catch {
-    return '';
-  }
-};
+export type { UpdateOwnProfilePayload };
 
 export const CivilianProfile: React.FC = () => {
   const { session, refreshSession } = useSession();
 
-  const [profile, setProfile] = useState<EmergencyMedicalProfile>(() => ({
-    reporterContactNumber: getStoredContact(),
+  const [profile, setProfile] = useState<EmergencyMedicalProfile>({
+    reporterContactNumber: '',
     bloodType: 'O+',
-    allergies: 'None',
-    medicalConditions: 'None',
-    isOrganDonor: true,
+    allergies: '',
+    medicalConditions: '',
+    isOrganDonor: false,
     emergencyContactName: '',
     emergencyContactRelation: 'Spouse',
     emergencyContactPhone: '',
     secondaryContactName: '',
     secondaryContactPhone: '',
-    barangay: 'Poblacion'
-  }));
+    barangay: ''
+  });
+
+  const [accountMeta, setAccountMeta] = useState<AccountIdentityMeta>({
+    fullName: '',
+    email: '',
+    employeeOrResidentId: '',
+    status: '',
+    faceVerified: false,
+    departmentOrBarangay: ''
+  });
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [saveSuccessToast, setSaveSuccessToast] = useState<string | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => {
-    try {
-      return (
-        localStorage.getItem('resqtrack_civilian_avatar') ||
-        localStorage.getItem('resqtrack_user_avatar') ||
-        null
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  const hydrateFromOwnProfile = useCallback((data: OwnProfileDto) => {
+    setAccountMeta({
+      fullName: data.fullName || '',
+      email: data.email || '',
+      employeeOrResidentId: data.employeeOrResidentId || '',
+      status: data.status || '',
+      faceVerified: Boolean(data.faceVerified),
+      departmentOrBarangay: data.departmentOrBarangay || data.barangay || ''
+    });
+
+    setProfile({
+      reporterContactNumber: data.phoneNumber || '',
+      bloodType: data.bloodType || 'O+',
+      allergies: data.allergies || '',
+      medicalConditions: data.medicalConditions || '',
+      isOrganDonor: Boolean(data.isOrganDonor),
+      emergencyContactName: data.emergencyContactName || '',
+      emergencyContactRelation: data.emergencyContactRelationship || 'Spouse',
+      emergencyContactPhone: data.emergencyContactPhone || '',
+      secondaryContactName: data.secondaryContactName || '',
+      secondaryContactPhone: data.secondaryContactPhone || '',
+      barangay: data.barangay || data.departmentOrBarangay || ''
+    });
+
+    const nextAvatar = data.avatarDataUrl || null;
+    setAvatarUrl(nextAvatar);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: nextAvatar } })
       );
-    } catch {
-      return null;
     }
-  });
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadOwnProfile = async () => {
+      setIsLoadingProfile(true);
+      setProfileError(null);
+      try {
+        const data = await getOwnProfile();
+        if (!isMounted) return;
+        hydrateFromOwnProfile(data);
+      } catch (err: unknown) {
+        if (!isMounted) return;
+        const msg = err instanceof Error ? err.message : 'Unable to load profile from database.';
+        setProfileError(msg);
+      } finally {
+        if (isMounted) {
+          setIsLoadingProfile(false);
+        }
+      }
+    };
+
+    void loadOwnProfile();
+    return () => {
+      isMounted = false;
+    };
+  }, [hydrateFromOwnProfile]);
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (file.size > MAX_AVATAR_FILE_SIZE_BYTES) {
-      setSaveSuccessToast('Image exceeds 2MB limit.');
-      setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
+      setProfileError('Image exceeds 2MB limit.');
       return;
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const dataUrl = reader.result as string;
-      setAvatarUrl(dataUrl);
+      setProfileError(null);
+      setIsSubmitting(true);
       try {
-        localStorage.setItem('resqtrack_user_avatar', dataUrl);
-        localStorage.setItem('resqtrack_civilian_avatar', dataUrl);
-        window.dispatchEvent(
-          new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: dataUrl } })
-        );
-        setSaveSuccessToast('Photo updated.');
+        const res = await updateOwnProfile({ avatarDataUrl: dataUrl });
+        if (res.user) {
+          hydrateFromOwnProfile(res.user);
+        } else {
+          setAvatarUrl(dataUrl);
+          window.dispatchEvent(
+            new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: dataUrl } })
+          );
+        }
+        setSaveSuccessToast('Photo saved.');
         setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
-      } catch (err) {
-        console.error('Failed to save civilian avatar', err);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Failed to save profile photo.';
+        setProfileError(msg);
+      } finally {
+        setIsSubmitting(false);
       }
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
-  const handleResetAvatar = () => {
-    setAvatarUrl(null);
+  const handleResetAvatar = async () => {
+    setProfileError(null);
+    setIsSubmitting(true);
     try {
-      localStorage.removeItem('resqtrack_user_avatar');
-      localStorage.removeItem('resqtrack_civilian_avatar');
-      window.dispatchEvent(
-        new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } })
-      );
-      setSaveSuccessToast('Photo reset.');
-      setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
-    } catch (err) {
-      console.error('Failed to reset avatar', err);
-    }
-  };
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      const storedContact = localStorage.getItem(CONTACT_STORAGE_KEY) || '';
-      if (saved) {
-        const parsed = JSON.parse(saved) as Partial<EmergencyMedicalProfile>;
-        setProfile((prev) => ({
-          ...prev,
-          ...parsed,
-          reporterContactNumber: parsed.reporterContactNumber || storedContact || prev.reporterContactNumber
-        }));
+      const res = await updateOwnProfile({ avatarDataUrl: null });
+      if (res.user) {
+        hydrateFromOwnProfile(res.user);
+      } else {
+        setAvatarUrl(null);
+        window.dispatchEvent(
+          new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } })
+        );
       }
-    } catch (err) {
-      console.error('Failed to load civilian medical profile:', err);
+      setSaveSuccessToast('Photo removed.');
+      setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to remove profile photo.';
+      setProfileError(msg);
+    } finally {
+      setIsSubmitting(false);
     }
-  }, []);
-
-  useEffect(() => {
-    if (session?.departmentOrBarangay) {
-      setProfile((prev) => ({
-        ...prev,
-        barangay:
-          prev.barangay === 'Poblacion' && session.departmentOrBarangay
-            ? session.departmentOrBarangay
-            : prev.barangay
-      }));
-    }
-  }, [session?.departmentOrBarangay]);
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setProfileError(null);
+    setSaveSuccessToast(null);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
-      localStorage.setItem(CONTACT_STORAGE_KEY, profile.reporterContactNumber.trim());
+      const res = await updateOwnProfile({
+        phoneNumber: profile.reporterContactNumber.trim(),
+        bloodType: profile.bloodType,
+        allergies: profile.allergies.trim(),
+        medicalConditions: profile.medicalConditions.trim(),
+        isOrganDonor: profile.isOrganDonor,
+        emergencyContactName: profile.emergencyContactName.trim(),
+        emergencyContactRelationship: profile.emergencyContactRelation,
+        emergencyContactPhone: profile.emergencyContactPhone.trim(),
+        secondaryContactName: profile.secondaryContactName.trim(),
+        secondaryContactPhone: profile.secondaryContactPhone.trim(),
+        departmentOrBarangay: profile.barangay,
+        avatarDataUrl: avatarUrl
+      });
 
-      try {
-        await updateOwnProfile({
-          phoneNumber: profile.reporterContactNumber.trim(),
-          bloodType: profile.bloodType,
-          allergies: profile.allergies,
-          medicalConditions: profile.medicalConditions,
-          isOrganDonor: profile.isOrganDonor,
-          emergencyContactName: profile.emergencyContactName,
-          emergencyContactRelation: profile.emergencyContactRelation,
-          emergencyContactRelationship: profile.emergencyContactRelation,
-          emergencyContactPhone: profile.emergencyContactPhone,
-          secondaryContactName: profile.secondaryContactName,
-          secondaryContactPhone: profile.secondaryContactPhone,
-          barangay: profile.barangay,
-          departmentOrBarangay: profile.barangay
-        });
-        if (refreshSession) {
-          refreshSession();
-        }
-      } catch (apiErr) {
-        console.warn('Backend PUT /api/profile sync notice (persisted locally):', apiErr);
+      if (res.user) {
+        hydrateFromOwnProfile(res.user);
+      }
+      if (refreshSession) {
+        void refreshSession();
       }
 
       setIsEditing(false);
       setSaveSuccessToast('Profile saved.');
       setTimeout(() => setSaveSuccessToast(null), SAVE_PROFILE_TOAST_MS);
-    } catch (err) {
-      console.error('Failed to save profile:', err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to save profile changes.';
+      setProfileError(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -261,11 +289,20 @@ export const CivilianProfile: React.FC = () => {
         </CivilianButton>
       </div>
 
-      {/* 2. Success Toast */}
+      {/* 2. Success & Error Callouts */}
       {saveSuccessToast && (
         <div className="clay-surface p-4 rounded-xl bg-[#F7F1EA] border border-[#670626]/25 text-[#670626] text-sm font-bold flex items-center gap-3 shadow-lg">
           <CheckCircle2 className="w-5 h-5 text-[#670626] flex-shrink-0" />
           <span>{saveSuccessToast}</span>
+        </div>
+      )}
+      {profileError && (
+        <div
+          role="alert"
+          className="clay-surface p-4 rounded-xl bg-[#670626] border border-[#F7F1EA]/25 text-[#F7F1EA] text-sm font-bold flex items-center gap-3 shadow-lg"
+        >
+          <AlertTriangle className="w-5 h-5 text-[#F7F1EA] flex-shrink-0" />
+          <span>{profileError}</span>
         </div>
       )}
 
@@ -277,12 +314,12 @@ export const CivilianProfile: React.FC = () => {
               {avatarUrl ? (
                 <img
                   src={avatarUrl}
-                  alt={session?.fullName || 'Resident'}
+                  alt={accountMeta.fullName || session?.fullName || 'Resident'}
                   className="w-full h-full object-cover"
                 />
               ) : (
                 <div className="w-full h-full bg-[#670626] flex items-center justify-center text-3xl font-black text-[#F7F1EA]">
-                  {session?.fullName?.charAt(0) || 'C'}
+                  {(accountMeta.fullName || session?.fullName)?.charAt(0) || 'C'}
                 </div>
               )}
 
@@ -304,9 +341,9 @@ export const CivilianProfile: React.FC = () => {
             <div>
               <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="text-xl font-black text-[#670626]">
-                  {session?.fullName || 'Registered Resident'}
+                  {accountMeta.fullName || session?.fullName || (isLoadingProfile ? 'Loading...' : 'Registered Resident')}
                 </h2>
-                {session?.faceVerified ? (
+                {(accountMeta.faceVerified || session?.faceVerified) ? (
                   <span className="px-3 py-1 rounded-full bg-[#E9D9D0] text-[#670626] border border-[#670626]/30 text-xs font-mono font-bold flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-[#670626]" />
                     <span>Verified</span>
@@ -318,7 +355,7 @@ export const CivilianProfile: React.FC = () => {
                 )}
               </div>
               <p className="text-sm text-[#A83B4D] mt-0.5 font-mono">
-                {session?.email || 'citizen@katipunan.gov.ph'}
+                {accountMeta.email || session?.email || 'Not provided'}
               </p>
 
               <div className="flex items-center gap-4 mt-2">
@@ -357,14 +394,14 @@ export const CivilianProfile: React.FC = () => {
           <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
             <span className="text-[#A83B4D] block text-xs font-bold">Status</span>
             <span className="text-[#670626] font-black text-base mt-1 block">
-              {session?.status || 'Active Resident'}
+              {accountMeta.status || session?.status || 'Unavailable'}
             </span>
           </div>
 
           <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
             <span className="text-[#A83B4D] block text-xs font-bold">Resident ID</span>
             <span className="text-[#670626] font-black text-base mt-1 block">
-              {session?.employeeOrResidentId || 'KTN-RES-9281'}
+              {accountMeta.employeeOrResidentId || session?.employeeOrResidentId || 'Not assigned'}
             </span>
           </div>
 
@@ -376,6 +413,7 @@ export const CivilianProfile: React.FC = () => {
                 onChange={(e) => setProfile({ ...profile, barangay: e.target.value })}
                 className="mt-1.5 w-full px-3 py-2 bg-[#F7F1EA] border border-[#670626]/25 rounded-lg text-sm text-[#670626] font-mono font-bold focus:outline-none focus:border-[#670626]"
               >
+                <option value="">Select Barangay</option>
                 {KATIPUNAN_BARANGAYS.map((b) => (
                   <option key={b} value={b}>
                     {b}
@@ -384,7 +422,7 @@ export const CivilianProfile: React.FC = () => {
               </select>
             ) : (
               <span className="text-[#670626] font-black text-base mt-1 block">
-                {profile.barangay || session?.departmentOrBarangay || 'Poblacion, Katipunan, ZN'}
+                {profile.barangay || accountMeta.departmentOrBarangay || session?.departmentOrBarangay || 'Not set'}
               </span>
             )}
           </div>
@@ -458,7 +496,9 @@ export const CivilianProfile: React.FC = () => {
                 />
               ) : (
                 <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
-                  <span className="text-sm font-mono text-[#670626]">{profile.allergies}</span>
+                  <span className="text-sm font-mono text-[#670626]">
+                    {profile.allergies || 'None listed'}
+                  </span>
                 </div>
               )}
             </div>
@@ -480,11 +520,30 @@ export const CivilianProfile: React.FC = () => {
               ) : (
                 <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
                   <span className="text-sm font-mono text-[#670626]">
-                    {profile.medicalConditions}
+                    {profile.medicalConditions || 'None listed'}
                   </span>
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex items-center justify-between gap-3">
+            <span className="text-sm font-mono font-bold text-[#670626]">Organ Donor Status</span>
+            {isEditing ? (
+              <label className="inline-flex items-center gap-2 text-sm font-mono font-bold text-[#670626] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={profile.isOrganDonor}
+                  onChange={(e) => setProfile({ ...profile, isOrganDonor: e.target.checked })}
+                  className="w-4 h-4 rounded accent-[#670626] cursor-pointer"
+                />
+                <span>Registered Organ Donor</span>
+              </label>
+            ) : (
+              <span className="text-sm font-mono font-black text-[#670626]">
+                {profile.isOrganDonor ? 'Registered Donor' : 'Not Registered'}
+              </span>
+            )}
           </div>
         </div>
 

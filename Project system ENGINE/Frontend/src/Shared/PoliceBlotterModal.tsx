@@ -29,7 +29,7 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
   isOpen,
   onClose,
   reportId,
-  defaultLocation = 'Dipolog City Central Highway',
+  defaultLocation = 'Katipunan, Zamboanga del Norte',
   onSuccess
 }) => {
   const [classification, setClassification] = useState(CLASSIFICATIONS[0]);
@@ -43,7 +43,7 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
   const [location, setLocation] = useState(defaultLocation);
   const [officerName, setOfficerName] = useState('P/Cpl. R. Dela Cruz');
   const [badgeNumber, setBadgeNumber] = useState('PNP-8841');
-  const [station, setStation] = useState('Dipolog City Police Station');
+  const [station, setStation] = useState('Katipunan Municipal Police Station');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 

@@ -32,7 +32,6 @@ import { useDebounce, usePagination, useToasts } from '@/Hooks';
 import {
   getUsers,
   updateUserStatus,
-  deleteUser,
   UserSummary,
   AccountStatus
 } from '@/Endpoints/adminGovernanceApi';
@@ -42,7 +41,6 @@ import {
   EditUserModal,
   DeleteUserConfirmModal
 } from './Components';
-import { BASELINE_USER_SUMMARY } from '@/Libs/Assets/baselineFixtures';
 import { AdminButton } from './Shared/AdminButton';
 import { CLAY_SURFACE, CLAY_WELL } from './Shared/adminCommandHelpers';
 
@@ -77,13 +75,15 @@ export const UserManagementPage: React.FC = () => {
     setIsLoading(true);
     try {
       const data = await getUsers();
-      setUsers(Array.isArray(data) && data.length > 0 ? data : BASELINE_USER_SUMMARY);
-    } catch {
-      setUsers((prev) => (prev.length > 0 ? prev : BASELINE_USER_SUMMARY));
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to load user registry.';
+      addToast(msg, 'error');
+      setUsers([]);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     void loadUsers();

@@ -65,6 +65,9 @@ public class User
     [MaxLength(500)]
     public string? FaceCapturePath { get; set; }
 
+    [MaxLength(500)]
+    public string? AvatarCapturePath { get; set; }
+
     [MaxLength(20)]
     public string? Weight { get; set; }
 
@@ -98,12 +101,20 @@ public class User
     [MaxLength(10)]
     public string? BloodType { get; set; }
 
+    [MaxLength(250)]
+    public string? Allergies { get; set; }
+
+    [MaxLength(300)]
+    public string? MedicalConditions { get; set; }
+
+    public bool IsOrganDonor { get; set; } = false;
+
     // --- Granular Address Breakdown (Philippine LGU Hierarchy) ---
     [MaxLength(100)]
     public string Province { get; set; } = "Zamboanga del Norte";
 
     [MaxLength(100)]
-    public string CityOrMunicipality { get; set; } = "Dipolog City";
+    public string CityOrMunicipality { get; set; } = "Katipunan";
 
     [MaxLength(100)]
     public string Barangay { get; set; } = string.Empty;
@@ -120,6 +131,12 @@ public class User
 
     [MaxLength(50)]
     public string? EmergencyContactRelationship { get; set; }
+
+    [MaxLength(150)]
+    public string? SecondaryContactName { get; set; }
+
+    [MaxLength(30)]
+    public string? SecondaryContactPhone { get; set; }
 
     // --- Civilian Specific ---
     [MaxLength(60)]

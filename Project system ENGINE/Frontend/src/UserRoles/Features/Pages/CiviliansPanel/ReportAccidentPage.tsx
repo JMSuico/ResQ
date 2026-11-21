@@ -37,6 +37,11 @@ import { CameraCaptureModal, CameraCaptureMetadata } from '@/Shared/CameraCaptur
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { CATEGORY_LABELS } from '@/Libs/Assets/data';
+import {
+  computeLaplacianVariance,
+  calculateDynamicClarityThreshold,
+  DEFAULT_CLARITY_THRESHOLD
+} from '@/Libs/Vision/cameraClarityHelper';
 import { CivilianButton } from './Shared/CivilianButton';
 import { CivilianModalCard } from './Shared/CivilianModalCard';
 
@@ -134,17 +139,10 @@ interface CivilianCreateReportPayload extends CreateReportPayload {
 
 const getInitialStoredContact = (): string => {
   try {
-    const direct = localStorage.getItem(CONTACT_STORAGE_KEY);
-    if (direct) return direct;
-    const rawProfile = localStorage.getItem('resqtrack_civilian_medical_profile');
-    if (rawProfile) {
-      const parsed = JSON.parse(rawProfile) as { reporterContactNumber?: string };
-      return parsed.reporterContactNumber || '';
-    }
+    return localStorage.getItem(CONTACT_STORAGE_KEY) || '';
   } catch {
     return '';
   }
-  return '';
 };
 
 export const ReportAccidentPage: React.FC = () => {
@@ -165,6 +163,7 @@ export const ReportAccidentPage: React.FC = () => {
   const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false);
   const [isAnalyzingAi, setIsAnalyzingAi] = useState<boolean>(false);
   const [aiAnalysis, setAiAnalysis] = useState<ExtendedAiAnalysisResponse | null>(null);
+  const [aiAnalysisUnavailable, setAiAnalysisUnavailable] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isResyncing, setIsResyncing] = useState<boolean>(false);
@@ -181,6 +180,7 @@ export const ReportAccidentPage: React.FC = () => {
   };
 
   const applyAiAnalysisResult = (res: ExtendedAiAnalysisResponse): void => {
+    setAiAnalysisUnavailable(null);
     setAiAnalysis(res);
     if (res.isGenuineIncident !== false) {
       const matchedCategory = resolveValidCategoryKey(res.detectedCategory);
@@ -196,6 +196,7 @@ export const ReportAccidentPage: React.FC = () => {
 
   const triggerDualAiVisionAnalysis = async (nextImageDataUrl: string): Promise<void> => {
     setIsAnalyzingAi(true);
+    setAiAnalysisUnavailable(null);
     try {
       const res = (await analyzeIncidentImage({
         imageDataUrl: nextImageDataUrl,
@@ -205,30 +206,10 @@ export const ReportAccidentPage: React.FC = () => {
       })) as ExtendedAiAnalysisResponse;
       applyAiAnalysisResult(res);
     } catch {
-      const fallbackPointer = derivePointerIconFromCategory(category);
-      setAiAnalysis({
-        roboflowModelId: 'accident-and-non-accident-label-image-dataset/14',
-        roboflowPrediction: 'Unavailable',
-        roboflowConfidence: 0,
-        roboflowNeedsReview: true,
-        roboflowAuthTransport: 'OFFLINE_FALLBACK',
-        claudeModelUsed: 'OFFLINE_MANUAL_REVIEW',
-        isGenuineIncident: false,
-        detectedCategory: category,
-        recommendedSeverity: severity,
-        pointerIconType: fallbackPointer,
-        situationDescription:
-          title.trim() || `${CATEGORY_LABELS[category] || category} scene captured.`,
-        visibleHazards: note.trim() || 'AI vision offline; responder verification required.',
-        uncertaintyNotes: 'AI vision offline — manual verification required.',
-        verificationStatus: 'SUBMITTED / PENDING_REVIEW',
-        recommendedAgencyUnit:
-          category === 'StructuralFire'
-            ? 'FIRE'
-            : category === 'CrimeOrSecurity'
-            ? 'PNP'
-            : 'RHU'
-      });
+      setAiAnalysis(null);
+      setAiAnalysisUnavailable(
+        'AI scene analysis service is currently unavailable. Your report will be submitted for manual responder verification.'
+      );
     } finally {
       setIsAnalyzingAi(false);
     }
@@ -252,20 +233,54 @@ export const ReportAccidentPage: React.FC = () => {
     reader.onload = () => {
       const result = typeof reader.result === 'string' ? reader.result : '';
       if (!result) return;
-      setImageDataUrl(result);
-      setCaptureMetadata({
-        varianceScore: 142.5,
-        isBlurry: false,
-        requiresManualVerification: false,
-        dynamicThreshold: 80,
-        thresholdReasoning: 'Uploaded Photo',
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        accuracyMeters: coords.accuracy,
-        isHardwareGeolocated,
-        analysisImageDataUrl: result
-      });
-      void triggerDualAiVisionAnalysis(result);
+
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 1280;
+        const maxH = 720;
+        const scale = Math.min(1, maxW / Math.max(1, img.naturalWidth), maxH / Math.max(1, img.naturalHeight));
+        const targetW = Math.max(1, Math.round(img.naturalWidth * scale));
+        const targetH = Math.max(1, Math.round(img.naturalHeight * scale));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        let varianceScore = 0;
+        let dynamicThreshold = DEFAULT_CLARITY_THRESHOLD;
+        let thresholdReasoning = 'Uploaded Photo · Canvas unavailable';
+        let isBlurry = true;
+
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+          const lap = computeLaplacianVariance(ctx, targetW, targetH);
+          const dyn = calculateDynamicClarityThreshold(targetW, targetH, lap.meanLuminance);
+          varianceScore = lap.variance;
+          dynamicThreshold = dyn.threshold;
+          thresholdReasoning = `Uploaded Photo · ${dyn.reasoning}`;
+          isBlurry = varianceScore < dynamicThreshold;
+        }
+
+        setImageDataUrl(result);
+        setCaptureMetadata({
+          varianceScore,
+          isBlurry,
+          requiresManualVerification: isBlurry,
+          dynamicThreshold,
+          thresholdReasoning,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracyMeters: coords.accuracy,
+          isHardwareGeolocated,
+          analysisImageDataUrl: result
+        });
+        void triggerDualAiVisionAnalysis(result);
+      };
+      img.onerror = () => {
+        setError('Unable to decode uploaded image file.');
+      };
+      img.src = result;
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -336,17 +351,17 @@ export const ReportAccidentPage: React.FC = () => {
         locationLabel: locationLabel.trim() || 'Katipunan, ZN (GPS Geotag)',
         imageDataUrl: imageDataUrl || undefined,
         reporterContactNumber: trimmedContact || undefined,
-        roboflowModelId: aiAnalysis?.roboflowModelId || 'accident-and-non-accident-label-image-dataset/14',
-        roboflowPrediction: aiAnalysis?.roboflowPrediction || null,
+        roboflowModelId: aiAnalysis?.roboflowModelId ?? null,
+        roboflowPrediction: aiAnalysis?.roboflowPrediction ?? null,
         roboflowConfidence:
           typeof aiAnalysis?.roboflowConfidence === 'number' ? aiAnalysis.roboflowConfidence : null,
         roboflowNeedsReview: aiAnalysis?.roboflowNeedsReview ?? false,
-        claudeModelUsed: aiAnalysis?.claudeModelUsed || (aiAnalysis ? 'claude-haiku-4-5' : null),
-        claudeIncidentCategory: aiAnalysis?.detectedCategory || null,
-        claudeSituationSummary: aiAnalysis?.situationDescription || null,
-        claudeVisibleHazards: aiAnalysis?.visibleHazards || null,
-        claudeUncertaintyNotes: aiAnalysis?.uncertaintyNotes || null,
-        pointerIconType: aiAnalysis?.pointerIconType || derivePointerIconFromCategory(category)
+        claudeModelUsed: aiAnalysis?.claudeModelUsed ?? null,
+        claudeIncidentCategory: aiAnalysis?.detectedCategory ?? null,
+        claudeSituationSummary: aiAnalysis?.situationDescription ?? null,
+        claudeVisibleHazards: aiAnalysis?.visibleHazards ?? null,
+        claudeUncertaintyNotes: aiAnalysis?.uncertaintyNotes ?? null,
+        pointerIconType: aiAnalysis?.pointerIconType ?? derivePointerIconFromCategory(category)
       };
 
       const res = await createReport(payload);
@@ -420,6 +435,7 @@ export const ReportAccidentPage: React.FC = () => {
     setImageDataUrl(null);
     setCaptureMetadata(null);
     setAiAnalysis(null);
+    setAiAnalysisUnavailable(null);
     setIsAnalyzingAi(false);
     setError(null);
   };
@@ -770,7 +786,11 @@ export const ReportAccidentPage: React.FC = () => {
                 ) : (
                   <div className="absolute bottom-1 left-1 right-1 px-2.5 py-1 bg-[#2B010E]/90 text-[#F7F1EA] text-xs font-mono font-bold rounded flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>CLARITY: {(captureMetadata?.varianceScore ?? 142.5).toFixed(1)}</span>
+                    <span>
+                      {captureMetadata
+                        ? `CLARITY: ${captureMetadata.varianceScore.toFixed(1)}`
+                        : 'CLARITY: PENDING'}
+                    </span>
                   </div>
                 )}
               </div>
@@ -848,7 +868,9 @@ export const ReportAccidentPage: React.FC = () => {
                   <p className="text-sm text-[#A83B4D] leading-relaxed font-medium">
                     {captureMetadata?.isBlurry
                       ? `Low clarity (${captureMetadata.varianceScore.toFixed(1)}) — manual review required.`
-                      : `Clarity verified (${(captureMetadata?.varianceScore ?? 142.5).toFixed(1)}).`}
+                      : captureMetadata
+                      ? `Clarity verified (${captureMetadata.varianceScore.toFixed(1)}).`
+                      : 'Clarity measurement pending.'}
                   </p>
                 </div>
               )}
@@ -875,6 +897,18 @@ export const ReportAccidentPage: React.FC = () => {
               <div className="w-full h-1.5 rounded-full bg-[#F7F1EA]/25 overflow-hidden">
                 <div className="h-full w-2/3 bg-[#F7F1EA] rounded-full animate-pulse" />
               </div>
+            </div>
+          )}
+
+          {/* AI Service Unavailable Notice */}
+          {aiAnalysisUnavailable && !isAnalyzingAi && !aiAnalysis && (
+            <div
+              id="incident-ai-unavailable-banner"
+              className="p-4 rounded-xl bg-[#E9D9D0] border border-[#A83B4D]/45 text-[#670626] font-mono text-xs flex items-center gap-3"
+              role="status"
+            >
+              <AlertTriangle className="w-4 h-4 text-[#A83B4D] flex-shrink-0" />
+              <span>{aiAnalysisUnavailable}</span>
             </div>
           )}
 
@@ -921,12 +955,12 @@ export const ReportAccidentPage: React.FC = () => {
                     </span>
                   </div>
                   <div className="text-[#670626] font-bold break-all">
-                    {aiAnalysis.roboflowModelId || 'accident-and-non-accident-label-image-dataset/14'}
+                    {aiAnalysis.roboflowModelId || 'Unavailable'}
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[#A83B4D]">Prediction:</span>
                     <span className="text-[#670626] font-black uppercase">
-                      {aiAnalysis.roboflowPrediction || 'incident'}
+                      {aiAnalysis.roboflowPrediction || 'Pending'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
@@ -942,7 +976,7 @@ export const ReportAccidentPage: React.FC = () => {
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[#A83B4D] font-bold uppercase">Claude Haiku 4.5</span>
                     <span className="px-2 py-0.5 rounded bg-[#F7F1EA] border border-[#670626]/20 text-[#670626] font-bold">
-                      {aiAnalysis.claudeModelUsed || 'claude-haiku-4-5'}
+                      {aiAnalysis.claudeModelUsed || 'Unavailable'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">

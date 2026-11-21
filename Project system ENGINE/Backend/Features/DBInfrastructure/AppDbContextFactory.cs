@@ -25,6 +25,7 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
             .AddJsonFile("appsettings.json", optional: true)
             .AddJsonFile("appsettings.Development.json", optional: true)
             .AddJsonFile("appsettings.Local.json", optional: true)
+            .AddJsonFile(Path.Combine("LocalConfig", "appsettings.Local.json"), optional: true)
             .AddEnvironmentVariables()
             .Build();
 

@@ -194,7 +194,6 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   const [isExpandedFullscreen, setIsExpandedFullscreen] = useState<boolean>(false);
   const [activePointer, setActivePointer] = useState<IncidentPinData | null>(null);
   const [respondedIds, setRespondedIds] = useState<Record<string, boolean>>({});
-  const [verifiedTimestamps, setVerifiedTimestamps] = useState<Record<string, number>>({});
   const [tickNow, setTickNow] = useState<number>(() => Date.now());
   const [lightboxOpen, setLightboxOpen] = useState<boolean>(false);
   const [calloutPoint, setCalloutPoint] = useState<{ x: number; y: number } | null>(null);
@@ -1149,24 +1148,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     }));
   };
 
-  const handleTriggerVerificationTimer = (incidentId: string) => {
-    setVerifiedTimestamps((prev) => ({
-      ...prev,
-      [incidentId]: prev[incidentId] ? 0 : Date.now()
-    }));
-  };
-
   const handleRequestDeployClick = (inc: IncidentPinData) => {
-    if (typeof window !== 'undefined') {
-      try {
-        window.sessionStorage.setItem(
-          'resqtrack_selected_deploy_incident',
-          JSON.stringify(inc)
-        );
-      } catch {
-        // Ignore storage error
-      }
-    }
     if (onRequestDeploy) {
       onRequestDeploy(inc);
     } else {
@@ -1193,10 +1175,10 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       activePointer.status?.toLowerCase() === 'resolved'
     : false;
 
-  const activeVerifiedTimestamp = activePointer
-    ? verifiedTimestamps[activePointer.id] ||
-      (activePointer.verifiedAt ? new Date(activePointer.verifiedAt).getTime() : null)
-    : null;
+  const activeVerifiedTimestamp =
+    activePointer && activePointer.verifiedAt
+      ? new Date(activePointer.verifiedAt).getTime()
+      : null;
 
   const activeRemainingSeconds = activeVerifiedTimestamp
     ? getRemainingCloseSeconds(activeVerifiedTimestamp)
@@ -1840,13 +1822,6 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                           : '5-MIN VERIFY TIMER (05:00)'}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleTriggerVerificationTimer(activePointer.id)}
-                      className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 cursor-pointer"
-                    >
-                      {activeVerifiedTimestamp ? 'Reset' : 'Simulate Verify'}
-                    </button>
                   </div>
 
                   <div className="w-full h-1.5 rounded-full bg-[#F7F1EA] overflow-hidden border border-[#D8C1B5]">

@@ -1,19 +1,26 @@
 // [Layer: UserRoles/Features/Pages/RespondersPanel]
-// Responsibility: RHU Emergency Medical Services — INCIDENT LOGS (renamed from PATIENT LOGS)
-// Implements 4 N=0 safe telemetry KPI cards, 5-minute verification countdown & auto-close engine,
-// multi-source synchronization (/api/incidents, /api/reports/mine, /api/responder-ops/pcr, localStorage 'resqtrack_incident_logs'),
-// SearchBar with useDebounce, Sort & Filter tabs, TableCardToggle, Pagination, and DefaultFloatingModalCard drill-down.
+// Responsibility: Responder Incident Logs & Reports console strictly backed by PostgreSQL APIs
+// (/api/reports, /api/reports/mine, /api/reports/agency/{unit}, /api/reports/{id}/evidences, /api/responder-ops/pcr).
+// ZERO localStorage shadowing, ZERO baselineFixtures, ZERO fabricated PCR records, ZERO hardcoded IPs.
+// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis.
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   getAllReports,
   getMyReports,
   getAgencyReports,
+  getReportEvidences,
+  uploadReportEvidence,
   createReport,
   verifyReport,
+  ReportEvidenceRecordDto,
   ReportItem
 } from '@/Endpoints/reportsApi';
-import { getPcrRecords, PatientCareRecord } from '@/Endpoints/responderOpsApi';
+import {
+  getPcrRecords,
+  submitPcrRecord,
+  PatientCareRecord
+} from '@/Endpoints/responderOpsApi';
 import {
   useSession,
   useGpsLocation,
@@ -32,7 +39,6 @@ import {
   Button
 } from '@/Shared';
 import { formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
-import { BASELINE_INCIDENT_REPORTS } from '@/Libs/Assets/baselineFixtures';
 import {
   Camera,
   ClipboardList,
@@ -44,7 +50,6 @@ import {
   Activity,
   ShieldCheck,
   HeartPulse,
-  Sparkles,
   Play,
   Lock,
   ChevronLeft,
@@ -56,21 +61,20 @@ import {
   Layers,
   Check,
   XCircle,
-  Send
+  Send,
+  Trash2
 } from 'lucide-react';
 
-const INCIDENT_LOGS_STORAGE_KEY = 'resqtrack_incident_logs';
 const FIVE_MINUTES_SECONDS = 300;
 const MAX_EVIDENCE_PHOTOS = 40;
 
 export interface EvidencePhotoItem {
   id: string;
   url: string;
-  timestamp: string; // YYYY-MM-DD hh:mm:ss A
+  timestamp: string;
   caption?: string;
   latitude?: number;
   longitude?: number;
-  ipAddress?: string;
 }
 
 export interface CasualtyVitalsEntry {
@@ -92,6 +96,21 @@ export interface CasualtyVitalsEntry {
   anatomicalInjuries?: string[];
   narrative?: string;
   recordedAt?: string;
+}
+
+interface DraftCasualtyInput {
+  id: string;
+  patientName: string;
+  age: string;
+  gender: string;
+  levelOfConsciousness: string;
+  bloodPressureSystolic: string;
+  bloodPressureDiastolic: string;
+  heartRateBpm: string;
+  respiratoryRate: string;
+  spO2Percent: string;
+  temperatureCelsius: string;
+  chiefComplaint: string;
 }
 
 export interface IncidentLogEntry {
@@ -123,7 +142,6 @@ export interface IncidentLogEntry {
 type LogFilterTab = 'ALL_LOGS' | 'ACTIVE_IN_ACTION' | 'VERIFIED_5M_TIMER' | 'CLOSED_SOLVED';
 type LogSortMode = 'NEWEST' | 'OLDEST' | 'SEVERITY' | 'TIMER_URGENCY';
 
-// Format timestamp strictly as YYYY-MM-DD hh:mm:ss A
 export const formatEvidenceTimestampExact = (input?: string | number | Date | null): string => {
   const dateObj = input ? new Date(input) : new Date();
   if (Number.isNaN(dateObj.getTime())) {
@@ -141,7 +159,6 @@ export const formatEvidenceTimestampExact = (input?: string | number | Date | nu
   return `${yyyy}-${mm}-${dd} ${hh12}:${min}:${sec} ${ampm}`;
 };
 
-// Format remaining seconds as MM:SS
 export const formatMmSs = (seconds: number): string => {
   const clamped = Math.max(0, Math.floor(seconds));
   const mins = String(Math.floor(clamped / 60)).padStart(2, '0');
@@ -149,8 +166,6 @@ export const formatMmSs = (seconds: number): string => {
   return `${mins}:${secs}`;
 };
 
-// Compute remaining seconds from verifiedAt using exact formula from FORMULAS_RHU_TELEMETRY.md:
-// T_remaining(t) = max(0, 300 - floor((t_now - t_verifiedAt) / 1000))
 export const computeRemainingSeconds = (verifiedAt: string | null, nowMs: number): number => {
   if (!verifiedAt) return FIVE_MINUTES_SECONDS;
   const verifiedMs = new Date(verifiedAt).getTime();
@@ -162,57 +177,6 @@ export const computeRemainingSeconds = (verifiedAt: string | null, nowMs: number
 export const computeProgressPct = (remainingSeconds: number): number => {
   const pct = (1 - remainingSeconds / FIVE_MINUTES_SECONDS) * 100;
   return Math.min(100, Math.max(0, Number(pct.toFixed(1))));
-};
-
-const readStoredLogs = (): Record<string, Partial<IncidentLogEntry>> => {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(INCIDENT_LOGS_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      const map: Record<string, Partial<IncidentLogEntry>> = {};
-      parsed.forEach((item: unknown) => {
-        if (item && typeof item === 'object') {
-          const rec = item as Partial<IncidentLogEntry> & {
-            reportId?: string;
-            incidentId?: string;
-            evidences?: unknown[];
-            pcrRecords?: unknown[];
-          };
-          const key = rec.id || rec.incidentId || rec.reportId || rec.referenceCode;
-          if (key) {
-            map[String(key)] = rec;
-          }
-          if (rec.incidentId) {
-            map[String(rec.incidentId)] = rec;
-          }
-          if (rec.referenceCode) {
-            map[String(rec.referenceCode)] = rec;
-          }
-          if (rec.id) {
-            map[String(rec.id)] = rec;
-          }
-        }
-      });
-      return map;
-    }
-    if (parsed && typeof parsed === 'object') {
-      return parsed as Record<string, Partial<IncidentLogEntry>>;
-    }
-    return {};
-  } catch {
-    return {};
-  }
-};
-
-const writeStoredLogs = (logsList: IncidentLogEntry[]): void => {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(INCIDENT_LOGS_STORAGE_KEY, JSON.stringify(logsList));
-  } catch (err) {
-    console.warn('[MyReportsPage] Failed to persist incident logs to localStorage:', err);
-  }
 };
 
 const getClaySeverityBadge = (severity: string): string => {
@@ -271,6 +235,21 @@ const isAwaitingVerificationStatus = (status: string): boolean => {
   return s === 'submitted' || s === 'reported' || s === 'pending';
 };
 
+const createEmptyDraftCasualty = (): DraftCasualtyInput => ({
+  id: `cas-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+  patientName: '',
+  age: '',
+  gender: 'Male',
+  levelOfConsciousness: 'Alert',
+  bloodPressureSystolic: '',
+  bloodPressureDiastolic: '',
+  heartRateBpm: '',
+  respiratoryRate: '',
+  spO2Percent: '',
+  temperatureCelsius: '',
+  chiefComplaint: ''
+});
+
 export const MyReportsPage: React.FC = () => {
   const { session } = useSession();
   const { coords, isHardwareGeolocated } = useGpsLocation();
@@ -286,64 +265,38 @@ export const MyReportsPage: React.FC = () => {
   const [logs, setLogs] = useState<IncidentLogEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
-  const [clientIp, setClientIp] = useState<string>('192.168.10.42 (KATIPUNAN-MDT-LINK)');
 
-  // Search, Debounce, Filter & Sort
   const [searchQuery, setSearchQuery] = useState<string>('');
   const debouncedSearch = useDebounce(searchQuery, 250);
   const [activeTab, setActiveTab] = useState<LogFilterTab>('ALL_LOGS');
   const [sortMode, setSortMode] = useState<LogSortMode>('NEWEST');
 
-  // Modals & Lightbox
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false);
   const [cameraTargetLogId, setCameraTargetLogId] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
 
-  // Create Field Log Form State
   const [newTitle, setNewTitle] = useState<string>('');
   const [newNote, setNewNote] = useState<string>('');
   const [newSeverity, setNewSeverity] = useState<string>('Critical');
   const [newCategory, setNewCategory] = useState<string>('MedicalEmergency');
   const [capturedPhotos, setCapturedPhotos] = useState<EvidencePhotoItem[]>([]);
-  const [newCasualties, setNewCasualties] = useState<CasualtyVitalsEntry[]>([
-    {
-      id: 'cas-init-1',
-      patientName: 'Unidentified Trauma Patient #1',
-      age: 34,
-      gender: 'Male',
-      triageTag: 'RED — IMMEDIATE',
-      levelOfConsciousness: 'Alert (GCS 14)',
-      bloodPressureSystolic: 118,
-      bloodPressureDiastolic: 76,
-      heartRateBpm: 96,
-      respiratoryRate: 20,
-      spO2Percent: 97,
-      temperatureCelsius: 36.8,
-      bloodGlucoseMgDl: 105,
-      chiefComplaint: 'Blunt vehicular trauma & laceration stabilization',
-      interventions: ['Cervical Collar', 'O2 Nasal Cannula 4L', 'IV Normal Saline', 'Hemorrhage Control']
-    }
-  ]);
+  const [newCasualties, setNewCasualties] = useState<DraftCasualtyInput[]>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Track which logs have already broadcasted CLOSE_CASE so we only fire once per log transition
   const closedBroadcastSetRef = useRef<Set<string>>(new Set());
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => {
+    window.setTimeout(() => {
       setToastMessage((prev) => (prev === msg ? null : prev));
     }, 3800);
   }, []);
 
-  // Merge backend reports (/api/reports/mine, /api/reports/agency/RHU, /api/incidents), PCR records (/api/responder-ops/pcr), and localStorage 'resqtrack_incident_logs'
   const loadAllIncidentLogs = useCallback(async () => {
     try {
-      const storedMap = readStoredLogs();
-
       const [myReportsRes, agencyReportsRes, allReportsRes, pcrRes] = await Promise.allSettled([
         getMyReports(),
         getAgencyReports(session?.unit && session.unit !== 'None' ? session.unit : 'RHU'),
@@ -362,11 +315,6 @@ export const MyReportsPage: React.FC = () => {
         rawReports.push(...allReportsRes.value);
       }
 
-      const firstIp = rawReports.find((r) => r.submittedIpAddress)?.submittedIpAddress;
-      if (firstIp) {
-        setClientIp(`${firstIp} (KATIPUNAN-MDT-VERIFIED)`);
-      }
-
       const pcrList: PatientCareRecord[] =
         pcrRes.status === 'fulfilled' && Array.isArray(pcrRes.value) ? pcrRes.value : [];
 
@@ -375,20 +323,20 @@ export const MyReportsPage: React.FC = () => {
         const key = pcr.reportId || pcr.id;
         if (!pcrByReportId[key]) pcrByReportId[key] = [];
         pcrByReportId[key].push({
-          id: pcr.id || `pcr-${Date.now()}`,
-          patientName: pcr.patientName || 'Trauma Patient',
-          age: pcr.age ?? 30,
-          gender: pcr.gender || 'Unknown',
+          id: pcr.id,
+          patientName: pcr.patientName,
+          age: pcr.age,
+          gender: pcr.gender,
           triageTag: pcr.spO2Percent < 92 || pcr.heartRateBpm > 120 ? 'RED — IMMEDIATE' : 'YELLOW — DELAYED',
-          levelOfConsciousness: pcr.levelOfConsciousness || 'Alert',
-          bloodPressureSystolic: pcr.bloodPressureSystolic || 120,
-          bloodPressureDiastolic: pcr.bloodPressureDiastolic || 80,
-          heartRateBpm: pcr.heartRateBpm || 84,
-          respiratoryRate: pcr.respiratoryRate || 18,
-          spO2Percent: pcr.spO2Percent || 98,
-          temperatureCelsius: pcr.temperatureCelsius || 36.7,
-          bloodGlucoseMgDl: pcr.bloodGlucoseMgDl || 100,
-          chiefComplaint: pcr.chiefComplaint || pcr.narrative || 'Field medical stabilization',
+          levelOfConsciousness: pcr.levelOfConsciousness,
+          bloodPressureSystolic: pcr.bloodPressureSystolic,
+          bloodPressureDiastolic: pcr.bloodPressureDiastolic,
+          heartRateBpm: pcr.heartRateBpm,
+          respiratoryRate: pcr.respiratoryRate,
+          spO2Percent: pcr.spO2Percent,
+          temperatureCelsius: pcr.temperatureCelsius,
+          bloodGlucoseMgDl: pcr.bloodGlucoseMgDl,
+          chiefComplaint: pcr.chiefComplaint || pcr.narrative || '',
           interventions: Array.isArray(pcr.interventions) ? pcr.interventions : [],
           anatomicalInjuries: Array.isArray(pcr.anatomicalInjuries) ? pcr.anatomicalInjuries : [],
           narrative: pcr.narrative,
@@ -396,172 +344,36 @@ export const MyReportsPage: React.FC = () => {
         });
       });
 
-      const mergedById = new Map<string, IncidentLogEntry>();
-
-      // 1. Hydrate from stored localStorage logs first (includes CASUALTY FIELD DISPATCHES "SUBMIT REPORT" entries)
-      Object.values(storedMap).forEach((stored) => {
-        if (!stored || !stored.id) return;
-        const id = String(stored.id);
-        const verifiedAt = stored.verifiedAt || null;
-        const isVerified = Boolean(stored.isVerified || verifiedAt || stored.status === 'Verified');
-        const remaining = isVerified ? computeRemainingSeconds(verifiedAt, Date.now()) : FIVE_MINUTES_SECONDS;
-        const isClosed = Boolean(
-          stored.isClosed ||
-            stored.status === 'Closed' ||
-            stored.status === 'Resolved' ||
-            (isVerified && verifiedAt && remaining === 0)
-        );
-
-        type StoredEvidenceRaw = {
-          id?: string;
-          url?: string;
-          dataUrl?: string;
-          timestamp?: string;
-          capturedAtFormatted?: string;
-          capturedAtIso?: string;
-          caption?: string;
-          name?: string;
-          latitude?: number;
-          longitude?: number;
-          ipAddress?: string;
-        };
-        const rawEvidenceArray: StoredEvidenceRaw[] =
-          Array.isArray(stored.evidencePhotos) && stored.evidencePhotos.length > 0
-            ? (stored.evidencePhotos as StoredEvidenceRaw[])
-            : Array.isArray((stored as { evidences?: StoredEvidenceRaw[] }).evidences)
-            ? ((stored as { evidences: StoredEvidenceRaw[] }).evidences)
-            : [];
-
-        const photos: EvidencePhotoItem[] = rawEvidenceArray
-          .filter((p) => Boolean(p.url || p.dataUrl))
-          .slice(0, MAX_EVIDENCE_PHOTOS)
-          .map((p, idx) => ({
-            id: p.id || `photo-${id}-${idx}`,
-            url: p.url || p.dataUrl || '',
-            timestamp: formatEvidenceTimestampExact(p.timestamp || p.capturedAtFormatted || p.capturedAtIso),
-            caption: p.caption || p.name || `Field Evidence #${idx + 1}`,
-            latitude: p.latitude ?? stored.latitude ?? coords.latitude,
-            longitude: p.longitude ?? stored.longitude ?? coords.longitude,
-            ipAddress: p.ipAddress || stored.ipAddress || clientIp
-          }));
-
-        type StoredCasualtyRaw = {
-          id?: string;
-          patientName?: string;
-          age?: number | string;
-          gender?: string;
-          triageColor?: string;
-          triageTag?: string;
-          consciousness?: string;
-          levelOfConsciousness?: string;
-          bloodPressure?: string;
-          bloodPressureSystolic?: number;
-          bpSystolic?: number;
-          bloodPressureDiastolic?: number;
-          bpDiastolic?: number;
-          heartRate?: number | string;
-          heartRateBpm?: number;
-          respiratoryRate?: number | string;
-          oxygenSaturation?: number | string;
-          spO2Percent?: number;
-          spO2?: number;
-          temperature?: number | string;
-          temperatureCelsius?: number;
-          temp?: number;
-          glucose?: number;
-          bloodGlucoseMgDl?: number;
-          chiefComplaint?: string;
-          treatmentNotes?: string;
-          narrative?: string;
-          interventions?: string[];
-          anatomicalInjuries?: string[];
-          recordedAt?: string;
-        };
-
-        const rawCasualtyArray: StoredCasualtyRaw[] =
-          Array.isArray(stored.casualties) && stored.casualties.length > 0
-            ? (stored.casualties as StoredCasualtyRaw[])
-            : Array.isArray((stored as { pcrRecords?: StoredCasualtyRaw[] }).pcrRecords)
-            ? ((stored as { pcrRecords: StoredCasualtyRaw[] }).pcrRecords)
-            : [];
-
-        const casualties: CasualtyVitalsEntry[] =
-          rawCasualtyArray.length > 0
-            ? rawCasualtyArray.map((c, idx) => {
-                const systolic = c.bloodPressureSystolic ?? c.bpSystolic ?? 120;
-                const diastolic = c.bloodPressureDiastolic ?? c.bpDiastolic ?? 80;
-                const hr = Number(c.heartRateBpm ?? c.heartRate ?? 84);
-                const spo2 = Number(c.spO2Percent ?? c.spO2 ?? c.oxygenSaturation ?? 98);
-                return {
-                  id: c.id || `pcr-${id}-${idx}`,
-                  patientName: c.patientName || 'Trauma Patient',
-                  age: typeof c.age === 'number' ? c.age : parseInt(String(c.age || 30), 10) || 30,
-                  gender: c.gender || 'Unknown',
-                  triageTag: c.triageTag || (spo2 < 92 || hr > 120 ? 'RED — IMMEDIATE' : 'YELLOW — DELAYED'),
-                  levelOfConsciousness: c.levelOfConsciousness || c.consciousness || 'Alert',
-                  bloodPressureSystolic: systolic,
-                  bloodPressureDiastolic: diastolic,
-                  heartRateBpm: hr,
-                  respiratoryRate: Number(c.respiratoryRate ?? 18),
-                  spO2Percent: spo2,
-                  temperatureCelsius: Number(c.temperatureCelsius ?? c.temperature ?? c.temp ?? 36.7),
-                  bloodGlucoseMgDl: Number(c.bloodGlucoseMgDl ?? c.glucose ?? 100),
-                  chiefComplaint: c.chiefComplaint || c.treatmentNotes || c.narrative || 'Field medical stabilization',
-                  interventions: Array.isArray(c.interventions) ? c.interventions : [],
-                  anatomicalInjuries: Array.isArray(c.anatomicalInjuries) ? c.anatomicalInjuries : [],
-                  narrative: c.narrative || c.treatmentNotes,
-                  recordedAt: formatEvidenceTimestampExact(c.recordedAt)
-                };
-              })
-            : pcrByReportId[id] || [];
-
-        if (isClosed) {
-          closedBroadcastSetRef.current.add(id);
+      const deduplicatedMap = new Map<string, ReportItem>();
+      rawReports.forEach((r) => {
+        if (r && r.id && !deduplicatedMap.has(r.id)) {
+          deduplicatedMap.set(r.id, r);
         }
-
-        mergedById.set(id, {
-          id,
-          referenceCode: stored.referenceCode || `RHU-LOG-${id.slice(0, 6).toUpperCase()}`,
-          title: stored.title || 'Field Emergency Dispatch',
-          note: stored.note || 'Field stabilization and incident telemetry logged.',
-          category: stored.category || 'MedicalEmergency',
-          severity: stored.severity || 'High',
-          status: isClosed ? 'Closed' : normalizeStatusForActiveFormula(stored.status || 'Submitted'),
-          isVerified,
-          verifiedAt,
-          verifiedBy: stored.verifiedBy || (isVerified ? 'LDRRMO Command / Responder Triage' : undefined),
-          isClosed,
-          closedAt: stored.closedAt || (isClosed ? new Date().toISOString() : null),
-          latitude: typeof stored.latitude === 'number' ? stored.latitude : coords.latitude,
-          longitude: typeof stored.longitude === 'number' ? stored.longitude : coords.longitude,
-          locationLabel: stored.locationLabel || 'Katipunan Sector Geotag',
-          ipAddress: stored.ipAddress || clientIp,
-          responderName: stored.responderName || session?.fullName || 'Duty Responder',
-          responderId: stored.responderId || session?.userId || 'resq-responder-01',
-          unitCode: stored.unitCode || session?.unit || 'RHU-ALPHA-1',
-          createdAt: stored.createdAt || new Date().toISOString(),
-          casualties,
-          evidencePhotos: photos,
-          isHardwareGeolocated: stored.isHardwareGeolocated ?? true
-        });
       });
 
-      // 2. Merge backend ReportItems
-      rawReports.forEach((r) => {
-        if (!r || !r.id) return;
-        const existing = mergedById.get(r.id) || (r.referenceCode ? mergedById.get(r.referenceCode) : undefined);
-        const backendVerified = Boolean(
-          r.verifiedAt || r.status === 'Verified' || r.status === 'Resolved' || existing?.isVerified
-        );
-        const verifiedAt =
-          existing?.verifiedAt ||
-          r.verifiedAt ||
-          (backendVerified ? r.createdAt || new Date().toISOString() : null);
+      const uniqueReports = Array.from(deduplicatedMap.values());
+      const evidenceEntries = await Promise.all(
+        uniqueReports.slice(0, 25).map(async (r) => {
+          try {
+            const list = await getReportEvidences(r.id);
+            return [r.id, Array.isArray(list) ? list : []] as const;
+          } catch {
+            return [r.id, [] as ReportEvidenceRecordDto[]] as const;
+          }
+        })
+      );
+      const evidencesByReportId = new Map<string, ReportEvidenceRecordDto[]>(evidenceEntries);
 
-        const remaining = backendVerified ? computeRemainingSeconds(verifiedAt, Date.now()) : FIVE_MINUTES_SECONDS;
+      const mergedById = new Map<string, IncidentLogEntry>();
+
+      uniqueReports.forEach((r) => {
+        const backendVerified = Boolean(
+          r.verifiedAt || r.status === 'Verified' || r.status === 'Resolved'
+        );
+        const verifiedAt = r.verifiedAt || null;
+        const remaining = backendVerified && verifiedAt ? computeRemainingSeconds(verifiedAt, Date.now()) : FIVE_MINUTES_SECONDS;
         const backendClosed = Boolean(
-          existing?.isClosed ||
-            r.status === 'Resolved' ||
+          r.status === 'Resolved' ||
             r.status === 'Closed' ||
             Boolean(r.resolvedAt) ||
             (backendVerified && verifiedAt && remaining === 0)
@@ -571,8 +383,18 @@ export const MyReportsPage: React.FC = () => {
           closedBroadcastSetRef.current.add(r.id);
         }
 
-        const existingPhotos = existing?.evidencePhotos || [];
-        const mergedPhotos: EvidencePhotoItem[] = [...existingPhotos];
+        const dbEvidences = evidencesByReportId.get(r.id) || [];
+        const mergedPhotos: EvidencePhotoItem[] = dbEvidences
+          .map((ev, idx) => ({
+            id: ev.id || `ev-${r.id}-${idx}`,
+            url: ev.url || ev.dataUrl || ev.filePath || '',
+            timestamp: formatEvidenceTimestampExact(ev.createdAtUtc || ev.createdAt || r.createdAt),
+            caption: ev.caption || `Evidence #${idx + 1}`,
+            latitude: r.latitude,
+            longitude: r.longitude
+          }))
+          .filter((p) => Boolean(p.url));
+
         if (r.imageUrl && !mergedPhotos.some((p) => p.url === r.imageUrl)) {
           mergedPhotos.unshift({
             id: `photo-main-${r.id}`,
@@ -580,73 +402,47 @@ export const MyReportsPage: React.FC = () => {
             timestamp: formatEvidenceTimestampExact(r.createdAt),
             caption: 'Primary Field Evidence Snapshot',
             latitude: r.latitude,
-            longitude: r.longitude,
-            ipAddress: existing?.ipAddress || clientIp
+            longitude: r.longitude
           });
         }
 
-        const casualties =
-          existing?.casualties && existing.casualties.length > 0
-            ? existing.casualties
-            : pcrByReportId[r.id] && pcrByReportId[r.id].length > 0
-            ? pcrByReportId[r.id]
-            : [
-                {
-                  id: `cas-${r.id}-1`,
-                  patientName: `Field Patient (${r.referenceCode || r.id.slice(0, 6)})`,
-                  age: 32,
-                  gender: 'Male',
-                  triageTag: r.severity === 'Critical' ? 'RED — IMMEDIATE' : 'YELLOW — OBSERVATION',
-                  levelOfConsciousness: 'Alert (GCS 15)',
-                  bloodPressureSystolic: 122,
-                  bloodPressureDiastolic: 78,
-                  heartRateBpm: 88,
-                  respiratoryRate: 18,
-                  spO2Percent: 98,
-                  temperatureCelsius: 36.8,
-                  bloodGlucoseMgDl: 102,
-                  chiefComplaint: r.title || 'Field trauma assessment',
-                  interventions: ['Primary Trauma Survey', 'Vitals Telemetry Logged'],
-                  recordedAt: formatEvidenceTimestampExact(r.createdAt)
-                }
-              ];
+        const casualties = pcrByReportId[r.id] || [];
 
         mergedById.set(r.id, {
           id: r.id,
-          referenceCode: r.referenceCode || existing?.referenceCode || `RHU-${r.id.slice(0, 6).toUpperCase()}`,
-          title: r.title || existing?.title || 'Emergency Medical Situation Report',
-          note: r.note || existing?.note || 'On-scene triage and patient stabilization executed.',
-          category: r.category || existing?.category || 'MedicalEmergency',
-          severity: r.severity || existing?.severity || 'High',
-          status: backendClosed ? 'Closed' : normalizeStatusForActiveFormula(existing?.status || r.status),
+          referenceCode: r.referenceCode || `RHU-${r.id.slice(0, 6).toUpperCase()}`,
+          title: r.title || 'Incident Report',
+          note: r.note || '',
+          category: r.category || 'MedicalEmergency',
+          severity: r.severity || 'High',
+          status: backendClosed ? 'Closed' : normalizeStatusForActiveFormula(r.status),
           isVerified: backendVerified,
           verifiedAt,
-          verifiedBy: existing?.verifiedBy || (backendVerified ? 'LDRRMO Command / AI Verified' : undefined),
+          verifiedBy: backendVerified ? 'Command / Verified' : undefined,
           isClosed: backendClosed,
-          closedAt: existing?.closedAt || r.resolvedAt || (backendClosed ? new Date().toISOString() : null),
-          latitude: r.latitude ?? existing?.latitude ?? coords.latitude,
-          longitude: r.longitude ?? existing?.longitude ?? coords.longitude,
-          locationLabel: r.locationLabel || existing?.locationLabel || 'Katipunan Sector Field Coordinates',
-          ipAddress: existing?.ipAddress || clientIp,
-          responderName: existing?.responderName || r.reporterName || session?.fullName || 'Duty Responder',
-          responderId: existing?.responderId || r.reporterId || session?.userId || 'resq-responder-01',
-          unitCode: existing?.unitCode || r.allocatedUnitCode || session?.unit || 'RHU-EMS-01',
-          createdAt: r.createdAt || existing?.createdAt || new Date().toISOString(),
+          closedAt: r.resolvedAt || null,
+          latitude: r.latitude,
+          longitude: r.longitude,
+          locationLabel: r.locationLabel || formatGpsCoord(r.latitude, r.longitude),
+          ipAddress: r.submittedIpAddress || 'Unavailable',
+          responderName: r.reporterName || session?.fullName || 'Responder',
+          responderId: r.reporterId || session?.userId || '',
+          unitCode: r.allocatedUnitCode || session?.unit || 'RHU',
+          createdAt: r.createdAt,
           casualties,
           evidencePhotos: mergedPhotos.slice(0, MAX_EVIDENCE_PHOTOS),
-          isHardwareGeolocated: r.isHardwareGeolocated ?? existing?.isHardwareGeolocated ?? true
+          isHardwareGeolocated: r.isHardwareGeolocated
         });
       });
 
-      // 3. Also include any standalone PCR records not yet linked to a report
       pcrList.forEach((pcr) => {
         const linkedId = pcr.reportId || `pcr-log-${pcr.id}`;
         if (!mergedById.has(linkedId)) {
           mergedById.set(linkedId, {
             id: linkedId,
             referenceCode: pcr.pcrReference || `PCR-${pcr.id.slice(0, 6).toUpperCase()}`,
-            title: `PCR Log: ${pcr.patientName} — ${pcr.chiefComplaint || 'Medical Triage'}`,
-            note: pcr.narrative || 'Patient Care Record submitted by field medic.',
+            title: `PCR Log: ${pcr.patientName}${pcr.chiefComplaint ? ` — ${pcr.chiefComplaint}` : ''}`,
+            note: pcr.narrative || '',
             category: 'MedicalEmergency',
             severity: pcr.spO2Percent < 92 ? 'Critical' : 'High',
             status: 'Responded',
@@ -656,12 +452,12 @@ export const MyReportsPage: React.FC = () => {
             closedAt: null,
             latitude: coords.latitude,
             longitude: coords.longitude,
-            locationLabel: `Unit ${pcr.unitCode || 'RHU'} Field Sector`,
-            ipAddress: clientIp,
-            responderName: pcr.medicName || session?.fullName || 'Duty Responder',
-            responderId: pcr.responderUserId || session?.userId || 'resq-responder-01',
-            unitCode: pcr.unitCode || 'RHU-EMS-01',
-            createdAt: pcr.createdAt || new Date().toISOString(),
+            locationLabel: pcr.unitCode ? `Unit ${pcr.unitCode}` : 'Field Sector',
+            ipAddress: 'Unavailable',
+            responderName: pcr.medicName || session?.fullName || 'Responder',
+            responderId: pcr.responderUserId || session?.userId || '',
+            unitCode: pcr.unitCode || activeAgencyUnit,
+            createdAt: pcr.createdAt,
             casualties: pcrByReportId[pcr.reportId || pcr.id] || [],
             evidencePhotos: [],
             isHardwareGeolocated: true
@@ -669,78 +465,13 @@ export const MyReportsPage: React.FC = () => {
         }
       });
 
-      if (mergedById.size === 0) {
-        BASELINE_INCIDENT_REPORTS.forEach((baseRep, idx) => {
-          const verifiedAt = idx === 0 ? new Date(Date.now() - 2 * 60 * 1000).toISOString() : null;
-          const isVerified = Boolean(verifiedAt);
-          mergedById.set(baseRep.id, {
-            id: baseRep.id,
-            referenceCode: baseRep.referenceCode,
-            title: baseRep.title,
-            note: baseRep.note,
-            category: baseRep.category,
-            severity: baseRep.severity,
-            status: isVerified ? 'Verified' : 'Responded',
-            isVerified,
-            verifiedAt,
-            verifiedBy: isVerified ? 'LDRRMO Admin Command' : undefined,
-            isClosed: false,
-            closedAt: null,
-            latitude: baseRep.latitude,
-            longitude: baseRep.longitude,
-            locationLabel: baseRep.locationLabel,
-            ipAddress: '192.168.10.42',
-            responderName: session?.fullName || 'Duty Responder',
-            responderId: session?.userId || 'resq-responder-01',
-            unitCode: baseRep.allocatedUnitCode || 'AMB-RHU-01',
-            createdAt: baseRep.createdAt,
-            casualties: [
-              {
-                id: `cas-base-${baseRep.id}`,
-                patientName: 'Casualty Patient (Juan Dela Cruz)',
-                age: 28,
-                gender: 'Male',
-                triageTag: 'RED — IMMEDIATE',
-                levelOfConsciousness: 'Alert (GCS 15)',
-                bloodPressureSystolic: 120,
-                bloodPressureDiastolic: 80,
-                heartRateBpm: 78,
-                respiratoryRate: 18,
-                spO2Percent: 98,
-                temperatureCelsius: 36.6,
-                bloodGlucoseMgDl: 95,
-                chiefComplaint: 'Acute knee laceration & lower limb trauma',
-                interventions: ['Wound Irrigation', 'Sterile Dressing', 'Traction Splint'],
-                recordedAt: formatEvidenceTimestampExact(baseRep.createdAt)
-              }
-            ],
-            evidencePhotos: baseRep.imageUrl
-              ? [
-                  {
-                    id: `ev-base-${baseRep.id}`,
-                    url: baseRep.imageUrl,
-                    timestamp: formatEvidenceTimestampExact(baseRep.createdAt),
-                    caption: 'Field incident point of impact',
-                    latitude: baseRep.latitude,
-                    longitude: baseRep.longitude,
-                    ipAddress: '192.168.10.42'
-                  }
-                ]
-              : [],
-            isHardwareGeolocated: true
-          });
-        });
-      }
-
-      const finalLogs = Array.from(mergedById.values());
-      setLogs(finalLogs);
-      writeStoredLogs(finalLogs);
+      setLogs(Array.from(mergedById.values()));
     } catch (err) {
       console.error('[MyReportsPage] Failed to load incident logs:', err);
     } finally {
       setLoading(false);
     }
-  }, [session, coords.latitude, coords.longitude, clientIp]);
+  }, [session, activeAgencyUnit, coords.latitude, coords.longitude]);
 
   useValueRefreshAuto(loadAllIncidentLogs, {
     intervalMs: 8000,
@@ -751,152 +482,81 @@ export const MyReportsPage: React.FC = () => {
     void loadAllIncidentLogs();
   }, [loadAllIncidentLogs]);
 
-  // Listen for cross-component incident submissions or verification events
   useEffect(() => {
     const handleExternalUpdate = () => {
       void loadAllIncidentLogs();
     };
     window.addEventListener('resqtrack:report', handleExternalUpdate);
     window.addEventListener('resqtrack:incident_created', handleExternalUpdate);
-    window.addEventListener('storage', handleExternalUpdate);
     return () => {
       window.removeEventListener('resqtrack:report', handleExternalUpdate);
       window.removeEventListener('resqtrack:incident_created', handleExternalUpdate);
-      window.removeEventListener('storage', handleExternalUpdate);
     };
   }, [loadAllIncidentLogs]);
 
-  // 1-second live tick for 5-Minute Verification Countdown & Auto-Close transitions
+  // 1-second live tick for 5-Minute Verification Countdown & Auto-Close via PostgreSQL verifyReport
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       const currentNow = Date.now();
       setNowMs(currentNow);
 
-      setLogs((prevLogs) => {
-        let didMutate = false;
-        const nextLogs = prevLogs.map((log) => {
-          if (log.isVerified && !log.isClosed && log.verifiedAt) {
-            const rem = computeRemainingSeconds(log.verifiedAt, currentNow);
-            if (rem === 0) {
-              didMutate = true;
-              const closedAtIso = new Date(currentNow).toISOString();
-
-              if (!closedBroadcastSetRef.current.has(log.id)) {
-                closedBroadcastSetRef.current.add(log.id);
-                // Broadcast resqtrack:notification with 'CLOSE_CASE'
-                window.dispatchEvent(
-                  new CustomEvent('resqtrack:notification', {
-                    detail: {
-                      type: 'CLOSE_CASE',
-                      action: 'CLOSE_CASE',
-                      reportId: log.id,
-                      referenceCode: log.referenceCode,
-                      title: log.title,
-                      message: `Incident ${log.referenceCode} (${log.title}) auto-closed after 5-minute verification timer reached 00:00.`,
-                      timestamp: closedAtIso
-                    }
-                  })
-                );
-                void verifyReport(
-                  log.id,
-                  'Resolved',
-                  'Case auto-closed (100% solved) upon completion of 5-minute verification timer.'
-                ).catch(() => {
-                  // Ignore if local-only report
-                });
-              }
-
-              return {
-                ...log,
-                isClosed: true,
-                status: 'Closed',
-                closedAt: closedAtIso
-              };
-            }
+      logs.forEach((log) => {
+        if (log.isVerified && !log.isClosed && log.verifiedAt) {
+          const rem = computeRemainingSeconds(log.verifiedAt, currentNow);
+          if (rem === 0 && !closedBroadcastSetRef.current.has(log.id)) {
+            closedBroadcastSetRef.current.add(log.id);
+            const closedAtIso = new Date(currentNow).toISOString();
+            window.dispatchEvent(
+              new CustomEvent('resqtrack:notification', {
+                detail: {
+                  type: 'CLOSE_CASE',
+                  action: 'CLOSE_CASE',
+                  reportId: log.id,
+                  referenceCode: log.referenceCode,
+                  title: log.title,
+                  message: `Incident ${log.referenceCode} (${log.title}) auto-closed after 5-minute verification timer reached 00:00.`,
+                  timestamp: closedAtIso
+                }
+              })
+            );
+            void verifyReport(
+              log.id,
+              'Resolved',
+              'Case auto-closed upon completion of 5-minute verification timer.'
+            )
+              .then(() => loadAllIncidentLogs())
+              .catch(() => {
+                closedBroadcastSetRef.current.delete(log.id);
+              });
           }
-          return log;
-        });
-
-        if (didMutate) {
-          writeStoredLogs(nextLogs);
-          return nextLogs;
         }
-        return prevLogs;
       });
     }, 1000);
 
     return () => window.clearInterval(intervalId);
-  }, []);
+  }, [logs, loadAllIncidentLogs]);
 
-  // Trigger 5-Minute Verification Timer (for testing/demoing or manual/AI verification)
   const handleStartFiveMinTimer = useCallback(
-    (logItem: IncidentLogEntry, e?: React.MouseEvent) => {
+    async (logItem: IncidentLogEntry, e?: React.MouseEvent) => {
       if (e) e.stopPropagation();
       const verifiedIso = new Date().toISOString();
       closedBroadcastSetRef.current.delete(logItem.id);
 
-      setLogs((prev) => {
-        const updated = prev.map((item) =>
-          item.id === logItem.id
-            ? {
-                ...item,
-                status: 'Responded',
-                isVerified: true,
-                verifiedAt: verifiedIso,
-                verifiedBy: 'RHU Command / AI Verification Engine',
-                isClosed: false,
-                closedAt: null
-              }
-            : item
+      try {
+        await verifyReport(
+          logItem.id,
+          'Verified',
+          `Verified at ${formatEvidenceTimestampExact(verifiedIso)} — 5-minute auto-close countdown initiated.`
         );
-        writeStoredLogs(updated);
-        return updated;
-      });
-
-      void verifyReport(
-        logItem.id,
-        'Verified',
-        `Verified at ${formatEvidenceTimestampExact(verifiedIso)} — 5-minute auto-close countdown initiated.`
-      ).catch(() => {
-        // Local report fallback
-      });
-
-      showToast(`5m timer started for ${logItem.referenceCode}`);
+        await loadAllIncidentLogs();
+        showToast(`5m timer started for ${logItem.referenceCode}`);
+      } catch {
+        showToast(`Failed to verify ${logItem.referenceCode} on server.`);
+      }
     },
-    [showToast]
+    [loadAllIncidentLogs, showToast]
   );
 
-  // Fast-forward timer to last 5 seconds so user/tester can immediately witness the 00:00 auto-close transition if desired
-  const handleSimulateFinalSeconds = useCallback(
-    (logItem: IncidentLogEntry, e?: React.MouseEvent) => {
-      if (e) e.stopPropagation();
-      const almostDoneIso = new Date(Date.now() - (FIVE_MINUTES_SECONDS - 5) * 1000).toISOString();
-      closedBroadcastSetRef.current.delete(logItem.id);
-
-      setLogs((prev) => {
-        const updated = prev.map((item) =>
-          item.id === logItem.id
-            ? {
-                ...item,
-                status: 'Responded',
-                isVerified: true,
-                verifiedAt: almostDoneIso,
-                verifiedBy: 'RHU Command / AI Verification Engine',
-                isClosed: false,
-                closedAt: null
-              }
-            : item
-        );
-        writeStoredLogs(updated);
-        return updated;
-      });
-
-      showToast(`Timer set to 00:05 for ${logItem.referenceCode}`);
-    },
-    [showToast]
-  );
-
-  // Authorized Responder Verification: Verify, Reject, or Dispatch newly uploaded Submitted/Reported/Pending incidents (Instructor #4, #7)
   const handleVerifyOrRejectLog = useCallback(
     async (
       logItem: IncidentLogEntry,
@@ -914,71 +574,31 @@ export const MyReportsPage: React.FC = () => {
           ? `Dispatched by ${responderLabel} (${activeAgencyUnit}) at ${formatEvidenceTimestampExact(nowIso)}.`
           : `Verified by ${responderLabel} (${activeAgencyUnit}) at ${formatEvidenceTimestampExact(nowIso)}.`;
 
-      if (actionStatus === 'Verified') {
-        closedBroadcastSetRef.current.delete(logItem.id);
-      } else if (actionStatus === 'Rejected') {
-        closedBroadcastSetRef.current.add(logItem.id);
+      try {
+        await verifyReport(logItem.id, backendStatus, noteText);
+        if (actionStatus === 'Verified') {
+          closedBroadcastSetRef.current.delete(logItem.id);
+        } else if (actionStatus === 'Rejected') {
+          closedBroadcastSetRef.current.add(logItem.id);
+        }
+        await loadAllIncidentLogs();
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('resqtrack:report', {
+              detail: { reportId: logItem.id, status: backendStatus }
+            })
+          );
+        }
+
+        showToast(`${logItem.referenceCode} marked ${actionStatus}`);
+      } catch {
+        showToast(`Failed to update ${logItem.referenceCode} on server.`);
       }
-
-      setLogs((prev) => {
-        const updated = prev.map((item) => {
-          if (item.id !== logItem.id) return item;
-          if (actionStatus === 'Verified') {
-            return {
-              ...item,
-              status: 'Verified',
-              isVerified: true,
-              verifiedAt: item.verifiedAt || nowIso,
-              verifiedBy: responderLabel,
-              isClosed: false,
-              closedAt: null
-            };
-          }
-          if (actionStatus === 'Rejected') {
-            return {
-              ...item,
-              status: 'Rejected',
-              isVerified: false,
-              isClosed: true,
-              closedAt: nowIso
-            };
-          }
-          return {
-            ...item,
-            status: 'Dispatched',
-            isVerified: true,
-            verifiedAt: item.verifiedAt || nowIso,
-            verifiedBy: item.verifiedBy || responderLabel
-          };
-        });
-        writeStoredLogs(updated);
-        return updated;
-      });
-
-      void verifyReport(logItem.id, backendStatus, noteText).catch(() => {
-        // Local persistence remains authoritative when offline
-      });
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('resqtrack:report', {
-            detail: { reportId: logItem.id, status: backendStatus }
-          })
-        );
-      }
-
-      showToast(`${logItem.referenceCode} marked ${actionStatus}`);
     },
-    [activeAgencyUnit, session?.fullName, showToast]
+    [activeAgencyUnit, session?.fullName, loadAllIncidentLogs, showToast]
   );
 
-  // ============================================================================
-  // TASK 2: 4 EXACT KPI TELEMETRY CARDS (N=0 SAFE FORMULAS FROM FORMULAS_RHU_TELEMETRY.md)
-  // 1. TOTAL LOGGED: N_totalLogged(r) = |L(r)|
-  // 2. ACTIVE IN ACTION: N_activeInAction(r) = |{ l in L(r) | l.status in {"Dispatched","EnRoute","OnScene","Responded"} AND NOT l.isClosed }|
-  // 3. VERIFIED ACTIONED: N_verifiedActioned(r) = |{ l in L(r) | l.isVerified = true }|
-  // 4. RESOLVED MISSIONS: N_resolvedMissions(r) = |{ l in L(r) | l.isClosed = true OR (l.isVerified = true AND T_remaining(l) = 0) }|
-  // ============================================================================
   const { totalLogged, activeInAction, verifiedActioned, resolvedMissions, verifiedActiveTimerCount } = useMemo(() => {
     const safeLogs = Array.isArray(logs) ? logs : [];
     const total = safeLogs.length;
@@ -1017,7 +637,6 @@ export const MyReportsPage: React.FC = () => {
     };
   }, [logs, nowMs]);
 
-  // Filter & Sort Logs
   const filteredAndSortedLogs = useMemo(() => {
     const activeStatuses = new Set(['Dispatched', 'EnRoute', 'OnScene', 'Responded']);
     const q = debouncedSearch.trim().toLowerCase();
@@ -1077,7 +696,6 @@ export const MyReportsPage: React.FC = () => {
     });
   }, [logs, activeTab, debouncedSearch, sortMode, nowMs]);
 
-  // Pagination via @/Hooks/usePagination
   const {
     currentPage,
     pageSize,
@@ -1104,9 +722,8 @@ export const MyReportsPage: React.FC = () => {
     [logs, selectedLogId]
   );
 
-  // Camera capture handler (either for new incident log or appending up to 40 photos to an existing log)
   const handleCameraCapture = useCallback(
-    (dataUrl: string, meta: CameraCaptureMetadata) => {
+    async (dataUrl: string, meta: CameraCaptureMetadata) => {
       const exactStamp = formatEvidenceTimestampExact(new Date());
       const newPhoto: EvidencePhotoItem = {
         id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1114,127 +731,123 @@ export const MyReportsPage: React.FC = () => {
         timestamp: exactStamp,
         caption: `Geotagged Evidence (${exactStamp})`,
         latitude: meta.latitude ?? coords.latitude,
-        longitude: meta.longitude ?? coords.longitude,
-        ipAddress: clientIp
+        longitude: meta.longitude ?? coords.longitude
       };
 
       setIsCameraOpen(false);
 
       if (cameraTargetLogId) {
-        setLogs((prev) => {
-          const updated = prev.map((item) => {
-            if (item.id !== cameraTargetLogId) return item;
-            if (item.evidencePhotos.length >= MAX_EVIDENCE_PHOTOS) return item;
-            return {
-              ...item,
-              evidencePhotos: [...item.evidencePhotos, newPhoto].slice(0, MAX_EVIDENCE_PHOTOS)
-            };
-          });
-          writeStoredLogs(updated);
-          return updated;
-        });
+        const targetId = cameraTargetLogId;
         setCameraTargetLogId(null);
-        showToast(`Photo added (${exactStamp})`);
+        try {
+          await uploadReportEvidence(targetId, dataUrl, newPhoto.caption);
+          await loadAllIncidentLogs();
+          showToast(`Evidence uploaded to PostgreSQL (${exactStamp})`);
+        } catch {
+          showToast('Failed to upload evidence photo to server.');
+        }
       } else {
         setCapturedPhotos((prev) => [...prev, newPhoto].slice(0, MAX_EVIDENCE_PHOTOS));
         setIsCreateModalOpen(true);
       }
     },
-    [cameraTargetLogId, coords.latitude, coords.longitude, clientIp, showToast]
+    [cameraTargetLogId, coords.latitude, coords.longitude, loadAllIncidentLogs, showToast]
   );
 
   const handleAddCasualtyRow = useCallback(() => {
-    setNewCasualties((prev) => [
-      ...prev,
-      {
-        id: `cas-${Date.now()}-${prev.length + 1}`,
-        patientName: `Casualty Patient #${prev.length + 1}`,
-        age: 28,
-        gender: 'Female',
-        triageTag: 'YELLOW — DELAYED',
-        levelOfConsciousness: 'Alert (GCS 15)',
-        bloodPressureSystolic: 120,
-        bloodPressureDiastolic: 80,
-        heartRateBpm: 86,
-        respiratoryRate: 18,
-        spO2Percent: 98,
-        temperatureCelsius: 36.7,
-        bloodGlucoseMgDl: 98,
-        chiefComplaint: 'Secondary impact contusion & triage observation',
-        interventions: ['Vitals Monitoring', 'Wound Dressing']
-      }
-    ]);
+    setNewCasualties((prev) => [...prev, createEmptyDraftCasualty()]);
   }, []);
+
+  const handleUpdateDraftCasualty = (
+    id: string,
+    field: keyof DraftCasualtyInput,
+    value: string
+  ) => {
+    setNewCasualties((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, [field]: value } : c))
+    );
+  };
+
+  const handleRemoveDraftCasualty = (id: string) => {
+    setNewCasualties((prev) => prev.filter((c) => c.id !== id));
+  };
 
   const handleCreateLogSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
+
+    const incompletePcr = newCasualties.find(
+      (c) =>
+        !c.patientName.trim() ||
+        !c.age.trim() ||
+        !c.bloodPressureSystolic.trim() ||
+        !c.bloodPressureDiastolic.trim() ||
+        !c.heartRateBpm.trim() ||
+        !c.respiratoryRate.trim() ||
+        !c.spO2Percent.trim()
+    );
+    if (incompletePcr) {
+      showToast('Please complete all required PCR patient vitals or remove empty patient rows.');
+      return;
+    }
+
     setIsSubmitting(true);
-
-    const createdAtIso = new Date().toISOString();
-    const refCode = `RHU-LOG-${Math.floor(100000 + Math.random() * 900000)}`;
-
     try {
-      let createdReportId = `local-log-${Date.now()}`;
-      let finalRefCode = refCode;
-
-      try {
-        const res = await createReport({
-          title: newTitle.trim(),
-          note: newNote.trim(),
-          category: newCategory,
-          severity: newSeverity,
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          locationLabel: 'RHU Field Responder Geotag',
-          imageDataUrl: capturedPhotos[0]?.url || undefined,
-          isHardwareGeolocated
-        });
-        if (res?.report?.id) {
-          createdReportId = res.report.id;
-          finalRefCode = res.report.referenceCode || refCode;
-        }
-      } catch {
-        // Fallback to local incident log persistence when backend is offline
-      }
-
-      const newEntry: IncidentLogEntry = {
-        id: createdReportId,
-        referenceCode: finalRefCode,
+      const res = await createReport({
         title: newTitle.trim(),
-        note: newNote.trim() || 'Field stabilization and incident telemetry recorded.',
+        note: newNote.trim(),
         category: newCategory,
         severity: newSeverity,
-        status: 'Submitted',
-        isVerified: false,
-        verifiedAt: null,
-        isClosed: false,
-        closedAt: null,
         latitude: coords.latitude,
         longitude: coords.longitude,
-        locationLabel: 'Katipunan Field Sector Coordinates',
-        ipAddress: clientIp,
-        responderName: session?.fullName || 'Duty Responder',
-        responderId: session?.userId || 'resq-responder-01',
-        unitCode: session?.unit || 'RHU-ALPHA-1',
-        createdAt: createdAtIso,
-        casualties: newCasualties,
-        evidencePhotos: capturedPhotos.slice(0, MAX_EVIDENCE_PHOTOS),
+        locationLabel: `${activeAgencyUnit} Field Geotag`,
+        imageDataUrl: capturedPhotos[0]?.url || undefined,
         isHardwareGeolocated
-      };
-
-      setLogs((prev) => {
-        const next = [newEntry, ...prev];
-        writeStoredLogs(next);
-        return next;
       });
 
-      window.dispatchEvent(new CustomEvent('resqtrack:report', { detail: newEntry }));
-      showToast(`Report ${finalRefCode} saved`);
+      const createdReportId = res?.report?.id;
+      const finalRefCode = res?.report?.referenceCode || 'NEW';
+
+      if (createdReportId) {
+        for (let idx = 0; idx < capturedPhotos.length; idx += 1) {
+          const photo = capturedPhotos[idx];
+          await uploadReportEvidence(
+            createdReportId,
+            photo.url,
+            photo.caption || `Field Evidence #${idx + 1}`
+          );
+        }
+
+        for (const c of newCasualties) {
+          await submitPcrRecord({
+            reportId: createdReportId,
+            patientName: c.patientName.trim(),
+            age: Number(c.age),
+            gender: c.gender,
+            levelOfConsciousness: c.levelOfConsciousness,
+            bloodPressureSystolic: Number(c.bloodPressureSystolic),
+            bloodPressureDiastolic: Number(c.bloodPressureDiastolic),
+            heartRateBpm: Number(c.heartRateBpm),
+            respiratoryRate: Number(c.respiratoryRate),
+            spO2Percent: Number(c.spO2Percent),
+            temperatureCelsius: c.temperatureCelsius.trim() ? Number(c.temperatureCelsius) : 0,
+            chiefComplaint: c.chiefComplaint.trim(),
+            medicName: session?.fullName || `${activeAgencyUnit} Responder`,
+            unitCode: activeAgencyUnit
+          });
+        }
+      }
+
+      await loadAllIncidentLogs();
+      window.dispatchEvent(new CustomEvent('resqtrack:report', { detail: res?.report }));
+      showToast(`Report ${finalRefCode} saved to PostgreSQL`);
       setIsCreateModalOpen(false);
       setNewTitle('');
       setNewNote('');
       setCapturedPhotos([]);
+      setNewCasualties([]);
+    } catch {
+      showToast('Failed to submit report to PostgreSQL.');
     } finally {
       setIsSubmitting(false);
     }
@@ -1242,7 +855,6 @@ export const MyReportsPage: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 text-[#2B010E] select-none pb-12 w-full">
-      {/* Toast Notification Banner */}
       {toastMessage && (
         <div className="clay-surface fixed top-5 right-5 z-50 px-4 py-3 rounded-xl bg-[#F7F1EA] border-2 border-[#670626] text-[#670626] font-mono text-sm font-bold shadow-2xl flex items-center gap-2.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[#670626] animate-ping" />
@@ -1260,7 +872,7 @@ export const MyReportsPage: React.FC = () => {
             </span>
             <span className="text-[#E9D9D0]/60 font-mono">·</span>
             <span className="text-sm font-mono text-[#F7F1EA] font-semibold">
-              {session?.fullName || 'Duty Responder'}
+              {session?.fullName || 'Responder'}
             </span>
             <span
               className={`px-2.5 py-0.5 rounded-lg border text-xs font-mono font-bold ${agencyHeaderMeta.badgeClass}`}
@@ -1456,7 +1068,7 @@ export const MyReportsPage: React.FC = () => {
           <ClipboardList className="w-9 h-9 mx-auto mb-2.5 text-[#A83B4D]" />
           <h3 className="text-lg font-black text-[#670626] font-mono">No matching reports</h3>
           <p className="text-sm text-[#A83B4D] font-mono mt-1">
-            Submit a dispatch or create a new report.
+            No incident logs found in database.
           </p>
         </div>
       ) : viewMode === 'card' ? (
@@ -1484,7 +1096,6 @@ export const MyReportsPage: React.FC = () => {
                 }`}
               >
                 <div>
-                  {/* Top Bar: Reference Code, Severity & Lifecycle State Badge */}
                   <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm font-black text-[#670626] group-hover:underline">
@@ -1521,15 +1132,17 @@ export const MyReportsPage: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Title & Narrative */}
                   <h3 className="text-lg font-black text-[#2B010E] line-clamp-1">{log.title}</h3>
-                  <p className="text-sm text-[#5C313E] mt-1 line-clamp-2">{log.note}</p>
+                  <p className="text-sm text-[#5C313E] mt-1 line-clamp-2">{log.note || 'No notes.'}</p>
 
-                  {/* Multi-Casualty & Photo Evidence Summary Chips */}
                   <div className="flex flex-wrap items-center gap-2 mt-3 font-mono text-xs">
                     <span className="px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#670626]/15 text-[#670626] font-bold inline-flex items-center gap-1.5">
                       <HeartPulse className="w-3.5 h-3.5 text-[#A83B4D]" />
-                      <span>{log.casualties.length} PCR</span>
+                      <span>
+                        {log.casualties.length === 0
+                          ? '0 PCRs logged'
+                          : `${log.casualties.length} PCR`}
+                      </span>
                     </span>
                     <span className="px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#670626]/15 text-[#670626] font-bold inline-flex items-center gap-1.5">
                       <ImageIcon className="w-3.5 h-3.5 text-[#A83B4D]" />
@@ -1537,11 +1150,10 @@ export const MyReportsPage: React.FC = () => {
                     </span>
                     <span className="px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#670626]/15 text-[#5C313E] inline-flex items-center gap-1.5">
                       <Globe className="w-3.5 h-3.5 text-[#A83B4D]" />
-                      <span>{log.ipAddress.split(' ')[0]}</span>
+                      <span>{log.ipAddress}</span>
                     </span>
                   </div>
 
-                  {/* Verification Actions + 5-Minute Verification Loading Timer Bar */}
                   <div className="mt-3.5 p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
                     {isRejected ? (
                       <div className="flex items-center justify-between text-xs font-mono text-[#670626] font-bold">
@@ -1549,62 +1161,34 @@ export const MyReportsPage: React.FC = () => {
                         <span>{formatEvidenceTimestampExact(log.closedAt)}</span>
                       </div>
                     ) : effectivelyClosed ? (
-                      <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center justify-between text-xs font-mono">
-                          <span className="text-emerald-900 font-bold flex items-center gap-1.5">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-                            <span>Closed</span>
-                          </span>
-                          <span className="text-emerald-800 font-bold">00:00 (100%)</span>
-                        </div>
-                        <div className="w-full h-2.5 rounded-full bg-[#F7F1EA] overflow-hidden border border-emerald-700/30">
-                          <div className="h-full bg-emerald-600 w-full transition-all duration-500" />
-                        </div>
+                      <div className="flex items-center justify-between text-xs font-mono text-emerald-900 font-bold">
+                        <span>Case Resolved</span>
+                        <span>{formatEvidenceTimestampExact(log.closedAt)}</span>
                       </div>
                     ) : log.isVerified ? (
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center justify-between text-xs font-mono">
-                          <span className="text-[#670626] font-bold flex items-center gap-1.5">
-                            <Sparkles className="w-4 h-4 text-[#A83B4D]" />
-                            <span>Closing in {formatMmSs(remainingSec)}</span>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-mono text-[#670626] font-bold">
+                          <span>Auto-close Timer</span>
+                          <span>
+                            {formatMmSs(remainingSec)} ({progressPct}%)
                           </span>
-                          <span className="text-[#670626] font-bold">{progressPct}%</span>
                         </div>
                         <div className="w-full h-2.5 rounded-full bg-[#F7F1EA] overflow-hidden border border-[#670626]/20">
                           <div
-                            className="h-full bg-gradient-to-r from-[#670626] via-[#A83B4D] to-emerald-600 transition-all duration-700"
+                            className="h-full bg-gradient-to-r from-[#670626] via-[#A83B4D] to-emerald-600 transition-all duration-500"
                             style={{ width: `${progressPct}%` }}
                           />
                         </div>
-                        <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-                          {log.status !== 'Dispatched' && (
-                            <button
-                              type="button"
-                              onClick={(e) => handleVerifyOrRejectLog(log, 'Dispatched', e)}
-                              className="px-2.5 py-1 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] text-xs font-mono font-bold inline-flex items-center gap-1 cursor-pointer"
-                            >
-                              <Send className="w-3 h-3" />
-                              <span>Dispatch</span>
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={(e) => handleSimulateFinalSeconds(log, e)}
-                            className="px-2.5 py-1 rounded-lg bg-[#F7F1EA] hover:bg-white text-[#670626] border border-[#670626]/25 text-xs font-mono font-bold cursor-pointer"
-                          >
-                            Skip to 00:05
-                          </button>
-                        </div>
                       </div>
                     ) : (
-                      <div className="flex flex-col gap-2.5">
+                      <div className="space-y-2.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs font-mono text-amber-900 font-bold">
                             {awaitingVerification ? 'Awaiting Verification' : 'Pending verification'}
                           </span>
                           <button
                             type="button"
-                            onClick={(e) => handleStartFiveMinTimer(log, e)}
+                            onClick={(e) => void handleStartFiveMinTimer(log, e)}
                             className="px-3 py-1 rounded-lg bg-[#F7F1EA] hover:bg-white text-[#670626] border border-[#670626]/25 font-mono text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
                           >
                             <Play className="w-3 h-3 fill-current" />
@@ -1615,7 +1199,7 @@ export const MyReportsPage: React.FC = () => {
                         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#670626]/12">
                           <button
                             type="button"
-                            onClick={(e) => handleVerifyOrRejectLog(log, 'Verified', e)}
+                            onClick={(e) => void handleVerifyOrRejectLog(log, 'Verified', e)}
                             className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
                           >
                             <Check className="w-3.5 h-3.5" />
@@ -1623,7 +1207,7 @@ export const MyReportsPage: React.FC = () => {
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => handleVerifyOrRejectLog(log, 'Dispatched', e)}
+                            onClick={(e) => void handleVerifyOrRejectLog(log, 'Dispatched', e)}
                             className="px-3 py-1.5 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-mono text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
                           >
                             <Send className="w-3.5 h-3.5" />
@@ -1631,7 +1215,7 @@ export const MyReportsPage: React.FC = () => {
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => handleVerifyOrRejectLog(log, 'Rejected', e)}
+                            onClick={(e) => void handleVerifyOrRejectLog(log, 'Rejected', e)}
                             className="px-3 py-1.5 rounded-lg bg-[#F7F1EA] hover:bg-rose-100 text-[#991B1B] border border-[#991B1B]/30 font-mono text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
                           >
                             <XCircle className="w-3.5 h-3.5" />
@@ -1643,7 +1227,6 @@ export const MyReportsPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Card Footer: GPS Coordinates & Timestamp */}
                 <div className="mt-3.5 pt-3 border-t border-[#670626]/12 flex items-center justify-between font-mono text-xs text-[#5C313E]">
                   <span className="truncate max-w-[230px] inline-flex items-center gap-1.5">
                     <MapPin className="w-4 h-4 text-[#670626] shrink-0" />
@@ -1671,7 +1254,6 @@ export const MyReportsPage: React.FC = () => {
           })}
         </div>
       ) : (
-        /* TABLE VIEW */
         <div className="clay-surface overflow-x-auto rounded-2xl border border-[#670626]/15 bg-[#F7F1EA] shadow-[0_14px_34px_rgba(74,4,26,0.22)]">
           <table className="w-full text-left text-sm font-mono">
             <thead className="bg-[#E9D9D0] text-[#670626] text-xs uppercase border-b border-[#670626]/15">
@@ -1709,12 +1291,12 @@ export const MyReportsPage: React.FC = () => {
                     <td className="p-4">
                       <div className="text-[#2B010E] font-sans font-bold line-clamp-1">{log.title}</div>
                       <div className="text-xs text-[#A83B4D] mt-0.5">
-                        {log.casualties.length} PCR · {log.unitCode}
+                        {log.casualties.length === 0 ? '0 PCRs logged' : `${log.casualties.length} PCR`} · {log.unitCode}
                       </div>
                     </td>
                     <td className="p-4 text-[#5C313E] whitespace-nowrap">
                       <div className="text-emerald-800 font-bold text-xs">{formatGpsCoord(log.latitude, log.longitude)}</div>
-                      <div className="text-xs text-[#7A4E59]">{log.ipAddress.split(' ')[0]}</div>
+                      <div className="text-xs text-[#7A4E59]">{log.ipAddress}</div>
                     </td>
                     <td className="p-4 whitespace-nowrap">
                       <span className="px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#670626]/15 text-[#670626] text-xs font-bold">
@@ -1755,21 +1337,21 @@ export const MyReportsPage: React.FC = () => {
                         <div className="inline-flex items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={(e) => handleVerifyOrRejectLog(log, 'Verified', e)}
+                            onClick={(e) => void handleVerifyOrRejectLog(log, 'Verified', e)}
                             className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer"
                           >
                             Verify
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => handleVerifyOrRejectLog(log, 'Dispatched', e)}
+                            onClick={(e) => void handleVerifyOrRejectLog(log, 'Dispatched', e)}
                             className="px-2.5 py-1.5 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-bold text-xs cursor-pointer"
                           >
                             Dispatch
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => handleVerifyOrRejectLog(log, 'Rejected', e)}
+                            onClick={(e) => void handleVerifyOrRejectLog(log, 'Rejected', e)}
                             className="px-2.5 py-1.5 rounded-lg bg-[#E9D9D0] hover:bg-rose-100 text-[#991B1B] border border-[#991B1B]/30 font-bold text-xs cursor-pointer"
                           >
                             Reject
@@ -1780,19 +1362,12 @@ export const MyReportsPage: React.FC = () => {
                           {log.status !== 'Dispatched' && (
                             <button
                               type="button"
-                              onClick={(e) => handleVerifyOrRejectLog(log, 'Dispatched', e)}
+                              onClick={(e) => void handleVerifyOrRejectLog(log, 'Dispatched', e)}
                               className="px-2.5 py-1.5 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-bold text-xs cursor-pointer"
                             >
                               Dispatch
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={(e) => handleSimulateFinalSeconds(log, e)}
-                            className="px-2.5 py-1.5 rounded-lg bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626] border border-[#670626]/20 font-bold text-xs cursor-pointer"
-                          >
-                            Skip 00:05
-                          </button>
                         </div>
                       ) : isRejected ? (
                         <span className="text-xs text-[#991B1B] font-bold">Rejected</span>
@@ -1879,7 +1454,6 @@ export const MyReportsPage: React.FC = () => {
             maxWidth="max-w-4xl"
           >
             <div className="flex flex-col gap-5 text-[#2B010E] text-sm font-mono">
-              {/* Top Headline & Lifecycle Status Banner */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#670626]/15 pb-4">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1917,7 +1491,6 @@ export const MyReportsPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Responder Incident Verification Bar (Verify / Dispatch / Reject) */}
               {!modalClosed && !modalRejected && (
                 <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -1934,7 +1507,7 @@ export const MyReportsPage: React.FC = () => {
                         type="button"
                         variant="action-green"
                         size="sm"
-                        onClick={(e) => handleVerifyOrRejectLog(selectedLog, 'Verified', e)}
+                        onClick={(e) => void handleVerifyOrRejectLog(selectedLog, 'Verified', e)}
                         icon={<Check className="w-4 h-4" />}
                       >
                         Verify
@@ -1945,7 +1518,7 @@ export const MyReportsPage: React.FC = () => {
                         type="button"
                         variant="primary"
                         size="sm"
-                        onClick={(e) => handleVerifyOrRejectLog(selectedLog, 'Dispatched', e)}
+                        onClick={(e) => void handleVerifyOrRejectLog(selectedLog, 'Dispatched', e)}
                         icon={<Send className="w-4 h-4" />}
                       >
                         Dispatch
@@ -1955,7 +1528,7 @@ export const MyReportsPage: React.FC = () => {
                       type="button"
                       variant="danger"
                       size="sm"
-                      onClick={(e) => handleVerifyOrRejectLog(selectedLog, 'Rejected', e)}
+                      onClick={(e) => void handleVerifyOrRejectLog(selectedLog, 'Rejected', e)}
                       icon={<XCircle className="w-4 h-4" />}
                     >
                       Reject
@@ -1964,7 +1537,6 @@ export const MyReportsPage: React.FC = () => {
                 </div>
               )}
 
-              {/* 5-Minute Verification Countdown Box */}
               <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
                   <span className="text-sm font-bold text-[#670626] flex items-center gap-1.5">
@@ -1974,20 +1546,11 @@ export const MyReportsPage: React.FC = () => {
                   {!modalClosed && !modalRejected && !selectedLog.isVerified && (
                     <button
                       type="button"
-                      onClick={(e) => handleStartFiveMinTimer(selectedLog, e)}
+                      onClick={(e) => void handleStartFiveMinTimer(selectedLog, e)}
                       className="px-3.5 py-1.5 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-black text-xs inline-flex items-center gap-1.5 cursor-pointer"
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
                       <span>Start Timer</span>
-                    </button>
-                  )}
-                  {!modalClosed && !modalRejected && selectedLog.isVerified && (
-                    <button
-                      type="button"
-                      onClick={(e) => handleSimulateFinalSeconds(selectedLog, e)}
-                      className="px-3 py-1.5 rounded-lg bg-[#F7F1EA] hover:bg-white text-[#670626] border border-[#670626]/25 font-bold text-xs cursor-pointer"
-                    >
-                      Skip to 00:05
                     </button>
                   )}
                 </div>
@@ -2026,7 +1589,6 @@ export const MyReportsPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Telemetry Metadata Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
                   <span className="text-[#A83B4D] block text-xs font-bold mb-0.5">Location</span>
@@ -2041,7 +1603,7 @@ export const MyReportsPage: React.FC = () => {
                   <span className="text-[#A83B4D] block text-xs font-bold mb-0.5">IP Address</span>
                   <span className="text-[#670626] font-bold flex items-center gap-1.5">
                     <Globe className="w-4 h-4" />
-                    <span>{selectedLog.ipAddress.split(' ')[0]}</span>
+                    <span>{selectedLog.ipAddress}</span>
                   </span>
                   <span className="text-[#5C313E] text-xs block mt-0.5">
                     {selectedLog.isHardwareGeolocated ? 'Hardware GPS' : 'Fallback GPS'}
@@ -2059,7 +1621,6 @@ export const MyReportsPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Field Notes */}
               <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
                 <span className="text-[#670626] font-bold text-xs mb-1.5 flex items-center gap-1.5">
                   <FileText className="w-4 h-4 text-[#A83B4D]" />
@@ -2075,80 +1636,90 @@ export const MyReportsPage: React.FC = () => {
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-bold text-[#670626] flex items-center gap-1.5">
                     <HeartPulse className="w-4 h-4 text-[#A83B4D]" />
-                    <span>PCR Vitals ({selectedLog.casualties.length})</span>
+                    <span>
+                      {selectedLog.casualties.length === 0
+                        ? '0 PCRs logged'
+                        : `PCR Vitals (${selectedLog.casualties.length})`}
+                    </span>
                   </span>
                 </div>
 
-                <div className="flex flex-col gap-3">
-                  {selectedLog.casualties.map((cas, idx) => (
-                    <div
-                      key={cas.id || idx}
-                      className="p-4 rounded-xl bg-[#F7F1EA] border border-[#670626]/15 flex flex-col gap-2.5"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#670626]/12 pb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-0.5 rounded-lg bg-[#670626] text-[#F7F1EA] font-black text-xs">
-                            #{idx + 1}
-                          </span>
-                          <span className="text-[#2B010E] font-bold text-sm">{cas.patientName}</span>
-                          <span className="text-[#5C313E] text-xs">
-                            ({cas.age}yo · {cas.gender})
-                          </span>
-                        </div>
-                        <span className="px-2.5 py-0.5 rounded-lg bg-rose-100 border border-rose-700/30 text-rose-900 text-xs font-bold">
-                          {cas.triageTag || 'RED'}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 text-xs">
-                        <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
-                          <span className="text-[#A83B4D] block text-xs">BP</span>
-                          <span className="text-[#2B010E] font-bold text-sm">
-                            {cas.bloodPressureSystolic}/{cas.bloodPressureDiastolic}
-                          </span>
-                        </div>
-                        <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
-                          <span className="text-[#A83B4D] block text-xs">HR</span>
-                          <span className="text-rose-800 font-bold text-sm">{cas.heartRateBpm} bpm</span>
-                        </div>
-                        <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
-                          <span className="text-[#A83B4D] block text-xs">RR</span>
-                          <span className="text-[#670626] font-bold text-sm">{cas.respiratoryRate}/min</span>
-                        </div>
-                        <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
-                          <span className="text-[#A83B4D] block text-xs">SpO2</span>
-                          <span className="text-emerald-800 font-bold text-sm">{cas.spO2Percent}%</span>
-                        </div>
-                        <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
-                          <span className="text-[#A83B4D] block text-xs">Temp</span>
-                          <span className="text-amber-800 font-bold text-sm">{cas.temperatureCelsius}°C</span>
-                        </div>
-                        <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
-                          <span className="text-[#A83B4D] block text-xs">AVPU</span>
-                          <span className="text-[#670626] font-bold text-sm">{cas.levelOfConsciousness}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">
-                        <span className="text-[#2B010E]">
-                          <strong className="text-[#670626]">Complaint:</strong> {cas.chiefComplaint}
-                        </span>
-                        {cas.interventions && cas.interventions.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5">
-                            {cas.interventions.map((intv, i) => (
-                              <span
-                                key={i}
-                                className="px-2.5 py-0.5 rounded-lg bg-emerald-100 border border-emerald-700/30 text-emerald-900 text-xs font-semibold"
-                              >
-                                {intv}
-                              </span>
-                            ))}
+                {selectedLog.casualties.length === 0 ? (
+                  <div className="p-4 rounded-xl bg-[#F7F1EA] border border-dashed border-[#670626]/25 text-center text-[#7A4E59] text-xs">
+                    0 PCRs logged for this report in PostgreSQL.
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {selectedLog.casualties.map((cas, idx) => (
+                      <div
+                        key={cas.id || idx}
+                        className="p-4 rounded-xl bg-[#F7F1EA] border border-[#670626]/15 flex flex-col gap-2.5"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#670626]/12 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-lg bg-[#670626] text-[#F7F1EA] font-black text-xs">
+                              #{idx + 1}
+                            </span>
+                            <span className="text-[#2B010E] font-bold text-sm">{cas.patientName}</span>
+                            <span className="text-[#5C313E] text-xs">
+                              ({cas.age}yo · {cas.gender})
+                            </span>
                           </div>
-                        )}
+                          <span className="px-2.5 py-0.5 rounded-lg bg-rose-100 border border-rose-700/30 text-rose-900 text-xs font-bold">
+                            {cas.triageTag || 'PCR'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 text-xs">
+                          <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
+                            <span className="text-[#A83B4D] block text-xs">BP</span>
+                            <span className="text-[#2B010E] font-bold text-sm">
+                              {cas.bloodPressureSystolic}/{cas.bloodPressureDiastolic}
+                            </span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
+                            <span className="text-[#A83B4D] block text-xs">HR</span>
+                            <span className="text-rose-800 font-bold text-sm">{cas.heartRateBpm} bpm</span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
+                            <span className="text-[#A83B4D] block text-xs">RR</span>
+                            <span className="text-[#670626] font-bold text-sm">{cas.respiratoryRate}/min</span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
+                            <span className="text-[#A83B4D] block text-xs">SpO2</span>
+                            <span className="text-emerald-800 font-bold text-sm">{cas.spO2Percent}%</span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
+                            <span className="text-[#A83B4D] block text-xs">Temp</span>
+                            <span className="text-amber-800 font-bold text-sm">{cas.temperatureCelsius}°C</span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/12">
+                            <span className="text-[#A83B4D] block text-xs">AVPU</span>
+                            <span className="text-[#670626] font-bold text-sm">{cas.levelOfConsciousness}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">
+                          <span className="text-[#2B010E]">
+                            <strong className="text-[#670626]">Complaint:</strong> {cas.chiefComplaint || 'N/A'}
+                          </span>
+                          {cas.interventions && cas.interventions.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {cas.interventions.map((intv, i) => (
+                                <span
+                                  key={i}
+                                  className="px-2.5 py-0.5 rounded-lg bg-emerald-100 border border-emerald-700/30 text-emerald-900 text-xs font-semibold"
+                                >
+                                  {intv}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Evidence Gallery */}
@@ -2227,7 +1798,7 @@ export const MyReportsPage: React.FC = () => {
           setIsCameraOpen(false);
           setCameraTargetLogId(null);
         }}
-        onCapture={handleCameraCapture}
+        onCapture={(dataUrl, meta) => void handleCameraCapture(dataUrl, meta)}
         title="Field Evidence Camera"
       />
 
@@ -2240,7 +1811,6 @@ export const MyReportsPage: React.FC = () => {
           maxWidth="max-w-2xl"
         >
           <form onSubmit={handleCreateLogSubmit} className="flex flex-col gap-4 text-sm font-mono text-[#2B010E]">
-            {/* Captured Evidence Photos Preview */}
             <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
               <div className="flex items-center justify-between mb-2.5">
                 <span className="text-[#670626] font-bold">
@@ -2315,7 +1885,7 @@ export const MyReportsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* PCR Vitals Quick Builder */}
+            {/* PCR Vitals Builder (empty by default, requires real input when added) */}
             <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
               <div className="flex items-center justify-between mb-2.5">
                 <span className="text-[#670626] font-bold">
@@ -2329,19 +1899,115 @@ export const MyReportsPage: React.FC = () => {
                   + Add Patient
                 </button>
               </div>
-              <div className="flex flex-col gap-2 max-h-44 overflow-y-auto">
-                {newCasualties.map((c, i) => (
-                  <div key={c.id} className="p-2.5 rounded-lg bg-[#F7F1EA] border border-[#670626]/15 flex items-center justify-between text-xs">
-                    <div>
-                      <span className="text-[#2B010E] font-bold">#{i + 1} {c.patientName}</span>
-                      <span className="text-[#5C313E] ml-2">
-                        BP {c.bloodPressureSystolic}/{c.bloodPressureDiastolic} · HR {c.heartRateBpm} · SpO2 {c.spO2Percent}%
-                      </span>
+              {newCasualties.length === 0 ? (
+                <p className="text-xs text-[#5C313E]">
+                  0 PCRs added. Click + Add Patient to attach real patient vitals.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-3 max-h-64 overflow-y-auto">
+                  {newCasualties.map((c, i) => (
+                    <div
+                      key={c.id}
+                      className="p-3 rounded-lg bg-[#F7F1EA] border border-[#670626]/15 flex flex-col gap-2 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[#670626]">Patient #{i + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDraftCasualty(c.id)}
+                          className="text-[#991B1B] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <input
+                          type="text"
+                          required
+                          placeholder="Patient Name *"
+                          value={c.patientName}
+                          onChange={(e) => handleUpdateDraftCasualty(c.id, 'patientName', e.target.value)}
+                          className="col-span-2 px-2.5 py-1.5 rounded-lg bg-[#FFFBF7] border border-[#D8C1B5]"
+                        />
+                        <input
+                          type="number"
+                          required
+                          min={0}
+                          placeholder="Age *"
+                          value={c.age}
+                          onChange={(e) => handleUpdateDraftCasualty(c.id, 'age', e.target.value)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#FFFBF7] border border-[#D8C1B5]"
+                        />
+                        <select
+                          value={c.gender}
+                          onChange={(e) => handleUpdateDraftCasualty(c.id, 'gender', e.target.value)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#FFFBF7] border border-[#D8C1B5]"
+                        >
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Unknown">Unknown</option>
+                        </select>
+                        <input
+                          type="number"
+                          required
+                          placeholder="BP Sys *"
+                          value={c.bloodPressureSystolic}
+                          onChange={(e) =>
+                            handleUpdateDraftCasualty(c.id, 'bloodPressureSystolic', e.target.value)
+                          }
+                          className="px-2.5 py-1.5 rounded-lg bg-[#FFFBF7] border border-[#D8C1B5]"
+                        />
+                        <input
+                          type="number"
+                          required
+                          placeholder="BP Dia *"
+                          value={c.bloodPressureDiastolic}
+                          onChange={(e) =>
+                            handleUpdateDraftCasualty(c.id, 'bloodPressureDiastolic', e.target.value)
+                          }
+                          className="px-2.5 py-1.5 rounded-lg bg-[#FFFBF7] border border-[#D8C1B5]"
+                        />
+                        <input
+                          type="number"
+                          required
+                          placeholder="HR BPM *"
+                          value={c.heartRateBpm}
+                          onChange={(e) => handleUpdateDraftCasualty(c.id, 'heartRateBpm', e.target.value)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#FFFBF7] border border-[#D8C1B5]"
+                        />
+                        <input
+                          type="number"
+                          required
+                          placeholder="SpO2 % *"
+                          value={c.spO2Percent}
+                          onChange={(e) => handleUpdateDraftCasualty(c.id, 'spO2Percent', e.target.value)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#FFFBF7] border border-[#D8C1B5]"
+                        />
+                        <input
+                          type="number"
+                          required
+                          placeholder="RR /min *"
+                          value={c.respiratoryRate}
+                          onChange={(e) =>
+                            handleUpdateDraftCasualty(c.id, 'respiratoryRate', e.target.value)
+                          }
+                          className="px-2.5 py-1.5 rounded-lg bg-[#FFFBF7] border border-[#D8C1B5]"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Chief Complaint"
+                          value={c.chiefComplaint}
+                          onChange={(e) =>
+                            handleUpdateDraftCasualty(c.id, 'chiefComplaint', e.target.value)
+                          }
+                          className="col-span-3 px-2.5 py-1.5 rounded-lg bg-[#FFFBF7] border border-[#D8C1B5]"
+                        />
+                      </div>
                     </div>
-                    <span className="text-[#A83B4D] text-xs font-bold">{c.triageTag}</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -2368,7 +2034,6 @@ export const MyReportsPage: React.FC = () => {
         </DefaultFloatingModalCard>
       )}
 
-      {/* Fullscreen Evidence Photo Lightbox */}
       <ImageLightboxModal
         isOpen={lightboxImageUrl !== null}
         onClose={() => setLightboxImageUrl(null)}

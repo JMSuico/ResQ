@@ -1,50 +1,82 @@
 // [Layer: Endpoints]
-// Responsibility: User management, profile modifications, and account synchronization API stubs using arrow lambdas (=>).
+// Responsibility: User management, profile retrieval/modification, and account synchronization APIs using arrow lambdas (=>).
 // Katipuneros Architecture: Strictly typed request/response contracts with ZERO 'any' usage.
 
 import { requestJson } from './apiClient';
 import type { UserSession } from './authEndpoints';
 export * from './userEndpoints';
 
+export interface OwnProfileDto extends UserSession {
+  id?: string;
+  phoneNumber?: string;
+  bloodType?: string;
+  allergies?: string;
+  medicalConditions?: string;
+  isOrganDonor?: boolean;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelationship?: string;
+  secondaryContactName?: string;
+  secondaryContactPhone?: string;
+  avatarDataUrl?: string | null;
+  avatarCapturePath?: string | null;
+  province?: string;
+  cityOrMunicipality?: string;
+  barangay?: string;
+  streetOrPurok?: string;
+  dateOfBirth?: string;
+  sex?: string;
+}
+
 export interface UpdateOwnProfilePayload {
   fullName?: string;
+  displayName?: string;
   phoneNumber?: string;
   departmentOrBarangay?: string;
   rankOrTitle?: string;
   bloodType?: string;
   allergies?: string;
+  medicalConditions?: string;
+  isOrganDonor?: boolean;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  emergencyContactRelationship?: string;
+  secondaryContactName?: string;
+  secondaryContactPhone?: string;
+  avatarDataUrl?: string | null;
 }
 
 export interface UpdateOwnProfileResponse {
   message: string;
-  user?: UserSession;
+  user?: OwnProfileDto;
 }
+
+export const getOwnProfile = (): Promise<OwnProfileDto> =>
+  requestJson<OwnProfileDto>('/api/profile', { method: 'GET' });
 
 export const updateOwnProfile = async (
   payload: UpdateOwnProfilePayload
 ): Promise<UpdateOwnProfileResponse> => {
-  let response: UpdateOwnProfileResponse;
-
-  try {
-    response = await requestJson<UpdateOwnProfileResponse>('/api/profile', {
-      method: 'PUT',
-      body: JSON.stringify({
-        fullName: payload.fullName,
-        phoneNumber: payload.phoneNumber,
-        departmentOrBarangay: payload.departmentOrBarangay,
-        rankOrTitle: payload.rankOrTitle,
-        bloodType: payload.bloodType,
-        allergies: payload.allergies,
-        emergencyContactName: payload.emergencyContactName,
-        emergencyContactPhone: payload.emergencyContactPhone
-      })
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Profile updated locally.';
-    response = { message };
-  }
+  const response = await requestJson<UpdateOwnProfileResponse>('/api/profile', {
+    method: 'PUT',
+    body: JSON.stringify({
+      fullName: payload.fullName,
+      displayName: payload.displayName,
+      phoneNumber: payload.phoneNumber,
+      departmentOrBarangay: payload.departmentOrBarangay,
+      rankOrTitle: payload.rankOrTitle,
+      bloodType: payload.bloodType,
+      allergies: payload.allergies,
+      medicalConditions: payload.medicalConditions,
+      isOrganDonor: payload.isOrganDonor,
+      emergencyContactName: payload.emergencyContactName,
+      emergencyContactPhone: payload.emergencyContactPhone,
+      emergencyContactRelationship: payload.emergencyContactRelationship,
+      secondaryContactName: payload.secondaryContactName,
+      secondaryContactPhone: payload.secondaryContactPhone,
+      avatarDataUrl: payload.avatarDataUrl
+    })
+  });
 
   if (typeof window !== 'undefined') {
     try {
@@ -60,14 +92,35 @@ export const updateOwnProfile = async (
 
       const updatedSession: Record<string, unknown> = {
         ...existing,
-        ...(payload.fullName ? { fullName: payload.fullName } : {}),
-        ...(payload.phoneNumber ? { phoneNumber: payload.phoneNumber } : {}),
-        ...(payload.departmentOrBarangay ? { departmentOrBarangay: payload.departmentOrBarangay } : {}),
-        ...(payload.rankOrTitle ? { rankOrTitle: payload.rankOrTitle } : {}),
-        ...(payload.bloodType ? { bloodType: payload.bloodType } : {}),
-        ...(payload.allergies ? { allergies: payload.allergies } : {}),
-        ...(payload.emergencyContactName ? { emergencyContactName: payload.emergencyContactName } : {}),
-        ...(payload.emergencyContactPhone ? { emergencyContactPhone: payload.emergencyContactPhone } : {}),
+        ...(payload.fullName !== undefined ? { fullName: payload.fullName } : {}),
+        ...(payload.displayName !== undefined ? { displayName: payload.displayName } : {}),
+        ...(payload.phoneNumber !== undefined ? { phoneNumber: payload.phoneNumber } : {}),
+        ...(payload.departmentOrBarangay !== undefined
+          ? { departmentOrBarangay: payload.departmentOrBarangay }
+          : {}),
+        ...(payload.rankOrTitle !== undefined ? { rankOrTitle: payload.rankOrTitle } : {}),
+        ...(payload.bloodType !== undefined ? { bloodType: payload.bloodType } : {}),
+        ...(payload.allergies !== undefined ? { allergies: payload.allergies } : {}),
+        ...(payload.medicalConditions !== undefined
+          ? { medicalConditions: payload.medicalConditions }
+          : {}),
+        ...(payload.isOrganDonor !== undefined ? { isOrganDonor: payload.isOrganDonor } : {}),
+        ...(payload.emergencyContactName !== undefined
+          ? { emergencyContactName: payload.emergencyContactName }
+          : {}),
+        ...(payload.emergencyContactPhone !== undefined
+          ? { emergencyContactPhone: payload.emergencyContactPhone }
+          : {}),
+        ...(payload.emergencyContactRelationship !== undefined
+          ? { emergencyContactRelationship: payload.emergencyContactRelationship }
+          : {}),
+        ...(payload.secondaryContactName !== undefined
+          ? { secondaryContactName: payload.secondaryContactName }
+          : {}),
+        ...(payload.secondaryContactPhone !== undefined
+          ? { secondaryContactPhone: payload.secondaryContactPhone }
+          : {}),
+        ...(payload.avatarDataUrl !== undefined ? { avatarDataUrl: payload.avatarDataUrl } : {}),
         ...(response.user ? (response.user as unknown as Record<string, unknown>) : {})
       };
 

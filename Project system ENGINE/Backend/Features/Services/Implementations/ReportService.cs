@@ -3,7 +3,9 @@
 // Zero emojis.
 
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Backend.Features.Api.DTOs;
+using Backend.Features.Data;
 using Backend.Features.Data.Enums;
 using Backend.Features.Data.Models;
 using Backend.Features.Helpers.Infrastructure;
@@ -18,7 +20,8 @@ public class ReportService(
     IUserRepository userRepo,
     IAuditLogRepository auditRepo,
     IIncidentSceneAiAnalysisStrategy? incidentVisionStrategy = null,
-    IIncidentAutoApprovalStrategy? incidentAutoApprovalStrategy = null) : IReportService
+    IIncidentAutoApprovalStrategy? incidentAutoApprovalStrategy = null,
+    AppDbContext? db = null) : IReportService
 {
     private readonly IIncidentSceneAiAnalysisStrategy _incidentVisionStrategy =
         incidentVisionStrategy ?? new DualStageIncidentSceneAiStrategy();
@@ -329,16 +332,145 @@ public class ReportService(
     }
 
     public async Task<List<ReportResponse>> GetAllReportsAsync(CancellationToken ct = default) =>
-        (await reportRepo.GetAllAsync(ct)).Select(MapToResponse).ToList();
+        await MapReportsWithFeedbackAsync(await reportRepo.GetAllAsync(ct), ct);
 
     public async Task<List<ReportResponse>> GetMyReportsAsync(Guid userId, CancellationToken ct = default) =>
-        (await reportRepo.GetByReporterIdAsync(userId, ct)).Select(MapToResponse).ToList();
+        await MapReportsWithFeedbackAsync(await reportRepo.GetByReporterIdAsync(userId, ct), ct);
 
     public async Task<List<ReportResponse>> GetAgencyReportsAsync(ResponderUnitType agency, CancellationToken ct = default) =>
-        (await reportRepo.GetByUnitAgencyAsync(agency, ct)).Select(MapToResponse).ToList();
+        await MapReportsWithFeedbackAsync(await reportRepo.GetByUnitAgencyAsync(agency, ct), ct);
 
     public async Task<string?> GetReportImagePathAsync(Guid reportId, CancellationToken ct = default) =>
         (await reportRepo.GetByIdAsync(reportId, ct))?.ImageCapturePath;
+
+    public async Task<List<ReportEvidenceResponse>> GetReportEvidencesAsync(Guid reportId, CancellationToken ct = default) =>
+        db is null
+            ? []
+            : (await db.ReportEvidences
+                .AsNoTracking()
+                .Where(e => e.ReportId == reportId)
+                .OrderByDescending(e => e.CreatedAtUtc)
+                .ToListAsync(ct))
+                .Select(MapToEvidenceResponse)
+                .ToList();
+
+    public async Task<(bool Success, bool NotFound, string? Error, ReportEvidenceResponse? Evidence)> AddReportEvidenceAsync(
+        Guid reportId,
+        CreateReportEvidenceRequest request,
+        Guid? uploaderId,
+        string? uploaderName,
+        string reportsRootPath,
+        CancellationToken ct = default)
+    {
+        if (db is null)
+            return (false, false, "Evidence database context unavailable.", null);
+
+        var report = await reportRepo.GetByIdAsync(reportId, ct);
+        if (report is null)
+            return (false, true, "Report not found.", null);
+
+        string? rawDataUrl = !string.IsNullOrWhiteSpace(request.ImageDataUrl) ? request.ImageDataUrl : request.DataUrl;
+        string? savedPath = await CaptureStorageHelper.SaveCaptureDataUrlAsync(rawDataUrl, reportsRootPath, $"EVIDENCE_{reportId:N}", ct);
+        if (string.IsNullOrWhiteSpace(savedPath))
+            return (false, false, "Invalid or unsupported evidence image payload. Only PNG, JPEG, and WebP up to 5 MB are allowed.", null);
+
+        string resolvedUploader = !string.IsNullOrWhiteSpace(uploaderName)
+            ? InputSanitizer.Sanitize(uploaderName)
+            : (uploaderId.HasValue && uploaderId.Value != Guid.Empty
+                ? (await userRepo.GetByIdAsync(uploaderId.Value, ct))?.FullName ?? "Operational Responder"
+                : "Operational Responder");
+
+        var evidence = new ReportEvidenceRecord
+        {
+            ReportId = reportId,
+            FilePath = savedPath,
+            MediaType = SanitizeOptionalField(request.MediaType, 32) ?? "image",
+            Caption = SanitizeOptionalField(request.Caption, 500) ?? string.Empty,
+            UploadedByUserId = uploaderId.HasValue && uploaderId.Value != Guid.Empty ? uploaderId.Value : null,
+            UploadedByName = resolvedUploader.Length > 150 ? resolvedUploader[..150] : resolvedUploader,
+            CreatedAtUtc = DateTime.UtcNow
+        };
+
+        await db.ReportEvidences.AddAsync(evidence, ct);
+        await db.SaveChangesAsync(ct);
+
+        await AppendAuditLogAsync(
+            uploaderId ?? Guid.Empty,
+            "REPORT_EVIDENCE_ADDED",
+            $"Report: {report.ReferenceCode}, EvidenceId: {evidence.Id}, UploadedBy: {evidence.UploadedByName}",
+            ct);
+
+        return (true, false, null, MapToEvidenceResponse(evidence));
+    }
+
+    public async Task<ReportEvidenceRecord?> GetReportEvidenceRecordAsync(Guid reportId, Guid evidenceId, CancellationToken ct = default) =>
+        db is null
+            ? null
+            : await db.ReportEvidences.AsNoTracking().FirstOrDefaultAsync(e => e.ReportId == reportId && e.Id == evidenceId, ct);
+
+    public async Task<List<ReportFeedbackResponse>> GetReportFeedbackAsync(Guid reportId, CancellationToken ct = default) =>
+        db is null
+            ? []
+            : (await db.ReportFeedbacks
+                .AsNoTracking()
+                .Where(f => f.ReportId == reportId)
+                .OrderByDescending(f => f.CreatedAtUtc)
+                .ToListAsync(ct))
+                .Select(MapToFeedbackResponse)
+                .ToList();
+
+    public async Task<(bool Success, bool NotFound, string? Error, ReportFeedbackResponse? Feedback)> SubmitReportFeedbackAsync(
+        Guid reportId,
+        Guid userId,
+        SubmitReportFeedbackRequest request,
+        CancellationToken ct = default)
+    {
+        if (db is null)
+            return (false, false, "Feedback database context unavailable.", null);
+
+        if (request.Rating < 1 || request.Rating > 5)
+            return (false, false, "Feedback rating must be between 1 and 5.", null);
+
+        var report = await reportRepo.GetByIdAsync(reportId, ct);
+        if (report is null)
+            return (false, true, "Report not found.", null);
+
+        string cleanComment = SanitizeOptionalField(request.Comment, 1000) ?? string.Empty;
+        DateTime now = DateTime.UtcNow;
+
+        ReportFeedbackRecord? existing = userId != Guid.Empty
+            ? await db.ReportFeedbacks.FirstOrDefaultAsync(f => f.ReportId == reportId && f.UserId == userId, ct)
+            : null;
+
+        if (existing is not null)
+        {
+            existing.Rating = request.Rating;
+            existing.Comment = cleanComment;
+            existing.CreatedAtUtc = now;
+        }
+        else
+        {
+            existing = new ReportFeedbackRecord
+            {
+                ReportId = reportId,
+                UserId = userId,
+                Rating = request.Rating,
+                Comment = cleanComment,
+                CreatedAtUtc = now
+            };
+            await db.ReportFeedbacks.AddAsync(existing, ct);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        await AppendAuditLogAsync(
+            userId,
+            "REPORT_FEEDBACK_SUBMITTED",
+            $"Report: {report.ReferenceCode}, Rating: {existing.Rating}",
+            ct);
+
+        return (true, false, null, MapToFeedbackResponse(existing));
+    }
 
     public async Task<bool> RecordDistressBeaconAsync(Guid reportId, DistressBeaconRequest beacon, CancellationToken ct = default)
     {
@@ -466,7 +598,47 @@ public class ReportService(
         return (false, "PENDING_REVIEW");
     }
 
-    private static ReportResponse MapToResponse(Report r)
+    private async Task<List<ReportResponse>> MapReportsWithFeedbackAsync(List<Report> reports, CancellationToken ct)
+    {
+        if (reports.Count == 0) return [];
+        if (db is null) return reports.Select(r => MapToResponse(r)).ToList();
+
+        List<Guid> reportIds = reports.Select(r => r.Id).ToList();
+        Dictionary<Guid, (int Rating, string Comment)> latestFeedbackByReport = (await db.ReportFeedbacks
+            .AsNoTracking()
+            .Where(f => reportIds.Contains(f.ReportId))
+            .OrderByDescending(f => f.CreatedAtUtc)
+            .ToListAsync(ct))
+            .GroupBy(f => f.ReportId)
+            .ToDictionary(g => g.Key, g => (g.First().Rating, g.First().Comment));
+
+        return reports
+            .Select(r => latestFeedbackByReport.TryGetValue(r.Id, out var fb)
+                ? MapToResponse(r, fb.Rating, fb.Comment)
+                : MapToResponse(r))
+            .ToList();
+    }
+
+    private static ReportEvidenceResponse MapToEvidenceResponse(ReportEvidenceRecord e) =>
+        new(
+            e.Id,
+            e.ReportId,
+            $"/api/reports/{e.ReportId}/evidences/{e.Id}",
+            e.MediaType,
+            e.Caption,
+            e.UploadedByName,
+            e.CreatedAtUtc);
+
+    private static ReportFeedbackResponse MapToFeedbackResponse(ReportFeedbackRecord f) =>
+        new(
+            f.Id,
+            f.ReportId,
+            f.UserId,
+            f.Rating,
+            f.Comment,
+            f.CreatedAtUtc);
+
+    private static ReportResponse MapToResponse(Report r, int? feedbackRating = null, string? feedbackComment = null)
     {
         var (aiAutoApproved, aiVerificationStatus) = ExtractAiApprovalMetadata(r);
         return new(
@@ -513,7 +685,9 @@ public class ReportService(
             r.PointerIconType ?? ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon(
                 (Enum.IsDefined(r.Category) ? r.Category : IncidentCategory.VehicularAccident).ToString()),
             aiAutoApproved,
-            aiVerificationStatus
+            aiVerificationStatus,
+            feedbackRating,
+            feedbackComment
         );
     }
 }

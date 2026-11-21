@@ -78,6 +78,13 @@ public static class StartupSchemaReconciler
             "IF OBJECT_ID('Users') IS NOT NULL AND COL_LENGTH('Users', 'FacialVerificationTokenId') IS NULL ALTER TABLE [Users] ADD [FacialVerificationTokenId] NVARCHAR(64) NULL;",
             "IF OBJECT_ID('Users') IS NOT NULL AND COL_LENGTH('Users', 'AutoApprovedByAi') IS NULL ALTER TABLE [Users] ADD [AutoApprovedByAi] BIT NOT NULL CONSTRAINT [DF_Users_AutoApprovedByAi] DEFAULT 0;",
             "IF OBJECT_ID('Users') IS NOT NULL AND COL_LENGTH('Users', 'AutoApprovedAtUtc') IS NULL ALTER TABLE [Users] ADD [AutoApprovedAtUtc] DATETIME2 NULL;",
+            "IF OBJECT_ID('Users') IS NOT NULL AND COL_LENGTH('Users', 'Allergies') IS NULL ALTER TABLE [Users] ADD [Allergies] NVARCHAR(250) NULL;",
+            "IF OBJECT_ID('Users') IS NOT NULL AND COL_LENGTH('Users', 'MedicalConditions') IS NULL ALTER TABLE [Users] ADD [MedicalConditions] NVARCHAR(300) NULL;",
+            "IF OBJECT_ID('Users') IS NOT NULL AND COL_LENGTH('Users', 'IsOrganDonor') IS NULL ALTER TABLE [Users] ADD [IsOrganDonor] BIT NOT NULL CONSTRAINT [DF_Users_IsOrganDonor] DEFAULT 0;",
+            "IF OBJECT_ID('Users') IS NOT NULL AND COL_LENGTH('Users', 'SecondaryContactName') IS NULL ALTER TABLE [Users] ADD [SecondaryContactName] NVARCHAR(150) NULL;",
+            "IF OBJECT_ID('Users') IS NOT NULL AND COL_LENGTH('Users', 'SecondaryContactPhone') IS NULL ALTER TABLE [Users] ADD [SecondaryContactPhone] NVARCHAR(30) NULL;",
+            "IF OBJECT_ID('Users') IS NOT NULL AND COL_LENGTH('Users', 'AvatarCapturePath') IS NULL ALTER TABLE [Users] ADD [AvatarCapturePath] NVARCHAR(500) NULL;",
+            "IF OBJECT_ID(N'dbo.Alerts', N'U') IS NOT NULL AND COL_LENGTH(N'dbo.Alerts', N'ImageCapturePath') IS NULL ALTER TABLE [dbo].[Alerts] ADD [ImageCapturePath] NVARCHAR(500) NULL;",
             """
             IF EXISTS (
                 SELECT 1 FROM sys.indexes
@@ -152,6 +159,69 @@ public static class StartupSchemaReconciler
             END
             """,
             """
+            IF OBJECT_ID(N'dbo.DispatchRequests', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[DispatchRequests] (
+                    [Id] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [PK_DispatchRequests] PRIMARY KEY,
+                    [RequestCode] NVARCHAR(50) NOT NULL,
+                    [Direction] NVARCHAR(40) NOT NULL,
+                    [TargetUnit] NVARCHAR(50) NOT NULL,
+                    [OriginUnit] NVARCHAR(50) NOT NULL,
+                    [Title] NVARCHAR(200) NOT NULL,
+                    [Description] NVARCHAR(2000) NOT NULL CONSTRAINT [DF_DispatchRequests_Description] DEFAULT N'',
+                    [Severity] NVARCHAR(32) NOT NULL,
+                    [Status] NVARCHAR(32) NOT NULL CONSTRAINT [DF_DispatchRequests_Status] DEFAULT N'PENDING',
+                    [LocationLabel] NVARCHAR(255) NOT NULL CONSTRAINT [DF_DispatchRequests_LocationLabel] DEFAULT N'',
+                    [Latitude] FLOAT NOT NULL,
+                    [Longitude] FLOAT NOT NULL,
+                    [IpAddress] NVARCHAR(64) NULL,
+                    [RequestedByUserId] UNIQUEIDENTIFIER NULL,
+                    [RequestedByName] NVARCHAR(150) NOT NULL,
+                    [RespondedByName] NVARCHAR(150) NULL,
+                    [CreatedAtUtc] DATETIME2 NOT NULL,
+                    [UpdatedAtUtc] DATETIME2 NOT NULL
+                );
+                CREATE UNIQUE INDEX [IX_DispatchRequests_RequestCode] ON [dbo].[DispatchRequests]([RequestCode]);
+                CREATE INDEX [IX_DispatchRequests_Status] ON [dbo].[DispatchRequests]([Status]);
+                CREATE INDEX [IX_DispatchRequests_TargetUnit] ON [dbo].[DispatchRequests]([TargetUnit]);
+                CREATE INDEX [IX_DispatchRequests_OriginUnit] ON [dbo].[DispatchRequests]([OriginUnit]);
+                CREATE INDEX [IX_DispatchRequests_CreatedAtUtc] ON [dbo].[DispatchRequests]([CreatedAtUtc]);
+            END
+            """,
+            """
+            IF OBJECT_ID(N'dbo.ReportEvidences', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[ReportEvidences] (
+                    [Id] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [PK_ReportEvidences] PRIMARY KEY,
+                    [ReportId] UNIQUEIDENTIFIER NOT NULL,
+                    [FilePath] NVARCHAR(500) NOT NULL,
+                    [MediaType] NVARCHAR(32) NOT NULL CONSTRAINT [DF_ReportEvidences_MediaType] DEFAULT N'image',
+                    [Caption] NVARCHAR(500) NOT NULL CONSTRAINT [DF_ReportEvidences_Caption] DEFAULT N'',
+                    [UploadedByUserId] UNIQUEIDENTIFIER NULL,
+                    [UploadedByName] NVARCHAR(150) NOT NULL CONSTRAINT [DF_ReportEvidences_UploadedByName] DEFAULT N'',
+                    [CreatedAtUtc] DATETIME2 NOT NULL
+                );
+                CREATE INDEX [IX_ReportEvidences_ReportId] ON [dbo].[ReportEvidences]([ReportId]);
+                CREATE INDEX [IX_ReportEvidences_CreatedAtUtc] ON [dbo].[ReportEvidences]([CreatedAtUtc]);
+            END
+            """,
+            """
+            IF OBJECT_ID(N'dbo.ReportFeedbacks', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[ReportFeedbacks] (
+                    [Id] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [PK_ReportFeedbacks] PRIMARY KEY,
+                    [ReportId] UNIQUEIDENTIFIER NOT NULL,
+                    [UserId] UNIQUEIDENTIFIER NOT NULL,
+                    [Rating] INT NOT NULL,
+                    [Comment] NVARCHAR(1000) NOT NULL CONSTRAINT [DF_ReportFeedbacks_Comment] DEFAULT N'',
+                    [CreatedAtUtc] DATETIME2 NOT NULL
+                );
+                CREATE INDEX [IX_ReportFeedbacks_ReportId] ON [dbo].[ReportFeedbacks]([ReportId]);
+                CREATE INDEX [IX_ReportFeedbacks_UserId] ON [dbo].[ReportFeedbacks]([UserId]);
+                CREATE INDEX [IX_ReportFeedbacks_ReportId_UserId] ON [dbo].[ReportFeedbacks]([ReportId], [UserId]);
+            END
+            """,
+            """
             IF OBJECT_ID(N'dbo.Reports', N'U') IS NOT NULL
             BEGIN
                 UPDATE [dbo].[Reports] SET [Category] = 1 WHERE [Category] < 1 OR [Category] > 6;
@@ -219,6 +289,13 @@ public static class StartupSchemaReconciler
             "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"FacialVerificationTokenId\" character varying(64);",
             "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"AutoApprovedByAi\" boolean NOT NULL DEFAULT false;",
             "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"AutoApprovedAtUtc\" timestamp with time zone;",
+            "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"Allergies\" character varying(250);",
+            "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"MedicalConditions\" character varying(300);",
+            "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"IsOrganDonor\" boolean NOT NULL DEFAULT false;",
+            "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"SecondaryContactName\" character varying(150);",
+            "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"SecondaryContactPhone\" character varying(30);",
+            "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"AvatarCapturePath\" character varying(500);",
+            "ALTER TABLE IF EXISTS \"Alerts\" ADD COLUMN IF NOT EXISTS \"ImageCapturePath\" character varying(500);",
             """
             CREATE TABLE IF NOT EXISTS "BiometricEnrollments" (
                 "Id" uuid PRIMARY KEY,
@@ -351,6 +428,60 @@ public static class StartupSchemaReconciler
             );
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_VerificationTokenRecords_TokenId" ON "VerificationTokenRecords"("TokenId");
             CREATE INDEX IF NOT EXISTS "IX_VerificationTokenRecords_ExpiresAtUtc_ConsumedAtUtc" ON "VerificationTokenRecords"("ExpiresAtUtc", "ConsumedAtUtc");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "DispatchRequests" (
+                "Id" uuid PRIMARY KEY,
+                "RequestCode" character varying(50) NOT NULL,
+                "Direction" character varying(40) NOT NULL,
+                "TargetUnit" character varying(50) NOT NULL,
+                "OriginUnit" character varying(50) NOT NULL,
+                "Title" character varying(200) NOT NULL,
+                "Description" character varying(2000) NOT NULL DEFAULT '',
+                "Severity" character varying(32) NOT NULL,
+                "Status" character varying(32) NOT NULL DEFAULT 'PENDING',
+                "LocationLabel" character varying(255) NOT NULL DEFAULT '',
+                "Latitude" double precision NOT NULL,
+                "Longitude" double precision NOT NULL,
+                "IpAddress" character varying(64) NULL,
+                "RequestedByUserId" uuid NULL,
+                "RequestedByName" character varying(150) NOT NULL,
+                "RespondedByName" character varying(150) NULL,
+                "CreatedAtUtc" timestamp with time zone NOT NULL,
+                "UpdatedAtUtc" timestamp with time zone NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_DispatchRequests_RequestCode" ON "DispatchRequests"("RequestCode");
+            CREATE INDEX IF NOT EXISTS "IX_DispatchRequests_Status" ON "DispatchRequests"("Status");
+            CREATE INDEX IF NOT EXISTS "IX_DispatchRequests_TargetUnit" ON "DispatchRequests"("TargetUnit");
+            CREATE INDEX IF NOT EXISTS "IX_DispatchRequests_OriginUnit" ON "DispatchRequests"("OriginUnit");
+            CREATE INDEX IF NOT EXISTS "IX_DispatchRequests_CreatedAtUtc" ON "DispatchRequests"("CreatedAtUtc");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "ReportEvidences" (
+                "Id" uuid PRIMARY KEY,
+                "ReportId" uuid NOT NULL,
+                "FilePath" character varying(500) NOT NULL,
+                "MediaType" character varying(32) NOT NULL DEFAULT 'image',
+                "Caption" character varying(500) NOT NULL DEFAULT '',
+                "UploadedByUserId" uuid NULL,
+                "UploadedByName" character varying(150) NOT NULL DEFAULT '',
+                "CreatedAtUtc" timestamp with time zone NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_ReportEvidences_ReportId" ON "ReportEvidences"("ReportId");
+            CREATE INDEX IF NOT EXISTS "IX_ReportEvidences_CreatedAtUtc" ON "ReportEvidences"("CreatedAtUtc");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "ReportFeedbacks" (
+                "Id" uuid PRIMARY KEY,
+                "ReportId" uuid NOT NULL,
+                "UserId" uuid NOT NULL,
+                "Rating" integer NOT NULL,
+                "Comment" character varying(1000) NOT NULL DEFAULT '',
+                "CreatedAtUtc" timestamp with time zone NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_ReportFeedbacks_ReportId" ON "ReportFeedbacks"("ReportId");
+            CREATE INDEX IF NOT EXISTS "IX_ReportFeedbacks_UserId" ON "ReportFeedbacks"("UserId");
+            CREATE INDEX IF NOT EXISTS "IX_ReportFeedbacks_ReportId_UserId" ON "ReportFeedbacks"("ReportId", "UserId");
             """,
             "UPDATE \"Reports\" SET \"Category\" = 1 WHERE \"Category\" < 1 OR \"Category\" > 6;",
             "UPDATE \"Reports\" SET \"Severity\" = 2 WHERE \"Severity\" < 1 OR \"Severity\" > 4;",

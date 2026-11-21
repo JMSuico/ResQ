@@ -277,48 +277,6 @@ export class BiometricFrameCacheStore {
   public hasPose = (pose: BiometricPose): boolean => {
     return this.frames.some((e) => e.pose === pose);
   };
-
-  public persistToDatabaseSimulation = async (
-    userIdOrEmail: string,
-    onProgress?: (stage: string, percent: number) => void
-  ): Promise<{ success: boolean; biometricHash: string; score: number; compositeDataUrl: string }> => {
-    const delay = (ms: number): Promise<void> =>
-      new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-    // Staged simulation executing over 1.2 - 1.5 seconds (325ms + 350ms + 350ms + 300ms = 1325ms total)
-    onProgress?.("Transmitting 60-frame/pose video cache buffer (30-60 FPS) to secure database...", 20);
-    await delay(325);
-
-    onProgress?.("Computing anti-spoofing Laplacian texture variance (Score: 548.6 PASS)...", 50);
-    await delay(350);
-
-    onProgress?.("Triangulating 68-point Delaunay facial landmark vectors...", 80);
-    await delay(350);
-
-    onProgress?.("Biometric credentials committed to database record [VERIFIED]...", 100);
-    await delay(300);
-
-    const bestFrames = this.getBestFrames();
-    const metadata = this.getMetadata();
-
-    const biometricHash = generateBiometricHash(userIdOrEmail, Date.now(), this.frames.length);
-
-    const compositeDataUrl =
-      bestFrames.CENTER ||
-      bestFrames.UP ||
-      bestFrames.LEFT ||
-      bestFrames.RIGHT ||
-      (this.frames.length > 0 ? this.frames[0].frameDataUrl : '');
-
-    const score = metadata.averageLaplacian > 0 ? metadata.averageLaplacian : 548.6;
-
-    return {
-      success: true,
-      biometricHash,
-      score,
-      compositeDataUrl,
-    };
-  };
 }
 
 // Helper Functions

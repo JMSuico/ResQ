@@ -9,7 +9,6 @@ namespace Backend.Features.Services.Interfaces;
 
 public interface IResponderOpsService
 {
-    Task<List<DutyUnitResponse>> GetRosterAsync(CancellationToken ct = default);
     Task<List<DutyUnitResponse>> GetRosterAsync(ResponderUnitType? agency, CancellationToken ct = default);
     Task<(bool Success, string? Error, DutyUnitResponse? Unit)> UpdateDutyStatusAsync(UpdateDutyStatusRequest request, Guid? userId = null, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateUnitStatusAsync(Guid unitId, DutyStatus status, CancellationToken ct = default);

@@ -484,6 +484,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                           <option value="UMID">UMID</option>
                           <option value="Driver's License">Driver's License</option>
                           <option value="Voter's ID">Voter's ID</option>
+                          <option value="Barangay ID">Barangay Resident ID</option>
                           <option value="Passport">Philippine Passport</option>
                           <option value="Senior Citizen ID">Senior Citizen ID</option>
                           <option value="PWD ID">PWD ID</option>
@@ -492,6 +493,26 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                       <div>
                         <label className={labelClass}>ID Card Number</label>
                         <input type="text" value={formData.governmentIdNumber} onChange={(e) => handleChange('governmentIdNumber', e.target.value)} className={CLAY_INPUT} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Residency Category</label>
+                        <select value={formData.residencyCategory} onChange={(e) => handleChange('residencyCategory', e.target.value)} className={CLAY_SELECT}>
+                          <option value="Permanent">Permanent Resident</option>
+                          <option value="Transient">Transient / Temporary</option>
+                          <option value="Student">Student / Boarder</option>
+                          <option value="Displaced / Evacuee">Displaced / Evacuee</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Vulnerability Flags</label>
+                        <select value={formData.vulnerabilityFlags} onChange={(e) => handleChange('vulnerabilityFlags', e.target.value)} className={CLAY_SELECT}>
+                          <option value="None">None</option>
+                          <option value="Senior Citizen">Senior Citizen (60+)</option>
+                          <option value="PWD">Persons with Disability (PWD)</option>
+                          <option value="Pregnant">Pregnant Resident</option>
+                          <option value="Solo Parent">Solo Parent</option>
+                          <option value="Medical Risk">Critical Medical Risk</option>
+                        </select>
                       </div>
                     </div>
                   </div>
@@ -509,8 +530,25 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                         <input type="text" value={formData.medicalLicenseNumber} onChange={(e) => handleChange('medicalLicenseNumber', e.target.value)} className={CLAY_INPUT} />
                       </div>
                       <div>
+                        <label className={labelClass}>Medical Cadre</label>
+                        <select value={formData.medicalCadre} onChange={(e) => handleChange('medicalCadre', e.target.value)} className={CLAY_SELECT}>
+                          <option value="Physician">Physician</option>
+                          <option value="Registered Nurse">Registered Nurse</option>
+                          <option value="Paramedic">Paramedic</option>
+                          <option value="First Responder">First Responder</option>
+                        </select>
+                      </div>
+                      <div>
                         <label className={labelClass}>Health Station</label>
                         <input type="text" value={formData.stationHealthCenter} onChange={(e) => handleChange('stationHealthCenter', e.target.value)} className={CLAY_INPUT} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Ambulance Call Sign</label>
+                        <input type="text" value={formData.ambulanceCallSign} onChange={(e) => handleChange('ambulanceCallSign', e.target.value)} className={CLAY_INPUT} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className={labelClass}>Medical Certifications</label>
+                        <input type="text" value={formData.medicalCertifications} onChange={(e) => handleChange('medicalCertifications', e.target.value)} className={CLAY_INPUT} />
                       </div>
                     </div>
                   </div>
@@ -524,12 +562,30 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                       <div>
+                        <label className={labelClass}>BFP Rank</label>
+                        <select value={formData.firefighterRank} onChange={(e) => handleChange('firefighterRank', e.target.value)} className={CLAY_SELECT}>
+                          <option value="Fire Officer 1 (FO1)">FO1</option>
+                          <option value="Fire Officer 2 (FO2)">FO2</option>
+                          <option value="Fire Officer 3 (FO3)">FO3</option>
+                          <option value="Senior Fire Officer 1 (SFO1)">SFO1</option>
+                          <option value="Senior Fire Inspector (SINSP)">SINSP</option>
+                        </select>
+                      </div>
+                      <div>
                         <label className={labelClass}>BFP Badge Number</label>
                         <input type="text" value={formData.bfpBadgeNumber} onChange={(e) => handleChange('bfpBadgeNumber', e.target.value)} className={CLAY_INPUT} />
                       </div>
                       <div>
                         <label className={labelClass}>Fire Station</label>
                         <input type="text" value={formData.fireStation} onChange={(e) => handleChange('fireStation', e.target.value)} className={CLAY_INPUT} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Apparatus Call Sign</label>
+                        <input type="text" value={formData.apparatusCallSign} onChange={(e) => handleChange('apparatusCallSign', e.target.value)} className={CLAY_INPUT} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className={labelClass}>Fire Specialization</label>
+                        <input type="text" value={formData.fireSpecialization} onChange={(e) => handleChange('fireSpecialization', e.target.value)} className={CLAY_INPUT} />
                       </div>
                     </div>
                   </div>
@@ -543,12 +599,30 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                       <div>
+                        <label className={labelClass}>PNP Police Rank</label>
+                        <select value={formData.policeRank} onChange={(e) => handleChange('policeRank', e.target.value)} className={CLAY_SELECT}>
+                          <option value="Patrolman">Patrolman / Patrolwoman</option>
+                          <option value="Police Corporal (PCpl)">PCpl</option>
+                          <option value="Police Staff Sergeant (PSSg)">PSSg</option>
+                          <option value="Police Lieutenant (PLT)">PLT</option>
+                          <option value="Police Major (PMAJ)">PMAJ</option>
+                        </select>
+                      </div>
+                      <div>
                         <label className={labelClass}>PNP Badge Number</label>
                         <input type="text" value={formData.pnpBadgeNumber} onChange={(e) => handleChange('pnpBadgeNumber', e.target.value)} className={CLAY_INPUT} />
                       </div>
                       <div>
                         <label className={labelClass}>Police Station</label>
                         <input type="text" value={formData.precinctOrStation} onChange={(e) => handleChange('precinctOrStation', e.target.value)} className={CLAY_INPUT} />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Assignment / Sector</label>
+                        <input type="text" value={formData.policeAssignment} onChange={(e) => handleChange('policeAssignment', e.target.value)} className={CLAY_INPUT} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className={labelClass}>Sidearm Serial</label>
+                        <input type="text" value={formData.sidearmSerial} onChange={(e) => handleChange('sidearmSerial', e.target.value)} className={CLAY_INPUT} />
                       </div>
                     </div>
                   </div>
@@ -568,6 +642,14 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                       <div>
                         <label className={labelClass}>Executive Designation</label>
                         <input type="text" value={formData.executiveDesignation} onChange={(e) => handleChange('executiveDesignation', e.target.value)} className={CLAY_INPUT} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className={labelClass}>Clearance Level</label>
+                        <select value={formData.clearanceLevel} onChange={(e) => handleChange('clearanceLevel', e.target.value)} className={CLAY_SELECT}>
+                          <option value="Level 1 - Tactical Support">Level 1 - Tactical Support</option>
+                          <option value="Level 2 - Tactical Operations">Level 2 - Tactical Operations</option>
+                          <option value="Level 3 - Executive Command">Level 3 - Executive Command</option>
+                        </select>
                       </div>
                     </div>
                   </div>

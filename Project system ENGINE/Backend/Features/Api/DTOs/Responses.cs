@@ -158,7 +158,28 @@ public record ReportResponse(
     string? ClaudeUncertaintyNotes = null,
     string? PointerIconType = null,
     bool AiAutoApproved = false,
-    string AiVerificationStatus = "PENDING_REVIEW"
+    string AiVerificationStatus = "PENDING_REVIEW",
+    int? FeedbackRating = null,
+    string? FeedbackComment = null
+);
+
+public record ReportEvidenceResponse(
+    Guid Id,
+    Guid ReportId,
+    string Url,
+    string MediaType,
+    string Caption,
+    string UploadedByName,
+    DateTime CreatedAtUtc
+);
+
+public record ReportFeedbackResponse(
+    Guid Id,
+    Guid ReportId,
+    Guid UserId,
+    int Rating,
+    string Comment,
+    DateTime CreatedAtUtc
 );
 
 public sealed record IncidentImageAiAnalysisResponseDto(

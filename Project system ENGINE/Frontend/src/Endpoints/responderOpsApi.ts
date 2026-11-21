@@ -1,6 +1,6 @@
 // [Layer: Endpoints]
-// Responsibility: Tactical responder operations, duty roster, PCR, and police blotter API stubs using arrow lambdas (=>).
-// Katipuneros Architecture: Strictly typed request/response contracts with ZERO 'any' usage.
+// Responsibility: Tactical responder operations, duty roster, PCR, police blotter, and PostgreSQL dispatch request APIs using arrow lambdas (=>).
+// Katipuneros Architecture: Strictly typed request/response contracts with ZERO 'any' usage and ZERO localStorage fallback ledgers.
 
 import { requestJson } from './apiClient';
 
@@ -161,7 +161,7 @@ export const getNearbyHydrants = (): Promise<HydrantFixture[]> =>
   requestJson<HydrantFixture[]>('/api/responder-ops/hydrants', { method: 'GET' });
 
 // ============================================================================
-// REQUEST & DEPLOY + RESPONDER NOTIFICATION SYNC API
+// REQUEST & DEPLOY + RESPONDER NOTIFICATION SYNC API (PostgreSQL Backed)
 // ============================================================================
 
 export type DispatchRequestDirection = 'MEDIC_REQUEST' | 'ADMIN_ORDER';
@@ -210,10 +210,16 @@ export interface CreateMedicDispatchRequestPayload {
   severity?: string;
   location: string;
   coordinates?: string;
+  latitude?: number;
+  longitude?: number;
   ipAddress?: string;
   evidenceUrl?: string;
   responderId?: string;
   responderName?: string;
+  targetUnit?: string;
+  originUnit?: string;
+  direction?: DispatchRequestDirection;
+  status?: DispatchRequestStatus;
   notes?: string;
 }
 
@@ -231,158 +237,123 @@ export interface ResponderNotificationRecord extends ResponderNotificationPayloa
   isRead: boolean;
 }
 
-const DISPATCH_STORAGE_KEY = 'resqtrack_dispatch_requests';
-const NOTIFICATION_STORAGE_KEY = 'resqtrack_responder_notifications';
-const SETTING_LEDGER_KEY = 'DISPATCH_REQUESTS_LEDGER';
+interface RawBackendDispatchRequest {
+  id?: string;
+  incidentId?: string;
+  reportId?: string;
+  incidentCode?: string;
+  requestCode?: string;
+  incidentTitle?: string;
+  title?: string;
+  category?: string;
+  severity?: string;
+  location?: string;
+  locationLabel?: string;
+  coordinates?: string;
+  latitude?: number;
+  longitude?: number;
+  ipAddress?: string | null;
+  evidenceUrl?: string;
+  responderId?: string;
+  targetUnit?: string;
+  originUnit?: string;
+  responderName?: string;
+  requestedByName?: string;
+  respondedByName?: string | null;
+  direction?: string;
+  status?: string;
+  requestedAt?: string;
+  createdAtUtc?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  updatedAtUtc?: string;
+  notes?: string;
+  description?: string;
+}
 
-const buildDispatchEvidenceUri = (code: string, subtitle: string): string => {
-  const safeCode = code.replace(/[<>&"']/g, '');
-  const safeSub = subtitle.replace(/[<>&"']/g, '');
-  const svg = [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">',
-    '<rect width="640" height="360" fill="#4A041A"/>',
-    '<rect x="24" y="24" width="592" height="312" rx="20" fill="#F7F1EA"/>',
-    '<rect x="44" y="44" width="180" height="32" rx="8" fill="#670626"/>',
-    `<text x="134" y="65" text-anchor="middle" font-family="monospace" font-size="13" font-weight="700" fill="#F7F1EA">${safeCode}</text>`,
-    `<text x="320" y="185" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18" font-weight="800" fill="#2B010E">${safeSub}</text>`,
-    '<text x="320" y="220" text-anchor="middle" font-family="monospace" font-size="12" fill="#A83B4D">RESQTRACK KATIPUNAN DISPATCH TELEMETRY</text>',
-    '</svg>'
-  ].join('');
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-};
-
-const buildInitialSeedRequests = (): DispatchRequestRecord[] => {
-  const now = Date.now();
-  return [
-    {
-      id: 'REQ-MED-2026-001',
-      incidentId: 'INC-EMS-9041',
-      incidentCode: 'RHU-2026-9041',
-      incidentTitle: 'Multi-Vehicle Highway Collision - Trauma Triage',
-      category: 'Medical / Trauma',
-      severity: 'Critical',
-      location: 'National Highway, Brgy. Dos (Poblacion), Katipunan, ZN',
-      coordinates: '8.5119° N, 123.2814° E',
-      ipAddress: '192.168.42.118',
-      evidenceUrl: buildDispatchEvidenceUri('RHU-2026-9041', 'Highway Trauma Triage'),
-      responderId: 'MED-UNIT-01',
-      responderName: 'Medic Alpha-1 (RHU EMS)',
-      direction: 'MEDIC_REQUEST',
-      status: 'PENDING',
-      requestedAt: new Date(now - 14 * 60 * 1000).toISOString(),
-      updatedAt: new Date(now - 14 * 60 * 1000).toISOString(),
-      notes:
-        'Medic field unit spotted high-impact collision on patrol telemetry; requesting immediate LDRRMO Admin clearance to deploy ALS ambulance.',
-    },
-    {
-      id: 'ORD-ADM-2026-002',
-      incidentId: 'INC-EMS-9044',
-      incidentCode: 'RHU-2026-9044',
-      incidentTitle: 'Acute Cardiac Arrest & Respiratory Distress',
-      category: 'Medical Emergency',
-      severity: 'Critical',
-      location: 'Purok 2, Brgy. Uno (Poblacion), Katipunan, ZN',
-      coordinates: '8.5162° N, 123.2858° E',
-      ipAddress: '10.24.88.204',
-      evidenceUrl: buildDispatchEvidenceUri('RHU-2026-9044', 'Cardiac & Respiratory Response'),
-      responderId: 'MED-UNIT-01',
-      responderName: 'Medic Alpha-1 (RHU EMS)',
-      direction: 'ADMIN_ORDER',
-      status: 'TO BE DEPLOYED',
-      requestedAt: new Date(now - 6 * 60 * 1000).toISOString(),
-      updatedAt: new Date(now - 6 * 60 * 1000).toISOString(),
-      notes:
-        'LDRRMO Command Center priority dispatch order: Civilian cardiac emergency verified via optical & GPS telemetry. Awaiting Medic ACCEPT confirmation.',
-    },
-  ];
-};
-
-const readStoredDispatchRequests = (): DispatchRequestRecord[] => {
-  if (typeof window === 'undefined') return buildInitialSeedRequests();
-  try {
-    const raw = localStorage.getItem(DISPATCH_STORAGE_KEY);
-    if (!raw) {
-      const seeded = buildInitialSeedRequests();
-      localStorage.setItem(DISPATCH_STORAGE_KEY, JSON.stringify(seeded));
-      return seeded;
-    }
-    const parsed = JSON.parse(raw) as DispatchRequestRecord[];
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      const seeded = buildInitialSeedRequests();
-      localStorage.setItem(DISPATCH_STORAGE_KEY, JSON.stringify(seeded));
-      return seeded;
-    }
-    return parsed;
-  } catch {
-    return buildInitialSeedRequests();
+const normalizeDispatchStatus = (raw?: string): DispatchRequestStatus => {
+  const upper = (raw || 'PENDING').trim().toUpperCase();
+  if (
+    upper === 'PENDING' ||
+    upper === 'DEPLOY' ||
+    upper === 'TO BE DEPLOYED' ||
+    upper === 'DECLINED' ||
+    upper === 'RESPONDED' ||
+    upper === 'CLOSED'
+  ) {
+    return upper;
   }
+  if (upper === 'TO_BE_DEPLOYED' || upper === 'APPROVED') return 'TO BE DEPLOYED';
+  if (upper === 'DISPATCHED') return 'DEPLOY';
+  return 'PENDING';
 };
 
-const writeStoredDispatchRequests = (records: DispatchRequestRecord[]): void => {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(DISPATCH_STORAGE_KEY, JSON.stringify(records));
-  } catch {
-    // Ignore storage quota errors
+const normalizeDispatchDirection = (raw?: string): DispatchRequestDirection => {
+  const upper = (raw || 'MEDIC_REQUEST').trim().toUpperCase();
+  return upper === 'ADMIN_ORDER' ? 'ADMIN_ORDER' : 'MEDIC_REQUEST';
+};
+
+const parseCoordinatesPair = (
+  coordinates?: string,
+  latitude?: number,
+  longitude?: number
+): { lat: number; lng: number; formatted: string } => {
+  if (typeof latitude === 'number' && typeof longitude === 'number' && !Number.isNaN(latitude) && !Number.isNaN(longitude)) {
+    return {
+      lat: latitude,
+      lng: longitude,
+      formatted: coordinates || `${latitude.toFixed(4)}° N, ${longitude.toFixed(4)}° E`
+    };
   }
-};
-
-const syncLedgerFromBackend = async (): Promise<DispatchRequestRecord[] | null> => {
-  try {
-    const settings = await requestJson<Array<{ key: string; value: string }>>('/api/settings', {
-      method: 'GET'
-    });
-    if (Array.isArray(settings)) {
-      const match = settings.find((s) => s.key === SETTING_LEDGER_KEY);
-      if (match?.value) {
-        const parsed = JSON.parse(match.value) as DispatchRequestRecord[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
+  if (coordinates) {
+    const matches = coordinates.match(/-?\d+(\.\d+)?/g);
+    if (matches && matches.length >= 2) {
+      const parsedLat = Number(matches[0]);
+      const parsedLng = Number(matches[1]);
+      if (!Number.isNaN(parsedLat) && !Number.isNaN(parsedLng)) {
+        return { lat: parsedLat, lng: parsedLng, formatted: coordinates };
       }
     }
-  } catch {
-    // Fall back gracefully to localStorage
   }
-  return null;
+  return {
+    lat: 8.5119,
+    lng: 123.2814,
+    formatted: coordinates || '8.5119° N, 123.2814° E'
+  };
 };
 
-const isCurrentSessionAdmin = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  try {
-    const candidates = [
-      sessionStorage.getItem('resqtrack_session'),
-      sessionStorage.getItem('resqtrack_user'),
-      localStorage.getItem('resqtrack_session_1996'),
-      localStorage.getItem('resqtrack_session')
-    ];
-    for (const raw of candidates) {
-      if (!raw) continue;
-      const parsed = JSON.parse(raw) as { role?: string };
-      const role = (parsed?.role || '').toLowerCase();
-      if (role.includes('admin') || role.includes('ldrrmo') || role === '1') {
-        return true;
-      }
-      if (role !== '') return false;
-    }
-  } catch {
-    return false;
-  }
-  return false;
+const mapDispatchRecord = (raw: RawBackendDispatchRequest): DispatchRequestRecord => {
+  const coords = parseCoordinatesPair(raw.coordinates, raw.latitude, raw.longitude);
+  const id = raw.id || raw.requestCode || raw.incidentCode || '';
+  const createdAt = raw.requestedAt || raw.createdAtUtc || raw.createdAt || new Date().toISOString();
+  const updatedAt = raw.updatedAt || raw.updatedAtUtc || createdAt;
+  return {
+    id,
+    incidentId: raw.incidentId || raw.reportId || id,
+    incidentCode: raw.incidentCode || raw.requestCode || id,
+    incidentTitle: raw.incidentTitle || raw.title || 'Dispatch Request',
+    category: raw.category || raw.originUnit || 'Emergency Dispatch',
+    severity: raw.severity || 'High',
+    location: raw.location || raw.locationLabel || 'Katipunan Municipal Sector',
+    coordinates: coords.formatted,
+    ipAddress: raw.ipAddress || '',
+    evidenceUrl: raw.evidenceUrl,
+    responderId: raw.responderId || raw.targetUnit || '',
+    responderName: raw.responderName || raw.requestedByName || raw.respondedByName || raw.targetUnit || 'Responder Unit',
+    direction: normalizeDispatchDirection(raw.direction),
+    status: normalizeDispatchStatus(raw.status),
+    requestedAt: createdAt,
+    updatedAt,
+    notes: raw.notes ?? raw.description
+  };
 };
 
-const syncLedgerToBackend = async (records: DispatchRequestRecord[]): Promise<void> => {
-  if (!isCurrentSessionAdmin()) {
-    return;
-  }
-  try {
-    await requestJson<{ message: string }>(`/api/settings/${SETTING_LEDGER_KEY}`, {
-      method: 'PUT',
-      body: JSON.stringify({ value: JSON.stringify(records) })
-    });
-  } catch {
-    // If backend rejects (e.g., key unseeded), local state is still persisted in localStorage
-  }
+const unwrapDispatchPayload = (
+  res: RawBackendDispatchRequest | { data?: RawBackendDispatchRequest; request?: RawBackendDispatchRequest }
+): DispatchRequestRecord => {
+  const wrapped = res as { data?: RawBackendDispatchRequest; request?: RawBackendDispatchRequest };
+  const record = wrapped.data || wrapped.request || (res as RawBackendDispatchRequest);
+  return mapDispatchRecord(record);
 };
 
 export const pushResponderNotification = (
@@ -396,24 +367,13 @@ export const pushResponderNotification = (
     type: notification.category,
     incidentId: notification.incidentId,
     timestamp: new Date().toISOString(),
-    isRead: false,
+    isRead: false
   };
 
   if (typeof window !== 'undefined') {
-    try {
-      const existingRaw = localStorage.getItem(NOTIFICATION_STORAGE_KEY);
-      const existing: ResponderNotificationRecord[] = existingRaw
-        ? (JSON.parse(existingRaw) as ResponderNotificationRecord[])
-        : [];
-      const updated = [entry, ...(Array.isArray(existing) ? existing : [])].slice(0, 100);
-      localStorage.setItem(NOTIFICATION_STORAGE_KEY, JSON.stringify(updated));
-    } catch {
-      // Ignore storage errors
-    }
-
     window.dispatchEvent(
       new CustomEvent('resqtrack:notification', {
-        detail: entry,
+        detail: entry
       })
     );
   }
@@ -421,254 +381,143 @@ export const pushResponderNotification = (
   return entry;
 };
 
-export const getResponderNotifications = (): ResponderNotificationRecord[] => {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(NOTIFICATION_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as ResponderNotificationRecord[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
+export const getResponderNotifications = (): ResponderNotificationRecord[] => [];
 
 export const getDispatchRequests = async (): Promise<DispatchRequestRecord[]> => {
-  let records = readStoredDispatchRequests();
-
-  // 1. Attempt to sync with backend ledger
-  const remoteLedger = await syncLedgerFromBackend();
-  if (remoteLedger && remoteLedger.length > 0) {
-    const map = new Map<string, DispatchRequestRecord>();
-    for (const r of records) {
-      map.set(r.id, r);
-    }
-    for (const r of remoteLedger) {
-      const existing = map.get(r.id);
-      if (!existing || new Date(r.updatedAt).getTime() >= new Date(existing.updatedAt).getTime()) {
-        map.set(r.id, r);
-      }
-    }
-    records = Array.from(map.values());
-    writeStoredDispatchRequests(records);
-  }
-
-  // 2. Fetch live reports and synchronize newly reported medical incidents
-  try {
-    const reports = await requestJson<
-      Array<{
-        id: string;
-        referenceCode?: string;
-        title?: string;
-        category?: string;
-        severity?: string;
-        status?: string;
-        latitude?: number;
-        longitude?: number;
-        locationLabel?: string;
-        imageUrl?: string | null;
-        allocatedUnitCode?: string | null;
-        createdAt?: string;
-      }>
-    >('/api/reports', { method: 'GET' });
-
-    if (Array.isArray(reports) && reports.length > 0) {
-      const existingIncidentIds = new Set(records.map((r) => r.incidentId));
-      const merged = [...records];
-      let hasNewReport = false;
-
-      reports.slice(0, 8).forEach((rep, idx) => {
-        if (!rep.id || existingIncidentIds.has(rep.id)) return;
-        const catLower = String(rep.category ?? '').toLowerCase();
-        const isMedical =
-          !catLower ||
-          catLower.includes('med') ||
-          catLower.includes('trauma') ||
-          catLower.includes('accident') ||
-          idx < 2;
-
-        if (!isMedical) return;
-
-        const lat = typeof rep.latitude === 'number' ? rep.latitude.toFixed(4) : '8.5119';
-        const lng = typeof rep.longitude === 'number' ? rep.longitude.toFixed(4) : '123.2814';
-
-        merged.push({
-          id: `REQ-SYNC-${rep.id.slice(0, 8).toUpperCase()}`,
-          incidentId: rep.id,
-          incidentCode: rep.referenceCode || `RHU-${rep.id.slice(0, 6).toUpperCase()}`,
-          incidentTitle: rep.title || 'Emergency Medical Incident',
-          category: rep.category || 'Medical / Trauma',
-          severity: rep.severity || 'High',
-          location: rep.locationLabel || 'Katipunan Municipal Sector',
-          coordinates: `${lat}° N, ${lng}° E`,
-          ipAddress: `192.168.10.${110 + idx}`,
-          evidenceUrl: rep.imageUrl || undefined,
-          responderId: rep.allocatedUnitCode || 'MED-UNIT-01',
-          responderName: 'Medic Alpha-1 (RHU EMS)',
-          direction: idx % 2 === 0 ? 'ADMIN_ORDER' : 'MEDIC_REQUEST',
-          status:
-            rep.status === 'Resolved' || rep.status === 'Closed'
-              ? 'CLOSED'
-              : rep.status === 'Dispatched'
-              ? 'DEPLOY'
-              : idx % 2 === 0
-              ? 'TO BE DEPLOYED'
-              : 'PENDING',
-          requestedAt: rep.createdAt || new Date().toISOString(),
-          updatedAt: rep.createdAt || new Date().toISOString(),
-          notes: 'Synchronized from live ResQTrack incident telemetry feed.',
-        });
-        hasNewReport = true;
-      });
-
-      if (hasNewReport) {
-        writeStoredDispatchRequests(merged);
-        syncLedgerToBackend(merged).catch(() => {});
-        records = merged;
-      }
-    }
-  } catch {
-    // Offline / local fallback uses records seamlessly
-  }
-
-  return [...records].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  const raw = await requestJson<RawBackendDispatchRequest[] | { items?: RawBackendDispatchRequest[]; data?: RawBackendDispatchRequest[] }>(
+    '/api/dispatch-requests',
+    { method: 'GET' }
   );
+  const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.items) ? raw.items : [];
+  return list
+    .map(mapDispatchRecord)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 };
 
 export const createMedicDispatchRequest = async (
   payload: CreateMedicDispatchRequestPayload
 ): Promise<DispatchRequestRecord> => {
-  const nowIso = new Date().toISOString();
-  const suffix = Math.floor(1000 + Math.random() * 9000);
-  const current = readStoredDispatchRequests();
+  const coords = parseCoordinatesPair(payload.coordinates, payload.latitude, payload.longitude);
+  const direction: DispatchRequestDirection = payload.direction || 'MEDIC_REQUEST';
+  const status: DispatchRequestStatus = payload.status || (direction === 'ADMIN_ORDER' ? 'TO BE DEPLOYED' : 'PENDING');
 
-  const newRecord: DispatchRequestRecord = {
-    id: `REQ-MED-${suffix}`,
-    incidentId: payload.incidentId || `INC-EMS-${suffix}`,
-    incidentCode: payload.incidentCode || `RHU-2026-${suffix}`,
-    incidentTitle: payload.incidentTitle,
-    category: payload.category || 'Medical / Trauma',
-    severity: payload.severity || 'Critical',
-    location: payload.location,
-    coordinates: payload.coordinates || '8.5119° N, 123.2814° E',
-    ipAddress: payload.ipAddress || `192.168.42.${Math.floor(20 + Math.random() * 200)}`,
-    evidenceUrl: payload.evidenceUrl || undefined,
-    responderId: payload.responderId || 'MED-UNIT-01',
-    responderName: payload.responderName || 'Medic Alpha-1 (RHU EMS)',
-    direction: 'MEDIC_REQUEST',
-    status: 'PENDING',
-    requestedAt: nowIso,
-    updatedAt: nowIso,
-    notes:
-      payload.notes ||
-      'Medic responder initiated dispatch request; awaiting LDRRMO Admin verification and deployment clearance.',
-  };
+  const res = await requestJson<
+    RawBackendDispatchRequest | { data?: RawBackendDispatchRequest; request?: RawBackendDispatchRequest }
+  >('/api/dispatch-requests', {
+    method: 'POST',
+    body: JSON.stringify({
+      incidentId: payload.incidentId,
+      requestCode: payload.incidentCode,
+      incidentCode: payload.incidentCode,
+      title: payload.incidentTitle,
+      incidentTitle: payload.incidentTitle,
+      category: payload.category || 'Medical / Trauma',
+      severity: payload.severity || 'Critical',
+      location: payload.location,
+      locationLabel: payload.location,
+      coordinates: coords.formatted,
+      latitude: coords.lat,
+      longitude: coords.lng,
+      ipAddress: payload.ipAddress,
+      evidenceUrl: payload.evidenceUrl,
+      responderId: payload.responderId,
+      targetUnit: payload.targetUnit || payload.responderId || 'RHU',
+      originUnit: payload.originUnit || (direction === 'ADMIN_ORDER' ? 'LDRRMO' : 'RHU'),
+      responderName: payload.responderName,
+      requestedByName: payload.responderName,
+      direction,
+      status,
+      description: payload.notes || '',
+      notes: payload.notes || ''
+    })
+  });
 
-  const updated = [newRecord, ...current];
-  writeStoredDispatchRequests(updated);
-  await syncLedgerToBackend(updated);
+  const created = unwrapDispatchPayload(res);
 
   pushResponderNotification({
-    title: `Dispatch Request Submitted (${newRecord.incidentCode})`,
-    message: `${newRecord.responderName} requested deployment for "${newRecord.incidentTitle}" at ${newRecord.location}. Status: PENDING Admin approval.`,
-    category: 'REQUEST_DISPATCH_DEPLOY',
-    incidentId: newRecord.incidentId,
+    title: `Dispatch Request Submitted (${created.incidentCode})`,
+    message: `${created.responderName} requested deployment for "${created.incidentTitle}" at ${created.location}. Status: ${created.status}.`,
+    category: direction === 'ADMIN_ORDER' ? 'ADMIN_REQUEST_DEPLOY' : 'REQUEST_DISPATCH_DEPLOY',
+    incidentId: created.incidentId
   });
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
       new CustomEvent('resqtrack:report', {
         detail: {
-          type: 'REQUEST_DISPATCH_DEPLOY',
-          request: newRecord,
-        },
+          type: direction === 'ADMIN_ORDER' ? 'ADMIN_REQUEST_DEPLOY' : 'REQUEST_DISPATCH_DEPLOY',
+          request: created
+        }
       })
     );
   }
 
-  return newRecord;
+  return created;
+};
+
+export const updateDispatchRequestStatus = async (
+  id: string,
+  status: DispatchRequestStatus,
+  notes?: string
+): Promise<DispatchRequestRecord | null> => {
+  const res = await requestJson<
+    RawBackendDispatchRequest | { data?: RawBackendDispatchRequest; request?: RawBackendDispatchRequest }
+  >(`/api/dispatch-requests/${encodeURIComponent(id)}/status`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      status,
+      notes
+    })
+  });
+
+  const updatedRecord = unwrapDispatchPayload(res);
+
+  const categoryMap: Record<DispatchRequestStatus, ResponderNotificationCategory> = {
+    PENDING: 'REQUEST_DISPATCH_DEPLOY',
+    'TO BE DEPLOYED': 'ADMIN_REQUEST_DEPLOY',
+    DEPLOY: 'REQUEST_DISPATCH_DEPLOY',
+    DECLINED: 'ADMIN_REQUEST_DEPLOY',
+    RESPONDED: 'SUBMITTED_INCIDENT_LOGS',
+    CLOSED: 'CLOSE_CASE'
+  };
+
+  pushResponderNotification({
+    title: `Incident Status Updated: ${updatedRecord.status} (${updatedRecord.incidentCode})`,
+    message: `"${updatedRecord.incidentTitle}" transitioned to ${updatedRecord.status}.`,
+    category: categoryMap[updatedRecord.status],
+    incidentId: updatedRecord.incidentId
+  });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('resqtrack:report', {
+        detail: {
+          type: 'DISPATCH_STATUS_UPDATED',
+          request: updatedRecord
+        }
+      })
+    );
+  }
+
+  return updatedRecord;
 };
 
 export const approveMedicRequestByAdmin = async (
   id: string
 ): Promise<DispatchRequestRecord | null> => {
-  const current = readStoredDispatchRequests();
-  const targetIndex = current.findIndex((item) => item.id === id);
-  if (targetIndex === -1) return null;
+  const updatedRecord = await updateDispatchRequestStatus(
+    id,
+    'DEPLOY',
+    'Approved by LDRRMO Command Admin — Unit cleared for active DEPLOY.'
+  );
 
-  const target = current[targetIndex];
-  const updatedRecord: DispatchRequestRecord = {
-    ...target,
-    status: 'DEPLOY',
-    updatedAt: new Date().toISOString(),
-    notes: `${
-      target.notes ? `${target.notes} | ` : ''
-    }Approved by LDRRMO Command Admin — Unit cleared for active DEPLOY.`,
-  };
-
-  const nextList = [...current];
-  nextList[targetIndex] = updatedRecord;
-  writeStoredDispatchRequests(nextList);
-  await syncLedgerToBackend(nextList);
-
-  // Cross-service backend sync: allocate report and update unit status
-  if (updatedRecord.incidentId) {
-    try {
-      const isGuid = (val: string): boolean =>
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-
-      let targetUnitId = updatedRecord.responderId;
-
-      if (!isGuid(targetUnitId)) {
-        try {
-          const roster = await getDutyRoster();
-          const matched = roster.find(
-            (u) =>
-              u.id === targetUnitId ||
-              u.unitCode === targetUnitId ||
-              u.unitName === targetUnitId
-          );
-          if (matched) {
-            targetUnitId = matched.id;
-          }
-        } catch {
-          // Fall back to targetUnitId
-        }
-      }
-
-      if (isGuid(updatedRecord.incidentId) && isGuid(targetUnitId)) {
-        await requestJson<{ message: string }>(`/api/reports/${updatedRecord.incidentId}/allocate`, {
-          method: 'POST',
-          body: JSON.stringify({ unitId: targetUnitId })
-        }).catch(() => {});
-      }
-
-      if (isGuid(targetUnitId)) {
-        await requestJson<{ message: string }>(`/api/responder-ops/units/${targetUnitId}/status`, {
-          method: 'PUT',
-          body: JSON.stringify({ status: 'Dispatched' })
-        }).catch(() => {});
-      }
-    } catch {
-      // Backend allocation/status call failure is non-fatal to optimistic client transition
-    }
-  }
-
-  pushResponderNotification({
-    title: `Admin Approved Deployment (${updatedRecord.incidentCode})`,
-    message: `LDRRMO Admin approved request ${updatedRecord.id} for "${updatedRecord.incidentTitle}". State transitioned from PENDING to DEPLOY.`,
-    category: 'ADMIN_REQUEST_DEPLOY',
-    incidentId: updatedRecord.incidentId,
-  });
-
-  if (typeof window !== 'undefined') {
+  if (updatedRecord && typeof window !== 'undefined') {
     window.dispatchEvent(
       new CustomEvent('resqtrack:report', {
         detail: {
           type: 'ADMIN_APPROVED_DEPLOY',
-          request: updatedRecord,
-        },
+          request: updatedRecord
+        }
       })
     );
   }
@@ -680,129 +529,22 @@ export const respondToAdminDeployOrder = async (
   id: string,
   decision: 'ACCEPT' | 'DECLINE'
 ): Promise<DispatchRequestRecord | null> => {
-  const current = readStoredDispatchRequests();
-  const targetIndex = current.findIndex((item) => item.id === id);
-  if (targetIndex === -1) return null;
-
   const nextStatus: DispatchRequestStatus = decision === 'ACCEPT' ? 'DEPLOY' : 'DECLINED';
-  const updatedRecord: DispatchRequestRecord = {
-    ...current[targetIndex],
-    status: nextStatus,
-    updatedAt: new Date().toISOString(),
-    notes:
-      decision === 'ACCEPT'
-        ? 'Medic Responder ACCEPTED Admin deployment order — Unit actively DEPLOYED to scene.'
-        : 'Medic Responder DECLINED Admin deployment order — Flagged for unit reassignment.',
-  };
+  const notes =
+    decision === 'ACCEPT'
+      ? 'Responder ACCEPTED Admin deployment order — Unit actively DEPLOYED to scene.'
+      : 'Responder DECLINED Admin deployment order — Flagged for unit reassignment.';
 
-  const nextList = [...current];
-  nextList[targetIndex] = updatedRecord;
-  writeStoredDispatchRequests(nextList);
-  await syncLedgerToBackend(nextList);
+  const updatedRecord = await updateDispatchRequestStatus(id, nextStatus, notes);
 
-  if (decision === 'ACCEPT' && updatedRecord.responderId) {
-    const isGuid = (val: string): boolean =>
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-
-    let targetUnitId = updatedRecord.responderId;
-    if (!isGuid(targetUnitId)) {
-      try {
-        const roster = await getDutyRoster();
-        const matched = roster.find(
-          (u) =>
-            u.id === targetUnitId ||
-            u.unitCode === targetUnitId ||
-            u.unitName === targetUnitId
-        );
-        if (matched) {
-          targetUnitId = matched.id;
-        }
-      } catch {
-        // Fall back
-      }
-    }
-
-    if (isGuid(targetUnitId)) {
-      requestJson<{ message: string }>(`/api/responder-ops/units/${targetUnitId}/status`, {
-        method: 'PUT',
-        body: JSON.stringify({ status: 'Dispatched' })
-      }).catch(() => {});
-    }
-  }
-
-  pushResponderNotification({
-    title:
-      decision === 'ACCEPT'
-        ? `Deployment Order Accepted (${updatedRecord.incidentCode})`
-        : `Deployment Order Declined (${updatedRecord.incidentCode})`,
-    message:
-      decision === 'ACCEPT'
-        ? `${updatedRecord.responderName} accepted Admin deploy order for "${updatedRecord.incidentTitle}". Unit status is now DEPLOY.`
-        : `${updatedRecord.responderName} declined Admin deploy order for "${updatedRecord.incidentTitle}". Status: DECLINED.`,
-    category:
-      decision === 'ACCEPT' ? 'REQUEST_DISPATCH_DEPLOY' : 'ADMIN_REQUEST_DEPLOY',
-    incidentId: updatedRecord.incidentId,
-  });
-
-  if (typeof window !== 'undefined') {
+  if (updatedRecord && typeof window !== 'undefined') {
     window.dispatchEvent(
       new CustomEvent('resqtrack:report', {
         detail: {
           type: decision === 'ACCEPT' ? 'MEDIC_ACCEPTED_DEPLOY' : 'MEDIC_DECLINED_DEPLOY',
           decision,
-          request: updatedRecord,
-        },
-      })
-    );
-  }
-
-  return updatedRecord;
-};
-
-export const updateDispatchRequestStatus = async (
-  id: string,
-  status: DispatchRequestStatus,
-  notes?: string
-): Promise<DispatchRequestRecord | null> => {
-  const current = readStoredDispatchRequests();
-  const targetIndex = current.findIndex((item) => item.id === id);
-  if (targetIndex === -1) return null;
-
-  const updatedRecord: DispatchRequestRecord = {
-    ...current[targetIndex],
-    status,
-    updatedAt: new Date().toISOString(),
-    notes: notes || current[targetIndex].notes,
-  };
-
-  const nextList = [...current];
-  nextList[targetIndex] = updatedRecord;
-  writeStoredDispatchRequests(nextList);
-  await syncLedgerToBackend(nextList);
-
-  const categoryMap: Record<DispatchRequestStatus, ResponderNotificationCategory> = {
-    PENDING: 'REQUEST_DISPATCH_DEPLOY',
-    'TO BE DEPLOYED': 'ADMIN_REQUEST_DEPLOY',
-    DEPLOY: 'REQUEST_DISPATCH_DEPLOY',
-    DECLINED: 'ADMIN_REQUEST_DEPLOY',
-    RESPONDED: 'SUBMITTED_INCIDENT_LOGS',
-    CLOSED: 'CLOSE_CASE',
-  };
-
-  pushResponderNotification({
-    title: `Incident Status Updated: ${status} (${updatedRecord.incidentCode})`,
-    message: `"${updatedRecord.incidentTitle}" transitioned to ${status}.`,
-    category: categoryMap[status],
-    incidentId: updatedRecord.incidentId,
-  });
-
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent('resqtrack:report', {
-        detail: {
-          type: 'DISPATCH_STATUS_UPDATED',
-          request: updatedRecord,
-        },
+          request: updatedRecord
+        }
       })
     );
   }

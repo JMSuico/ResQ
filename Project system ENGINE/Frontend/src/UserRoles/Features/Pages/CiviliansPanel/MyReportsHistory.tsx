@@ -18,9 +18,11 @@ import {
   Flame,
   HeartPulse,
   ShieldAlert,
-  Waves
+  Waves,
+  AlertTriangle
 } from 'lucide-react';
 import { getMyReports, ReportItem } from '@/Endpoints/reportsApi';
+import { requestJson } from '@/Endpoints/apiClient';
 import { ImageLightboxModal } from '@/Shared/ImageLightboxModal';
 import { SearchBar } from '@/Shared/SearchBar';
 import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
@@ -181,6 +183,8 @@ export const MyReportsHistory: React.FC = () => {
   const [selectedFeedbackReport, setSelectedFeedbackReport] = useState<ExtendedReportItem | null>(null);
   const [feedbackRating, setFeedbackRating] = useState<number>(5);
   const [feedbackComment, setFeedbackComment] = useState<string>('');
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<boolean>(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [feedbackSuccessToast, setFeedbackSuccessToast] = useState<string | null>(null);
 
   const { viewMode, setViewMode } = useTableCardView('card');
@@ -271,14 +275,38 @@ export const MyReportsHistory: React.FC = () => {
     'Rejected'
   ];
 
-  const handleSubmitFeedback = () => {
-    if (!selectedFeedbackReport) return;
-    setFeedbackSuccessToast(
-      `Rating saved for #${selectedFeedbackReport.referenceCode}.`
-    );
-    setSelectedFeedbackReport(null);
+  const handleOpenFeedbackModal = (report: ExtendedReportItem) => {
+    setFeedbackError(null);
+    setFeedbackRating(5);
     setFeedbackComment('');
-    setTimeout(() => setFeedbackSuccessToast(null), 5000);
+    setSelectedFeedbackReport(report);
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!selectedFeedbackReport || isSubmittingFeedback) return;
+    setIsSubmittingFeedback(true);
+    setFeedbackError(null);
+    try {
+      await requestJson<{ message?: string }>(`/api/reports/${selectedFeedbackReport.id}/feedback`, {
+        method: 'POST',
+        body: JSON.stringify({
+          rating: feedbackRating,
+          comment: feedbackComment.trim()
+        })
+      });
+      const refCode = selectedFeedbackReport.referenceCode;
+      setSelectedFeedbackReport(null);
+      setFeedbackComment('');
+      setFeedbackRating(5);
+      setFeedbackSuccessToast(`Feedback saved for #${refCode}.`);
+      setTimeout(() => setFeedbackSuccessToast(null), 5000);
+      await loadReports();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to save feedback.';
+      setFeedbackError(msg);
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
   };
 
   return (
@@ -428,7 +456,7 @@ export const MyReportsHistory: React.FC = () => {
                     {normalizedStatus === 'Resolved' && (
                       <button
                         type="button"
-                        onClick={() => setSelectedFeedbackReport(r)}
+                        onClick={() => handleOpenFeedbackModal(r)}
                         className="mt-1 text-xs font-mono text-[#670626] hover:text-[#4A041A] font-bold underline text-right inline-flex items-center gap-1 cursor-pointer"
                       >
                         <Star className="w-3.5 h-3.5" />
@@ -498,7 +526,7 @@ export const MyReportsHistory: React.FC = () => {
                           </span>
                         )}
                         <span className="px-2 py-0.5 rounded bg-[#F7F1EA] border border-[#A83B4D]/40 text-[#A83B4D] font-bold">
-                          {r.claudeModelUsed || 'claude-haiku-4-5'}
+                          {r.claudeModelUsed || 'Pending AI'}
                         </span>
                       </div>
                     </div>
@@ -629,7 +657,7 @@ export const MyReportsHistory: React.FC = () => {
                           {normalizedStatus === 'Resolved' && (
                             <button
                               type="button"
-                              onClick={() => setSelectedFeedbackReport(r)}
+                              onClick={() => handleOpenFeedbackModal(r)}
                               className="px-3 py-1.5 rounded-lg bg-[#670626] text-[#F7F1EA] text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
                             >
                               <Star className="w-3.5 h-3.5" />
@@ -705,14 +733,25 @@ export const MyReportsHistory: React.FC = () => {
               />
             </div>
 
+            {feedbackError && (
+              <div
+                role="alert"
+                className="p-3 rounded-xl bg-[#670626] text-[#F7F1EA] text-xs font-mono font-bold flex items-center gap-2"
+              >
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>{feedbackError}</span>
+              </div>
+            )}
+
             <div className="flex items-center gap-3 pt-2">
               <CivilianButton
                 variant="primary"
                 size="md"
+                isLoading={isSubmittingFeedback}
                 onClick={handleSubmitFeedback}
                 className="flex-1 text-sm"
               >
-                Submit Feedback
+                {isSubmittingFeedback ? 'Saving Feedback...' : 'Submit Feedback'}
               </CivilianButton>
               <CivilianButton
                 variant="outline"

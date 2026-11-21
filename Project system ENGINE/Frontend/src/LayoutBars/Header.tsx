@@ -29,6 +29,8 @@ import {
 import { UserSessionChip, UserSessionChipProps } from './UserSessionChip';
 import { useDrawerSidebar } from '@/Shared/ToggleDrawerSidebarMenu';
 import { requestJson } from '@/Endpoints/apiClient';
+import { getAlerts, getAllReports, markAlertRead, markAllAlertsRead, AlertItem, ReportItem } from '@/Endpoints/reportsApi';
+import { getDispatchRequests, DispatchRequestRecord } from '@/Endpoints/responderOpsApi';
 import { createPortal } from 'react-dom';
 import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
 
@@ -93,7 +95,6 @@ const EXPANDED_SIDEBAR_VAR = 'var(--brand-w, 260px)';
 const ALERT_POLL_INTERVAL_MS = 10000;
 const MAX_DISPLAY_UNREAD_COUNT = 99;
 const LOCAL_STORAGE_READ_KEY = 'resqtrack.alerts.read';
-const RESPONDER_NOTIFICATIONS_STORAGE_PREFIX = 'resqtrack_responder_notifications';
 
 const COMPACT_FILTER_CATEGORIES: ReadonlyArray<{
   category: ResponderNotificationCategory;
@@ -112,182 +113,6 @@ const SEVERITY_PRIORITY_RANK: Record<string, number> = {
   MEDIUM: 2,
   LOW: 1
 };
-
-const DEFAULT_SEED_NOTIFICATIONS: ResponderNotificationItem[] = [
-  // RHU / MEDIC Scoped Seed Notifications
-  {
-    id: 'notif-rhu-admin-deploy-01',
-    referenceCode: 'CMD-RHU-101',
-    category: 'ADMIN REQUEST YOU TO DEPLOY',
-    incidentCategory: 'MedicalEmergency',
-    targetUnit: 'RHU',
-    title: 'LDRRMO Command Orders Immediate Medic Deployment',
-    message: 'Central Command ordered RHU Ambulance Unit 01 to deploy to National Highway KM 284 trauma scene.',
-    timestamp: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
-    isRead: false,
-    severity: 'Critical',
-    targetRoute: '/responder/request-deploy',
-    locationLabel: 'National Highway KM 284, Katipunan'
-  },
-  {
-    id: 'notif-rhu-req-deploy-02',
-    referenceCode: 'REQ-RHU-102',
-    category: 'REQUEST DISPATCH DEPLOY',
-    incidentCategory: 'MedicalEmergency',
-    targetUnit: 'RHU',
-    title: 'Medic Dispatch & Deployment Request Logged',
-    message: 'RHU Medic Team Alpha requested ambulance deployment clearance to Barangay Uno sector.',
-    timestamp: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-    isRead: false,
-    severity: 'High',
-    targetRoute: '/responder/request-deploy',
-    locationLabel: 'Barangay Uno, Katipunan'
-  },
-  {
-    id: 'notif-rhu-incident-on-03',
-    referenceCode: 'INC-RHU-103',
-    category: 'INCIDENT HAPPENS ON',
-    incidentCategory: 'MedicalEmergency',
-    targetUnit: 'RHU',
-    title: 'Medical Emergency & Trauma Detected on Sector Radar',
-    message: 'Acute respiratory distress and patient trauma alert reported on Sector 1 Radar (8.5147°N, 123.2842°E).',
-    timestamp: new Date(Date.now() - 11 * 60 * 1000).toISOString(),
-    isRead: false,
-    severity: 'Critical',
-    targetRoute: '/responder/incidents',
-    locationLabel: 'Sector 1 · Poblacion Junction'
-  },
-  {
-    id: 'notif-rhu-submitted-log-04',
-    referenceCode: 'LOG-RHU-104',
-    category: 'SUBMITTED INCIDENT LOGS',
-    incidentCategory: 'MedicalEmergency',
-    targetUnit: 'RHU',
-    title: 'Submitted Medical Incident Log & Multi-PCR Evidence',
-    message: 'Medic field assessment and multi-patient PCR trauma documentation transmitted to Command Verification Queue.',
-    timestamp: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
-    isRead: false,
-    severity: 'Medium',
-    targetRoute: '/responder/my-reports',
-    locationLabel: 'RHU Field Terminal'
-  },
-  {
-    id: 'notif-rhu-verified-log-05',
-    referenceCode: 'VER-RHU-105',
-    category: 'VERIFIED SUBMITTED INCIDENT LOGS',
-    incidentCategory: 'MedicalEmergency',
-    targetUnit: 'RHU',
-    title: 'Verified Medical Incident Log — 5:00 Countdown Started',
-    message: 'AI & LDRRMO Command verified your submitted PCR log. 5-minute auto case closure countdown initiated.',
-    timestamp: new Date(Date.now() - 24 * 60 * 1000).toISOString(),
-    isRead: false,
-    severity: 'High',
-    targetRoute: '/responder/my-reports',
-    locationLabel: 'Command Verification Engine'
-  },
-  {
-    id: 'notif-rhu-close-case-06',
-    referenceCode: 'CLS-RHU-106',
-    category: 'CLOSE CASE',
-    incidentCategory: 'MedicalEmergency',
-    targetUnit: 'RHU',
-    title: '5-Minute Countdown Complete — Medical Case Closed',
-    message: 'Medical case #INC-2026-089 completed the 5-minute verification timer and is archived as CLOSED / SOLVED.',
-    timestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
-    isRead: true,
-    severity: 'Low',
-    targetRoute: '/responder/my-reports',
-    locationLabel: 'Municipal Archive'
-  },
-
-  // BFP / FIRE Scoped Seed Notifications
-  {
-    id: 'notif-fire-admin-deploy-01',
-    referenceCode: 'CMD-BFP-201',
-    category: 'ADMIN REQUEST YOU TO DEPLOY',
-    incidentCategory: 'StructuralFire',
-    targetUnit: 'FIRE',
-    title: 'LDRRMO Command Orders Immediate Fire Engine Deployment',
-    message: 'Central Command ordered BFP Engine 01 to deploy to Public Market electrical arcing & structural fire.',
-    timestamp: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-    isRead: false,
-    severity: 'Critical',
-    targetRoute: '/responder/request-deploy',
-    locationLabel: 'Public Market Perimeter, Barangay Uno'
-  },
-  {
-    id: 'notif-fire-req-deploy-02',
-    referenceCode: 'REQ-BFP-202',
-    category: 'REQUEST DISPATCH DEPLOY',
-    incidentCategory: 'StructuralFire',
-    targetUnit: 'FIRE',
-    title: 'Fire & Hazmat Dispatch Request Logged',
-    message: 'BFP Engine Company requested 2-alarm suppression clearance for commercial warehouse smoke plume.',
-    timestamp: new Date(Date.now() - 9 * 60 * 1000).toISOString(),
-    isRead: false,
-    severity: 'High',
-    targetRoute: '/responder/request-deploy',
-    locationLabel: 'Barangay Dos Industrial Zone'
-  },
-  {
-    id: 'notif-fire-incident-on-03',
-    referenceCode: 'INC-BFP-203',
-    category: 'INCIDENT HAPPENS ON',
-    incidentCategory: 'StructuralFire',
-    targetUnit: 'FIRE',
-    title: 'Structural Fire & Hazmat Alert on Sector Radar',
-    message: 'Active electrical transformer sparks and hazmat smoke reported on Sector 2 Radar.',
-    timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    isRead: false,
-    severity: 'Critical',
-    targetRoute: '/responder/incidents',
-    locationLabel: 'Sector 2 · Market Perimeter'
-  },
-
-  // PNP / POLICE Scoped Seed Notifications
-  {
-    id: 'notif-pnp-admin-deploy-01',
-    referenceCode: 'CMD-PNP-301',
-    category: 'ADMIN REQUEST YOU TO DEPLOY',
-    incidentCategory: 'CrimeOrSecurity',
-    targetUnit: 'PNP',
-    title: 'LDRRMO Command Orders Immediate Patrol Deployment',
-    message: 'Central Command ordered PNP Mobile Patrol 01 to secure Sitio Malugas Bridge vehicular traffic bottleneck.',
-    timestamp: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-    isRead: false,
-    severity: 'High',
-    targetRoute: '/responder/request-deploy',
-    locationLabel: 'Sitio Malugas Bridge, Katipunan'
-  },
-  {
-    id: 'notif-pnp-req-deploy-02',
-    referenceCode: 'REQ-PNP-302',
-    category: 'REQUEST DISPATCH DEPLOY',
-    incidentCategory: 'VehicularAccident',
-    targetUnit: 'PNP',
-    title: 'Traffic & Security Perimeter Dispatch Logged',
-    message: 'PNP Patrol Unit requested perimeter security clearance for arterial highway vehicular collision.',
-    timestamp: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-    isRead: false,
-    severity: 'Medium',
-    targetRoute: '/responder/request-deploy',
-    locationLabel: 'National Highway KM 284'
-  },
-  {
-    id: 'notif-pnp-incident-on-03',
-    referenceCode: 'INC-PNP-303',
-    category: 'INCIDENT HAPPENS ON',
-    incidentCategory: 'CrimeOrSecurity',
-    targetUnit: 'PNP',
-    title: 'Security Disturbance & Traffic Gridlock Reported',
-    message: 'Active highway gridlock and security perimeter report logged in Barangay Daanglungsod.',
-    timestamp: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
-    isRead: false,
-    severity: 'Medium',
-    targetRoute: '/responder/my-reports',
-    locationLabel: 'Barangay Daanglungsod'
-  }
-];
 
 const normalizeUnitCode = (unit?: string): string => {
   const upper = (unit || '').toUpperCase().trim();
@@ -428,6 +253,7 @@ const normalizeNotificationCategory = (
   if (
     combined.includes('ADMIN REQUEST') ||
     combined.includes('ADMIN_REQUEST') ||
+    combined.includes('ADMIN_ORDER') ||
     combined.includes('ORDER YOU TO DEPLOY') ||
     combined.includes('ORDERS IMMEDIATE') ||
     combined.includes('ADMIN DEPLOY')
@@ -556,6 +382,113 @@ const normalizeRawNotification = (
   };
 };
 
+const mapAlertToNotification = (
+  alert: AlertItem,
+  idx: number,
+  readIds: string[],
+  activeRole: string,
+  activeUnit: string
+): ResponderNotificationItem =>
+  normalizeRawNotification(
+    {
+      id: alert.reportId,
+      reportId: alert.reportId,
+      referenceCode: alert.referenceCode,
+      title: alert.title,
+      category: alert.category,
+      incidentCategory: alert.category,
+      severity: alert.severity,
+      timestamp: alert.timestamp,
+      isRead: alert.isRead,
+      notificationType:
+        alert.status?.toLowerCase() === 'resolved' || alert.status?.toLowerCase() === 'closed'
+          ? 'CLOSE CASE'
+          : alert.status?.toLowerCase() === 'verified'
+          ? 'VERIFIED SUBMITTED INCIDENT LOGS'
+          : 'INCIDENT HAPPENS ON'
+    },
+    idx,
+    readIds,
+    activeRole,
+    activeUnit
+  );
+
+const mapReportToNotification = (
+  report: ReportItem,
+  idx: number,
+  readIds: string[],
+  activeRole: string,
+  activeUnit: string
+): ResponderNotificationItem => {
+  const statusLower = (report.status || '').toLowerCase();
+  const notifType: ResponderNotificationCategory =
+    statusLower === 'resolved' || statusLower === 'closed'
+      ? 'CLOSE CASE'
+      : statusLower === 'verified'
+      ? 'VERIFIED SUBMITTED INCIDENT LOGS'
+      : 'INCIDENT HAPPENS ON';
+
+  return normalizeRawNotification(
+    {
+      id: report.id,
+      reportId: report.id,
+      referenceCode: report.referenceCode || report.id.slice(0, 8).toUpperCase(),
+      title: report.title,
+      message: report.note || `${report.category} reported at ${report.locationLabel || 'Katipunan'}`,
+      category: report.category,
+      incidentCategory: report.category,
+      targetUnit: report.recommendedAgencyUnit || report.allocatedUnitCode || undefined,
+      severity: report.severity,
+      timestamp: report.createdAt,
+      locationLabel: report.locationLabel,
+      notificationType: notifType
+    },
+    idx + 500,
+    readIds,
+    activeRole,
+    activeUnit
+  );
+};
+
+const mapDispatchToNotification = (
+  dispatch: DispatchRequestRecord,
+  idx: number,
+  readIds: string[],
+  activeRole: string,
+  activeUnit: string
+): ResponderNotificationItem => {
+  const notifType: ResponderNotificationCategory =
+    dispatch.status === 'CLOSED'
+      ? 'CLOSE CASE'
+      : dispatch.status === 'RESPONDED'
+      ? 'SUBMITTED INCIDENT LOGS'
+      : dispatch.direction === 'ADMIN_ORDER'
+      ? 'ADMIN REQUEST YOU TO DEPLOY'
+      : 'REQUEST DISPATCH DEPLOY';
+
+  return normalizeRawNotification(
+    {
+      id: dispatch.id,
+      reportId: dispatch.incidentId,
+      referenceCode: dispatch.incidentCode || dispatch.id,
+      title: `${dispatch.incidentTitle} (${dispatch.status})`,
+      message: dispatch.notes || `${dispatch.responderName} — ${dispatch.location}`,
+      category: dispatch.category,
+      incidentCategory: dispatch.category,
+      targetUnit: dispatch.responderId,
+      severity: dispatch.severity,
+      timestamp: dispatch.updatedAt || dispatch.requestedAt,
+      locationLabel: dispatch.location,
+      isRead: dispatch.status === 'CLOSED' || dispatch.status === 'DECLINED',
+      notificationType: notifType
+    },
+    idx + 1000,
+    readIds,
+    activeRole,
+    activeUnit
+  );
+};
+
 const formatTimeAgo = (iso?: string): string => {
   if (!iso) return 'JUST NOW';
   const parsed = Date.parse(iso);
@@ -575,20 +508,16 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'UNREAD' | ResponderNotificationCategory>('ALL');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'unread'>('newest');
   const [sirenMuted, setSirenMuted] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const { isCollapsed } = useDrawerSidebar();
   const { isMobile } = useFluidResposiveness();
   const navigate = useNavigate();
   const bellWrapperRef = useRef<HTMLDivElement | null>(null);
   const alertsPanelRef = useRef<HTMLElement | null>(null);
+  const liveEventsRef = useRef<ResponderNotificationItem[]>([]);
+  const clearedIdsRef = useRef<Set<string>>(new Set());
 
   const sessionScope = useMemo(() => resolveActiveSessionScope(user), [user]);
-
-  const storageKey = useMemo(() => {
-    if (sessionScope.role === 'responder' && sessionScope.unit && sessionScope.unit !== 'NONE') {
-      return `${RESPONDER_NOTIFICATIONS_STORAGE_PREFIX}_${String(sessionScope.unit ?? '').toLowerCase()}`;
-    }
-    return `${RESPONDER_NOTIFICATIONS_STORAGE_PREFIX}_${sessionScope.role || 'default'}`;
-  }, [sessionScope.role, sessionScope.unit]);
 
   const getLocallyReadIds = useCallback((): string[] => {
     try {
@@ -599,80 +528,94 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
     }
   }, []);
 
-  const loadStoredResponderNotifications = useCallback((): ResponderNotificationItem[] => {
-    const readIds = getLocallyReadIds();
-    const scopedDefaults = DEFAULT_SEED_NOTIFICATIONS.filter((item) =>
-      doesNotificationMatchUnit(item, sessionScope.role, sessionScope.unit)
-    ).map((item) => ({
-      ...item,
-      targetRoute: resolveTargetRoute(item.category, item.targetRoute, sessionScope.role, sessionScope.unit),
-      isRead: item.isRead || readIds.includes(item.id)
-    }));
-
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) {
-        window.localStorage.setItem(storageKey, JSON.stringify(scopedDefaults));
-        return scopedDefaults;
-      }
-      const parsed = JSON.parse(raw) as RawNotificationPayload[];
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed
-          .map((item, idx) =>
-            normalizeRawNotification(item, idx, readIds, sessionScope.role, sessionScope.unit)
-          )
-          .filter((item) => doesNotificationMatchUnit(item, sessionScope.role, sessionScope.unit));
-      }
-    } catch {
-      // Fallback to unit-scoped seed notifications
-    }
-    return scopedDefaults;
-  }, [getLocallyReadIds, sessionScope.role, sessionScope.unit, storageKey]);
-
   const synchronizeAllNotifications = useCallback(async () => {
-    const localItems = loadStoredResponderNotifications();
     const readIds = getLocallyReadIds();
 
-    try {
-      const apiAlerts = await requestJson<RawNotificationPayload[]>('/api/alerts', { method: 'GET' });
-      if (Array.isArray(apiAlerts) && apiAlerts.length > 0) {
-        const existingIds = new Set(localItems.map((i) => i.id));
-        const mergedFromApi: ResponderNotificationItem[] = [];
+    const [alertsRes, reportsRes, dispatchesRes] = await Promise.allSettled([
+      getAlerts(),
+      getAllReports(),
+      sessionScope.role !== 'civilian' ? getDispatchRequests() : Promise.resolve([] as DispatchRequestRecord[])
+    ]);
 
-        apiAlerts.slice(0, 20).forEach((alertItem, idx) => {
-          const normalized = normalizeRawNotification(
-            {
-              ...alertItem,
-              incidentCategory: alertItem.incidentCategory || alertItem.category,
-              notificationType: alertItem.notificationType || 'INCIDENT HAPPENS ON'
-            },
-            idx + 200,
-            readIds,
-            sessionScope.role,
-            sessionScope.unit
-          );
-          if (
-            !existingIds.has(normalized.id) &&
-            doesNotificationMatchUnit(normalized, sessionScope.role, sessionScope.unit)
-          ) {
-            existingIds.add(normalized.id);
-            mergedFromApi.push(normalized);
-          }
+    const itemMap = new Map<string, ResponderNotificationItem>();
+
+    // 1. Live in-session custom events
+    for (const evtItem of liveEventsRef.current) {
+      if (clearedIdsRef.current.has(evtItem.id)) continue;
+      if (doesNotificationMatchUnit(evtItem, sessionScope.role, sessionScope.unit)) {
+        itemMap.set(evtItem.id, {
+          ...evtItem,
+          isRead: evtItem.isRead || readIds.includes(evtItem.id)
         });
-
-        setNotifications([...localItems, ...mergedFromApi]);
-        return;
       }
-    } catch {
-      // Ignore network jitter and use unit-scoped local notifications
     }
 
-    setNotifications(localItems);
-  }, [getLocallyReadIds, loadStoredResponderNotifications, sessionScope.role, sessionScope.unit]);
+    // 2. Real PostgreSQL /api/alerts
+    if (alertsRes.status === 'fulfilled' && Array.isArray(alertsRes.value)) {
+      alertsRes.value.forEach((alertItem, idx) => {
+        const normalized = mapAlertToNotification(
+          alertItem,
+          idx,
+          readIds,
+          sessionScope.role,
+          sessionScope.unit
+        );
+        if (
+          !clearedIdsRef.current.has(normalized.id) &&
+          doesNotificationMatchUnit(normalized, sessionScope.role, sessionScope.unit)
+        ) {
+          itemMap.set(normalized.id, normalized);
+        }
+      });
+    }
+
+    // 3. Real PostgreSQL /api/reports
+    if (reportsRes.status === 'fulfilled' && Array.isArray(reportsRes.value)) {
+      reportsRes.value.slice(0, 25).forEach((reportItem, idx) => {
+        const normalized = mapReportToNotification(
+          reportItem,
+          idx,
+          readIds,
+          sessionScope.role,
+          sessionScope.unit
+        );
+        if (
+          !itemMap.has(normalized.id) &&
+          !clearedIdsRef.current.has(normalized.id) &&
+          doesNotificationMatchUnit(normalized, sessionScope.role, sessionScope.unit)
+        ) {
+          itemMap.set(normalized.id, normalized);
+        }
+      });
+    }
+
+    // 4. Real PostgreSQL /api/dispatch-requests
+    if (dispatchesRes.status === 'fulfilled' && Array.isArray(dispatchesRes.value)) {
+      dispatchesRes.value.slice(0, 25).forEach((dispatchItem, idx) => {
+        const normalized = mapDispatchToNotification(
+          dispatchItem,
+          idx,
+          readIds,
+          sessionScope.role,
+          sessionScope.unit
+        );
+        if (
+          !clearedIdsRef.current.has(normalized.id) &&
+          doesNotificationMatchUnit(normalized, sessionScope.role, sessionScope.unit)
+        ) {
+          itemMap.set(normalized.id, normalized);
+        }
+      });
+    }
+
+    setNotifications(Array.from(itemMap.values()));
+  }, [getLocallyReadIds, sessionScope.role, sessionScope.unit]);
 
   useEffect(() => {
-    synchronizeAllNotifications();
-    const intervalId = window.setInterval(synchronizeAllNotifications, ALERT_POLL_INTERVAL_MS);
+    void synchronizeAllNotifications();
+    const intervalId = window.setInterval(() => {
+      void synchronizeAllNotifications();
+    }, ALERT_POLL_INTERVAL_MS);
 
     const handleCustomNotification = (event: Event) => {
       const customEvent = event as CustomEvent<RawNotificationPayload | undefined>;
@@ -688,19 +631,13 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           sessionScope.unit
         );
         if (doesNotificationMatchUnit(incoming, sessionScope.role, sessionScope.unit)) {
-          try {
-            const current = loadStoredResponderNotifications();
-            const deduplicated = [
-              incoming,
-              ...current.filter((item) => item.id !== incoming.id)
-            ];
-            window.localStorage.setItem(storageKey, JSON.stringify(deduplicated));
-          } catch {
-            // Ignore quota error
-          }
+          liveEventsRef.current = [
+            incoming,
+            ...liveEventsRef.current.filter((item) => item.id !== incoming.id)
+          ].slice(0, 30);
         }
       }
-      synchronizeAllNotifications();
+      void synchronizeAllNotifications();
     };
 
     const handleCustomReport = (event: Event) => {
@@ -722,23 +659,17 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           sessionScope.unit
         );
         if (doesNotificationMatchUnit(incoming, sessionScope.role, sessionScope.unit)) {
-          try {
-            const current = loadStoredResponderNotifications();
-            const deduplicated = [
-              incoming,
-              ...current.filter((item) => item.id !== incoming.id)
-            ];
-            window.localStorage.setItem(storageKey, JSON.stringify(deduplicated));
-          } catch {
-            // Ignore quota error
-          }
+          liveEventsRef.current = [
+            incoming,
+            ...liveEventsRef.current.filter((item) => item.id !== incoming.id)
+          ].slice(0, 30);
         }
       }
-      synchronizeAllNotifications();
+      void synchronizeAllNotifications();
     };
 
     const handleStorageOrAlertsUpdated = () => {
-      synchronizeAllNotifications();
+      void synchronizeAllNotifications();
     };
 
     window.addEventListener('resqtrack:notification', handleCustomNotification);
@@ -755,10 +686,8 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
     };
   }, [
     getLocallyReadIds,
-    loadStoredResponderNotifications,
     sessionScope.role,
     sessionScope.unit,
-    storageKey,
     synchronizeAllNotifications
   ]);
 
@@ -819,15 +748,6 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
     [unitScopedNotifications]
   );
 
-  const persistNotificationsState = (updated: ResponderNotificationItem[]) => {
-    setNotifications(updated);
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(updated));
-    } catch {
-      // Ignore storage error
-    }
-  };
-
   const handleMarkSingleRead = async (item: ResponderNotificationItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const readIds = getLocallyReadIds();
@@ -840,27 +760,27 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
       }
     }
 
-    const updated = unitScopedNotifications.map((n) =>
+    liveEventsRef.current = liveEventsRef.current.map((n) =>
       n.id === item.id ? { ...n, isRead: true } : n
     );
-    persistNotificationsState(updated);
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
+    );
 
     try {
-      await requestJson<{ message?: string }>(`/api/alerts/${encodeURIComponent(item.id)}/read`, {
-        method: 'POST'
-      });
+      await markAlertRead(item.id);
     } catch {
-      // Non-blocking backend acknowledge
+      // Non-blocking backend acknowledge for non-alert dispatch items
     }
   };
 
   const handleNotificationClick = (item: ResponderNotificationItem) => {
-    handleMarkSingleRead(item);
+    void handleMarkSingleRead(item);
     setIsAlertsOpen(false);
     navigate(item.targetRoute || '/responder/dashboard');
   };
 
-  const handleMarkAllRead = () => {
+  const handleMarkAllRead = async () => {
     const allIds = unitScopedNotifications.map((n) => n.id);
     const combinedRead = Array.from(new Set([...getLocallyReadIds(), ...allIds]));
     try {
@@ -868,13 +788,23 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
     } catch {
       // Ignore storage error
     }
-    const updated = unitScopedNotifications.map((n) => ({ ...n, isRead: true }));
-    persistNotificationsState(updated);
+
+    liveEventsRef.current = liveEventsRef.current.map((n) => ({ ...n, isRead: true }));
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+
+    try {
+      await markAllAlertsRead();
+      window.dispatchEvent(new CustomEvent('resqtrack:alerts-updated'));
+    } catch {
+      // Non-blocking backend mark-all-read
+    }
   };
 
   const handleClearReadNotifications = () => {
-    const remaining = unitScopedNotifications.filter((n) => !n.isRead);
-    persistNotificationsState(remaining.length > 0 ? remaining : []);
+    const readItems = unitScopedNotifications.filter((n) => n.isRead);
+    readItems.forEach((n) => clearedIdsRef.current.add(n.id));
+    liveEventsRef.current = liveEventsRef.current.filter((n) => !n.isRead);
+    setNotifications((prev) => prev.filter((n) => !n.isRead));
   };
 
   const getCategoryVisuals = (category: ResponderNotificationCategory) => {
@@ -924,6 +854,20 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
     }
   };
 
+  const handleSearchSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const trimmed = searchQuery.trim();
+    const querySuffix = trimmed ? `?q=${encodeURIComponent(trimmed)}` : '';
+
+    if (sessionScope.role === 'ldrrmo_admin' || sessionScope.role === 'admin') {
+      navigate(`/admin/incidents${querySuffix}`);
+    } else if (sessionScope.role === 'civilian') {
+      navigate(`/civilian/my-reports${querySuffix}`);
+    } else {
+      navigate(`/responder/incidents${querySuffix}`);
+    }
+  };
+
   const handleSettingsClick = () => {
     const role = (user?.role || '').toLowerCase();
     if (role === 'ldrrmo_admin' || role === 'admin') {
@@ -937,7 +881,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
 
   const handleHelpClick = () => {
     alert(
-      'ResQTrack Emergency Response Command System\nKatipunan, Zamboanga del Norte\nMulti-Agency Dispatch Mesh: LDRRMO • RHU • BFP • PNP'
+      'ResQTrack Emergency Response Command System\nKatipunan, Zamboanga del Norte\nMulti-Agency Dispatch Mesh: LDRRMO / RHU / BFP / PNP'
     );
   };
 
@@ -948,15 +892,27 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
       console.error('Logout error encountered:', err);
     } finally {
       if (typeof window !== 'undefined') {
+        const port = window.location.port || '1998';
+        const tabUnit = (window.sessionStorage.getItem('resqtrack_unit') || '').toLowerCase().trim();
         window.sessionStorage.removeItem('resqtrack_token');
         window.sessionStorage.removeItem('resqtrack_session');
         window.sessionStorage.removeItem('resqtrack_user');
+        window.sessionStorage.removeItem('resqtrack_unit');
+        if (tabUnit && tabUnit !== 'none') {
+          window.localStorage.removeItem(`resqtrack_token_${tabUnit}`);
+          window.localStorage.removeItem(`resqtrack_session_${tabUnit}`);
+          window.localStorage.removeItem(`resqtrack_user_${tabUnit}`);
+        }
+        window.localStorage.removeItem(`resqtrack_token_${port}`);
+        window.localStorage.removeItem(`resqtrack_session_${port}`);
+        window.localStorage.removeItem(`resqtrack_user_${port}`);
         window.localStorage.removeItem('resqtrack_token');
         window.localStorage.removeItem('resqtrack_session');
         window.localStorage.removeItem('resqtrack_user');
       }
     }
-    navigate('/login');
+    const port = typeof window !== 'undefined' ? window.location.port : '';
+    navigate(port === '1996' ? '/admin/login' : '/login');
   };
 
   const handleToggleAlerts = () => {
@@ -1005,13 +961,15 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
         )}
       </div>
 
-      <form className="search" id="search-form" role="search" onSubmit={(e) => e.preventDefault()}>
+      <form className="search" id="search-form" role="search" onSubmit={handleSearchSubmit}>
         <Search className="search__icon w-4 h-4 text-[#FFD9DD]/80 pointer-events-none flex-shrink-0" aria-hidden="true" />
         <input
           className="search__input !h-9 !text-sm !bg-[#670626]/75 !border !border-[#FFD9DD]/25 focus:!border-[#F7F1EA] !text-[#F7F1EA] placeholder:!text-[#FFD9DD]/65 rounded-xl"
           id="search"
           type="search"
           name="q"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search incidents..."
           autoComplete="off"
           spellCheck={false}
@@ -1127,7 +1085,9 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
 
                       <button
                         type="button"
-                        onClick={handleMarkAllRead}
+                        onClick={() => {
+                          void handleMarkAllRead();
+                        }}
                         className="relative z-10 pointer-events-auto cursor-pointer flex items-center gap-1 text-[11px] font-mono font-bold text-[#F7F1EA] hover:bg-[#4A041A] px-2 py-1 rounded-lg bg-[#400014] border border-[#FFD9DD]/25 transition-colors"
                         title="Mark all notifications as read"
                       >
@@ -1255,7 +1215,6 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                           </div>
 
                           <div className="flex-1 min-w-0">
-                            {/* Top row: Category Badge + Ref Code + Timestamp */}
                             <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1">
                               <span
                                 className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold uppercase tracking-wider border ${visuals.badgeClass}`}
@@ -1273,7 +1232,6 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                               </div>
                             </div>
 
-                            {/* Title & Message */}
                             <p className="text-sm font-extrabold text-[#2B010E] leading-snug">
                               {item.title}
                             </p>
@@ -1281,7 +1239,6 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                               {item.message}
                             </p>
 
-                            {/* Bottom Row: Navigation Action & Read Toggle */}
                             <div className="mt-2.5 flex items-center justify-between gap-2">
                               <span className="inline-flex items-center gap-1 text-xs font-mono font-bold text-[#670626] hover:underline">
                                 <span>{visuals.routeLabel}</span>
@@ -1291,7 +1248,9 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                               {!item.isRead ? (
                                 <button
                                   type="button"
-                                  onClick={(e) => handleMarkSingleRead(item, e)}
+                                  onClick={(e) => {
+                                    void handleMarkSingleRead(item, e);
+                                  }}
                                   className="px-2.5 py-1 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] text-xs font-mono font-bold inline-flex items-center gap-1 shadow-sm"
                                 >
                                   <Check className="w-3.5 h-3.5 text-[#FFD9DD]" />
@@ -1350,7 +1309,9 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           id="btn-logout"
           title="Sign Out of Session"
           aria-label="Sign Out"
-          onClick={handleLogout}
+          onClick={() => {
+            void handleLogout();
+          }}
         >
           <LogOut className="w-4 h-4 text-current transition-colors" aria-hidden="true" />
         </button>

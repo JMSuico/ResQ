@@ -52,7 +52,7 @@ public class PoliceBlotterEntry
     public string InvestigatingOfficerBadge { get; set; } = string.Empty;
 
     [Required, MaxLength(100)]
-    public string Station { get; set; } = "Dipolog City Police Station";
+    public string Station { get; set; } = "Katipunan Municipal Police Station";
 
     [Required, MaxLength(128)]
     public string CryptographicSeal { get; set; } = string.Empty;

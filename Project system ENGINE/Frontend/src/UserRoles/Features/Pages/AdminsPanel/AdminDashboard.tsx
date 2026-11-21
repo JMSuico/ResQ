@@ -38,12 +38,6 @@ import {
   KATIPUNAN_BASE_COORDS,
   getKatipunanBarangay
 } from '@/Libs/Map/mapAccuracy';
-import {
-  BASELINE_INCIDENT_REPORTS,
-  BASELINE_INCIDENT_FIXTURES,
-  BASELINE_DUTY_ROSTER,
-  BASELINE_ANALYTICS_SUMMARY
-} from '@/Libs/Assets/baselineFixtures';
 import { AdminButton } from './Shared/AdminButton';
 import { AdminModalCard } from './Shared/AdminModalCard';
 import {
@@ -355,16 +349,12 @@ export const AdminDashboard: FC = () => {
         getDutyRoster().catch(() => [] as DutyUnit[]),
         getAnalyticsSummary().catch(() => null as AnalyticsSummaryDto | null)
       ]);
-      setReports(r && r.length > 0 ? r : BASELINE_INCIDENT_REPORTS);
-      setFixtures(f && f.length > 0 ? f : BASELINE_INCIDENT_FIXTURES);
-      setRoster(u && u.length > 0 ? u : BASELINE_DUTY_ROSTER);
-      setAnalyticsSummary(s || BASELINE_ANALYTICS_SUMMARY);
+      setReports(Array.isArray(r) ? r : []);
+      setFixtures(Array.isArray(f) ? f : []);
+      setRoster(Array.isArray(u) ? u : []);
+      setAnalyticsSummary(s || null);
     } catch (err) {
       console.error('[AdminDashboard] Failed to load telemetry:', err);
-      setReports((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_REPORTS));
-      setFixtures((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_FIXTURES));
-      setRoster((prev) => (prev.length > 0 ? prev : BASELINE_DUTY_ROSTER));
-      setAnalyticsSummary((prev) => prev || BASELINE_ANALYTICS_SUMMARY);
     }
   }, []);
 
@@ -397,7 +387,10 @@ export const AdminDashboard: FC = () => {
 
   // Wire getStandbyAutoDispatch (ClaudeAutoDispatchResponderStrategy / Haversine nearest-unit ranking)
   useEffect(() => {
-    if (!focusedIncident || roster.length === 0) return;
+    if (!focusedIncident || roster.length === 0) {
+      setAutoDispatchOutput(null);
+      return;
+    }
     let cancelled = false;
 
     const rankUnits = async () => {
@@ -585,17 +578,18 @@ export const AdminDashboard: FC = () => {
   const resolvedCount = reports.filter((r) => (r.status || '').toLowerCase() === 'resolved').length;
   const dynamicResolutionRate = reports.length > 0
     ? `${((resolvedCount / reports.length) * 100).toFixed(1)}%`
-    : '100%';
+    : '0.0%';
 
-  const dynamicAvgEtaMinutes = useMemo(() => {
+  const dynamicAvgEtaMinutes = useMemo<string | null>(() => {
     const unres = reports.filter((r) => (r.status || '').toLowerCase() !== 'resolved');
-    if (unres.length === 0) return 3.5;
-    const etas = unres.map((r) => {
-      const nearest = findNearestResponderUnit(r.latitude, r.longitude, roster);
-      return nearest ? nearest.etaMinutes : 4;
-    });
+    if (unres.length === 0) return null;
+    const etas = unres
+      .map((r) => findNearestResponderUnit(r.latitude, r.longitude, roster))
+      .filter((nearest): nearest is NearestUnitCalculation => nearest !== null)
+      .map((nearest) => nearest.etaMinutes);
+    if (etas.length === 0) return null;
     const sum = etas.reduce((a, b) => a + b, 0);
-    return Number((sum / etas.length).toFixed(1));
+    return `${(sum / etas.length).toFixed(1)}m`;
   }, [reports, roster]);
 
   const topTenIncidents = reports.slice(0, 10);
@@ -692,7 +686,7 @@ export const AdminDashboard: FC = () => {
             <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold tracking-wider">Resolution Rate</p>
             <h3 className="text-3xl font-black text-[#670626] mt-1">{dynamicResolutionRate}</h3>
             <span className="text-xs text-[#670626]/80 font-mono mt-0.5 block">
-              Avg ETA ~{dynamicAvgEtaMinutes}m
+              {dynamicAvgEtaMinutes ? `Avg ETA ~${dynamicAvgEtaMinutes}` : 'Avg ETA N/A'}
             </span>
           </div>
           <div className="w-11 h-11 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] flex items-center justify-center">
@@ -850,7 +844,9 @@ export const AdminDashboard: FC = () => {
             ))}
             {(!autoDispatchOutput || autoDispatchOutput.rankedUnits.length === 0) && (
               <div className={`${CLAY_WELL} p-4 text-center text-xs font-mono text-[#A83B4D]`}>
-                Loading nearest available responder units...
+                {roster.length === 0
+                  ? 'No responder units registered.'
+                  : 'No active incidents available for unit ranking.'}
               </div>
             )}
           </div>

@@ -1,8 +1,8 @@
 // [Layer: UserRoles/Features/Pages/RespondersPanel]
 // RequestDeployPage.tsx -- Unit-scoped "Request & Deploy" tactical workflow module (RHU, BFP Fire, PNP Police).
-// Supports Responder-Initiated Dispatch Requests (PENDING -> DEPLOY) and Admin-Initiated Deploy Orders (TO BE DEPLOYED -> ACCEPT/DECLINE -> DEPLOY/DECLINED).
+// Hydrated and mutated strictly via PostgreSQL /api/dispatch-requests in responderOpsApi.ts.
 // Stitch Official Cherry (#670626) / Warm Ivory (#F7F1EA) / Soft Beige (#E9D9D0) / Muted Cherry (#A83B4D) Clay Design System.
-// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis, ZERO Unsplash URLs, ZERO Apalit fallbacks.
+// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis, ZERO Unsplash URLs, ZERO static baselines.
 
 import React, { FC, useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -29,7 +29,8 @@ import {
   Flame,
   Shield,
   ExternalLink,
-  RefreshCw
+  RefreshCw,
+  Image as ImageIcon
 } from 'lucide-react';
 import {
   SearchBar,
@@ -42,7 +43,8 @@ import {
   usePagination,
   useSession,
   useToasts,
-  useReportEventBus
+  useReportEventBus,
+  useGpsLocation
 } from '@/Hooks';
 import {
   DispatchRequestRecord,
@@ -67,30 +69,6 @@ const SEVERITY_WEIGHT: Record<string, number> = {
   Medium: 2,
   Moderate: 2,
   Low: 1
-};
-
-const KATIPUNAN_DEFAULT_COORDS = '8.5145° N, 123.2852° E';
-const KATIPUNAN_DEFAULT_LOCATION = 'Barangay Uno (Poblacion), Katipunan, Zamboanga del Norte';
-
-const buildTelemetryPlaceholderDataUri = (refCode: string, subtitle: string): string => {
-  const safeCode = refCode.replace(/[<>&"']/g, '');
-  const safeSub = subtitle.replace(/[<>&"']/g, '').slice(0, 42);
-  const svg = [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">',
-    '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">',
-    '<stop offset="0%" stop-color="#4A041A"/><stop offset="100%" stop-color="#670626"/>',
-    '</linearGradient></defs>',
-    '<rect width="640" height="360" fill="url(#bg)"/>',
-    '<rect x="24" y="24" width="592" height="312" rx="22" fill="#F7F1EA" fill-opacity="0.96"/>',
-    '<rect x="44" y="44" width="180" height="34" rx="10" fill="#670626"/>',
-    `<text x="134" y="66" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#F7F1EA">${safeCode}</text>`,
-    '<circle cx="320" cy="175" r="46" fill="#E9D9D0" stroke="#A83B4D" stroke-width="2"/>',
-    '<path d="M320 148v54M293 175h54" stroke="#670626" stroke-width="6" stroke-linecap="round"/>',
-    `<text x="320" y="256" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18" font-weight="800" fill="#2B010E">${safeSub}</text>`,
-    '<text x="320" y="284" text-anchor="middle" font-family="monospace" font-size="12" fill="#A83B4D">RESQTRACK KATIPUNAN TELEMETRY</text>',
-    '</svg>'
-  ].join('');
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 };
 
 const resolveActiveAgency = (rawUnit?: string | null): AgencyScope => {
@@ -128,144 +106,6 @@ const classifyDispatchAgency = (record: DispatchRequestRecord): AgencyScope => {
   return 'RHU';
 };
 
-const sanitizeKatipunanRecord = (record: DispatchRequestRecord): DispatchRequestRecord => {
-  const rawLocation = (record.location || '').trim();
-  const isLegacyApalit =
-    /apalit|pampanga|macarthur|sampaloc/i.test(rawLocation) || rawLocation.length === 0;
-  const cleanLocation = isLegacyApalit
-    ? record.incidentCode.includes('9044')
-      ? 'Purok 2, Barangay Uno (Poblacion), Katipunan, Zamboanga del Norte'
-      : 'National Highway Junction, Barangay Dos, Katipunan, Zamboanga del Norte'
-    : rawLocation;
-
-  const rawCoords = (record.coordinates || '').trim();
-  const isLegacyCoords =
-    rawCoords.startsWith('14.9') || rawCoords.includes('120.7') || rawCoords.length === 0;
-  const cleanCoords = isLegacyCoords
-    ? record.incidentCode.includes('9044')
-      ? '8.5162° N, 123.2858° E'
-      : '8.5119° N, 123.2814° E'
-    : rawCoords;
-
-  const hasExternalUnsplash =
-    !record.evidenceUrl || record.evidenceUrl.toLowerCase().includes('unsplash.com');
-  const cleanEvidence = hasExternalUnsplash
-    ? buildTelemetryPlaceholderDataUri(record.incidentCode, record.incidentTitle)
-    : record.evidenceUrl;
-
-  return {
-    ...record,
-    location: cleanLocation,
-    coordinates: cleanCoords,
-    evidenceUrl: cleanEvidence
-  };
-};
-
-const buildUnitBaselineRequests = (agency: AgencyScope): DispatchRequestRecord[] => {
-  const now = Date.now();
-  if (agency === 'FIRE') {
-    return [
-      {
-        id: 'REQ-FIRE-2026-101',
-        incidentId: 'INC-BFP-4101',
-        incidentCode: 'FIRE-2026-4101',
-        incidentTitle: 'Commercial Storefront Electrical Arcing & Smoke Alert',
-        category: 'Fire / Structural',
-        severity: 'Critical',
-        location: 'Public Market Perimeter, Barangay Uno (Poblacion), Katipunan, ZN',
-        coordinates: '8.5138° N, 123.2904° E',
-        ipAddress: '103.62.155.10',
-        evidenceUrl: buildTelemetryPlaceholderDataUri(
-          'FIRE-2026-4101',
-          'Commercial Electrical Arcing Alert'
-        ),
-        responderId: 'FIRE-ENG-01',
-        responderName: 'BFP Pumper Engine 01 (SFO4 Pendelton)',
-        direction: 'MEDIC_REQUEST',
-        status: 'PENDING',
-        requestedAt: new Date(now - 11 * 60 * 1000).toISOString(),
-        updatedAt: new Date(now - 11 * 60 * 1000).toISOString(),
-        notes:
-          'BFP Engine 01 requesting LDRRMO Command clearance for Second Alarm water tanker and feeder line isolation.'
-      },
-      {
-        id: 'ORD-FIRE-2026-102',
-        incidentId: 'INC-BFP-4104',
-        incidentCode: 'FIRE-2026-4104',
-        incidentTitle: 'Residential Kitchen LPG Leak & Containment',
-        category: 'Fire / HazMat',
-        severity: 'High',
-        location: 'Rizal Avenue Ext., Barangay Dos, Katipunan, ZN',
-        coordinates: '8.5155° N, 123.2829° E',
-        ipAddress: '103.62.155.42',
-        evidenceUrl: buildTelemetryPlaceholderDataUri(
-          'FIRE-2026-4104',
-          'Residential LPG Containment'
-        ),
-        responderId: 'FIRE-RSC-02',
-        responderName: 'BFP Rapid Rescue Unit 02 (SFO2 Macapagal)',
-        direction: 'ADMIN_ORDER',
-        status: 'TO BE DEPLOYED',
-        requestedAt: new Date(now - 5 * 60 * 1000).toISOString(),
-        updatedAt: new Date(now - 5 * 60 * 1000).toISOString(),
-        notes:
-          'LDRRMO Command priority order: Civilian reported strong LPG odor near residential block. Awaiting BFP ACCEPT confirmation.'
-      }
-    ];
-  }
-  if (agency === 'PNP') {
-    return [
-      {
-        id: 'REQ-PNP-2026-201',
-        incidentId: 'INC-PNP-7201',
-        incidentCode: 'PNP-2026-7201',
-        incidentTitle: 'Barangay Boundary Traffic Gridlock & Checkpoint Support',
-        category: 'Police / Traffic & Security',
-        severity: 'High',
-        location: 'Sitio Malugas Bridge, Barangay Daanglungsod, Katipunan, ZN',
-        coordinates: '8.5085° N, 123.2775° E',
-        ipAddress: '103.62.156.24',
-        evidenceUrl: buildTelemetryPlaceholderDataUri(
-          'PNP-2026-7201',
-          'Sitio Malugas Traffic Lockdown'
-        ),
-        responderId: 'PNP-MOB-01',
-        responderName: 'PNP Tactical Mobile Patrol 01 (PCPT del Pilar)',
-        direction: 'MEDIC_REQUEST',
-        status: 'PENDING',
-        requestedAt: new Date(now - 12 * 60 * 1000).toISOString(),
-        updatedAt: new Date(now - 12 * 60 * 1000).toISOString(),
-        notes:
-          'Mobile Patrol 01 requesting LDRRMO Admin clearance to deploy additional perimeter patrol and highway reroute barricades.'
-      },
-      {
-        id: 'ORD-PNP-2026-202',
-        incidentId: 'INC-PNP-7204',
-        incidentCode: 'PNP-2026-7204',
-        incidentTitle: 'Commercial Strip Perimeter Security & SOCO Dispatch',
-        category: 'Police / Security',
-        severity: 'Critical',
-        location: 'Bonifacio Street Commercial Strip, Barangay Uno, Katipunan, ZN',
-        coordinates: '8.5171° N, 123.2849° E',
-        ipAddress: '103.62.156.89',
-        evidenceUrl: buildTelemetryPlaceholderDataUri(
-          'PNP-2026-7204',
-          'Commercial Strip Perimeter Security'
-        ),
-        responderId: 'PNP-MOB-02',
-        responderName: 'PNP Investigation Unit 02 (PLT Dimaculangan)',
-        direction: 'ADMIN_ORDER',
-        status: 'TO BE DEPLOYED',
-        requestedAt: new Date(now - 6 * 60 * 1000).toISOString(),
-        updatedAt: new Date(now - 6 * 60 * 1000).toISOString(),
-        notes:
-          'LDRRMO Command priority deploy order: Verified civilian security alarm with optical evidence. Awaiting PNP ACCEPT confirmation.'
-      }
-    ];
-  }
-  return [];
-};
-
 const AGENCY_UI_META: Record<
   AgencyScope,
   {
@@ -284,7 +124,7 @@ const AGENCY_UI_META: Record<
     shortUnit: 'RHU Medical Unit',
     defaultCategory: 'Medical / Trauma',
     defaultResponderId: 'AMB-RHU-01',
-    defaultResponderName: 'Medic Alpha-1 (RHU EMS)',
+    defaultResponderName: 'RHU Medical Unit',
     codePrefix: 'RHU',
     requestBadge: 'RHU UNIT REQUEST',
     icon: Ambulance
@@ -294,7 +134,7 @@ const AGENCY_UI_META: Record<
     shortUnit: 'BFP Fire Rescue',
     defaultCategory: 'Fire / Rescue',
     defaultResponderId: 'FIRE-ENG-01',
-    defaultResponderName: 'BFP Engine 01 (Fire Rescue)',
+    defaultResponderName: 'BFP Fire Rescue Unit',
     codePrefix: 'FIRE',
     requestBadge: 'FIRE UNIT REQUEST',
     icon: Flame
@@ -304,7 +144,7 @@ const AGENCY_UI_META: Record<
     shortUnit: 'PNP Tactical Patrol',
     defaultCategory: 'Police / Security',
     defaultResponderId: 'PNP-MOB-01',
-    defaultResponderName: 'PNP Mobile Patrol 01',
+    defaultResponderName: 'PNP Tactical Patrol Unit',
     codePrefix: 'PNP',
     requestBadge: 'PNP UNIT REQUEST',
     icon: Shield
@@ -313,6 +153,7 @@ const AGENCY_UI_META: Record<
 
 export const RequestDeployPage: FC = () => {
   const { session } = useSession();
+  const { coords } = useGpsLocation();
   const { toasts, addToast, removeToast } = useToasts();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -338,13 +179,11 @@ export const RequestDeployPage: FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Unit-Scoped Dispatch Request Form State (Katipunan baseline defaults)
   const [formTitle, setFormTitle] = useState<string>('');
   const [formIncidentCode, setFormIncidentCode] = useState<string>('');
   const [formSeverity, setFormSeverity] = useState<string>('Critical');
   const [formLocation, setFormLocation] = useState<string>('');
-  const [formCoordinates, setFormCoordinates] = useState<string>(KATIPUNAN_DEFAULT_COORDS);
-  const [formIpAddress, setFormIpAddress] = useState<string>('103.62.154.118');
+  const [formCoordinates, setFormCoordinates] = useState<string>('');
   const [formEvidenceUrl, setFormEvidenceUrl] = useState<string>('');
   const [formNotes, setFormNotes] = useState<string>('');
 
@@ -352,16 +191,13 @@ export const RequestDeployPage: FC = () => {
     setIsLoading(true);
     try {
       const rawData = await getDispatchRequests();
-      const sanitized = rawData.map(sanitizeKatipunanRecord);
-      const unitScoped = sanitized.filter(
+      const unitScoped = (Array.isArray(rawData) ? rawData : []).filter(
         (rec) => classifyDispatchAgency(rec) === activeAgency
       );
-
-      if (unitScoped.length > 0) {
-        setRequests(unitScoped);
-      } else {
-        setRequests(buildUnitBaselineRequests(activeAgency));
-      }
+      setRequests(unitScoped);
+    } catch (err) {
+      console.error('[RequestDeployPage] Failed to load dispatch requests:', err);
+      setRequests([]);
     } finally {
       setIsLoading(false);
     }
@@ -375,7 +211,6 @@ export const RequestDeployPage: FC = () => {
     void loadRequests();
   });
 
-  // Handle ?incidentId=... deep-link redirect from Responder Dashboard / Map Pointer
   useEffect(() => {
     const incidentIdParam = searchParams.get('incidentId');
     if (!incidentIdParam || isLoading) return;
@@ -399,12 +234,11 @@ export const RequestDeployPage: FC = () => {
         const titleParam =
           searchParams.get('title') ||
           `${agencyMeta.label} Field Dispatch (${incidentIdParam.toUpperCase()})`;
-        const locationParam =
-          searchParams.get('location') || KATIPUNAN_DEFAULT_LOCATION;
+        const locationParam = searchParams.get('location') || 'Reported Field Location';
         const coordsParam =
-          searchParams.get('coordinates') || KATIPUNAN_DEFAULT_COORDS;
+          searchParams.get('coordinates') ||
+          `${coords.latitude.toFixed(4)}° N, ${coords.longitude.toFixed(4)}° E`;
         const severityParam = searchParams.get('severity') || 'Critical';
-        const ipParam = searchParams.get('ip') || '103.62.154.195';
         const resolvedCode = incidentIdParam.toUpperCase().startsWith(agencyMeta.codePrefix)
           ? incidentIdParam.toUpperCase()
           : `${agencyMeta.codePrefix}-${incidentIdParam.slice(0, 6).toUpperCase()}`;
@@ -417,20 +251,17 @@ export const RequestDeployPage: FC = () => {
           severity: severityParam,
           location: locationParam,
           coordinates: coordsParam,
-          ipAddress: ipParam,
-          evidenceUrl: buildTelemetryPlaceholderDataUri(resolvedCode, titleParam),
           responderId:
-            session?.employeeId || session?.userId || agencyMeta.defaultResponderId,
+            session?.employeeOrResidentId || session?.userId || agencyMeta.defaultResponderId,
           responderName: session?.fullName || agencyMeta.defaultResponderName,
           notes: `Initiated from ${agencyMeta.label} Radar Pointer — awaiting LDRRMO Admin clearance to deploy.`
         });
 
-        const cleanCreated = sanitizeKatipunanRecord(created);
         await loadRequests();
-        setHighlightedId(cleanCreated.id);
-        setSelectedRecord(cleanCreated);
+        setHighlightedId(created.id);
+        setSelectedRecord(created);
         addToast(
-          `Created ${activeAgency} Dispatch Request ${cleanCreated.incidentCode} in PENDING state.`,
+          `Created ${activeAgency} Dispatch Request ${created.incidentCode} in PENDING state.`,
           'success'
         );
       }
@@ -446,6 +277,8 @@ export const RequestDeployPage: FC = () => {
     isLoading,
     requests,
     session,
+    coords.latitude,
+    coords.longitude,
     activeAgency,
     agencyMeta,
     loadRequests,
@@ -470,20 +303,18 @@ export const RequestDeployPage: FC = () => {
     try {
       const code =
         formIncidentCode.trim() ||
-        `${agencyMeta.codePrefix}-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+        `${agencyMeta.codePrefix}-${Date.now().toString().slice(-6)}`;
+      const fallbackCoords = `${coords.latitude.toFixed(4)}° N, ${coords.longitude.toFixed(4)}° E`;
       const created = await createMedicDispatchRequest({
         incidentCode: code,
         incidentTitle: formTitle.trim(),
         category: agencyMeta.defaultCategory,
         severity: formSeverity,
         location: formLocation.trim(),
-        coordinates: formCoordinates.trim() || KATIPUNAN_DEFAULT_COORDS,
-        ipAddress: formIpAddress.trim() || '103.62.154.118',
-        evidenceUrl:
-          formEvidenceUrl.trim() ||
-          buildTelemetryPlaceholderDataUri(code, formTitle.trim()),
+        coordinates: formCoordinates.trim() || fallbackCoords,
+        evidenceUrl: formEvidenceUrl.trim() || undefined,
         responderId:
-          session?.employeeId || session?.userId || agencyMeta.defaultResponderId,
+          session?.employeeOrResidentId || session?.userId || agencyMeta.defaultResponderId,
         responderName: session?.fullName || agencyMeta.defaultResponderName,
         notes:
           formNotes.trim() ||
@@ -496,37 +327,36 @@ export const RequestDeployPage: FC = () => {
       setFormTitle('');
       setFormIncidentCode('');
       setFormLocation('');
+      setFormCoordinates('');
       setFormEvidenceUrl('');
       setFormNotes('');
       addToast(
         `Request ${created.incidentCode} submitted as PENDING. Waiting for LDRRMO Admin approval.`,
         'success'
       );
+    } catch {
+      addToast('Failed to submit dispatch request to server.', 'warning');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleSimulateAdminApprove = async (record: DispatchRequestRecord) => {
-    const updated = await approveMedicRequestByAdmin(record.id);
-    if (updated) {
-      const cleanUpdated = sanitizeKatipunanRecord(updated);
-      await loadRequests();
-      setSelectedRecord(cleanUpdated);
-      setHighlightedId(cleanUpdated.id);
-      addToast(
-        `Admin Approved! Request ${cleanUpdated.incidentCode} transitioned from PENDING to DEPLOY.`,
-        'success'
-      );
-    } else {
-      setRequests((prev) =>
-        prev.map((r) =>
-          r.id === record.id
-            ? { ...r, status: 'DEPLOY', updatedAt: new Date().toISOString() }
-            : r
-        )
-      );
-      addToast(`Request ${record.incidentCode} transitioned to DEPLOY.`, 'success');
+    try {
+      const updated = await approveMedicRequestByAdmin(record.id);
+      if (updated) {
+        await loadRequests();
+        setSelectedRecord(updated);
+        setHighlightedId(updated.id);
+        addToast(
+          `Admin Approved! Request ${updated.incidentCode} transitioned from PENDING to DEPLOY.`,
+          'success'
+        );
+      } else {
+        addToast('Failed to approve request on server.', 'warning');
+      }
+    } catch {
+      addToast('Failed to approve request on server.', 'warning');
     }
   };
 
@@ -534,36 +364,25 @@ export const RequestDeployPage: FC = () => {
     record: DispatchRequestRecord,
     decision: 'ACCEPT' | 'DECLINE'
   ) => {
-    const updated = await respondToAdminDeployOrder(record.id, decision);
-    if (updated) {
-      const cleanUpdated = sanitizeKatipunanRecord(updated);
-      await loadRequests();
-      if (selectedRecord?.id === cleanUpdated.id) {
-        setSelectedRecord(cleanUpdated);
+    try {
+      const updated = await respondToAdminDeployOrder(record.id, decision);
+      if (updated) {
+        await loadRequests();
+        if (selectedRecord?.id === updated.id) {
+          setSelectedRecord(updated);
+        }
+        setHighlightedId(updated.id);
+        addToast(
+          decision === 'ACCEPT'
+            ? `Accepted Admin Deploy Order for ${updated.incidentCode}. Status is now DEPLOY.`
+            : `Declined Admin Deploy Order for ${updated.incidentCode}. Status marked DECLINED.`,
+          decision === 'ACCEPT' ? 'success' : 'warning'
+        );
+      } else {
+        addToast('Failed to update dispatch order status on server.', 'warning');
       }
-      setHighlightedId(cleanUpdated.id);
-      addToast(
-        decision === 'ACCEPT'
-          ? `Accepted Admin Deploy Order for ${cleanUpdated.incidentCode}. Status is now DEPLOY.`
-          : `Declined Admin Deploy Order for ${cleanUpdated.incidentCode}. Status marked DECLINED.`,
-        decision === 'ACCEPT' ? 'success' : 'warning'
-      );
-    } else {
-      const nextStatus: DispatchRequestStatus = decision === 'ACCEPT' ? 'DEPLOY' : 'DECLINED';
-      setRequests((prev) =>
-        prev.map((r) =>
-          r.id === record.id
-            ? { ...r, status: nextStatus, updatedAt: new Date().toISOString() }
-            : r
-        )
-      );
-      if (selectedRecord?.id === record.id) {
-        setSelectedRecord({ ...record, status: nextStatus, updatedAt: new Date().toISOString() });
-      }
-      addToast(
-        `${record.incidentCode} marked ${nextStatus}.`,
-        decision === 'ACCEPT' ? 'success' : 'warning'
-      );
+    } catch {
+      addToast('Failed to update dispatch order status on server.', 'warning');
     }
   };
 
@@ -704,7 +523,6 @@ export const RequestDeployPage: FC = () => {
 
   return (
     <div className="min-h-screen text-[#F7F1EA] p-1 sm:p-2 space-y-6">
-      {/* Toast Notifications Overlay */}
       {toasts.length > 0 && (
         <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none">
           {toasts.map((t) => (
@@ -888,7 +706,11 @@ export const RequestDeployPage: FC = () => {
       </div>
 
       {/* Main Content: Table View vs Card Grid View */}
-      {isTable ? (
+      {isLoading ? (
+        <div className="clay-surface bg-[#F7F1EA] text-[#670626] border border-[#670626]/15 rounded-2xl p-12 text-center font-mono font-bold animate-pulse">
+          Loading {activeAgency} dispatch requests...
+        </div>
+      ) : isTable ? (
         <div className="clay-surface bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -906,7 +728,7 @@ export const RequestDeployPage: FC = () => {
                 {paginatedItems.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-12 text-center text-[#5B2A35]">
-                      No matching {activeAgency} dispatches.
+                      No dispatch requests found for {activeAgency}.
                     </td>
                   </tr>
                 ) : (
@@ -924,17 +746,17 @@ export const RequestDeployPage: FC = () => {
                       >
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-3">
-                            <img
-                              src={
-                                item.evidenceUrl ||
-                                buildTelemetryPlaceholderDataUri(
-                                  item.incidentCode,
-                                  item.incidentTitle
-                                )
-                              }
-                              alt={item.incidentTitle}
-                              className="w-12 h-12 rounded-xl object-cover border border-[#670626]/20 flex-shrink-0"
-                            />
+                            {item.evidenceUrl ? (
+                              <img
+                                src={item.evidenceUrl}
+                                alt={item.incidentTitle}
+                                className="w-12 h-12 rounded-xl object-cover border border-[#670626]/20 flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="w-12 h-12 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 flex items-center justify-center flex-shrink-0">
+                                <ImageIcon className="w-5 h-5 text-[#A83B4D]" />
+                              </div>
+                            )}
                             <div>
                               <div className="font-mono font-bold text-[#670626]">
                                 {item.incidentCode}
@@ -966,11 +788,11 @@ export const RequestDeployPage: FC = () => {
                         <td className="py-4 px-4 font-mono text-xs">
                           <div className="flex items-center gap-1.5 text-[#670626] font-bold">
                             <Crosshair className="w-3.5 h-3.5 text-[#A83B4D]" />
-                            <span>{item.coordinates}</span>
+                            <span>{item.coordinates || 'Unavailable'}</span>
                           </div>
                           <div className="flex items-center gap-1.5 text-[#5B2A35] mt-0.5">
                             <Globe className="w-3.5 h-3.5 text-[#A83B4D]" />
-                            <span>IP: {item.ipAddress}</span>
+                            <span>IP: {item.ipAddress || 'Unavailable'}</span>
                           </div>
                         </td>
 
@@ -1033,11 +855,10 @@ export const RequestDeployPage: FC = () => {
           </div>
         </div>
       ) : (
-        /* Card Grid View */
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {paginatedItems.length === 0 ? (
             <div className="col-span-full clay-surface bg-[#F7F1EA] text-[#5B2A35] border border-[#670626]/15 rounded-2xl p-12 text-center text-sm">
-              No matching {activeAgency} dispatches.
+              No dispatch requests found for {activeAgency}.
             </div>
           ) : (
             paginatedItems.map((item) => {
@@ -1053,18 +874,19 @@ export const RequestDeployPage: FC = () => {
                   }`}
                 >
                   <div>
-                    <div className="relative h-44 w-full bg-[#4A041A] overflow-hidden">
-                      <img
-                        src={
-                          item.evidenceUrl ||
-                          buildTelemetryPlaceholderDataUri(
-                            item.incidentCode,
-                            item.incidentTitle
-                          )
-                        }
-                        alt={item.incidentTitle}
-                        className="w-full h-full object-cover opacity-90"
-                      />
+                    <div className="relative h-44 w-full bg-[#4A041A] overflow-hidden flex items-center justify-center">
+                      {item.evidenceUrl ? (
+                        <img
+                          src={item.evidenceUrl}
+                          alt={item.incidentTitle}
+                          className="w-full h-full object-cover opacity-90"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center gap-2 text-[#E9D9D0]/70 font-mono text-xs">
+                          <ImageIcon className="w-8 h-8" />
+                          <span>No evidence image</span>
+                        </div>
+                      )}
                       <div className="absolute inset-0 bg-gradient-to-t from-[#2B010E]/85 via-[#2B010E]/25 to-transparent" />
                       <div className="absolute top-3 left-3">
                         {renderDirectionBadge(item.direction)}
@@ -1093,11 +915,11 @@ export const RequestDeployPage: FC = () => {
                         </div>
                         <div className="flex items-center gap-1.5 font-mono text-xs text-[#670626] font-bold">
                           <Crosshair className="w-4 h-4 text-[#A83B4D] flex-shrink-0" />
-                          <span>{item.coordinates}</span>
+                          <span>{item.coordinates || 'Unavailable'}</span>
                         </div>
                         <div className="flex items-center gap-1.5 font-mono text-xs text-[#5B2A35]">
                           <Globe className="w-4 h-4 text-[#A83B4D] flex-shrink-0" />
-                          <span>IP: {item.ipAddress}</span>
+                          <span>IP: {item.ipAddress || 'Unavailable'}</span>
                         </div>
                       </div>
                       {item.notes && (
@@ -1298,18 +1120,19 @@ export const RequestDeployPage: FC = () => {
       >
         {selectedRecord && (
           <div className="space-y-5 text-sm text-[#2B010E]">
-            <div className="relative h-56 w-full rounded-xl overflow-hidden border border-[#670626]/20 bg-[#4A041A]">
-              <img
-                src={
-                  selectedRecord.evidenceUrl ||
-                  buildTelemetryPlaceholderDataUri(
-                    selectedRecord.incidentCode,
-                    selectedRecord.incidentTitle
-                  )
-                }
-                alt={selectedRecord.incidentTitle}
-                className="w-full h-full object-cover"
-              />
+            <div className="relative h-56 w-full rounded-xl overflow-hidden border border-[#670626]/20 bg-[#4A041A] flex items-center justify-center">
+              {selectedRecord.evidenceUrl ? (
+                <img
+                  src={selectedRecord.evidenceUrl}
+                  alt={selectedRecord.incidentTitle}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-2 text-[#E9D9D0]/70 font-mono text-xs">
+                  <ImageIcon className="w-10 h-10" />
+                  <span>No evidence image attached</span>
+                </div>
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-[#2B010E]/85 via-[#2B010E]/20 to-transparent" />
               <div className="absolute top-3 left-3 flex items-center gap-2">
                 {renderDirectionBadge(selectedRecord.direction)}
@@ -1322,7 +1145,7 @@ export const RequestDeployPage: FC = () => {
               </div>
               <div className="absolute bottom-3 left-3 right-3 text-[#F7F1EA]">
                 <p className="font-mono text-xs text-[#FFD9DD]">
-                  Verified Evidence
+                  Dispatch Telemetry
                 </p>
                 <p className="text-base font-bold">{selectedRecord.incidentTitle}</p>
               </div>
@@ -1341,7 +1164,7 @@ export const RequestDeployPage: FC = () => {
                   <Crosshair className="w-3.5 h-3.5" /> GPS Coordinates
                 </span>
                 <p className="font-mono font-bold text-[#670626]">
-                  {selectedRecord.coordinates}
+                  {selectedRecord.coordinates || 'Unavailable'}
                 </p>
               </div>
 
@@ -1349,7 +1172,9 @@ export const RequestDeployPage: FC = () => {
                 <span className="text-xs font-mono uppercase text-[#A83B4D] font-bold flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5" /> Device IP
                 </span>
-                <p className="font-mono text-[#2B010E]">{selectedRecord.ipAddress}</p>
+                <p className="font-mono text-[#2B010E]">
+                  {selectedRecord.ipAddress || 'Unavailable'}
+                </p>
               </div>
 
               <div className="space-y-1">
@@ -1489,34 +1314,19 @@ export const RequestDeployPage: FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div>
-              <label className="block text-xs font-mono font-bold uppercase text-[#670626] mb-1.5">
-                GPS Coordinates
-              </label>
-              <input
-                type="text"
-                value={formCoordinates}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setFormCoordinates(e.target.value)
-                }
-                className="w-full bg-[#E9D9D0] border border-[#670626]/20 rounded-xl px-3.5 py-2.5 text-[#670626] font-mono font-bold focus:outline-none focus:border-[#670626]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-mono font-bold uppercase text-[#670626] mb-1.5">
-                Source IP
-              </label>
-              <input
-                type="text"
-                value={formIpAddress}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setFormIpAddress(e.target.value)
-                }
-                className="w-full bg-[#E9D9D0] border border-[#670626]/20 rounded-xl px-3.5 py-2.5 text-[#2B010E] font-mono focus:outline-none focus:border-[#670626]"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-mono font-bold uppercase text-[#670626] mb-1.5">
+              GPS Coordinates (Optional — defaults to device GPS)
+            </label>
+            <input
+              type="text"
+              value={formCoordinates}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setFormCoordinates(e.target.value)
+              }
+              placeholder={`${coords.latitude.toFixed(4)}° N, ${coords.longitude.toFixed(4)}° E`}
+              className="w-full bg-[#E9D9D0] border border-[#670626]/20 rounded-xl px-3.5 py-2.5 text-[#670626] font-mono font-bold focus:outline-none focus:border-[#670626]"
+            />
           </div>
 
           <div>

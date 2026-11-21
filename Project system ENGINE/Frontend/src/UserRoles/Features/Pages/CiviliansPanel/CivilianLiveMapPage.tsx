@@ -22,7 +22,7 @@ import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useSession } from '@/Hooks/useSession';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
-import { BASELINE_INCIDENT_FIXTURES } from '@/Libs/Assets/baselineFixtures';
+import { KATIPUNAN_BASE_COORDS } from '@/Libs/Map/mapAccuracy';
 import { formatRelativeTime } from '@/Libs/Assets/formatters';
 import { CivilianButton } from './Shared/CivilianButton';
 
@@ -80,12 +80,12 @@ export const CivilianLiveMapPage: React.FC = () => {
         getMyReports().catch(() => [])
       ]);
 
-      setFixtures(Array.isArray(f) && f.length > 0 ? f : BASELINE_INCIDENT_FIXTURES);
+      setFixtures(Array.isArray(f) ? f : []);
       setAllReports(Array.isArray(repList) ? repList : []);
       setMyRawReports(Array.isArray(myRepList) ? myRepList : []);
     } catch (err) {
       console.error('Failed to refresh civilian live map telemetry:', err);
-      setFixtures((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_FIXTURES));
+      setFixtures([]);
     }
   }, []);
 
@@ -308,8 +308,16 @@ export const CivilianLiveMapPage: React.FC = () => {
         <div className="h-[440px] sm:h-[540px] w-full rounded-xl overflow-hidden border border-[#670626]/20 bg-[#E9D9D0] relative">
           <SatelliteCommandMap
             markers={markers}
-            centerLat={8.51145}
-            centerLng={123.28261}
+            centerLat={
+              typeof coords.latitude === 'number' && Number.isFinite(coords.latitude)
+                ? coords.latitude
+                : KATIPUNAN_BASE_COORDS.latitude
+            }
+            centerLng={
+              typeof coords.longitude === 'number' && Number.isFinite(coords.longitude)
+                ? coords.longitude
+                : KATIPUNAN_BASE_COORDS.longitude
+            }
             roleFilter="Civilian"
             className="h-full w-full"
           />

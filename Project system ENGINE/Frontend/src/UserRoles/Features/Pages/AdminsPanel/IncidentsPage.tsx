@@ -18,7 +18,6 @@ import {
   Flame,
   Radio,
   MapPin,
-  Sparkles,
   Activity,
   Camera,
   TrendingUp,
@@ -48,10 +47,6 @@ import {
 } from '@/Shared';
 import { usePagination, useTableDraggable, useDebounce, useValueRefreshAuto } from '@/Hooks';
 import {
-  BASELINE_INCIDENT_REPORTS,
-  BASELINE_DUTY_ROSTER
-} from '@/Libs/Assets/baselineFixtures';
-import {
   calculateHaversineDistanceKm,
   calculateDynamicEtaMinutes,
   getKatipunanBarangay,
@@ -68,21 +63,11 @@ import {
 } from './Shared/adminCommandHelpers';
 
 export interface ExtendedReportItem extends ReportItem {
-  deviceIp?: string;
-  ipAddress?: string;
-  mediaUrl?: string;
   timestamp?: string;
   location?: string;
 }
 
-export interface ExtendedDutyUnit extends DutyUnit {
-  badgeNumber?: string;
-  name?: string;
-  assignedUnit?: string;
-  currentIncident?: string;
-  person?: string;
-  incident?: string;
-}
+export type ExtendedDutyUnit = DutyUnit;
 
 export const IncidentsPage: FC = () => {
   const [reports, setReports] = useState<ExtendedReportItem[]>([]);
@@ -97,8 +82,7 @@ export const IncidentsPage: FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [sortOrder, setSortOrder] = useState<string>('desc_date');
 
-  // Auto-dispatch & Nearby Available Units state (Instructor #8)
-  const [isAutoDispatchEnabled, setIsAutoDispatchEnabled] = useState<boolean>(true);
+  // Nearby Available Units state (Instructor #8)
   const [focusedIncidentId, setFocusedIncidentId] = useState<string>('');
   const [autoDispatchOutput, setAutoDispatchOutput] = useState<StandbyAutoDispatchOutput | null>(null);
   const [isAutoDispatchingId, setIsAutoDispatchingId] = useState<string | null>(null);
@@ -133,48 +117,11 @@ export const IncidentsPage: FC = () => {
         getDispatchRequests().catch(() => [] as DispatchRequestRecord[])
       ]);
 
-      let escalations: Record<string, string> = {};
-      try {
-        const storedEscalationsRaw = localStorage.getItem('resqtrack_escalated_severities');
-        if (storedEscalationsRaw) {
-          escalations = JSON.parse(storedEscalationsRaw) as Record<string, string>;
-        }
-      } catch {}
-
-      let aiVisionCache: Record<string, Partial<ExtendedReportItem>> = {};
-      try {
-        const cachedAiRaw = localStorage.getItem('resqtrack_ai_vision_by_report');
-        if (cachedAiRaw) {
-          aiVisionCache = JSON.parse(cachedAiRaw) as Record<string, Partial<ExtendedReportItem>>;
-        }
-      } catch {}
-
-      const baseList = r && r.length > 0 ? (r as ExtendedReportItem[]) : (BASELINE_INCIDENT_REPORTS as ExtendedReportItem[]);
-      const validReports = baseList.map((rep) => {
-        const cached = aiVisionCache[rep.id] || (rep.referenceCode ? aiVisionCache[rep.referenceCode] : undefined);
-        return {
-          ...rep,
-          severity: escalations[rep.id] || rep.severity,
-          roboflowModelId: rep.roboflowModelId ?? cached?.roboflowModelId,
-          roboflowPrediction: rep.roboflowPrediction ?? cached?.roboflowPrediction,
-          roboflowConfidence: rep.roboflowConfidence ?? cached?.roboflowConfidence,
-          roboflowNeedsReview: rep.roboflowNeedsReview ?? cached?.roboflowNeedsReview,
-          claudeModelUsed: rep.claudeModelUsed ?? cached?.claudeModelUsed,
-          claudeIncidentCategory: rep.claudeIncidentCategory ?? cached?.claudeIncidentCategory,
-          claudeSituationSummary: rep.claudeSituationSummary ?? cached?.claudeSituationSummary,
-          claudeVisibleHazards: rep.claudeVisibleHazards ?? cached?.claudeVisibleHazards,
-          claudeUncertaintyNotes: rep.claudeUncertaintyNotes ?? cached?.claudeUncertaintyNotes,
-          pointerIconType: rep.pointerIconType ?? cached?.pointerIconType
-        };
-      });
-      const validRoster = u && u.length > 0 ? (u as ExtendedDutyUnit[]) : (BASELINE_DUTY_ROSTER as ExtendedDutyUnit[]);
-      setReports(validReports);
-      setRoster(validRoster);
-      setDispatchRequests(reqs || []);
+      setReports(Array.isArray(r) ? (r as ExtendedReportItem[]) : []);
+      setRoster(Array.isArray(u) ? (u as ExtendedDutyUnit[]) : []);
+      setDispatchRequests(Array.isArray(reqs) ? reqs : []);
     } catch (err) {
       console.error('[DispatchManager] Data sync error:', err);
-      setReports((prev) => (prev.length > 0 ? prev : (BASELINE_INCIDENT_REPORTS as ExtendedReportItem[])));
-      setRoster((prev) => (prev.length > 0 ? prev : (BASELINE_DUTY_ROSTER as ExtendedDutyUnit[])));
     }
   };
 
@@ -222,7 +169,10 @@ export const IncidentsPage: FC = () => {
 
   // Wire getStandbyAutoDispatch for Nearby Available Units sorted by distance (km)
   useEffect(() => {
-    if (!focusedIncident || roster.length === 0) return;
+    if (!focusedIncident || roster.length === 0) {
+      setAutoDispatchOutput(null);
+      return;
+    }
     let cancelled = false;
 
     const runRanking = async () => {
@@ -248,32 +198,6 @@ export const IncidentsPage: FC = () => {
     };
   }, [focusedIncident, roster]);
 
-  const calculateTivaScore = (inc: ExtendedReportItem): number => {
-    const severityWeights: Record<string, number> = {
-      Critical: 40,
-      Severe: 38,
-      High: 28,
-      Medium: 18,
-      Low: 10
-    };
-    const baseWeight = severityWeights[inc.severity] || 15;
-    const geoBonus = inc.isHardwareGeolocated ? 15 : 5;
-    const clarityBonus = inc.isBlurry ? 0 : 15;
-    const reportTime = new Date(inc.createdAt || inc.timestamp || Date.now()).getTime();
-    const elapsedMinutes = Math.max(0, (Date.now() - reportTime) / 60000);
-    const recencyDecay = Math.max(0, Math.min(30, Math.floor(30 - elapsedMinutes * 0.5)));
-    return Math.min(100, Math.max(12, baseWeight + geoBonus + clarityBonus + recencyDecay));
-  };
-
-  const calculateAiConfidence = (inc: ExtendedReportItem): string => {
-    let score = 84;
-    if (inc.isHardwareGeolocated) score += 9;
-    if (!inc.isBlurry) score += 5;
-    if (inc.gpsAccuracyMeters && inc.gpsAccuracyMeters < 15) score += 1.8;
-    const fractional = Math.abs(Math.sin((inc.latitude || 8.5) * 100)) * 0.9;
-    return `${Math.min(99.9, score + fractional).toFixed(1)}%`;
-  };
-
   const handleEscalateSeverity = async (incidentId: string): Promise<void> => {
     const escalationOrder: Record<string, string> = {
       Low: 'Medium',
@@ -286,31 +210,25 @@ export const IncidentsPage: FC = () => {
     if (!target) return;
     const nextSeverity = escalationOrder[target.severity] || 'High';
 
-    setReports((prev) =>
-      prev.map((r) => (r.id === incidentId ? { ...r, severity: nextSeverity } : r))
-    );
-    showToast(`Severity escalated to ${nextSeverity} for ${target.referenceCode || target.title}.`);
-
     try {
-      const stored = localStorage.getItem('resqtrack_escalated_severities');
-      const overrides: Record<string, string> = stored ? (JSON.parse(stored) as Record<string, string>) : {};
-      overrides[incidentId] = nextSeverity;
-      localStorage.setItem('resqtrack_escalated_severities', JSON.stringify(overrides));
-    } catch {}
-
-    try {
-      await updateReportSeverity(incidentId, nextSeverity);
-    } catch {
       try {
+        await updateReportSeverity(incidentId, nextSeverity);
+      } catch {
         await verifyReport(
           incidentId,
           target.status || 'Reported',
           `Severity escalated to ${nextSeverity} by LDRRMO Admin.`,
           nextSeverity
         );
-      } catch (backendErr: unknown) {
-        console.warn('[DispatchManager] Failed to persist severity escalation:', backendErr);
       }
+      setReports((prev) =>
+        prev.map((r) => (r.id === incidentId ? { ...r, severity: nextSeverity } : r))
+      );
+      showToast(`Severity escalated to ${nextSeverity} for ${target.referenceCode || target.title}.`);
+      await loadData();
+    } catch (backendErr: unknown) {
+      console.warn('[DispatchManager] Failed to persist severity escalation:', backendErr);
+      showToast('Failed to persist severity escalation.');
     }
   };
 
@@ -401,7 +319,7 @@ export const IncidentsPage: FC = () => {
     if (!activeDispatchIncident || !selectedResponderId) return;
 
     const chosen = roster.find(
-      (u) => u.id === selectedResponderId || u.unitCode === selectedResponderId || u.badgeNumber === selectedResponderId
+      (u) => u.id === selectedResponderId || u.unitCode === selectedResponderId
     );
     const unitTargetId = chosen?.id || selectedResponderId;
 
@@ -417,9 +335,7 @@ export const IncidentsPage: FC = () => {
       await loadData();
     } catch (err) {
       console.error('[DispatchManager] Allocation error:', err);
-      showToast(`Unit allocated locally to incident ${activeDispatchIncident.referenceCode || activeDispatchIncident.id}.`);
-      setActiveDispatchIncident(null);
-      setSelectedResponderId('');
+      showToast('Failed to allocate unit to incident.');
     } finally {
       setIsSubmittingDispatch(false);
     }
@@ -435,8 +351,8 @@ export const IncidentsPage: FC = () => {
       .filter((res) => {
         if (!query) return true;
         return (
-          (res.unitName || res.name || '').toLowerCase().includes(query) ||
-          (res.unitCode || res.badgeNumber || '').toLowerCase().includes(query) ||
+          (res.unitName || '').toLowerCase().includes(query) ||
+          (res.unitCode || '').toLowerCase().includes(query) ||
           (res.agency || '').toLowerCase().includes(query)
         );
       })
@@ -514,9 +430,9 @@ export const IncidentsPage: FC = () => {
   }, [reports]);
 
   const overallAiAccuracy = useMemo(() => {
-    if (reports.length === 0) return '100.0%';
+    if (reports.length === 0) return '0.0% Verified Geo';
     const validCount = reports.filter((r) => !r.isBlurry && r.isHardwareGeolocated).length;
-    return `${((validCount / reports.length) * 100).toFixed(1)}% AI Match`;
+    return `${((validCount / reports.length) * 100).toFixed(1)}% Clear Geo`;
   }, [reports]);
 
   const pendingDispatchRequestsCount = useMemo(
@@ -630,28 +546,6 @@ export const IncidentsPage: FC = () => {
               {pendingDispatchRequestsCount > 0 ? pendingDispatchRequestsCount : dispatchRequests.length}
             </span>
           </AdminButton>
-
-          <div className={`${CLAY_WELL} flex items-center gap-3 px-3.5 py-2`}>
-            <Sparkles className="w-4 h-4 text-[#670626]" />
-            <span className="text-xs sm:text-sm font-mono font-bold text-[#670626]">Auto-Dispatch</span>
-            <button
-              type="button"
-              onClick={() => {
-                setIsAutoDispatchEnabled(!isAutoDispatchEnabled);
-                showToast(`Auto-Dispatch ${!isAutoDispatchEnabled ? 'Enabled' : 'Disabled'}.`);
-              }}
-              className={`w-11 h-6 rounded-full transition-colors relative p-0.5 flex items-center cursor-pointer ${
-                isAutoDispatchEnabled ? 'bg-[#670626]' : 'bg-[#A83B4D]/40'
-              }`}
-              title="Toggle autonomous agency dispatch based on AI incident classification"
-            >
-              <div
-                className={`w-5 h-5 rounded-full bg-[#F7F1EA] shadow-md transition-transform duration-200 ${
-                  isAutoDispatchEnabled ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>
         </div>
       </div>
 
@@ -766,21 +660,28 @@ export const IncidentsPage: FC = () => {
                 </span>
               </div>
 
-              <div className="flex items-center justify-between text-xs font-mono pt-2 border-t border-[#670626]/10">
-                <span className="font-black text-[#670626]">{item.distanceKm} km · ~{item.etaMinutes}m</span>
-                {focusedIncident && (
-                  <AdminButton
-                    variant={idx === 0 ? 'primary' : 'outline'}
-                    size="xs"
-                    isLoading={isAutoDispatchingId === focusedIncident.id}
-                    onClick={() => void handleOneClickAutoDispatch(focusedIncident, item.unit.unitCode)}
-                  >
-                    Auto-Dispatch
-                  </AdminButton>
-                )}
+                <div className="flex items-center justify-between text-xs font-mono pt-2 border-t border-[#670626]/10">
+                  <span className="font-black text-[#670626]">{item.distanceKm} km · ~{item.etaMinutes}m</span>
+                  {focusedIncident && (
+                    <AdminButton
+                      variant={idx === 0 ? 'primary' : 'outline'}
+                      size="xs"
+                      isLoading={isAutoDispatchingId === focusedIncident.id}
+                      onClick={() => void handleOneClickAutoDispatch(focusedIncident, item.unit.unitCode)}
+                    >
+                      Auto-Dispatch
+                    </AdminButton>
+                  )}
+                </div>
               </div>
+            ))}
+          {(!autoDispatchOutput || autoDispatchOutput.rankedUnits.length === 0) && (
+            <div className={`col-span-full ${CLAY_WELL} p-4 text-center text-xs font-mono text-[#A83B4D]`}>
+              {roster.length === 0
+                ? 'No responder units registered.'
+                : 'No active incidents available for unit ranking.'}
             </div>
-          ))}
+          )}
         </div>
       </div>
 
@@ -866,7 +767,7 @@ export const IncidentsPage: FC = () => {
                 <tr>
                   <th className="py-3.5 px-4">Media</th>
                   <th className="py-3.5 px-4">ID & Title</th>
-                  <th className="py-3.5 px-4">Category & Score</th>
+                  <th className="py-3.5 px-4">Category & Triage</th>
                   <th className="py-3.5 px-4">Device & Location</th>
                   <th className="py-3.5 px-4">Severity</th>
                   <th className="py-3.5 px-4">Status</th>
@@ -875,8 +776,7 @@ export const IncidentsPage: FC = () => {
               </thead>
               <tbody className="divide-y divide-[#670626]/10">
                 {paginatedItems.map((inc, i) => {
-                  const tivaScore = calculateTivaScore(inc);
-                  const confidence = calculateAiConfidence(inc);
+                  const mediaSrc = inc.imageUrl || (inc.hasImage ? `/api/reports/${inc.id}/image` : undefined);
                   const statusBadge = formatIncidentStatusBadge(
                     inc.status,
                     inc.allocatedUnitCode,
@@ -890,9 +790,9 @@ export const IncidentsPage: FC = () => {
                     <tr key={inc.id || i} className="hover:bg-[#F7F1EA]/70 transition-colors">
                       <td className="py-3.5 px-4 w-20">
                         <div className="w-14 h-11 rounded-lg bg-[#F7F1EA] border border-[#670626]/20 overflow-hidden relative flex items-center justify-center">
-                          {inc.imageUrl || inc.mediaUrl ? (
+                          {mediaSrc ? (
                             <img
-                              src={inc.imageUrl || inc.mediaUrl}
+                              src={mediaSrc}
                               alt="Incident capture"
                               className="w-full h-full object-cover"
                             />
@@ -936,20 +836,14 @@ export const IncidentsPage: FC = () => {
                           <span className="font-mono text-xs text-[#670626] font-bold">
                             {inc.category || 'Trauma / Casualty'}
                           </span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono text-emerald-800 font-bold flex items-center gap-1">
-                              <Sparkles className="w-3.5 h-3.5 text-emerald-700" />
-                              {confidence}
-                            </span>
-                            <span
-                              className={`text-xs font-mono px-2 py-0.5 rounded font-bold ${
-                                tivaScore >= 75
-                                  ? 'bg-[#670626] text-[#F7F1EA]'
-                                  : 'bg-[#F7F1EA] text-[#670626] border border-[#670626]/20'
-                              }`}
-                              title="Triage Priority Score"
-                            >
-                              Score: {tivaScore}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {typeof inc.roboflowConfidence === 'number' && (
+                              <span className="text-xs font-mono text-emerald-800 font-bold">
+                                AI: {Math.round(inc.roboflowConfidence * 100)}%
+                              </span>
+                            )}
+                            <span className="text-xs font-mono px-2 py-0.5 rounded font-bold bg-[#F7F1EA] text-[#670626] border border-[#670626]/20">
+                              {inc.isHardwareGeolocated ? 'Hardware GPS' : 'Sector GPS'}
                             </span>
                           </div>
                         </div>
@@ -958,7 +852,7 @@ export const IncidentsPage: FC = () => {
                       <td className="py-3.5 px-4">
                         <div className="flex flex-col gap-0.5">
                           <span className="font-mono text-xs text-[#A83B4D]">
-                            IP: {inc.deviceIp || inc.ipAddress || '192.168.1.104'}
+                            IP: {inc.submittedIpAddress || 'Unavailable'}
                           </span>
                           <span className="text-xs text-[#670626] truncate max-w-[210px] flex items-center gap-1">
                             <MapPin className="w-3.5 h-3.5 text-[#A83B4D] flex-shrink-0" />
@@ -1077,7 +971,7 @@ export const IncidentsPage: FC = () => {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {paginatedItems.map((inc, i) => {
-            const tivaScore = calculateTivaScore(inc);
+            const mediaSrc = inc.imageUrl || (inc.hasImage ? `/api/reports/${inc.id}/image` : undefined);
             const statusBadge = formatIncidentStatusBadge(
               inc.status,
               inc.allocatedUnitCode,
@@ -1124,8 +1018,8 @@ export const IncidentsPage: FC = () => {
 
                 <div className={`${CLAY_WELL} p-3 flex items-center gap-3`}>
                   <div className="w-16 h-12 rounded-lg bg-[#F7F1EA] border border-[#670626]/20 flex items-center justify-center font-mono text-xs text-[#A83B4D] overflow-hidden flex-shrink-0">
-                    {inc.imageUrl || inc.mediaUrl ? (
-                      <img src={inc.imageUrl || inc.mediaUrl} alt="Capture" className="w-full h-full object-cover" />
+                    {mediaSrc ? (
+                      <img src={mediaSrc} alt="Capture" className="w-full h-full object-cover" />
                     ) : (
                       <div className="flex flex-col items-center justify-center text-xs">
                         <Camera className="w-4 h-4 mb-0.5" />
@@ -1142,8 +1036,10 @@ export const IncidentsPage: FC = () => {
                         getKatipunanBarangay(inc.latitude, inc.longitude)}
                     </span>
                     <div className="flex items-center gap-2 text-xs font-mono text-[#670626]/80">
-                      <span>IP: {inc.deviceIp || inc.ipAddress || '192.168.1.104'}</span>
-                      <span className="font-bold text-[#670626]">Score: {tivaScore}</span>
+                      <span>IP: {inc.submittedIpAddress || 'Unavailable'}</span>
+                      {typeof inc.roboflowConfidence === 'number' && (
+                        <span className="font-bold text-[#670626]">AI: {Math.round(inc.roboflowConfidence * 100)}%</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1305,7 +1201,7 @@ export const IncidentsPage: FC = () => {
 
             <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
               {modalRankedRoster.map(({ unit: res, distanceKm, etaMinutes }) => {
-                const unitIdentifier = res.id || res.unitCode || res.badgeNumber || '';
+                const unitIdentifier = res.id || res.unitCode || '';
                 const isSelected = selectedResponderId === unitIdentifier;
 
                 return (
@@ -1335,9 +1231,9 @@ export const IncidentsPage: FC = () => {
                         )}
                       </div>
                       <div>
-                        <h4 className="font-bold text-sm">{res.unitName || res.name || 'Emergency Unit'}</h4>
+                        <h4 className="font-bold text-sm">{res.unitName || 'Emergency Unit'}</h4>
                         <span className={`text-xs font-mono ${isSelected ? 'text-[#E9D9D0]' : 'text-[#A83B4D]'}`}>
-                          {res.agency} · Code: {res.unitCode || res.badgeNumber || 'UNIT'} · {distanceKm} km (~{etaMinutes}m ETA)
+                          {res.agency} · Code: {res.unitCode || 'UNIT'} · {distanceKm} km (~{etaMinutes}m ETA)
                         </span>
                       </div>
                     </div>

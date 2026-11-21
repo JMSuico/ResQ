@@ -25,6 +25,8 @@ import {
   Loader2
 } from 'lucide-react';
 import { getAllReports, verifyReport, autoApproveReportWithAi, ReportItem } from '@/Endpoints/reportsApi';
+import { getPcrRecords, PatientCareRecord } from '@/Endpoints/responderOpsApi';
+import { requestJson } from '@/Endpoints/apiClient';
 import {
   SearchBar,
   Dropdown,
@@ -64,93 +66,34 @@ export interface PcrCasualtyItem {
   recordedAt: string;
 }
 
-export interface RawEvidenceObject {
-  url?: string;
-  timestamp?: string;
-  caption?: string;
-}
-
-export interface RawIncidentLog {
+interface ReportEvidenceApiItem {
   id?: string;
-  referenceCode?: string;
-  title?: string;
-  category?: string;
-  severity?: string;
-  status?: string;
-  locationLabel?: string;
-  location?: string;
-  latitude?: number;
-  longitude?: number;
-  ipAddress?: string;
-  responderName?: string;
-  responderUnit?: string;
-  unitCode?: string;
-  createdAt?: string;
-  submittedAt?: string;
-  isVerified?: boolean;
-  verifiedAt?: string | null;
-  verifiedBy?: string;
-  isClosed?: boolean;
-  closedAt?: string | null;
-  evidencePhotos?: Array<RawEvidenceObject | string>;
-  evidences?: Array<RawEvidenceObject | string>;
-  casualties?: Partial<PcrCasualtyItem>[];
-  pcrRecords?: Array<Record<string, unknown>>;
-  notes?: string;
-  note?: string;
-  roboflowModelId?: string | null;
-  roboflowPrediction?: string | null;
-  roboflowConfidence?: number | null;
-  roboflowNeedsReview?: boolean;
-  claudeModelUsed?: string | null;
-  claudeSituationSummary?: string | null;
-  claudeVisibleHazards?: string | null;
-  pointerIconType?: string | null;
-  aiAutoApproved?: boolean;
-  aiVerificationStatus?: string | null;
+  url?: string;
+  mediaUrl?: string;
+  caption?: string;
+  timestamp?: string;
+  createdAtUtc?: string;
 }
 
-const normalizeEvidence = (item: RawIncidentLog): Array<{ url: string; timestamp?: string; caption?: string }> => {
-  const rawList = item.evidencePhotos || item.evidences || [];
-  if (!Array.isArray(rawList)) return [];
-  return rawList
-    .map((e, idx) => {
-      if (typeof e === 'string') {
-        return { url: e, caption: `Attached Evidence #${idx + 1}` };
-      }
-      return {
-        url: typeof e?.url === 'string' ? e.url : '',
-        timestamp: typeof e?.timestamp === 'string' ? e.timestamp : undefined,
-        caption: typeof e?.caption === 'string' ? e.caption : `Attached Evidence #${idx + 1}`
-      };
-    })
-    .filter((e) => Boolean(e.url) && !e.url.includes('unsplash.com'));
-};
-
-const normalizeCasualties = (item: RawIncidentLog): PcrCasualtyItem[] => {
-  const rawList = (item.casualties as Array<Record<string, unknown>> | undefined) ||
-    (item.pcrRecords as Array<Record<string, unknown>> | undefined) || [];
-  if (!Array.isArray(rawList)) return [];
-  return rawList.map((c, idx) => ({
-    id: typeof c.id === 'string' ? c.id : `cas-${idx + 1}`,
-    patientName: typeof c.patientName === 'string' ? c.patientName : 'Unidentified Patient',
-    age: typeof c.age === 'number' ? c.age : 0,
-    gender: typeof c.gender === 'string' ? c.gender : 'Unspecified',
-    levelOfConsciousness: typeof c.levelOfConsciousness === 'string' ? c.levelOfConsciousness : 'Alert',
-    bpSystolic: typeof c.bpSystolic === 'number' ? c.bpSystolic : typeof c.bloodPressureSystolic === 'number' ? c.bloodPressureSystolic : 120,
-    bpDiastolic: typeof c.bpDiastolic === 'number' ? c.bpDiastolic : typeof c.bloodPressureDiastolic === 'number' ? c.bloodPressureDiastolic : 80,
-    heartRate: typeof c.heartRate === 'number' ? c.heartRate : typeof c.heartRateBpm === 'number' ? c.heartRateBpm : 75,
-    respiratoryRate: typeof c.respiratoryRate === 'number' ? c.respiratoryRate : 16,
-    spO2: typeof c.spO2 === 'number' ? c.spO2 : typeof c.spO2Percent === 'number' ? c.spO2Percent : 98,
-    glucose: typeof c.glucose === 'number' ? c.glucose : typeof c.bloodGlucoseMgDl === 'number' ? c.bloodGlucoseMgDl : 90,
-    temp: typeof c.temp === 'number' ? c.temp : typeof c.temperatureCelsius === 'number' ? c.temperatureCelsius : 36.5,
-    receivingHospital: typeof c.receivingHospital === 'string' ? c.receivingHospital : 'Katipunan Rural Health Unit (RHU)',
-    chiefComplaint: typeof c.chiefComplaint === 'string' ? c.chiefComplaint : 'Trauma & Triage Evaluation',
-    narrative: typeof c.narrative === 'string' ? c.narrative : '',
-    interventions: Array.isArray(c.interventions) ? c.interventions.filter((i): i is string => typeof i === 'string') : [],
-    recordedAt: typeof c.recordedAt === 'string' ? c.recordedAt : typeof c.createdAt === 'string' ? c.createdAt : new Date().toISOString()
-  }));
-};
+const mapPcrToCasualty = (p: PatientCareRecord): PcrCasualtyItem => ({
+  id: p.id,
+  patientName: p.patientName || 'Unidentified Patient',
+  age: p.age ?? 0,
+  gender: p.gender || 'Unspecified',
+  levelOfConsciousness: p.levelOfConsciousness || 'Alert',
+  bpSystolic: p.bloodPressureSystolic ?? 0,
+  bpDiastolic: p.bloodPressureDiastolic ?? 0,
+  heartRate: p.heartRateBpm ?? 0,
+  respiratoryRate: p.respiratoryRate ?? 0,
+  spO2: p.spO2Percent ?? 0,
+  glucose: p.bloodGlucoseMgDl ?? 0,
+  temp: p.temperatureCelsius ?? 0,
+  receivingHospital: p.unitCode || 'Katipunan Rural Health Unit (RHU)',
+  chiefComplaint: p.chiefComplaint || '',
+  narrative: p.narrative || '',
+  interventions: Array.isArray(p.interventions) ? p.interventions : [],
+  recordedAt: p.createdAt || ''
+});
 
 export interface SubmittedReportRecord {
   id: string;
@@ -188,11 +131,15 @@ export interface SubmittedReportRecord {
   aiVerificationStatus?: string | null;
 }
 
-const STORAGE_INCIDENT_LOGS_KEY = 'resqtrack_incident_logs';
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
 export const SubmittedReportsPage: FC = () => {
   const [reports, setReports] = useState<SubmittedReportRecord[]>([]);
+  const [dossierPcrByReportId, setDossierPcrByReportId] = useState<Record<string, PcrCasualtyItem[]>>({});
+  const [dossierEvidencesByReportId, setDossierEvidencesByReportId] = useState<
+    Record<string, Array<{ url: string; timestamp?: string; caption?: string }>>
+  >({});
+  const [isLoadingDossier, setIsLoadingDossier] = useState<boolean>(false);
   const [searchRaw, setSearchRaw] = useState<string>('');
   const debouncedSearch = useDebounce(searchRaw, 250);
   const [viewMode, setViewMode] = useState<ViewMode>('table');
@@ -215,89 +162,23 @@ export const SubmittedReportsPage: FC = () => {
 
   const loadSubmittedReports = useCallback(async (): Promise<void> => {
     try {
-      let localLogs: RawIncidentLog[] = [];
-      try {
-        const raw = localStorage.getItem(STORAGE_INCIDENT_LOGS_KEY);
-        if (raw) localLogs = JSON.parse(raw) as RawIncidentLog[];
-      } catch {
-        localLogs = [];
+      const backendReports = await getAllReports();
+      if (!Array.isArray(backendReports)) {
+        setReports([]);
+        return;
       }
 
-      let aiVisionCache: Record<string, Partial<ReportItem>> = {};
-      try {
-        const cachedAiRaw = localStorage.getItem('resqtrack_ai_vision_by_report');
-        if (cachedAiRaw) {
-          aiVisionCache = JSON.parse(cachedAiRaw) as Record<string, Partial<ReportItem>>;
-        }
-      } catch {}
-
-      const backendReports = await getAllReports().catch(() => [] as ReportItem[]);
-      const mergedMap = new Map<string, SubmittedReportRecord>();
-
-      if (Array.isArray(localLogs)) {
-        localLogs.forEach((item: RawIncidentLog) => {
-          if (!item || !item.id) return;
-          const rawStatus = (item.status || 'Submitted').toLowerCase();
-          const isRejected = rawStatus === 'rejected';
-          const isVerified = !isRejected && Boolean(item.isVerified || item.verifiedAt || rawStatus === 'verified');
-          const isClosed = Boolean(item.isClosed || item.closedAt || rawStatus === 'closed' || rawStatus === 'resolved');
-          const refCode = item.referenceCode || `RESQ-${item.id.slice(0, 8).toUpperCase()}`;
-          const cached = aiVisionCache[item.id] || aiVisionCache[refCode];
-
-          mergedMap.set(item.id, {
-            id: item.id,
-            referenceCode: refCode,
-            title: item.title || 'Submitted Incident Report',
-            category: item.category || 'MedicalEmergency',
-            severity: item.severity || 'Medium',
-            status: isRejected ? 'Rejected' : isClosed ? 'Resolved' : isVerified ? 'Verified' : (item.status || 'Submitted'),
-            locationLabel:
-              item.locationLabel ||
-              item.location ||
-              getKatipunanBarangay(item.latitude ?? KATIPUNAN_BASE_COORDS.latitude, item.longitude ?? KATIPUNAN_BASE_COORDS.longitude),
-            latitude: typeof item.latitude === 'number' ? item.latitude : KATIPUNAN_BASE_COORDS.latitude,
-            longitude: typeof item.longitude === 'number' ? item.longitude : KATIPUNAN_BASE_COORDS.longitude,
-            ipAddress: item.ipAddress || '192.168.42.118',
-            responderName: item.responderName || 'Dr. Maria Clara Santos MD',
-            responderUnit: item.unitCode || item.responderUnit || 'RHU-ALPHA-1',
-            submittedAt: item.createdAt || item.submittedAt || new Date().toISOString(),
-            isVerified,
-            verifiedAt: item.verifiedAt || (isVerified ? new Date().toISOString() : null),
-            verifiedBy: item.verifiedBy,
-            isClosed,
-            closedAt: item.closedAt || (isClosed ? new Date().toISOString() : null),
-            isRejected,
-            evidencePhotos: normalizeEvidence(item),
-            casualties: normalizeCasualties(item),
-            notes: item.note || item.notes || '',
-            roboflowModelId: item.roboflowModelId ?? cached?.roboflowModelId,
-            roboflowPrediction: item.roboflowPrediction ?? cached?.roboflowPrediction,
-            roboflowConfidence: item.roboflowConfidence ?? cached?.roboflowConfidence,
-            roboflowNeedsReview: item.roboflowNeedsReview ?? cached?.roboflowNeedsReview,
-            claudeModelUsed: item.claudeModelUsed ?? cached?.claudeModelUsed,
-            claudeSituationSummary: item.claudeSituationSummary ?? cached?.claudeSituationSummary,
-            claudeVisibleHazards: item.claudeVisibleHazards ?? cached?.claudeVisibleHazards,
-            pointerIconType: item.pointerIconType ?? cached?.pointerIconType,
-            aiAutoApproved: Boolean((item as RawIncidentLog & { aiAutoApproved?: boolean }).aiAutoApproved ?? cached?.aiAutoApproved),
-            aiVerificationStatus: (item as RawIncidentLog & { aiVerificationStatus?: string | null }).aiVerificationStatus ?? cached?.aiVerificationStatus ?? null
-          });
-        });
-      }
-
-      if (Array.isArray(backendReports)) {
-        backendReports.forEach((rep) => {
-          if (!rep || !rep.id) return;
-          if (mergedMap.has(rep.id)) return;
-
+      const mapped: SubmittedReportRecord[] = backendReports
+        .filter((rep): rep is ReportItem => Boolean(rep && rep.id))
+        .map((rep) => {
           const s = (rep.status || 'Reported').toLowerCase();
           const isRejected = s === 'rejected';
           const isVerified = !isRejected && (Boolean(rep.verifiedAt) || s === 'verified' || s === 'responded');
           const isClosed = s === 'resolved' || s === 'completed' || s === 'closed';
-          const safePhoto = rep.imageUrl && !rep.imageUrl.includes('unsplash.com') ? rep.imageUrl : null;
+          const safePhoto = rep.hasImage ? (rep.imageUrl || `/api/reports/${rep.id}/image`) : null;
           const refCode = rep.referenceCode || `RESQ-${rep.id.slice(0, 8).toUpperCase()}`;
-          const cached = aiVisionCache[rep.id] || aiVisionCache[refCode];
 
-          mergedMap.set(rep.id, {
+          return {
             id: rep.id,
             referenceCode: refCode,
             title: rep.title || 'Field Incident Report',
@@ -309,111 +190,78 @@ export const SubmittedReportsPage: FC = () => {
               getKatipunanBarangay(rep.latitude ?? KATIPUNAN_BASE_COORDS.latitude, rep.longitude ?? KATIPUNAN_BASE_COORDS.longitude),
             latitude: rep.latitude ?? KATIPUNAN_BASE_COORDS.latitude,
             longitude: rep.longitude ?? KATIPUNAN_BASE_COORDS.longitude,
-            ipAddress: '192.168.42.118',
-            responderName: rep.reporterName || 'Field Reporter',
+            ipAddress: rep.submittedIpAddress || 'Unavailable',
+            responderName: rep.reporterName || 'Unknown Reporter',
             responderUnit: rep.allocatedUnitCode || rep.recommendedAgencyUnit || 'UNASSIGNED',
             submittedAt: rep.createdAt || new Date().toISOString(),
             isVerified,
-            verifiedAt: rep.verifiedAt || (isVerified ? new Date().toISOString() : null),
+            verifiedAt: rep.verifiedAt || null,
             verifiedBy: isVerified ? 'LDRRMO Admin Command' : undefined,
             isClosed,
-            closedAt: rep.resolvedAt || (isClosed ? new Date().toISOString() : null),
+            closedAt: rep.resolvedAt || null,
             isRejected,
             allocatedUnitCode: rep.allocatedUnitCode,
             evidencePhotos: safePhoto ? [{ url: safePhoto, timestamp: rep.createdAt, caption: 'Attached Evidence' }] : [],
             casualties: [],
             notes: rep.note || '',
-            roboflowModelId: rep.roboflowModelId ?? cached?.roboflowModelId,
-            roboflowPrediction: rep.roboflowPrediction ?? cached?.roboflowPrediction,
-            roboflowConfidence: rep.roboflowConfidence ?? cached?.roboflowConfidence,
-            roboflowNeedsReview: rep.roboflowNeedsReview ?? cached?.roboflowNeedsReview,
-            claudeModelUsed: rep.claudeModelUsed ?? cached?.claudeModelUsed,
-            claudeSituationSummary: rep.claudeSituationSummary ?? cached?.claudeSituationSummary,
-            claudeVisibleHazards: rep.claudeVisibleHazards ?? cached?.claudeVisibleHazards,
-            pointerIconType: rep.pointerIconType ?? cached?.pointerIconType,
-            aiAutoApproved: Boolean(rep.aiAutoApproved ?? cached?.aiAutoApproved),
-            aiVerificationStatus: rep.aiVerificationStatus ?? cached?.aiVerificationStatus ?? null
-          });
-        });
-      }
-
-      if (mergedMap.size === 0) {
-        const seedId = 'seed-sub-rep-01';
-        mergedMap.set(seedId, {
-          id: seedId,
-          referenceCode: 'RESQ-20261028-001',
-          title: 'Two-Motorcycle Collision with Minor Injury',
-          category: 'VehicularAccident',
-          severity: 'Medium',
-          status: 'Submitted',
-          locationLabel: 'Barangay Uno (Poblacion), Katipunan, Zamboanga del Norte',
-          latitude: 8.5147,
-          longitude: 123.2842,
-          ipAddress: '192.168.42.118',
-          responderName: 'Dr. Maria Clara Santos MD',
-          responderUnit: 'RHU-ALPHA-1',
-          submittedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-          isVerified: false,
-          verifiedAt: null,
-          isClosed: false,
-          closedAt: null,
-          isRejected: false,
-          evidencePhotos: [],
-          casualties: [
-            {
-              id: 'cas-01',
-              patientName: 'Juan Dela Cruz',
-              age: 28,
-              gender: 'Male',
-              levelOfConsciousness: 'Alert',
-              bpSystolic: 120,
-              bpDiastolic: 80,
-              heartRate: 78,
-              respiratoryRate: 18,
-              spO2: 98,
-              glucose: 95,
-              temp: 36.6,
-              receivingHospital: 'Katipunan Rural Health Unit (RHU)',
-              chiefComplaint: 'Minor abrasions on right knee and forearm',
-              narrative: 'Patient conscious and coherent. Dressed abrasions with sterile gauze.',
-              interventions: ['Wound Cleaning', 'Sterile Dressing', 'Vitals Monitored'],
-              recordedAt: formatDateTimeWithSecondsAmPm(new Date().toISOString())
-            }
-          ],
-          notes: 'Both riders stabilized. Cleared by Medical Officer III.'
+            roboflowModelId: rep.roboflowModelId,
+            roboflowPrediction: rep.roboflowPrediction,
+            roboflowConfidence: rep.roboflowConfidence,
+            roboflowNeedsReview: rep.roboflowNeedsReview,
+            claudeModelUsed: rep.claudeModelUsed,
+            claudeSituationSummary: rep.claudeSituationSummary,
+            claudeVisibleHazards: rep.claudeVisibleHazards,
+            pointerIconType: rep.pointerIconType,
+            aiAutoApproved: Boolean(rep.aiAutoApproved),
+            aiVerificationStatus: rep.aiVerificationStatus ?? null
+          };
         });
 
-        const seedId2 = 'seed-sub-rep-02';
-        const seedVerifiedTime = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-        mergedMap.set(seedId2, {
-          id: seedId2,
-          referenceCode: 'RESQ-20261028-002',
-          title: 'Commercial Storefront Electrical Wire Sparking & Arcing',
-          category: 'StructuralFire',
-          severity: 'High',
-          status: 'Verified',
-          locationLabel: 'Public Market Perimeter, Barangay Uno, Katipunan, ZN',
-          latitude: 8.5138,
-          longitude: 123.2904,
-          ipAddress: '192.168.42.119',
-          responderName: 'SINSP Ricardo Dalisay BFP',
-          responderUnit: 'FIRE-ENG-01',
-          submittedAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
-          isVerified: true,
-          verifiedAt: seedVerifiedTime,
-          verifiedBy: 'LDRRMO Admin Command',
-          isClosed: false,
-          closedAt: null,
-          isRejected: false,
-          evidencePhotos: [],
-          casualties: [],
-          notes: 'Feeder line de-energized by utility team. Perimeter secured.'
-        });
-      }
-
-      setReports(Array.from(mergedMap.values()));
+      setReports(mapped);
     } catch (err) {
       console.error('[SubmittedReportsPage] Error loading reports:', err);
+    }
+  }, []);
+
+  const openReportDossier = useCallback(async (reportId: string): Promise<void> => {
+    setSelectedReportId(reportId);
+    setIsDetailModalOpen(true);
+    setIsLoadingDossier(true);
+
+    try {
+      const [pcrs, evidences] = await Promise.all([
+        getPcrRecords(reportId).catch(() => [] as PatientCareRecord[]),
+        requestJson<ReportEvidenceApiItem[]>(`/api/reports/${encodeURIComponent(reportId)}/evidences`, {
+          method: 'GET'
+        }).catch(() => [] as ReportEvidenceApiItem[])
+      ]);
+
+      if (Array.isArray(pcrs)) {
+        setDossierPcrByReportId((prev) => ({
+          ...prev,
+          [reportId]: pcrs.map(mapPcrToCasualty)
+        }));
+      }
+
+      if (Array.isArray(evidences)) {
+        const mappedEvidences = evidences
+          .map((ev, idx) => ({
+            url:
+              ev.url ||
+              ev.mediaUrl ||
+              (ev.id ? `/api/reports/${encodeURIComponent(reportId)}/evidences/${encodeURIComponent(ev.id)}` : ''),
+            timestamp: ev.timestamp || ev.createdAtUtc,
+            caption: ev.caption || `Attached Evidence #${idx + 1}`
+          }))
+          .filter((ev) => Boolean(ev.url));
+
+        setDossierEvidencesByReportId((prev) => ({
+          ...prev,
+          [reportId]: mappedEvidences
+        }));
+      }
+    } finally {
+      setIsLoadingDossier(false);
     }
   }, []);
 
@@ -443,59 +291,40 @@ export const SubmittedReportsPage: FC = () => {
             ? 'Rejected by LDRRMO Administration.'
             : 'Verified by LDRRMO Administration.'
         );
+
+        setReports((prev) =>
+          prev.map((r) => {
+            if (r.id !== reportId) return r;
+            return {
+              ...r,
+              isVerified: nextStatus === 'Verified',
+              isRejected: nextStatus === 'Rejected',
+              status: nextStatus,
+              verifiedAt: nextStatus === 'Verified' ? actionTimestamp : null,
+              verifiedBy: 'LDRRMO Admin Command'
+            };
+          })
+        );
+
+        window.dispatchEvent(
+          new CustomEvent('resqtrack:report', {
+            detail: { id: reportId, status: nextStatus, verifiedAt: nextStatus === 'Verified' ? actionTimestamp : null }
+          })
+        );
+        setToastMessage(
+          nextStatus === 'Verified'
+            ? 'Report verified. 5-Minute auto-close timer started on radar HUD.'
+            : 'Report marked as Rejected.'
+        );
+        setTimeout(() => setToastMessage(null), 4000);
+        await loadSubmittedReports();
       } catch (err: unknown) {
-        console.warn('[SubmittedReportsPage] Failed to persist report verification:', err);
+        const msg = err instanceof Error ? err.message : 'Failed to update report verification.';
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 4000);
       }
-
-      setReports((prev) => {
-        const next = prev.map((r) => {
-          if (r.id !== reportId) return r;
-          return {
-            ...r,
-            isVerified: nextStatus === 'Verified',
-            isRejected: nextStatus === 'Rejected',
-            status: nextStatus,
-            verifiedAt: nextStatus === 'Verified' ? actionTimestamp : null,
-            verifiedBy: 'LDRRMO Admin Command'
-          };
-        });
-
-        try {
-          const raw = localStorage.getItem(STORAGE_INCIDENT_LOGS_KEY);
-          let localArr: RawIncidentLog[] = raw ? (JSON.parse(raw) as RawIncidentLog[]) : [];
-          localArr = localArr.map((item) => {
-            if (item.id === reportId) {
-              return {
-                ...item,
-                isVerified: nextStatus === 'Verified',
-                status: nextStatus,
-                verifiedAt: nextStatus === 'Verified' ? actionTimestamp : null,
-                verifiedBy: 'LDRRMO Admin Command'
-              };
-            }
-            return item;
-          });
-          localStorage.setItem(STORAGE_INCIDENT_LOGS_KEY, JSON.stringify(localArr));
-        } catch (err: unknown) {
-          console.error('[SubmittedReportsPage] Failed to persist verification:', err);
-        }
-
-        return next;
-      });
-
-      window.dispatchEvent(
-        new CustomEvent('resqtrack:report', {
-          detail: { id: reportId, status: nextStatus, verifiedAt: nextStatus === 'Verified' ? actionTimestamp : null }
-        })
-      );
-      setToastMessage(
-        nextStatus === 'Verified'
-          ? 'Report verified. 5-Minute auto-close timer started on radar HUD.'
-          : 'Report marked as Rejected.'
-      );
-      setTimeout(() => setToastMessage(null), 4000);
     },
-    []
+    [loadSubmittedReports]
   );
 
   const handleManualClose = useCallback(
@@ -504,52 +333,34 @@ export const SubmittedReportsPage: FC = () => {
 
       try {
         await verifyReport(reportId, 'Resolved', 'Incident closed by LDRRMO Administration.');
+
+        setReports((prev) =>
+          prev.map((r) => {
+            if (r.id !== reportId) return r;
+            return {
+              ...r,
+              isClosed: true,
+              status: 'Resolved',
+              closedAt: closedTimestamp
+            };
+          })
+        );
+
+        window.dispatchEvent(
+          new CustomEvent('resqtrack:report', {
+            detail: { id: reportId, status: 'Closed', isClosed: true, closedAt: closedTimestamp }
+          })
+        );
+        setToastMessage('Incident successfully finalized and resolved.');
+        setTimeout(() => setToastMessage(null), 4000);
+        await loadSubmittedReports();
       } catch (err: unknown) {
-        console.warn('[SubmittedReportsPage] Failed to persist close to backend:', err);
+        const msg = err instanceof Error ? err.message : 'Failed to close incident.';
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 4000);
       }
-
-      setReports((prev) => {
-        const next = prev.map((r) => {
-          if (r.id !== reportId) return r;
-          return {
-            ...r,
-            isClosed: true,
-            status: 'Resolved',
-            closedAt: closedTimestamp
-          };
-        });
-
-        try {
-          const raw = localStorage.getItem(STORAGE_INCIDENT_LOGS_KEY);
-          let localArr: RawIncidentLog[] = raw ? (JSON.parse(raw) as RawIncidentLog[]) : [];
-          localArr = localArr.map((item) => {
-            if (item.id === reportId) {
-              return {
-                ...item,
-                isClosed: true,
-                status: 'Closed',
-                closedAt: closedTimestamp
-              };
-            }
-            return item;
-          });
-          localStorage.setItem(STORAGE_INCIDENT_LOGS_KEY, JSON.stringify(localArr));
-        } catch (err: unknown) {
-          console.error('[SubmittedReportsPage] Failed to persist close:', err);
-        }
-
-        return next;
-      });
-
-      window.dispatchEvent(
-        new CustomEvent('resqtrack:report', {
-          detail: { id: reportId, status: 'Closed', isClosed: true, closedAt: closedTimestamp }
-        })
-      );
-      setToastMessage('Incident successfully finalized and resolved.');
-      setTimeout(() => setToastMessage(null), 4000);
     },
-    []
+    [loadSubmittedReports]
   );
 
   const handleAiAutoApprove = useCallback(
@@ -581,27 +392,6 @@ export const SubmittedReportsPage: FC = () => {
           })
         );
 
-        try {
-          const raw = localStorage.getItem(STORAGE_INCIDENT_LOGS_KEY);
-          const localArr: RawIncidentLog[] = raw ? (JSON.parse(raw) as RawIncidentLog[]) : [];
-          const updatedLocal = localArr.map((item) =>
-            item.id === reportId
-              ? {
-                  ...item,
-                  isVerified: approved ? true : item.isVerified,
-                  status: nextStatus,
-                  verifiedAt: approved ? actionTimestamp : item.verifiedAt,
-                  verifiedBy: approved ? 'AI Auto-Approve' : item.verifiedBy,
-                  aiAutoApproved: approved,
-                  aiVerificationStatus: nextAiStatus
-                }
-              : item
-          );
-          localStorage.setItem(STORAGE_INCIDENT_LOGS_KEY, JSON.stringify(updatedLocal));
-        } catch {
-          // Ignore localStorage quota failure
-        }
-
         window.dispatchEvent(
           new CustomEvent('resqtrack:report', {
             detail: { id: reportId, status: nextStatus, aiAutoApproved: approved, aiVerificationStatus: nextAiStatus }
@@ -613,6 +403,7 @@ export const SubmittedReportsPage: FC = () => {
               ? 'AI Auto-Approved photo report. 5-Minute auto-close timer started.'
               : 'AI flagged report for manual review.')
         );
+        await loadSubmittedReports();
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'AI Auto-Approve request failed.';
         setToastMessage(msg);
@@ -621,7 +412,7 @@ export const SubmittedReportsPage: FC = () => {
         setTimeout(() => setToastMessage(null), 4000);
       }
     },
-    []
+    [loadSubmittedReports]
   );
 
   const renderAiStatusPill = (r: SubmittedReportRecord) => {
@@ -713,10 +504,25 @@ export const SubmittedReportsPage: FC = () => {
     prevPage
   } = usePagination(filteredReports, { initialPageSize: 10 });
 
-  const selectedReport = useMemo(
-    () => reports.find((r) => r.id === selectedReportId) || null,
-    [reports, selectedReportId]
-  );
+  const selectedReport = useMemo(() => {
+    const base = reports.find((r) => r.id === selectedReportId) || null;
+    if (!base) return null;
+
+    const dossierCasualties = dossierPcrByReportId[base.id];
+    const dossierEvidences = dossierEvidencesByReportId[base.id] || [];
+    const mergedEvidences = [...base.evidencePhotos];
+    dossierEvidences.forEach((ev) => {
+      if (!mergedEvidences.some((existing) => existing.url === ev.url)) {
+        mergedEvidences.push(ev);
+      }
+    });
+
+    return {
+      ...base,
+      casualties: dossierCasualties ?? base.casualties,
+      evidencePhotos: mergedEvidences
+    };
+  }, [reports, selectedReportId, dossierPcrByReportId, dossierEvidencesByReportId]);
 
   const getRemainingSeconds = (verifiedAtStr: string | null): number => {
     if (!verifiedAtStr) return 0;
@@ -906,10 +712,7 @@ export const SubmittedReportsPage: FC = () => {
                   return (
                     <tr
                       key={r.id}
-                      onClick={() => {
-                        setSelectedReportId(r.id);
-                        setIsDetailModalOpen(true);
-                      }}
+                      onClick={() => void openReportDossier(r.id)}
                       className="hover:bg-[#F7F1EA]/70 transition-colors cursor-pointer"
                     >
                       <td className="py-4 px-4">
@@ -1060,10 +863,7 @@ export const SubmittedReportsPage: FC = () => {
                           <AdminButton
                             variant="ghost"
                             size="xs"
-                            onClick={() => {
-                              setSelectedReportId(r.id);
-                              setIsDetailModalOpen(true);
-                            }}
+                            onClick={() => void openReportDossier(r.id)}
                           >
                             <Eye className="w-4 h-4" />
                           </AdminButton>
@@ -1093,10 +893,7 @@ export const SubmittedReportsPage: FC = () => {
             return (
               <div
                 key={r.id}
-                onClick={() => {
-                  setSelectedReportId(r.id);
-                  setIsDetailModalOpen(true);
-                }}
+                onClick={() => void openReportDossier(r.id)}
                 className={`tactical-card ${CLAY_SURFACE} p-5 flex flex-col justify-between gap-3.5 cursor-pointer hover:border-[#670626]/40 transition-all`}
               >
                 <div>
@@ -1313,7 +1110,12 @@ export const SubmittedReportsPage: FC = () => {
                 Evidence Photos ({selectedReport.evidencePhotos.length})
               </h4>
 
-              {selectedReport.evidencePhotos.length === 0 ? (
+              {isLoadingDossier && selectedReport.evidencePhotos.length === 0 ? (
+                <div className={`${CLAY_WELL} p-6 text-center text-[#A83B4D] font-mono text-sm flex items-center justify-center gap-2`}>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Loading evidence media from PostgreSQL…</span>
+                </div>
+              ) : selectedReport.evidencePhotos.length === 0 ? (
                 <div className={`${CLAY_WELL} p-6 text-center text-[#A83B4D] font-mono text-sm`}>
                   No photographic evidence attached to this dossier.
                 </div>
@@ -1342,7 +1144,12 @@ export const SubmittedReportsPage: FC = () => {
                 Patient Care Records ({selectedReport.casualties.length})
               </h4>
 
-              {selectedReport.casualties.length === 0 ? (
+              {isLoadingDossier && selectedReport.casualties.length === 0 ? (
+                <div className={`${CLAY_WELL} p-6 text-center text-[#A83B4D] font-mono text-sm flex items-center justify-center gap-2`}>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Loading Patient Care Records from PostgreSQL…</span>
+                </div>
+              ) : selectedReport.casualties.length === 0 ? (
                 <div className={`${CLAY_WELL} p-6 text-center text-[#A83B4D] font-mono text-sm`}>
                   No individual patient care records recorded for this incident.
                 </div>

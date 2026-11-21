@@ -17,11 +17,8 @@ public class RespondersService(
     IDutyUnitRepository unitRepo,
     IIncidentFixtureRepository fixtureRepo,
     IAuditLogRepository auditRepo,
-    AppDbContext db) : IRespondersService
+    AppDbContext db) : IResponderOpsService
 {
-    public Task<List<DutyUnitResponse>> GetRosterAsync(CancellationToken ct = default) =>
-        GetRosterAsync(null, ct);
-
     public async Task<List<DutyUnitResponse>> GetRosterAsync(ResponderUnitType? agency, CancellationToken ct = default) =>
         (await unitRepo.GetAllAsync(ct))
             .Where(d => agency == null || agency == ResponderUnitType.None || d.Agency == agency.Value)
@@ -154,7 +151,7 @@ public class RespondersService(
             IncidentDateTime = incidentTime,
             InvestigatingOfficerName = InputSanitizer.Sanitize(request.InvestigatingOfficerName ?? "Desk Officer"),
             InvestigatingOfficerBadge = InputSanitizer.Sanitize(request.InvestigatingOfficerBadge ?? "PNP-OFFICER"),
-            Station = InputSanitizer.Sanitize(request.Station ?? "Dipolog City Police Station"),
+            Station = InputSanitizer.Sanitize(request.Station ?? "Katipunan Municipal Police Station"),
             CryptographicSeal = seal,
             CreatedAt = DateTime.UtcNow
         };

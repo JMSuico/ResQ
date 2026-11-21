@@ -244,7 +244,7 @@ export const createInitialFiveLayerPipeline = (): BiometricLoginLayerTelemetry[]
     status: 'IDLE',
     passed: false,
     score: 0,
-    detail: 'SQL Server BiometricEnrollments & 4-pose trained frame repository lookup'
+    detail: 'PostgreSQL BiometricEnrollments & 4-pose trained frame repository lookup'
   },
   {
     layerNumber: 4,
@@ -823,7 +823,7 @@ export class ClaudeFacialBiometricStrategy implements IFacialBiometricStrategy {
         status: 'RUNNING',
         passed: false,
         score: 0,
-        detail: 'Querying SQL Server BiometricEnrollments & 4-pose trained knowledge...'
+        detail: 'Querying PostgreSQL BiometricEnrollments & 4-pose trained knowledge...'
       },
       {
         layerNumber: 4,

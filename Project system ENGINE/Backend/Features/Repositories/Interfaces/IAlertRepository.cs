@@ -10,4 +10,5 @@ public interface IAlertRepository
 {
     Task<List<AlertReadState>> GetUserAlertsAsync(Guid userId, CancellationToken ct = default);
     Task MarkAsReadAsync(Guid userId, Guid reportId, CancellationToken ct = default);
+    Task<int> MarkAllAsReadAsync(Guid userId, IEnumerable<Guid> reportIds, CancellationToken ct = default);
 }

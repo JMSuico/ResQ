@@ -16,8 +16,8 @@ export const AdminLoginPage: FC = () => {
   const { isMobile } = useFluidResposiveness();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState<string>('ldrrmo.admin@resqtrack.gov.ph');
-  const [password, setPassword] = useState<string>('LdrrmoCommand@2026!');
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [consent, setConsent] = useState<boolean>(true);
   const [emailError, setEmailError] = useState<string>('');
@@ -31,16 +31,6 @@ export const AdminLoginPage: FC = () => {
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-  const fillAdminCredentials = () => {
-    setEmail('ldrrmo.admin@resqtrack.gov.ph');
-    setPassword('LdrrmoCommand@2026!');
-    setStatusMessage('');
-    setStatusTone('');
-    setEmailError('');
-    setPasswordError('');
-    setConsentError('');
-  };
-
   const validateEmail = (val: string): string => {
     if (!val.trim()) return 'Enter authorized LDRRMO email address.';
     return EMAIL_RE.test(val.trim()) ? '' : 'Enter a valid email address.';
@@ -49,12 +39,6 @@ export const AdminLoginPage: FC = () => {
   const validatePassword = (val: string): string => {
     if (!val) return 'Security password is required.';
     return val.length >= 8 ? '' : 'Password must be at least 8 characters.';
-  };
-
-  const handleCliPasswordReset = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setStatusMessage('Emergency admin credentials reset must be performed via local terminal CLI: .\\start.ps1 createsuperadmin');
-    setStatusTone('');
   };
 
   const processAdminSession = (res: LoginResponse) => {
@@ -221,7 +205,7 @@ export const AdminLoginPage: FC = () => {
                   id="admin-password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••••••"
+                  placeholder="Enter LDRRMO security password"
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);

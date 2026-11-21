@@ -18,7 +18,6 @@ public class IdentityController(IIdentityAiService aiService) : ControllerBase
         Ok(aiService.GetAiStatus());
 
     [HttpPost("ai-extract")]
-    [HttpPost("extract-ocr")]
     public async Task<IActionResult> AiExtractAsync([FromBody] AiExtractRequestDto? request, CancellationToken ct) =>
         request == null || (string.IsNullOrWhiteSpace(request.ImageDataUrl) && string.IsNullOrWhiteSpace(request.FrontImageBase64))
             ? BadRequest(BuildFailureDto<AiExtractResponseDto>(
@@ -89,7 +88,6 @@ public class IdentityController(IIdentityAiService aiService) : ControllerBase
         return MapOcrActionResult(result);
     }
 
-    [HttpPost("analyze-document")]
     [HttpPost("/api/identity-documents/analyze")]
     public async Task<IActionResult> AnalyzeDocumentAsync([FromBody] IdentityDocumentAnalyzeRequestDto request, CancellationToken ct) =>
         Ok(await aiService.AnalyzeDocumentAsync(request, ct));

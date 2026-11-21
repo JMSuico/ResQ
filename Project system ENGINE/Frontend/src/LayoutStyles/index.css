@@ -4,13 +4,8 @@
 @import './style.css';
 @import './dashboard.css';
 @import './register.css';
-@import './incidents.css';
-@import './responder.css';
-@import './responders.css';
-@import './settings.css';
 @import './MainLayout.css';
 @import './PartLayout.css';
-@import './FontSyle/fontStyles.css';
 
 @tailwind base;
 @tailwind components;

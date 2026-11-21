@@ -12,8 +12,11 @@ namespace Backend.Features.Api.Controllers;
 
 [ApiController]
 [Route("api/users")]
-public class UsersController(IUserGovernanceService governanceService) : ControllerBase
+public class UsersController(
+    IUserGovernanceService governanceService,
+    IWebHostEnvironment? env = null) : ControllerBase
 {
+    private string CapturesDirectory => Path.Combine(env?.ContentRootPath ?? Directory.GetCurrentDirectory(), "server-data", "uploads", "captures");
     private bool IsAdmin => HttpContext.Items["UserRole"] is UserRole role && role == UserRole.LDRRMO_Admin;
     private Guid CurrentUserId => HttpContext.Items["UserId"] is Guid uid ? uid : Guid.Empty;
     private Guid AdminId => CurrentUserId;
@@ -58,12 +61,20 @@ public class UsersController(IUserGovernanceService governanceService) : Control
                 ? Ok(new { message = "User updated successfully." })
                 : BadRequest(new { message = error });
 
+    [HttpGet("/api/profile")]
+    public async Task<IActionResult> GetSelfProfileAsync(CancellationToken ct) =>
+        CurrentUserId == Guid.Empty
+            ? Unauthorized(new { message = "Authentication required to access profile." })
+            : await governanceService.GetUserDetailAsync(CurrentUserId, ct) is { } user
+                ? Ok(user)
+                : NotFound(new { message = "User profile not found." });
+
     [HttpPut("/api/profile")]
     public async Task<IActionResult> UpdateSelfProfileAsync([FromBody] UpdateProfileRequest request, CancellationToken ct) =>
         HttpContext.Items["UserId"] is not Guid userId || userId == Guid.Empty
             ? Unauthorized(new { message = "Authentication required to update profile." })
-            : await governanceService.UpdateProfileAsync(userId, request, ct) is var (success, error) && success
-                ? Ok(new { message = "Profile updated successfully." })
+            : await governanceService.UpdateProfileAsync(userId, request, ct, CapturesDirectory) is var (success, error) && success
+                ? Ok(new { message = "Profile updated successfully.", user = await governanceService.GetUserDetailAsync(userId, ct) })
                 : BadRequest(new { message = error });
 
     [HttpDelete("{id:guid}")]
@@ -91,12 +102,20 @@ public class UsersController(IUserGovernanceService governanceService) : Control
                 "id" or "front" => await ServeCaptureFileAsync(id, CaptureKind.Id, ct),
                 "back" or "idback" => await ServeCaptureFileAsync(id, CaptureKind.IdBack, ct),
                 "face" => await ServeCaptureFileAsync(id, CaptureKind.Face, ct),
-                _ => BadRequest(new { message = "Invalid capture kind. Expected 'id', 'front', 'back', or 'face'." })
+                "avatar" => await ServeAvatarFileAsync(id, ct),
+                _ => BadRequest(new { message = "Invalid capture kind. Expected 'id', 'front', 'back', 'face', or 'avatar'." })
             };
 
     private async Task<IActionResult> ServeCaptureFileAsync(Guid id, CaptureKind kind, CancellationToken ct)
     {
         string? path = await governanceService.GetUserCapturePathAsync(id, kind, ct);
+        var (bytes, contentType) = await CaptureStorageHelper.ReadCaptureFileAsync(path, ct);
+        return MediaStreamResponseHelper.CreateBytesOrRangeResponse(HttpContext, bytes, contentType);
+    }
+
+    private async Task<IActionResult> ServeAvatarFileAsync(Guid id, CancellationToken ct)
+    {
+        string? path = await governanceService.GetUserAvatarCapturePathAsync(id, ct);
         var (bytes, contentType) = await CaptureStorageHelper.ReadCaptureFileAsync(path, ct);
         return MediaStreamResponseHelper.CreateBytesOrRangeResponse(HttpContext, bytes, contentType);
     }

@@ -10,6 +10,7 @@ import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { Footer } from './Footer';
 import { useSession } from '../Hooks/useSession';
+import { useGpsLocation } from '../Hooks/useGpsLocation';
 import { DrawerSidebarProvider } from '../Shared/ToggleDrawerSidebarMenu';
 
 export interface ResponderLayoutProps {
@@ -19,7 +20,6 @@ export interface ResponderLayoutProps {
 const DEFAULT_RESPONDER_ROLE = 'Responder';
 const DEFAULT_RESPONDER_UNIT = 'RHU';
 const DEFAULT_RESPONDER_NAME = 'Active Duty Responder';
-const DEFAULT_EMPLOYEE_ID = 'RES-773-009';
 const DEFAULT_VERIFIED_STATUS = 'Verified';
 
 interface StoredResponderTabSession {
@@ -28,6 +28,7 @@ interface StoredResponderTabSession {
   displayName?: string;
   employeeOrResidentId?: string;
   employeeId?: string;
+  email?: string;
   role?: string;
   status?: string;
   faceVerified?: boolean;
@@ -63,6 +64,7 @@ const getTabSession = (): StoredResponderTabSession | null => {
 
 export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) => {
   const { session } = useSession();
+  const { isHardwareGeolocated, isLocating, error: gpsError, coords } = useGpsLocation();
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
 
   // Strict Port Guard: Port 1996 will NEVER display Responder or Civilian views
@@ -82,9 +84,17 @@ export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) =>
       : DEFAULT_RESPONDER_UNIT;
   const normUnit = rawUnit.toUpperCase();
 
+  const resolvedId =
+    tabSession?.employeeOrResidentId ||
+    tabSession?.employeeId ||
+    session?.employeeOrResidentId ||
+    session?.employeeId ||
+    '-';
+
   const user = {
     name: tabSession?.displayName || tabSession?.fullName || session?.displayName || session?.fullName || DEFAULT_RESPONDER_NAME,
-    id: tabSession?.employeeOrResidentId || tabSession?.employeeId || session?.employeeOrResidentId || session?.employeeId || DEFAULT_EMPLOYEE_ID,
+    id: resolvedId,
+    email: tabSession?.email || session?.email,
     role: activeRole,
     unit: normUnit,
     status: tabSession?.status || session?.status || DEFAULT_VERIFIED_STATUS,
@@ -118,6 +128,14 @@ export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) =>
 
   const branch = getBranchTelemetry(normUnit);
 
+  const gpsStatusLabel = isHardwareGeolocated
+    ? `GPS Locked (${Math.round(coords.accuracy)}m)`
+    : isLocating
+    ? 'Acquiring GPS Signal...'
+    : gpsError
+    ? 'GPS Unavailable'
+    : 'GPS Standby';
+
   return (
     <DrawerSidebarProvider>
       <div className={`app-shell responder-portal responder-branch-${normUnit.toLowerCase()} flex flex-col h-screen w-screen overflow-hidden bg-[#4A041A] text-[#F7F1EA]`}>
@@ -140,13 +158,18 @@ export const ResponderLayout: React.FC<ResponderLayoutProps> = ({ children }) =>
                     <span>{branch.label}</span>
                   </span>
                   <span className="text-[#A83B4D]" aria-hidden="true">&bull;</span>
-                  <span className="text-[#2B010E] font-semibold">{user.name} ({user.id})</span>
+                  <span className="text-[#2B010E] font-semibold">
+                    {user.id && user.id !== '-' ? `${user.name} (${user.id})` : user.name}
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-3 text-xs text-[#670626] font-bold">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#A83B4D]/25">
+                  <div
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#A83B4D]/25"
+                    title={gpsError || gpsStatusLabel}
+                  >
                     <Activity className="w-3.5 h-3.5 text-[#670626] flex-shrink-0" aria-hidden="true" />
-                    <span>GPS Telemetry Locked</span>
+                    <span>{gpsStatusLabel}</span>
                   </div>
                 </div>
               </div>
