@@ -2,11 +2,12 @@
 
 /* MainLayout.css - ResQTrack Core Shell & Global Theme Extensions */
 :root {
-  --brand-primary: #00d2ff;
-  --brand-secondary: #3a7bd5;
-  --bg-dark: #0b0f19;
-  --surface-dark: rgba(18, 24, 38, 0.7);
-  --border-glass: rgba(255, 255, 255, 0.08);
+  --brand-primary: #F7F1EA;
+  --brand-secondary: #A83B4D;
+  --bg-dark: #4A041A;
+  --surface-dark: rgba(64, 0, 20, 0.86);
+  --border-glass: rgba(255, 217, 221, 0.18);
+  --glass-blur: blur(16px);
 
   /* Tactical HUD Theme Reference Tokens */
   --hud-theme-rhu-base: #0a192f;
@@ -28,9 +29,11 @@
 .main-layout-container {
   display: flex;
   min-height: 100vh;
-  background-color: var(--bg-dark);
-  color: #f8fafc;
-  font-family: 'Inter', sans-serif;
+  background-color: var(--resq-cherry-deep, #4A041A);
+  color: var(--resq-ink-on-cherry, #F7F1EA);
+  font-family: var(--font-sans, 'Plus Jakarta Sans', system-ui, sans-serif);
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 .main-content-area {
@@ -38,4 +41,13 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.main-glass-surface {
+  background: var(--surface-dark);
+  backdrop-filter: var(--glass-blur) saturate(145%);
+  -webkit-backdrop-filter: var(--glass-blur) saturate(145%);
+  border: 1px solid var(--border-glass);
 }

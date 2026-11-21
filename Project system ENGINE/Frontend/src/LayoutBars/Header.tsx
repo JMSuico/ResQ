@@ -1,8 +1,7 @@
 // [Layer: LayoutBars]
-// Responsibility: Top navigation command header with live search, consolidated Hospital ER Alarms &
-// 6-category Responder Notification Bell dropdown/modal, contextual system routing, floating profile trigger,
-// and authenticated logout session termination.
-// ResQTrack Incident AI System Detection -- Universal Lucide icon standard with strict typing (ZERO any) and arrow lambdas (=>).
+// Responsibility: Top navigation command header with live search, unit-scoped Responder Notification Bell dropdown/modal,
+// contextual system routing, floating profile trigger, and authenticated logout session termination.
+// Official Cherry (#670626 / #400014) & Warm Ivory (#F7F1EA / #E9D9D0) Stitch design -- Universal Lucide icon standard (ZERO any).
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -49,6 +48,8 @@ export interface ResponderNotificationItem {
   id: string;
   referenceCode: string;
   category: ResponderNotificationCategory;
+  incidentCategory?: string;
+  targetUnit?: string;
   title: string;
   message: string;
   timestamp: string;
@@ -65,6 +66,11 @@ interface RawNotificationPayload {
   type?: string;
   notificationType?: string;
   category?: string;
+  incidentCategory?: string;
+  targetUnit?: string;
+  unit?: string;
+  agency?: string;
+  recommendedAgencyUnit?: string;
   title?: string;
   message?: string;
   description?: string;
@@ -87,7 +93,7 @@ const EXPANDED_SIDEBAR_VAR = 'var(--brand-w, 260px)';
 const ALERT_POLL_INTERVAL_MS = 10000;
 const MAX_DISPLAY_UNREAD_COUNT = 99;
 const LOCAL_STORAGE_READ_KEY = 'resqtrack.alerts.read';
-const RESPONDER_NOTIFICATIONS_STORAGE_KEY = 'resqtrack_responder_notifications';
+const RESPONDER_NOTIFICATIONS_STORAGE_PREFIX = 'resqtrack_responder_notifications';
 
 const NOTIFICATION_CATEGORIES: ResponderNotificationCategory[] = [
   'REQUEST DISPATCH DEPLOY',
@@ -99,12 +105,15 @@ const NOTIFICATION_CATEGORIES: ResponderNotificationCategory[] = [
 ];
 
 const DEFAULT_SEED_NOTIFICATIONS: ResponderNotificationItem[] = [
+  // RHU / MEDIC Scoped Seed Notifications
   {
-    id: 'notif-admin-deploy-01',
-    referenceCode: 'CMD-DEP-101',
+    id: 'notif-rhu-admin-deploy-01',
+    referenceCode: 'CMD-RHU-101',
     category: 'ADMIN REQUEST YOU TO DEPLOY',
+    incidentCategory: 'MedicalEmergency',
+    targetUnit: 'RHU',
     title: 'LDRRMO Command Orders Immediate Medic Deployment',
-    message: 'Central Command C2 ordered RHU Ambulance Unit 01 to deploy to National Highway KM 284 multi-vehicle trauma scene.',
+    message: 'Central Command ordered RHU Ambulance Unit 01 to deploy to National Highway KM 284 trauma scene.',
     timestamp: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
     isRead: false,
     severity: 'Critical',
@@ -112,11 +121,13 @@ const DEFAULT_SEED_NOTIFICATIONS: ResponderNotificationItem[] = [
     locationLabel: 'National Highway KM 284, Katipunan'
   },
   {
-    id: 'notif-req-deploy-02',
-    referenceCode: 'REQ-DEP-102',
+    id: 'notif-rhu-req-deploy-02',
+    referenceCode: 'REQ-RHU-102',
     category: 'REQUEST DISPATCH DEPLOY',
+    incidentCategory: 'MedicalEmergency',
+    targetUnit: 'RHU',
     title: 'Medic Dispatch & Deployment Request Logged',
-    message: 'RHU Medic Team Alpha requested tactical dispatch clearance and ambulance deployment to Barangay Uno sector.',
+    message: 'RHU Medic Team Alpha requested ambulance deployment clearance to Barangay Uno sector.',
     timestamp: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
     isRead: false,
     severity: 'High',
@@ -124,54 +135,268 @@ const DEFAULT_SEED_NOTIFICATIONS: ResponderNotificationItem[] = [
     locationLabel: 'Barangay Uno, Katipunan'
   },
   {
-    id: 'notif-incident-on-03',
-    referenceCode: 'INC-RAD-103',
+    id: 'notif-rhu-incident-on-03',
+    referenceCode: 'INC-RHU-103',
     category: 'INCIDENT HAPPENS ON',
-    title: 'New Emergency Incident Detected on Sector Radar',
-    message: 'High-impact vehicular collision with casualty alert reported on Sector 1 Radar (8.5147°N, 123.2842°E).',
+    incidentCategory: 'MedicalEmergency',
+    targetUnit: 'RHU',
+    title: 'Medical Emergency & Trauma Detected on Sector Radar',
+    message: 'Acute respiratory distress and patient trauma alert reported on Sector 1 Radar (8.5147°N, 123.2842°E).',
     timestamp: new Date(Date.now() - 11 * 60 * 1000).toISOString(),
     isRead: false,
     severity: 'Critical',
     targetRoute: '/responder/incidents',
-    locationLabel: 'Sector 1 • Poblacion Junction'
+    locationLabel: 'Sector 1 · Poblacion Junction'
   },
   {
-    id: 'notif-submitted-log-04',
-    referenceCode: 'LOG-PCR-104',
+    id: 'notif-rhu-submitted-log-04',
+    referenceCode: 'LOG-RHU-104',
     category: 'SUBMITTED INCIDENT LOGS',
-    title: 'Submitted Incident Report & Multi-PCR Evidence',
+    incidentCategory: 'MedicalEmergency',
+    targetUnit: 'RHU',
+    title: 'Submitted Medical Incident Log & Multi-PCR Evidence',
     message: 'Medic field assessment and multi-patient PCR trauma documentation transmitted to Command Verification Queue.',
     timestamp: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
     isRead: false,
     severity: 'Medium',
-    targetRoute: '/responder/reports',
+    targetRoute: '/responder/my-reports',
     locationLabel: 'RHU Field Terminal'
   },
   {
-    id: 'notif-verified-log-05',
-    referenceCode: 'VER-LOG-105',
+    id: 'notif-rhu-verified-log-05',
+    referenceCode: 'VER-RHU-105',
     category: 'VERIFIED SUBMITTED INCIDENT LOGS',
-    title: 'Verified Submitted Incident Log — 5:00 Countdown Started',
-    message: 'AI & LDRRMO Command verified your submitted incident log and PCR evidence. 5-minute auto case closure countdown initiated.',
+    incidentCategory: 'MedicalEmergency',
+    targetUnit: 'RHU',
+    title: 'Verified Medical Incident Log — 5:00 Countdown Started',
+    message: 'AI & LDRRMO Command verified your submitted PCR log. 5-minute auto case closure countdown initiated.',
     timestamp: new Date(Date.now() - 24 * 60 * 1000).toISOString(),
     isRead: false,
     severity: 'High',
-    targetRoute: '/responder/reports',
+    targetRoute: '/responder/my-reports',
     locationLabel: 'Command Verification Engine'
   },
   {
-    id: 'notif-close-case-06',
-    referenceCode: 'CLS-CAS-106',
+    id: 'notif-rhu-close-case-06',
+    referenceCode: 'CLS-RHU-106',
     category: 'CLOSE CASE',
-    title: '5-Minute Countdown Complete — Case Declared Closed & Solved',
-    message: 'Incident case #INC-2026-089 has completed the 5-minute verification timer and is officially archived as CLOSED / SOLVED.',
+    incidentCategory: 'MedicalEmergency',
+    targetUnit: 'RHU',
+    title: '5-Minute Countdown Complete — Medical Case Closed',
+    message: 'Medical case #INC-2026-089 completed the 5-minute verification timer and is archived as CLOSED / SOLVED.',
     timestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
     isRead: true,
     severity: 'Low',
-    targetRoute: '/responder/reports',
+    targetRoute: '/responder/my-reports',
     locationLabel: 'Municipal Archive'
+  },
+
+  // BFP / FIRE Scoped Seed Notifications
+  {
+    id: 'notif-fire-admin-deploy-01',
+    referenceCode: 'CMD-BFP-201',
+    category: 'ADMIN REQUEST YOU TO DEPLOY',
+    incidentCategory: 'StructuralFire',
+    targetUnit: 'FIRE',
+    title: 'LDRRMO Command Orders Immediate Fire Engine Deployment',
+    message: 'Central Command ordered BFP Engine 01 to deploy to Public Market electrical arcing & structural fire.',
+    timestamp: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+    isRead: false,
+    severity: 'Critical',
+    targetRoute: '/responder/request-deploy',
+    locationLabel: 'Public Market Perimeter, Barangay Uno'
+  },
+  {
+    id: 'notif-fire-req-deploy-02',
+    referenceCode: 'REQ-BFP-202',
+    category: 'REQUEST DISPATCH DEPLOY',
+    incidentCategory: 'StructuralFire',
+    targetUnit: 'FIRE',
+    title: 'Fire & Hazmat Dispatch Request Logged',
+    message: 'BFP Engine Company requested 2-alarm suppression clearance for commercial warehouse smoke plume.',
+    timestamp: new Date(Date.now() - 9 * 60 * 1000).toISOString(),
+    isRead: false,
+    severity: 'High',
+    targetRoute: '/responder/request-deploy',
+    locationLabel: 'Barangay Dos Industrial Zone'
+  },
+  {
+    id: 'notif-fire-incident-on-03',
+    referenceCode: 'INC-BFP-203',
+    category: 'INCIDENT HAPPENS ON',
+    incidentCategory: 'StructuralFire',
+    targetUnit: 'FIRE',
+    title: 'Structural Fire & Hazmat Alert on Sector Radar',
+    message: 'Active electrical transformer sparks and hazmat smoke reported on Sector 2 Radar.',
+    timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+    isRead: false,
+    severity: 'Critical',
+    targetRoute: '/responder/incidents',
+    locationLabel: 'Sector 2 · Market Perimeter'
+  },
+
+  // PNP / POLICE Scoped Seed Notifications
+  {
+    id: 'notif-pnp-admin-deploy-01',
+    referenceCode: 'CMD-PNP-301',
+    category: 'ADMIN REQUEST YOU TO DEPLOY',
+    incidentCategory: 'CrimeOrSecurity',
+    targetUnit: 'PNP',
+    title: 'LDRRMO Command Orders Immediate Patrol Deployment',
+    message: 'Central Command ordered PNP Mobile Patrol 01 to secure Sitio Malugas Bridge vehicular traffic bottleneck.',
+    timestamp: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
+    isRead: false,
+    severity: 'High',
+    targetRoute: '/responder/request-deploy',
+    locationLabel: 'Sitio Malugas Bridge, Katipunan'
+  },
+  {
+    id: 'notif-pnp-req-deploy-02',
+    referenceCode: 'REQ-PNP-302',
+    category: 'REQUEST DISPATCH DEPLOY',
+    incidentCategory: 'VehicularAccident',
+    targetUnit: 'PNP',
+    title: 'Traffic & Security Perimeter Dispatch Logged',
+    message: 'PNP Patrol Unit requested perimeter security clearance for arterial highway vehicular collision.',
+    timestamp: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+    isRead: false,
+    severity: 'Medium',
+    targetRoute: '/responder/request-deploy',
+    locationLabel: 'National Highway KM 284'
+  },
+  {
+    id: 'notif-pnp-incident-on-03',
+    referenceCode: 'INC-PNP-303',
+    category: 'INCIDENT HAPPENS ON',
+    incidentCategory: 'CrimeOrSecurity',
+    targetUnit: 'PNP',
+    title: 'Security Disturbance & Traffic Gridlock Reported',
+    message: 'Active highway gridlock and security perimeter report logged in Barangay Daanglungsod.',
+    timestamp: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+    isRead: false,
+    severity: 'Medium',
+    targetRoute: '/responder/my-reports',
+    locationLabel: 'Barangay Daanglungsod'
   }
 ];
+
+const normalizeUnitCode = (unit?: string): string => {
+  const upper = (unit || '').toUpperCase().trim();
+  if (upper === 'MEDIC') return 'RHU';
+  if (upper === 'BFP') return 'FIRE';
+  if (upper === 'SECURITY' || upper === 'POLICE') return 'PNP';
+  return upper;
+};
+
+const resolveActiveSessionScope = (
+  propUser?: HeaderProps['user']
+): { role: string; unit: string } => {
+  let role = propUser?.role || '';
+  let unit = propUser?.unit || '';
+
+  if (typeof window !== 'undefined' && (!role || !unit || unit === 'None')) {
+    try {
+      const tabRaw =
+        window.sessionStorage.getItem('resqtrack_session') ||
+        window.sessionStorage.getItem('resqtrack_user');
+      if (tabRaw) {
+        const parsed = JSON.parse(tabRaw) as { role?: string; unit?: string };
+        role = role || parsed.role || '';
+        if (!unit || unit === 'None') unit = parsed.unit || '';
+      }
+      if (!unit || unit === 'None') {
+        const tabUnit = window.sessionStorage.getItem('resqtrack_unit') || '';
+        if (tabUnit && tabUnit !== 'none') unit = tabUnit;
+      }
+    } catch {
+      // Ignore storage read failure
+    }
+  }
+
+  return {
+    role: String(role ?? '').toLowerCase().trim(),
+    unit: normalizeUnitCode(unit)
+  };
+};
+
+const doesNotificationMatchUnit = (
+  item: ResponderNotificationItem,
+  activeRole: string,
+  activeUnit: string
+): boolean => {
+  if (activeRole !== 'responder') return true;
+  if (!activeUnit || activeUnit === 'NONE') return true;
+
+  const explicitTarget = normalizeUnitCode(item.targetUnit);
+  if (explicitTarget && explicitTarget !== 'NONE') {
+    return explicitTarget === activeUnit;
+  }
+
+  const text = `${item.incidentCategory || ''} ${item.title || ''} ${item.message || ''} ${item.referenceCode || ''}`.toUpperCase();
+
+  if (activeUnit === 'FIRE') {
+    return (
+      text.includes('FIRE') ||
+      text.includes('HAZMAT') ||
+      text.includes('FLAME') ||
+      text.includes('SMOKE') ||
+      text.includes('ARSON') ||
+      text.includes('ELECTRICAL') ||
+      text.includes('SPARK') ||
+      text.includes('ARCING') ||
+      text.includes('GAS') ||
+      text.includes('2-ALARM') ||
+      text.includes('BFP')
+    );
+  }
+
+  if (activeUnit === 'RHU') {
+    return (
+      text.includes('MEDICAL') ||
+      text.includes('MEDIC') ||
+      text.includes('RHU') ||
+      text.includes('TRAUMA') ||
+      text.includes('HEALTH') ||
+      text.includes('AMBULANCE') ||
+      text.includes('EMS') ||
+      text.includes('CASUALTY') ||
+      text.includes('PATIENT') ||
+      text.includes('PCR') ||
+      text.includes('CPR') ||
+      text.includes('CARDIAC') ||
+      text.includes('RESPIRATORY') ||
+      text.includes('DYSPNEA') ||
+      text.includes('LACERATION') ||
+      text.includes('FRACTURE') ||
+      text.includes('INJURY') ||
+      text.includes('HEMORRHAGE') ||
+      text.includes('FIRST AID')
+    );
+  }
+
+  if (activeUnit === 'PNP') {
+    return (
+      text.includes('CRIME') ||
+      text.includes('SECURITY') ||
+      text.includes('PNP') ||
+      text.includes('POLICE') ||
+      text.includes('PATROL') ||
+      text.includes('VEHICULAR') ||
+      text.includes('TRAFFIC') ||
+      text.includes('COLLISION') ||
+      text.includes('GRIDLOCK') ||
+      text.includes('BOTTLENECK') ||
+      text.includes('DISTURBANCE') ||
+      text.includes('BLOTTER') ||
+      text.includes('ASSAULT') ||
+      text.includes('THEFT') ||
+      text.includes('ROBBERY') ||
+      text.includes('PERIMETER')
+    );
+  }
+
+  return true;
+};
 
 const normalizeNotificationCategory = (
   rawType?: string,
@@ -240,33 +465,46 @@ const normalizeNotificationCategory = (
 
 const resolveTargetRoute = (
   category: ResponderNotificationCategory,
-  explicitRoute?: string
+  explicitRoute?: string,
+  activeRole?: string,
+  activeUnit?: string
 ): string => {
   if (explicitRoute && explicitRoute.startsWith('/')) {
-    return explicitRoute === '/responder/my-reports' ? '/responder/reports' : explicitRoute;
+    if (explicitRoute === '/responder/reports' || explicitRoute === '/responder/my-reports') {
+      return '/responder/my-reports';
+    }
+    return explicitRoute;
+  }
+  if (activeRole === 'ldrrmo_admin' || activeRole === 'admin') {
+    return '/admin/incidents';
+  }
+  if (activeRole === 'civilian') {
+    return '/civilian/my-reports';
   }
   switch (category) {
     case 'REQUEST DISPATCH DEPLOY':
     case 'ADMIN REQUEST YOU TO DEPLOY':
       return '/responder/request-deploy';
     case 'INCIDENT HAPPENS ON':
-      return '/responder/incidents';
+      return activeUnit === 'PNP' ? '/responder/my-reports' : '/responder/incidents';
     case 'SUBMITTED INCIDENT LOGS':
     case 'VERIFIED SUBMITTED INCIDENT LOGS':
     case 'CLOSE CASE':
-      return '/responder/reports';
+      return '/responder/my-reports';
     default:
-      return '/responder';
+      return '/responder/dashboard';
   }
 };
 
 const normalizeRawNotification = (
   raw: RawNotificationPayload,
   fallbackIndex: number,
-  readIds: string[]
+  readIds: string[],
+  activeRole: string,
+  activeUnit: string
 ): ResponderNotificationItem => {
   const category = normalizeNotificationCategory(
-    raw.category || raw.notificationType || raw.type,
+    raw.notificationType || raw.type || raw.category,
     raw.title,
     raw.message || raw.description || raw.note
   );
@@ -274,7 +512,7 @@ const normalizeRawNotification = (
     raw.id ||
     raw.reportId ||
     raw.referenceCode ||
-    `notif-${category.toLowerCase().replace(/\s+/g, '-')}-${fallbackIndex}`;
+    `notif-${String(category ?? '').toLowerCase().replace(/\s+/g, '-')}-${fallbackIndex}`;
   const referenceCode = raw.referenceCode || raw.reportId || raw.id || `ALT-${100 + fallbackIndex}`;
   const title = raw.title || `${category} Alert`;
   const message =
@@ -283,15 +521,22 @@ const normalizeRawNotification = (
     raw.note ||
     (raw.location || raw.locationLabel || raw.sector
       ? `Sector telemetry update at ${raw.location || raw.locationLabel || raw.sector}`
-      : 'Tactical hospital ER & dispatch channel notification.');
+      : 'Official LDRRMO safety notice & dispatch channel notification.');
   const timestamp = raw.timestamp || raw.createdAt || new Date().toISOString();
   const isRead = Boolean(raw.isRead || raw.read || readIds.includes(id));
-  const targetRoute = resolveTargetRoute(category, raw.targetRoute || raw.route || raw.link);
+  const targetRoute = resolveTargetRoute(
+    category,
+    raw.targetRoute || raw.route || raw.link,
+    activeRole,
+    activeUnit
+  );
 
   return {
     id,
     referenceCode,
     category,
+    incidentCategory: raw.incidentCategory || raw.category,
+    targetUnit: raw.targetUnit || raw.recommendedAgencyUnit || raw.unit || raw.agency,
     title,
     message,
     timestamp,
@@ -325,6 +570,15 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
   const navigate = useNavigate();
   const bellWrapperRef = useRef<HTMLDivElement | null>(null);
 
+  const sessionScope = useMemo(() => resolveActiveSessionScope(user), [user]);
+
+  const storageKey = useMemo(() => {
+    if (sessionScope.role === 'responder' && sessionScope.unit && sessionScope.unit !== 'NONE') {
+      return `${RESPONDER_NOTIFICATIONS_STORAGE_PREFIX}_${String(sessionScope.unit ?? '').toLowerCase()}`;
+    }
+    return `${RESPONDER_NOTIFICATIONS_STORAGE_PREFIX}_${sessionScope.role || 'default'}`;
+  }, [sessionScope.role, sessionScope.unit]);
+
   const getLocallyReadIds = useCallback((): string[] => {
     try {
       const raw = window.localStorage.getItem(LOCAL_STORAGE_READ_KEY);
@@ -336,30 +590,33 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
 
   const loadStoredResponderNotifications = useCallback((): ResponderNotificationItem[] => {
     const readIds = getLocallyReadIds();
+    const scopedDefaults = DEFAULT_SEED_NOTIFICATIONS.filter((item) =>
+      doesNotificationMatchUnit(item, sessionScope.role, sessionScope.unit)
+    ).map((item) => ({
+      ...item,
+      targetRoute: resolveTargetRoute(item.category, item.targetRoute, sessionScope.role, sessionScope.unit),
+      isRead: item.isRead || readIds.includes(item.id)
+    }));
+
     try {
-      const raw = window.localStorage.getItem(RESPONDER_NOTIFICATIONS_STORAGE_KEY);
+      const raw = window.localStorage.getItem(storageKey);
       if (!raw) {
-        window.localStorage.setItem(
-          RESPONDER_NOTIFICATIONS_STORAGE_KEY,
-          JSON.stringify(DEFAULT_SEED_NOTIFICATIONS)
-        );
-        return DEFAULT_SEED_NOTIFICATIONS.map((item) => ({
-          ...item,
-          isRead: item.isRead || readIds.includes(item.id)
-        }));
+        window.localStorage.setItem(storageKey, JSON.stringify(scopedDefaults));
+        return scopedDefaults;
       }
       const parsed = JSON.parse(raw) as RawNotificationPayload[];
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((item, idx) => normalizeRawNotification(item, idx, readIds));
+        return parsed
+          .map((item, idx) =>
+            normalizeRawNotification(item, idx, readIds, sessionScope.role, sessionScope.unit)
+          )
+          .filter((item) => doesNotificationMatchUnit(item, sessionScope.role, sessionScope.unit));
       }
     } catch {
-      // Fallback to default seed notifications
+      // Fallback to unit-scoped seed notifications
     }
-    return DEFAULT_SEED_NOTIFICATIONS.map((item) => ({
-      ...item,
-      isRead: item.isRead || readIds.includes(item.id)
-    }));
-  }, [getLocallyReadIds]);
+    return scopedDefaults;
+  }, [getLocallyReadIds, sessionScope.role, sessionScope.unit, storageKey]);
 
   const synchronizeAllNotifications = useCallback(async () => {
     const localItems = loadStoredResponderNotifications();
@@ -371,16 +628,22 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
         const existingIds = new Set(localItems.map((i) => i.id));
         const mergedFromApi: ResponderNotificationItem[] = [];
 
-        apiAlerts.slice(0, 15).forEach((alertItem, idx) => {
+        apiAlerts.slice(0, 20).forEach((alertItem, idx) => {
           const normalized = normalizeRawNotification(
             {
               ...alertItem,
-              category: alertItem.category || 'INCIDENT HAPPENS ON'
+              incidentCategory: alertItem.incidentCategory || alertItem.category,
+              notificationType: alertItem.notificationType || 'INCIDENT HAPPENS ON'
             },
             idx + 200,
-            readIds
+            readIds,
+            sessionScope.role,
+            sessionScope.unit
           );
-          if (!existingIds.has(normalized.id)) {
+          if (
+            !existingIds.has(normalized.id) &&
+            doesNotificationMatchUnit(normalized, sessionScope.role, sessionScope.unit)
+          ) {
             existingIds.add(normalized.id);
             mergedFromApi.push(normalized);
           }
@@ -390,11 +653,11 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
         return;
       }
     } catch {
-      // Ignore network jitter and use local responder notifications
+      // Ignore network jitter and use unit-scoped local notifications
     }
 
     setNotifications(localItems);
-  }, [getLocallyReadIds, loadStoredResponderNotifications]);
+  }, [getLocallyReadIds, loadStoredResponderNotifications, sessionScope.role, sessionScope.unit]);
 
   useEffect(() => {
     synchronizeAllNotifications();
@@ -406,19 +669,24 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
       const readIds = getLocallyReadIds();
 
       if (detail && typeof detail === 'object') {
-        const incoming = normalizeRawNotification(detail, Date.now() % 1000, readIds);
-        try {
-          const current = loadStoredResponderNotifications();
-          const deduplicated = [
-            incoming,
-            ...current.filter((item) => item.id !== incoming.id)
-          ];
-          window.localStorage.setItem(
-            RESPONDER_NOTIFICATIONS_STORAGE_KEY,
-            JSON.stringify(deduplicated)
-          );
-        } catch {
-          // Ignore quota error
+        const incoming = normalizeRawNotification(
+          detail,
+          Date.now() % 1000,
+          readIds,
+          sessionScope.role,
+          sessionScope.unit
+        );
+        if (doesNotificationMatchUnit(incoming, sessionScope.role, sessionScope.unit)) {
+          try {
+            const current = loadStoredResponderNotifications();
+            const deduplicated = [
+              incoming,
+              ...current.filter((item) => item.id !== incoming.id)
+            ];
+            window.localStorage.setItem(storageKey, JSON.stringify(deduplicated));
+          } catch {
+            // Ignore quota error
+          }
         }
       }
       synchronizeAllNotifications();
@@ -433,24 +701,26 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
         const incoming = normalizeRawNotification(
           {
             ...detail,
-            category: detail.category || 'INCIDENT HAPPENS ON',
+            incidentCategory: detail.incidentCategory || detail.category,
+            notificationType: detail.notificationType || 'INCIDENT HAPPENS ON',
             title: detail.title || 'New Emergency Incident Reported on Sector Radar'
           },
           Date.now() % 1000,
-          readIds
+          readIds,
+          sessionScope.role,
+          sessionScope.unit
         );
-        try {
-          const current = loadStoredResponderNotifications();
-          const deduplicated = [
-            incoming,
-            ...current.filter((item) => item.id !== incoming.id)
-          ];
-          window.localStorage.setItem(
-            RESPONDER_NOTIFICATIONS_STORAGE_KEY,
-            JSON.stringify(deduplicated)
-          );
-        } catch {
-          // Ignore quota error
+        if (doesNotificationMatchUnit(incoming, sessionScope.role, sessionScope.unit)) {
+          try {
+            const current = loadStoredResponderNotifications();
+            const deduplicated = [
+              incoming,
+              ...current.filter((item) => item.id !== incoming.id)
+            ];
+            window.localStorage.setItem(storageKey, JSON.stringify(deduplicated));
+          } catch {
+            // Ignore quota error
+          }
         }
       }
       synchronizeAllNotifications();
@@ -472,9 +742,15 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
       window.removeEventListener('resqtrack:alerts-updated', handleStorageOrAlertsUpdated);
       window.removeEventListener('storage', handleStorageOrAlertsUpdated);
     };
-  }, [getLocallyReadIds, loadStoredResponderNotifications, synchronizeAllNotifications]);
+  }, [
+    getLocallyReadIds,
+    loadStoredResponderNotifications,
+    sessionScope.role,
+    sessionScope.unit,
+    storageKey,
+    synchronizeAllNotifications
+  ]);
 
-  // Close popover when clicking outside
   useEffect(() => {
     if (!isAlertsOpen) return;
     const handleOutsideClick = (e: MouseEvent) => {
@@ -486,32 +762,37 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [isAlertsOpen]);
 
+  const unitScopedNotifications = useMemo(
+    () =>
+      notifications.filter((item) =>
+        doesNotificationMatchUnit(item, sessionScope.role, sessionScope.unit)
+      ),
+    [notifications, sessionScope.role, sessionScope.unit]
+  );
+
   const unreadCount = useMemo(
-    () => notifications.filter((item) => !item.isRead).length,
-    [notifications]
+    () => unitScopedNotifications.filter((item) => !item.isRead).length,
+    [unitScopedNotifications]
   );
 
   const filteredNotifications = useMemo(() => {
-    return notifications.filter((item) => {
+    return unitScopedNotifications.filter((item) => {
       if (activeFilter === 'ALL') return true;
       if (activeFilter === 'UNREAD') return !item.isRead;
       return item.category === activeFilter;
     });
-  }, [notifications, activeFilter]);
+  }, [unitScopedNotifications, activeFilter]);
 
   const countByCategory = useCallback(
     (cat: ResponderNotificationCategory): number =>
-      notifications.filter((n) => n.category === cat).length,
-    [notifications]
+      unitScopedNotifications.filter((n) => n.category === cat).length,
+    [unitScopedNotifications]
   );
 
   const persistNotificationsState = (updated: ResponderNotificationItem[]) => {
     setNotifications(updated);
     try {
-      window.localStorage.setItem(
-        RESPONDER_NOTIFICATIONS_STORAGE_KEY,
-        JSON.stringify(updated)
-      );
+      window.localStorage.setItem(storageKey, JSON.stringify(updated));
     } catch {
       // Ignore storage error
     }
@@ -529,7 +810,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
       }
     }
 
-    const updated = notifications.map((n) =>
+    const updated = unitScopedNotifications.map((n) =>
       n.id === item.id ? { ...n, isRead: true } : n
     );
     persistNotificationsState(updated);
@@ -546,23 +827,23 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
   const handleNotificationClick = (item: ResponderNotificationItem) => {
     handleMarkSingleRead(item);
     setIsAlertsOpen(false);
-    navigate(item.targetRoute || '/responder');
+    navigate(item.targetRoute || '/responder/dashboard');
   };
 
   const handleMarkAllRead = () => {
-    const allIds = notifications.map((n) => n.id);
+    const allIds = unitScopedNotifications.map((n) => n.id);
     const combinedRead = Array.from(new Set([...getLocallyReadIds(), ...allIds]));
     try {
       window.localStorage.setItem(LOCAL_STORAGE_READ_KEY, JSON.stringify(combinedRead));
     } catch {
       // Ignore storage error
     }
-    const updated = notifications.map((n) => ({ ...n, isRead: true }));
+    const updated = unitScopedNotifications.map((n) => ({ ...n, isRead: true }));
     persistNotificationsState(updated);
   };
 
   const handleClearReadNotifications = () => {
-    const remaining = notifications.filter((n) => !n.isRead);
+    const remaining = unitScopedNotifications.filter((n) => !n.isRead);
     persistNotificationsState(remaining.length > 0 ? remaining : []);
   };
 
@@ -571,43 +852,43 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
       case 'REQUEST DISPATCH DEPLOY':
         return {
           icon: Send,
-          badgeClass: 'bg-sky-950/90 text-sky-300 border-sky-500/60',
-          iconWrapClass: 'bg-sky-950/80 border-sky-500/50 text-sky-400',
+          badgeClass: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/35',
+          iconWrapClass: 'bg-[#E9D9D0] border-[#A83B4D]/35 text-[#670626]',
           routeLabel: 'Request & Deploy'
         };
       case 'ADMIN REQUEST YOU TO DEPLOY':
         return {
           icon: Radio,
-          badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-500/70 animate-pulse',
-          iconWrapClass: 'bg-rose-950/80 border-rose-500/60 text-rose-400',
+          badgeClass: 'bg-[#670626] text-[#F7F1EA] border-[#4A041A]',
+          iconWrapClass: 'bg-[#670626] border-[#4A041A] text-[#F7F1EA]',
           routeLabel: 'Deploy Order'
         };
       case 'INCIDENT HAPPENS ON':
         return {
           icon: AlertTriangle,
-          badgeClass: 'bg-amber-950/90 text-amber-300 border-amber-500/60',
-          iconWrapClass: 'bg-amber-950/80 border-amber-500/50 text-amber-400',
-          routeLabel: 'Dispatches'
+          badgeClass: 'bg-[#FAF5EE] text-[#670626] border-[#A83B4D]/45',
+          iconWrapClass: 'bg-[#E9D9D0] border-[#670626]/30 text-[#670626]',
+          routeLabel: sessionScope.unit === 'PNP' ? 'Reports' : 'Incident Feed'
         };
       case 'SUBMITTED INCIDENT LOGS':
         return {
           icon: FileText,
-          badgeClass: 'bg-indigo-950/90 text-indigo-300 border-indigo-500/60',
-          iconWrapClass: 'bg-indigo-950/80 border-indigo-500/50 text-indigo-400',
-          routeLabel: 'Incident Logs'
+          badgeClass: 'bg-[#E9D9D0] text-[#2B010E] border-[#A83B4D]/35',
+          iconWrapClass: 'bg-[#E9D9D0] border-[#A83B4D]/35 text-[#670626]',
+          routeLabel: 'Reports'
         };
       case 'VERIFIED SUBMITTED INCIDENT LOGS':
         return {
           icon: ShieldCheck,
-          badgeClass: 'bg-rose-950/90 text-rose-300 border-rose-500/60',
-          iconWrapClass: 'bg-rose-950/80 border-rose-500/50 text-[#ff5c74]',
+          badgeClass: 'bg-[#670626]/15 text-[#670626] border-[#670626]/35',
+          iconWrapClass: 'bg-[#E9D9D0] border-[#670626]/35 text-[#670626]',
           routeLabel: 'Verified Timer'
         };
       case 'CLOSE CASE':
         return {
           icon: CheckCircle2,
-          badgeClass: 'bg-rose-950/90 text-rose-200 border-rose-500/60',
-          iconWrapClass: 'bg-rose-950/80 border-rose-500/50 text-[#ff5c74]',
+          badgeClass: 'bg-[#E9D9D0] text-[#2B010E] border-[#A83B4D]/35',
+          iconWrapClass: 'bg-[#E9D9D0] border-[#A83B4D]/35 text-[#670626]',
           routeLabel: 'Closed Case'
         };
     }
@@ -626,7 +907,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
 
   const handleHelpClick = () => {
     alert(
-      'ResQTrack Emergency Response Command System\nKatipunan, Zamboanga del Norte\nHotline: 911 / (065) 908-1234'
+      'ResQTrack Emergency Response Command System\nKatipunan, Zamboanga del Norte\nMulti-Agency Dispatch Mesh: LDRRMO • RHU • BFP • PNP'
     );
   };
 
@@ -652,39 +933,52 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
     setIsAlertsOpen((prev) => !prev);
   };
 
+  const handleRadarClick = () => {
+    setIsAlertsOpen(false);
+    if (sessionScope.role === 'ldrrmo_admin' || sessionScope.role === 'admin') {
+      navigate('/admin/strategic-map');
+    } else if (sessionScope.role === 'civilian') {
+      navigate('/civilian/live-map');
+    } else {
+      navigate('/responder/dashboard');
+    }
+  };
+
   return (
     <header
-      className="topbar select-none relative"
+      className="topbar select-none relative bg-[#400014]/95 backdrop-blur-xl border-b border-[#FFD9DD]/18 shadow-[0_8px_28px_rgba(43,1,14,0.45)]"
       style={{ zIndex: isAlertsOpen ? 999999 : 100000 }}
       role="banner"
     >
       <div
-        className="brandbar flex items-center justify-between transition-all duration-200 border-r border-white/5 pr-3 overflow-hidden"
+        className="brandbar flex items-center justify-between transition-all duration-200 border-r border-[#FFD9DD]/15 pr-3 overflow-hidden"
         style={{
           width: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : EXPANDED_SIDEBAR_VAR,
           minWidth: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : EXPANDED_SIDEBAR_VAR
         }}
       >
         {!isCollapsed ? (
-          <div>
-            <span className="brandbar__mark">
-              Res<span className="brandbar__accent">Qtrack</span>
+          <div className="flex flex-col gap-0.5">
+            <span className="brandbar__mark !text-xl font-black text-[#F7F1EA]">
+              Res<span className="brandbar__accent text-[#FFD9DD]">Qtrack</span>
             </span>
-            <span className="brandbar__sub">Katipunan Dispatch</span>
+            <span className="brandbar__sub !text-xs !tracking-wider !text-[#E9D9D0] !font-semibold !normal-case">
+              Katipunan Dispatch
+            </span>
           </div>
         ) : (
           <div className="flex items-center justify-center w-full">
-            <span className="brandbar__mark text-base">
-              R<span className="brandbar__accent">Q</span>
+            <span className="brandbar__mark !text-lg font-black text-[#F7F1EA]">
+              R<span className="brandbar__accent text-[#FFD9DD]">Q</span>
             </span>
           </div>
         )}
       </div>
 
       <form className="search" id="search-form" role="search" onSubmit={(e) => e.preventDefault()}>
-        <Search className="search__icon w-4 h-4 text-slate-400 pointer-events-none flex-shrink-0" aria-hidden="true" />
+        <Search className="search__icon w-4 h-4 text-[#FFD9DD]/80 pointer-events-none flex-shrink-0" aria-hidden="true" />
         <input
-          className="search__input"
+          className="search__input !h-9 !text-sm !bg-[#670626]/75 !border !border-[#FFD9DD]/25 focus:!border-[#F7F1EA] !text-[#F7F1EA] placeholder:!text-[#FFD9DD]/65 rounded-xl"
           id="search"
           type="search"
           name="q"
@@ -695,10 +989,10 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
         />
       </form>
 
-      <div className="topbar__actions flex items-center gap-1 sm:gap-2">
+      <div className="topbar__actions flex items-center gap-1.5 sm:gap-2">
         <div className={`alerts relative ${isAlertsOpen ? 'z-[999999]' : ''}`} id="alerts" ref={bellWrapperRef}>
           <button
-            className="iconbtn relative flex items-center justify-center p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all"
+            className="iconbtn relative flex items-center justify-center p-2 rounded-xl text-[#FFD9DD] hover:text-[#F7F1EA] hover:bg-[#670626] border border-transparent hover:border-[#FFD9DD]/25 transition-all"
             type="button"
             id="btn-alerts"
             title="Notifications"
@@ -708,10 +1002,10 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
             aria-controls="alerts-panel"
             onClick={handleToggleAlerts}
           >
-            <Bell className="w-4 h-4 text-slate-300 hover:text-white transition-colors" aria-hidden="true" />
+            <Bell className="w-4 h-4 text-current transition-colors" aria-hidden="true" />
             {unreadCount > 0 && (
               <span
-                className="iconbtn__dot absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-rose-600 text-white text-[10px] font-bold font-mono rounded-full flex items-center justify-center border border-slate-900 shadow-md animate-pulse"
+                className="iconbtn__dot absolute -top-1 -right-1 min-w-[20px] h-[20px] px-1 bg-[#F7F1EA] text-[#670626] text-xs font-extrabold font-mono rounded-full flex items-center justify-center border border-[#670626] shadow-md"
                 aria-label={`${unreadCount} unread alerts`}
               >
                 {unreadCount > MAX_DISPLAY_UNREAD_COUNT ? `${MAX_DISPLAY_UNREAD_COUNT}+` : unreadCount}
@@ -719,287 +1013,294 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
             )}
           </button>
 
-          {/* Notification Bell Popover */}
+          {/* Notification Bell Popover (Warm Ivory Clay Drawer + Cherry Header) */}
           {isAlertsOpen && typeof document !== 'undefined' && createPortal(
             <>
               <div
-                className="fixed inset-0 z-[999998] bg-black/20 backdrop-blur-[0.5px]"
+                className="fixed inset-0 z-[999998] bg-[#2B010E]/45 backdrop-blur-[2px]"
                 onClick={() => setIsAlertsOpen(false)}
                 aria-hidden="true"
               />
               <section
-                className={`alerts__panel fixed top-14 right-2 sm:right-4 z-[999999] ${
-                  isMobile ? 'inset-x-2 w-auto' : 'w-[400px] sm:w-[480px] md:w-[540px]'
-                } max-w-[calc(100vw-1rem)] max-h-[85vh] border border-slate-700/90 shadow-2xl rounded-2xl bg-slate-950/98 backdrop-blur-xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150`}
+                className={`alerts__panel clay-surface fixed top-14 right-2 sm:right-4 z-[999999] ${
+                  isMobile ? 'inset-x-2 w-auto' : 'w-[420px] sm:w-[500px] md:w-[560px]'
+                } max-w-[calc(100vw-1rem)] max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150`}
                 id="alerts-panel"
                 aria-label="Notifications"
                 role="region"
                 onClick={(e: React.MouseEvent<HTMLElement>) => e.stopPropagation()}
               >
-              {/* Popover Header */}
-              <header className="flex flex-col gap-2.5 px-4 py-3 bg-slate-900 border-b border-slate-800">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping flex-shrink-0" />
-                    <Bell className="w-4 h-4 text-sky-400 flex-shrink-0" aria-hidden="true" />
-                    <h2 className="text-xs font-black font-mono tracking-wider text-white truncate">
-                      Notifications
-                    </h2>
-                    {unreadCount > 0 ? (
-                      <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-rose-600/30 text-rose-300 border border-rose-500/50 rounded flex-shrink-0">
-                        {unreadCount} New
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono text-rose-300 flex-shrink-0">
-                        All Clear
-                      </span>
-                    )}
-                  </div>
+                {/* Popover Header */}
+                <header className="flex flex-col gap-2.5 px-4 py-3.5 bg-[#670626] text-[#F7F1EA] border-b border-[#FFD9DD]/20">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-2 h-2 rounded-full bg-[#FFD9DD] animate-ping flex-shrink-0" />
+                        <Bell className="w-4 h-4 text-[#FFD9DD] flex-shrink-0" aria-hidden="true" />
+                        <h2 className="text-sm font-black tracking-wide text-[#F7F1EA] truncate">
+                          Notifications
+                        </h2>
+                        {sessionScope.role === 'responder' && sessionScope.unit && sessionScope.unit !== 'NONE' && (
+                          <span className="px-2 py-0.5 text-xs font-mono font-bold bg-[#400014] text-[#FFD9DD] border border-[#FFD9DD]/25 rounded-md flex-shrink-0">
+                            {sessionScope.unit}
+                          </span>
+                        )}
+                        {unreadCount > 0 ? (
+                          <span className="px-2 py-0.5 text-xs font-mono font-bold bg-[#F7F1EA] text-[#670626] rounded-md flex-shrink-0">
+                            {unreadCount} New
+                          </span>
+                        ) : (
+                          <span className="text-xs font-mono text-[#FFD9DD] flex-shrink-0">
+                            All Clear
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[#FFD9DD] font-medium leading-snug">
+                        Emergency Advisories &amp; Warnings — Official LDRRMO safety notices &amp; dispatch alerts
+                      </p>
+                    </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setIsAlertsOpen(false)}
-                    aria-label="Close notifications panel"
-                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {/* Action Controls Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
-                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setSirenMuted((prev) => !prev)}
-                      className={`px-2 py-1 rounded text-[10px] font-mono font-bold border inline-flex items-center gap-1 transition-all ${
-                        sirenMuted
-                          ? 'bg-slate-950 text-slate-400 border-slate-800'
-                          : 'bg-rose-950/70 text-rose-300 border-rose-600/60'
+                      onClick={() => setIsAlertsOpen(false)}
+                      aria-label="Close notifications panel"
+                      className="p-1.5 rounded-lg text-[#FFD9DD] hover:text-[#F7F1EA] hover:bg-[#4A041A] transition-colors flex-shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Action Controls Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#FFD9DD]/15">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setSirenMuted((prev) => !prev)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border inline-flex items-center gap-1.5 transition-all ${
+                          sirenMuted
+                            ? 'bg-[#400014] text-[#FFD9DD] border-[#FFD9DD]/20'
+                            : 'bg-[#F7F1EA] text-[#670626] border-[#F7F1EA]'
+                        }`}
+                      >
+                        {sirenMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                        <span>{sirenMuted ? 'Siren Muted' : 'Siren Active'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleRadarClick}
+                        className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-[#400014] text-[#F7F1EA] border border-[#FFD9DD]/25 hover:bg-[#4A041A] transition-colors"
+                      >
+                        Radar
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleMarkAllRead}
+                        className="flex items-center gap-1 text-xs font-mono font-bold text-[#F7F1EA] hover:bg-[#4A041A] px-2.5 py-1 rounded-lg bg-[#400014] border border-[#FFD9DD]/25 transition-colors"
+                        title="Mark all notifications as read"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        <span>Mark All Read</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleClearReadNotifications}
+                        className="flex items-center gap-1 text-xs font-mono font-bold text-[#FFD9DD] hover:text-[#F7F1EA] px-2.5 py-1 rounded-lg bg-[#400014] border border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45 transition-colors"
+                        title="Clear read notifications"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Clear Read</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Category Filter Pills */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveFilter('ALL')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition-all ${
+                        activeFilter === 'ALL'
+                          ? 'bg-[#F7F1EA] text-[#670626] border-[#F7F1EA]'
+                          : 'bg-[#400014] text-[#FFD9DD] border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45'
                       }`}
                     >
-                      {sirenMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-                      <span>{sirenMuted ? 'Siren Muted' : 'Siren Active'}</span>
+                      All ({unitScopedNotifications.length})
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setIsAlertsOpen(false);
-                        navigate('/responder');
-                      }}
-                      className="px-2 py-1 rounded text-[10px] font-mono font-bold bg-slate-950 text-sky-400 border border-slate-800 hover:border-sky-500/50 transition-colors"
+                      onClick={() => setActiveFilter('UNREAD')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition-all ${
+                        activeFilter === 'UNREAD'
+                          ? 'bg-[#F7F1EA] text-[#670626] border-[#F7F1EA]'
+                          : 'bg-[#400014] text-[#FFD9DD] border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45'
+                      }`}
                     >
-                      Radar
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={handleMarkAllRead}
-                      className="flex items-center gap-1 text-[10px] font-mono font-bold text-rose-300 hover:text-rose-200 px-2 py-1 rounded bg-rose-950/40 border border-rose-800/60 transition-colors"
-                      title="Mark all notifications as read"
-                    >
-                      <CheckCheck className="w-3 h-3" />
-                      <span>Mark All Read</span>
+                      Unread ({unreadCount})
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={handleClearReadNotifications}
-                      className="flex items-center gap-1 text-[10px] font-mono font-bold text-slate-300 hover:text-rose-300 px-2 py-1 rounded bg-slate-950 border border-slate-800 hover:border-rose-800 transition-colors"
-                      title="Clear read notifications"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      <span>Clear Read</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Category Filter Pills */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setActiveFilter('ALL')}
-                    className={`px-2 py-1 rounded text-[10px] font-mono font-bold border transition-all ${
-                      activeFilter === 'ALL'
-                        ? 'bg-sky-500 text-slate-950 border-sky-400'
-                        : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    All ({notifications.length})
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveFilter('UNREAD')}
-                    className={`px-2 py-1 rounded text-[10px] font-mono font-bold border transition-all ${
-                      activeFilter === 'UNREAD'
-                        ? 'bg-amber-400 text-slate-950 border-amber-300'
-                        : 'bg-slate-950 text-amber-300 border-amber-900/60 hover:border-amber-700'
-                    }`}
-                  >
-                    Unread ({unreadCount})
-                  </button>
-
-                  {NOTIFICATION_CATEGORIES.map((category) => {
-                    const count = countByCategory(category);
-                    const isSelected = activeFilter === category;
-                    return (
-                      <button
-                        key={category}
-                        type="button"
-                        onClick={() => setActiveFilter(category)}
-                        className={`px-2 py-1 rounded text-[9px] font-mono font-bold border transition-all ${
-                          isSelected
-                            ? 'bg-sky-500 text-slate-950 border-sky-300 shadow-sm'
-                            : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        {category} ({count})
-                      </button>
-                    );
-                  })}
-                </div>
-              </header>
-
-              {/* Notification Items Feed */}
-              <ul className="divide-y divide-slate-800/80 max-h-[420px] overflow-y-auto bg-slate-950" id="alerts-list">
-                {filteredNotifications.length === 0 ? (
-                  <li className="p-8 text-center text-slate-400 flex flex-col items-center justify-center gap-1.5">
-                    <Bell className="w-7 h-7 text-slate-600" />
-                    <p className="text-xs font-mono font-bold text-slate-300">
-                      No notifications
-                    </p>
-                  </li>
-                ) : (
-                  filteredNotifications.map((item) => {
-                    const visuals = getCategoryVisuals(item.category);
-                    const CategoryIcon = visuals.icon;
-
-                    return (
-                      <li
-                        key={item.id}
-                        onClick={() => handleNotificationClick(item)}
-                        className={`p-3.5 transition-all cursor-pointer flex items-start gap-3 ${
-                          !item.isRead
-                            ? 'bg-sky-950/20 hover:bg-sky-950/35 border-l-2 border-l-sky-400'
-                            : 'bg-slate-950 hover:bg-slate-900/70 opacity-85 hover:opacity-100'
-                        }`}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            handleNotificationClick(item);
-                          }
-                        }}
-                      >
-                        <div
-                          className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 mt-0.5 ${visuals.iconWrapClass}`}
+                    {NOTIFICATION_CATEGORIES.map((category) => {
+                      const count = countByCategory(category);
+                      const isSelected = activeFilter === category;
+                      return (
+                        <button
+                          key={category}
+                          type="button"
+                          onClick={() => setActiveFilter(category)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition-all ${
+                            isSelected
+                              ? 'bg-[#F7F1EA] text-[#670626] border-[#F7F1EA] shadow-sm'
+                              : 'bg-[#400014] text-[#FFD9DD] border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45'
+                          }`}
                         >
-                          <CategoryIcon className="w-4 h-4" />
-                        </div>
+                          {category} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </header>
 
-                        <div className="flex-1 min-w-0">
-                          {/* Top row: Category Badge + Ref Code + Timestamp */}
-                          <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1">
-                            <span
-                              className={`px-2 py-0.5 rounded text-[9px] font-mono font-black uppercase tracking-wider border ${visuals.badgeClass}`}
-                            >
-                              {item.category}
-                            </span>
+                {/* Notification Items Feed (Warm Ivory) */}
+                <ul className="divide-y divide-[#A83B4D]/15 max-h-[420px] overflow-y-auto bg-[#F7F1EA]" id="alerts-list">
+                  {filteredNotifications.length === 0 ? (
+                    <li className="p-8 text-center text-[#670626] flex flex-col items-center justify-center gap-2">
+                      <Bell className="w-7 h-7 text-[#A83B4D]" />
+                      <p className="text-sm font-mono font-bold text-[#2B010E]">
+                        No notifications for this filter
+                      </p>
+                    </li>
+                  ) : (
+                    filteredNotifications.map((item) => {
+                      const visuals = getCategoryVisuals(item.category);
+                      const CategoryIcon = visuals.icon;
 
-                            <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
-                              <span className="text-sky-400 font-bold">{item.referenceCode}</span>
-                              <span>&bull;</span>
-                              <span className="inline-flex items-center gap-0.5">
-                                <Clock className="w-3 h-3 text-slate-500" />
-                                {formatTimeAgo(item.timestamp)}
+                      return (
+                        <li
+                          key={item.id}
+                          onClick={() => handleNotificationClick(item)}
+                          className={`p-3.5 transition-all cursor-pointer flex items-start gap-3 ${
+                            !item.isRead
+                              ? 'bg-[#FAF5EE] hover:bg-[#E9D9D0]/75 border-l-4 border-l-[#670626]'
+                              : 'bg-[#F7F1EA] hover:bg-[#E9D9D0]/55 opacity-85 hover:opacity-100'
+                          }`}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              handleNotificationClick(item);
+                            }
+                          }}
+                        >
+                          <div
+                            className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 mt-0.5 ${visuals.iconWrapClass}`}
+                          >
+                            <CategoryIcon className="w-4 h-4" />
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            {/* Top row: Category Badge + Ref Code + Timestamp */}
+                            <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1">
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold uppercase tracking-wider border ${visuals.badgeClass}`}
+                              >
+                                {item.category}
                               </span>
+
+                              <div className="flex items-center gap-1.5 text-xs font-mono text-[#A83B4D]">
+                                <span className="text-[#670626] font-bold">{item.referenceCode}</span>
+                                <span>&bull;</span>
+                                <span className="inline-flex items-center gap-1">
+                                  <Clock className="w-3.5 h-3.5 text-[#A83B4D]" />
+                                  {formatTimeAgo(item.timestamp)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Title & Message */}
+                            <p className="text-sm font-extrabold text-[#2B010E] leading-snug">
+                              {item.title}
+                            </p>
+                            <p className="text-xs sm:text-sm text-[#670626]/90 font-sans mt-1 line-clamp-2 leading-relaxed">
+                              {item.message}
+                            </p>
+
+                            {/* Bottom Row: Navigation Action & Read Toggle */}
+                            <div className="mt-2.5 flex items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1 text-xs font-mono font-bold text-[#670626] hover:underline">
+                                <span>{visuals.routeLabel}</span>
+                                <ArrowUpRight className="w-3.5 h-3.5" />
+                              </span>
+
+                              {!item.isRead ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleMarkSingleRead(item, e)}
+                                  className="px-2.5 py-1 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] text-xs font-mono font-bold inline-flex items-center gap-1 shadow-sm"
+                                >
+                                  <Check className="w-3.5 h-3.5 text-[#FFD9DD]" />
+                                  <span>Acknowledge</span>
+                                </button>
+                              ) : (
+                                <span className="text-xs font-mono text-[#A83B4D] inline-flex items-center gap-1">
+                                  <Check className="w-3.5 h-3.5 text-[#670626]" />
+                                  <span>Acknowledged</span>
+                                </span>
+                              )}
                             </div>
                           </div>
-
-                          {/* Title & Message */}
-                          <p className="text-xs font-bold text-white leading-snug">
-                            {item.title}
-                          </p>
-                          <p className="text-[11px] text-slate-300 font-sans mt-0.5 line-clamp-2 leading-relaxed">
-                            {item.message}
-                          </p>
-
-                          {/* Bottom Row: Navigation Action & Read Toggle */}
-                          <div className="mt-2 flex items-center justify-between gap-2">
-                            <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-sky-400 hover:underline">
-                              <span>{visuals.routeLabel}</span>
-                              <ArrowUpRight className="w-3 h-3" />
-                            </span>
-
-                            {!item.isRead ? (
-                              <button
-                                type="button"
-                                onClick={(e) => handleMarkSingleRead(item, e)}
-                                className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/50 text-[10px] font-mono font-bold inline-flex items-center gap-1"
-                              >
-                                <Check className="w-3 h-3 text-[#ff5c74]" />
-                                <span>Acknowledge</span>
-                              </button>
-                            ) : (
-                              <span className="text-[10px] font-mono text-slate-500 inline-flex items-center gap-1">
-                                <Check className="w-3 h-3 text-rose-400" />
-                                <span>Acknowledged</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })
-                )}
-              </ul>
-            </section>
+                        </li>
+                      );
+                    })
+                  )}
+                </ul>
+              </section>
             </>,
             document.body
           )}
         </div>
 
         <button
-          className="iconbtn iconbtn--desk p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all hidden sm:flex items-center justify-center"
+          className="iconbtn iconbtn--desk p-2 rounded-xl text-[#FFD9DD] hover:text-[#F7F1EA] hover:bg-[#670626] border border-transparent hover:border-[#FFD9DD]/25 transition-all hidden sm:flex items-center justify-center"
           type="button"
           id="btn-settings"
           aria-label="Settings"
           title="Profile Settings"
           onClick={handleSettingsClick}
         >
-          <Settings className="w-4 h-4 text-slate-300 hover:text-white transition-colors" aria-hidden="true" />
+          <Settings className="w-4 h-4 text-current transition-colors" aria-hidden="true" />
         </button>
 
         <button
-          className="iconbtn iconbtn--desk p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all hidden sm:flex items-center justify-center"
+          className="iconbtn iconbtn--desk p-2 rounded-xl text-[#FFD9DD] hover:text-[#F7F1EA] hover:bg-[#670626] border border-transparent hover:border-[#FFD9DD]/25 transition-all hidden sm:flex items-center justify-center"
           type="button"
           id="btn-help"
           aria-label="Help"
           title="Emergency Command Support"
           onClick={handleHelpClick}
         >
-          <HelpCircle className="w-4 h-4 text-slate-300 hover:text-white transition-colors" aria-hidden="true" />
+          <HelpCircle className="w-4 h-4 text-current transition-colors" aria-hidden="true" />
         </button>
 
-        <span className="topbar__sep w-px h-5 bg-white/10 mx-1" aria-hidden="true" />
+        <span className="topbar__sep w-px h-5 bg-[#FFD9DD]/20 mx-1" aria-hidden="true" />
 
         {/* User profile avatar session chip with profile card toggle */}
         <UserSessionChip user={user} />
 
         {/* Dedicated Logout button cleanly positioned after avatar */}
         <button
-          className="iconbtn iconbtn--logout group flex items-center justify-center p-2 rounded-lg text-rose-400 hover:text-white hover:bg-rose-950/80 border border-rose-900/50 hover:border-rose-700 ml-1.5 transition-all focus:outline-none focus:ring-1 focus:ring-rose-500"
+          className="iconbtn iconbtn--logout group flex items-center justify-center p-2 rounded-xl text-[#FFD9DD] hover:text-[#670626] hover:bg-[#F7F1EA] border border-[#FFD9DD]/25 hover:border-[#F7F1EA] ml-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-[#FFD9DD]/60"
           type="button"
           id="btn-logout"
           title="Sign Out of Session"
           aria-label="Sign Out"
           onClick={handleLogout}
         >
-          <LogOut className="w-4 h-4 text-rose-400 group-hover:text-white transition-colors" aria-hidden="true" />
+          <LogOut className="w-4 h-4 text-current transition-colors" aria-hidden="true" />
         </button>
       </div>
     </header>

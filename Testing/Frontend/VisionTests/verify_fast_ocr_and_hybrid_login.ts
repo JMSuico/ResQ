@@ -946,20 +946,24 @@ const testBiometricLoginModalLockoutAndRetryGuards = (): void => {
 
   const hasTerminalGuardHelper = /\bisTerminalAuthFailure\b/.test(modalSource);
   const hasExplicitTerminalChecks =
-    /\blocked\b/i.test(executeSlice) &&
     /\bpending\b/i.test(executeSlice) &&
     /\bsuspended\b/i.test(executeSlice) &&
     /not\s+found/i.test(executeSlice);
 
   assert(
     hasTerminalGuardHelper || hasExplicitTerminalChecks,
-    'BiometricLoginModal.tsx contains terminal-auth-failure guard (isTerminalAuthFailure or explicit locked/pending/suspended/not found checks)'
+    'BiometricLoginModal.tsx contains terminal-auth-failure guard (isTerminalAuthFailure or explicit pending/suspended/not found checks)'
+  );
+
+  assert(
+    !modalSource.includes('temporarily locked') && !/TERMINAL_AUTH_FAILURE_TOKENS[\s\S]*'locked'/.test(modalSource),
+    'BiometricLoginModal.tsx removes 15-minute lockout token guards from biometric sign-in'
   );
 
   const catchMentionsTerminalOrPauseGuard =
     /\bisTerminalAuthFailure\b/.test(catchSlice) ||
     /\bautoScanPausedRef\b/.test(catchSlice) ||
-    (/\blocked\b/i.test(catchSlice) && /\bpending\b/i.test(catchSlice));
+    /\bpending\b/i.test(catchSlice);
   const catchUnconditionallySchedulesRetry =
     /retryTimeoutRef\.current\s*=\s*window\.setTimeout/.test(catchSlice) &&
     !catchMentionsTerminalOrPauseGuard;

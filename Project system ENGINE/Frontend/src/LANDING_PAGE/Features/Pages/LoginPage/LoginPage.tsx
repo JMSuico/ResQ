@@ -3,20 +3,23 @@
 // Role-Based Access Control (RBAC): Clean, authentic login form with automatic operational routing based on account credentials.
 // Katipuneros architecture with Universal Lambdas (=>), Shared primitives, and useFluidResposiveness.
 
-import React, { useState, FC } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { User, Lock, Eye, EyeOff, Check, ArrowRight, Camera } from 'lucide-react';
+import React, { useState, useEffect, FC } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { User, Lock, Eye, EyeOff, Check, ArrowRight, Camera, Cpu, X } from 'lucide-react';
 import { loginUser, LoginResponse } from '@/Endpoints/authApi';
 import { Button, Checkbox } from '@/Shared';
 import { useFluidResposiveness } from '@/Hooks';
 import { BiometricLoginModal } from './BiometricLoginModal';
 
+const POST_REGISTER_LEARNING_STORAGE_KEY = 'resqtrack_post_register_learning_notice';
+
 export const LoginPage: FC = () => {
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
-  const isDedicatedAdminPort = currentPort === '1996' || currentPort === '5174';
+  const isDedicatedAdminPort = currentPort === '1996';
 
   const { isMobile } = useFluidResposiveness();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
@@ -30,6 +33,34 @@ export const LoginPage: FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [isBiometricModalOpen, setIsBiometricModalOpen] = useState<boolean>(false);
+  const [postRegisterNotice, setPostRegisterNotice] = useState<string>('');
+
+  useEffect(() => {
+    const navState = location.state as { postRegisterLearningNotice?: string } | null;
+    const fromState =
+      typeof navState?.postRegisterLearningNotice === 'string'
+        ? navState.postRegisterLearningNotice.trim()
+        : '';
+    let fromStorage = '';
+    try {
+      fromStorage = (sessionStorage.getItem(POST_REGISTER_LEARNING_STORAGE_KEY) || '').trim();
+    } catch {
+      fromStorage = '';
+    }
+    const resolved = fromState || fromStorage;
+    if (resolved) {
+      setPostRegisterNotice(resolved);
+    }
+  }, [location.state]);
+
+  const dismissPostRegisterNotice = () => {
+    setPostRegisterNotice('');
+    try {
+      sessionStorage.removeItem(POST_REGISTER_LEARNING_STORAGE_KEY);
+    } catch {
+      // Storage safeguard
+    }
+  };
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -77,15 +108,12 @@ export const LoginPage: FC = () => {
         }
       }
 
-      // 3. Port-scoped storage
-      if (isAdminUser || portKey === '1996' || portKey === '5174') {
+      // 3. Port-scoped storage (:1996 Admin / :1997 Responder / :1998 Civilian)
+      if (isAdminUser || portKey === '1996') {
         localStorage.setItem('resqtrack_token_1996', res.token);
-        localStorage.setItem('resqtrack_token_5174', res.token);
         if (res.session) {
           localStorage.setItem('resqtrack_user_1996', JSON.stringify(res.session));
           localStorage.setItem('resqtrack_session_1996', JSON.stringify(res.session));
-          localStorage.setItem('resqtrack_user_5174', JSON.stringify(res.session));
-          localStorage.setItem('resqtrack_session_5174', JSON.stringify(res.session));
         }
       } else {
         localStorage.setItem(`resqtrack_token_${portKey}`, res.token);
@@ -119,7 +147,7 @@ export const LoginPage: FC = () => {
     setTimeout(() => {
       if (isLdrrmo) {
         const host = window.location.hostname || '127.0.0.1';
-        if (currentPort === '1997' || currentPort === '5173') {
+        if (currentPort === '1997' || currentPort === '1998') {
           window.location.href = `http://${host}:1996/admin/dashboard?session_token=${encodeURIComponent(res.token)}`;
         } else {
           navigate('/admin/dashboard');
@@ -172,28 +200,49 @@ export const LoginPage: FC = () => {
   };
 
   return (
-    <main className="scene">
-      <div className="stage">
-        {/* Stylized Giant 'R' Platinum/Silver Background Elements */}
-        <div className="bg" aria-hidden="true">
-          <span className="bg__strip"></span>
-          <span className="bg__disc"></span>
-          <span className="bg__wedge"></span>
-        </div>
+    <main
+      className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 md:p-10 relative overflow-hidden"
+      style={{
+        background: 'linear-gradient(145deg, #4A041A 0%, #670626 55%, #3B0315 100%)'
+      }}
+    >
+      {/* Subtle Cherry Ambient Accents */}
+      <div
+        className="pointer-events-none absolute -top-32 -left-32 w-[460px] h-[460px] rounded-full opacity-25 blur-3xl"
+        style={{ background: 'radial-gradient(circle, #A83B4D, transparent 70%)' }}
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute -bottom-32 -right-32 w-[460px] h-[460px] rounded-full opacity-20 blur-3xl"
+        style={{ background: 'radial-gradient(circle, #F7F1EA, transparent 70%)' }}
+        aria-hidden="true"
+      />
 
-        {/* ResQTrack Brand Header with Decorative Crimson Accent Bar */}
-        <header className="brand">
-          <h1 className="brand__mark">RESQTRACK</h1>
-          <p className="brand__lead">Emergency Portal</p>
-          <div className="brand__bar" aria-hidden="true" />
-        </header>
+      <div className={`relative z-10 w-full ${isMobile ? 'max-w-md' : 'max-w-5xl'} mx-auto flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-12`}>
+        {/* Left Brand & Responders Showcase */}
+        <div className="w-full lg:w-5/12 flex flex-col items-center lg:items-start text-center lg:text-left">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#F7F1EA]/12 border border-[#F7F1EA]/25 mb-4">
+            <span className="w-2 h-2 rounded-full bg-[#F7F1EA] animate-pulse" />
+            <span className="font-mono text-xs font-bold tracking-widest text-[#F7F1EA] uppercase">
+              Katipunan Emergency Grid
+            </span>
+          </div>
 
-        {/* Responders Team Cutout Visual */}
-        <div className="responders" aria-hidden="true">
-          <span className="responder responder--group">
+          <header className="mb-4">
+            <h1 className="text-4xl sm:text-5xl font-black tracking-tight text-[#F7F1EA] font-['Montserrat',sans-serif]">
+              RESQTRACK
+            </h1>
+            <p className="text-lg sm:text-xl font-bold text-[#E9D9D0] mt-1 tracking-wide">
+              Emergency Portal
+            </p>
+            <div className="w-28 h-1 rounded-full bg-[#A83B4D] mt-3 mx-auto lg:mx-0" aria-hidden="true" />
+          </header>
+
+          <div className="hidden lg:block w-full max-w-sm mt-2">
             <img
               src="/img/responders.png"
               alt="Emergency Responders Cutout"
+              className="w-full h-auto object-contain drop-shadow-[0_18px_36px_rgba(20,2,10,0.55)]"
               onError={(e) => {
                 const target = e.currentTarget;
                 if (!target.src.endsWith('/responders.png')) {
@@ -201,51 +250,54 @@ export const LoginPage: FC = () => {
                 }
               }}
             />
-            <i>responders.png</i>
-          </span>
+          </div>
         </div>
 
-        {/* Dedicated Login Panel with Military HUD Styling */}
+        {/* Elevated Warm Ivory Clay Sign-In Panel */}
         <section
-          className="panel relative"
+          className="clay-surface relative w-full max-w-[460px] rounded-3xl bg-[#F7F1EA] border border-[#E9D9D0] p-6 sm:p-8 text-[#670626] shadow-[0_28px_64px_-12px_rgba(38,2,14,0.55),inset_0_2px_4px_rgba(255,255,255,0.85)]"
           aria-labelledby="panel-title"
-          style={{
-            height: 'auto',
-            minHeight: 'calc(455 * var(--u))',
-            paddingBottom: '20px',
-            border: '1px solid rgba(255, 92, 116, 0.22)',
-            boxShadow: '0 24px 60px rgba(0,0,0,0.65), 0 0 20px rgba(232,17,76,0.15)'
-          }}
         >
-          {/* Military HUD Corner Brackets */}
-          <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-[#ff5c74]/70 pointer-events-none rounded-tl-[3px]" aria-hidden="true" />
-          <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-[#ff5c74]/70 pointer-events-none rounded-tr-[3px]" aria-hidden="true" />
-          <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-[#ff5c74]/70 pointer-events-none rounded-bl-[3px]" aria-hidden="true" />
-          <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-[#ff5c74]/70 pointer-events-none rounded-br-[3px]" aria-hidden="true" />
+          <div className="mb-5 border-b border-[#D5BEB3] pb-3.5">
+            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-[#670626] font-['Montserrat',sans-serif]" id="panel-title">
+              Sign In
+            </h2>
+            <p className="font-mono text-xs text-[#A83B4D] uppercase tracking-wider mt-1 font-semibold">
+              Responder &amp; Civilian Command Access
+            </p>
+          </div>
 
-          {/* Top Subtle Tactical Scanline Accent */}
-          <span className="panel__rule" aria-hidden="true" />
-          <h2 className="visually-hidden" id="panel-title">Sign In</h2>
+          {postRegisterNotice && (
+            <div
+              id="login-post-register-learning-banner"
+              role="alert"
+              className="mb-4 p-3 rounded-2xl bg-[#E9D9D0] border border-[#A83B4D]/50 text-[#670626] font-sans text-xs sm:text-sm flex items-start gap-2.5 shadow-sm"
+            >
+              <Cpu className="w-4 h-4 text-[#670626] shrink-0 mt-0.5" />
+              <span className="flex-1 font-medium leading-relaxed">{postRegisterNotice}</span>
+              <button
+                type="button"
+                onClick={dismissPostRegisterNotice}
+                aria-label="Dismiss notice"
+                className="text-[#A83B4D] hover:text-[#670626] p-0.5 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
-          <form className="panel__body" id="login-form" onSubmit={handleSubmit} noValidate>
+          <form id="login-form" onSubmit={handleSubmit} noValidate className="space-y-4">
             {/* Email Address Field */}
-            <div className={`field ${emailError ? 'is-invalid' : ''}`} style={{ marginTop: '8px' }}>
-              <div className="flex items-center justify-between mb-1">
-                <label className="font-mono text-[10.5px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="email">
+            <div className={emailError ? 'is-invalid' : ''}>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold" htmlFor="email">
                   Email *
                 </label>
               </div>
-              <div
-                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                style={{
-                  background: 'rgba(46, 10, 22, 0.85)',
-                  border: '1px solid rgba(255, 92, 116, 0.22)',
-                  borderRadius: '6px'
-                }}
-              >
-                <User className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+              <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3.5 min-h-[46px]">
+                <User className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2.5" />
                 <input
-                  className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                  className="w-full py-2.5 bg-transparent font-sans text-[#670626] text-sm sm:text-base placeholder:text-[#A83B4D]/70 focus:outline-none"
                   id="email"
                   name="email"
                   type="email"
@@ -265,37 +317,30 @@ export const LoginPage: FC = () => {
                 />
               </div>
               {emailError && (
-                <p className="field__error font-mono text-[10.5px]" id="email-error" role="alert">
+                <p className="font-mono text-xs text-[#670626] font-semibold mt-1" id="email-error" role="alert">
                   {emailError}
                 </p>
               )}
             </div>
 
             {/* Password Field */}
-            <div className={`field field--password ${passwordError ? 'is-invalid' : ''}`} style={{ marginTop: '10px' }}>
-              <div className="flex items-center justify-between mb-1">
-                <label className="font-mono text-[10.5px] uppercase tracking-wider text-slate-200 font-semibold" htmlFor="password">
+            <div className={passwordError ? 'is-invalid' : ''}>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="font-mono text-xs sm:text-sm uppercase tracking-wider text-[#670626] font-bold" htmlFor="password">
                   Password *
                 </label>
                 <a
-                  className="link link--quiet font-mono text-[10px] text-rose-400 hover:text-rose-300 font-semibold transition-colors"
+                  className="font-mono text-xs text-[#A83B4D] hover:text-[#670626] font-semibold transition-colors underline underline-offset-2"
                   href="#"
                   onClick={handleForgotPassword}
                 >
                   Forgot password?
                 </a>
               </div>
-              <div
-                className="field__box focus-within:ring-2 focus-within:ring-rose-500/50 focus-within:border-rose-400 transition-all flex items-center px-3"
-                style={{
-                  background: 'rgba(46, 10, 22, 0.85)',
-                  border: '1px solid rgba(255, 92, 116, 0.22)',
-                  borderRadius: '6px'
-                }}
-              >
-                <Lock className="w-4 h-4 text-[#ff5c74] shrink-0 mr-2" />
+              <div className="bg-[#E9D9D0] border border-[#D5BEB3] rounded-xl focus-within:ring-2 focus-within:ring-[#670626]/35 focus-within:border-[#670626] transition-all flex items-center px-3.5 min-h-[46px]">
+                <Lock className="w-4 h-4 text-[#A83B4D] shrink-0 mr-2.5" />
                 <input
-                  className="field__input font-sans text-white text-[13px] placeholder:text-slate-400/60"
+                  className="w-full py-2.5 bg-transparent font-sans text-[#670626] text-sm sm:text-base placeholder:text-[#A83B4D]/70 focus:outline-none"
                   id="password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
@@ -313,7 +358,7 @@ export const LoginPage: FC = () => {
                   aria-invalid={!!passwordError}
                 />
                 <button
-                  className="field__toggle hover:text-rose-300 ml-auto p-1"
+                  className="text-[#A83B4D] hover:text-[#670626] ml-auto p-1 cursor-pointer"
                   type="button"
                   id="pw-toggle"
                   aria-pressed={showPassword}
@@ -322,24 +367,21 @@ export const LoginPage: FC = () => {
                   onClick={handleTogglePassword}
                 >
                   {!showPassword ? (
-                    <Eye className="w-4 h-4 text-slate-400" />
+                    <Eye className="w-4 h-4" />
                   ) : (
-                    <EyeOff className="w-4 h-4 text-slate-400" />
+                    <EyeOff className="w-4 h-4" />
                   )}
                 </button>
               </div>
               {passwordError && (
-                <p className="field__error font-mono text-[10.5px]" id="password-error" role="alert">
+                <p className="font-mono text-xs text-[#670626] font-semibold mt-1" id="password-error" role="alert">
                   {passwordError}
                 </p>
               )}
             </div>
 
             {/* Terms Row */}
-            <div
-              className="flex items-center justify-between mt-3 mb-2"
-              style={{ minHeight: '24px' }}
-            >
+            <div className="flex items-center justify-between pt-1" style={{ minHeight: '24px' }}>
               <Checkbox
                 id="consent"
                 checked={consent}
@@ -348,14 +390,14 @@ export const LoginPage: FC = () => {
                   if (val) setConsentError('');
                 }}
                 label={
-                  <span className="text-[11px] text-slate-300 font-medium select-none">
+                  <span className="text-xs sm:text-sm text-[#670626] font-semibold select-none">
                     Accept access terms
                   </span>
                 }
               />
             </div>
             {consentError && (
-              <p className="font-mono text-[11px] text-[#ff5c74] font-medium -mt-1 mb-2" id="consent-error" role="alert">
+              <p className="font-mono text-xs text-[#670626] font-semibold -mt-1" id="consent-error" role="alert">
                 {consentError}
               </p>
             )}
@@ -365,21 +407,21 @@ export const LoginPage: FC = () => {
               <div
                 role="status"
                 aria-live="polite"
-                className="font-mono text-[11px] font-semibold text-center my-2 p-2 rounded border"
-                style={{
-                  background: statusTone === 'ok' ? 'rgba(6, 32, 21, 0.85)' : statusTone === 'bad' ? 'rgba(52, 3, 19, 0.85)' : 'rgba(30, 41, 59, 0.85)',
-                  borderColor: statusTone === 'ok' ? 'rgba(52, 211, 153, 0.4)' : statusTone === 'bad' ? 'rgba(255, 92, 116, 0.5)' : 'rgba(148, 163, 184, 0.3)',
-                  color: statusTone === 'ok' ? '#34d399' : statusTone === 'bad' ? '#ff5c74' : '#e2e8f0',
-                  letterSpacing: '0.02em',
-                  wordBreak: 'break-word'
-                }}
+                className={`font-mono text-xs sm:text-sm font-semibold text-center p-2.5 rounded-xl border ${
+                  statusTone === 'ok'
+                    ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                    : statusTone === 'bad'
+                    ? 'bg-[#670626] border-[#4A041A] text-[#F7F1EA]'
+                    : 'bg-[#E9D9D0] border-[#D5BEB3] text-[#670626]'
+                }`}
+                style={{ wordBreak: 'break-word' }}
               >
                 {statusMessage}
               </div>
             )}
 
-            {/* Submit Action Button using Atomic Shared Primitive */}
-            <div style={{ marginTop: statusMessage ? '0' : '10px' }} className="space-y-2">
+            {/* Submit & Biometric Buttons */}
+            <div className="space-y-2.5 pt-1">
               <Button
                 type="submit"
                 id="submit"
@@ -393,7 +435,7 @@ export const LoginPage: FC = () => {
                     <ArrowRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
                   )
                 }
-                className="!h-[46px] !bg-gradient-to-r !from-[#a5002e] !via-[#d9093e] !to-[#ff2b4a] hover:!brightness-110 !text-white !font-black !tracking-widest !uppercase !shadow-lg !shadow-[#e8114c]/40 active:!scale-[0.99] transition-all rounded-lg group cursor-pointer border border-[#ff5c74]/50"
+                className="!h-[48px] !text-sm sm:!text-base !bg-[#670626] hover:!bg-[#4A041A] !text-[#F7F1EA] !font-black !tracking-widest !uppercase !shadow-lg !shadow-[#4A041A]/25 active:!scale-[0.99] transition-all rounded-xl group cursor-pointer !border !border-[#4A041A]"
               >
                 {isLoading ? 'Signing in...' : isSuccess ? 'Access Granted' : 'Sign In'}
               </Button>
@@ -402,20 +444,20 @@ export const LoginPage: FC = () => {
                 type="button"
                 id="biometric-login-btn"
                 onClick={() => setIsBiometricModalOpen(true)}
-                className="w-full !h-[42px] rounded-lg border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-[0_0_12px_rgba(232,17,76,0.15)] hover:border-rose-400"
+                className="w-full !h-[44px] rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626] font-mono text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm"
               >
-                <Camera className="w-4 h-4 text-[#ff5c74]" />
+                <Camera className="w-4 h-4 text-[#A83B4D]" />
                 <span>Biometric Face Login</span>
               </button>
             </div>
 
             {/* Civilian & Responder Registration Redirection */}
-            <div className="mt-4 text-center">
-              <span className="text-xs text-slate-400 font-mono">Don't have an account? </span>
+            <div className="pt-3 text-center border-t border-[#D5BEB3]">
+              <span className="text-sm text-[#7D2B3D] font-mono">Don't have an account? </span>
               <Link
                 to="/register"
                 id="register-link"
-                className="text-xs font-mono font-bold text-rose-400 hover:text-rose-300 underline underline-offset-4 transition-colors"
+                className="text-sm font-mono font-bold text-[#670626] hover:text-[#A83B4D] underline underline-offset-4 transition-colors"
               >
                 Sign up here
               </Link>

@@ -8,6 +8,13 @@ import { Camera, AlertTriangle, CheckCircle2, Check } from 'lucide-react';
 import { DefaultFloatingModalCard } from './DefaultFloatingModalCard';
 import { Button } from './Button';
 import { useGpsLocation } from '../Hooks/useGpsLocation';
+import {
+  computeLaplacianVariance,
+  calculateDynamicClarityThreshold,
+  DEFAULT_CLARITY_THRESHOLD,
+  CANVAS_WIDTH,
+  CANVAS_HEIGHT
+} from '@/Libs/Vision/cameraClarityHelper';
 
 export interface CameraCaptureMetadata {
   isBlurry: boolean;
@@ -29,117 +36,6 @@ export interface CameraCaptureModalProps {
   instructionText?: string;
 }
 
-const DEFAULT_THRESHOLD = 70.0;
-const SD_RESOLUTION_THRESHOLD = 640 * 480;
-const HD_RESOLUTION_THRESHOLD = 1920 * 1080;
-const LOW_LIGHT_LUMINANCE_CUTOFF = 45;
-const HIGH_GLARE_LUMINANCE_CUTOFF = 215;
-const LOW_FRAMERATE_CUTOFF = 20;
-const CANVAS_WIDTH = 1280;
-const CANVAS_HEIGHT = 720;
-
-// Client-side Laplacian edge variance calculation for blurriness detection
-const computeLaplacianVariance = (
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number
-): { variance: number; meanLuminance: number } => {
-  try {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-    const gray = new Float32Array(width * height);
-    let totalLuminance = 0;
-
-    // Convert RGB to luminance grayscale
-    for (let i = 0; i < data.length; i += 4) {
-      const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-      gray[i / 4] = lum;
-      totalLuminance += lum;
-    }
-
-    const meanLuminance = totalLuminance / (width * height);
-
-    // 3x3 Laplacian convolution kernel [-1, -1, -1, -1, 8, -1, -1, -1, -1]
-    let sum = 0;
-    let sumSq = 0;
-    let sampleCount = 0;
-
-    for (let y = 1; y < height - 1; y += 2) {
-      for (let x = 1; x < width - 1; x += 2) {
-        const idx = y * width + x;
-        const laplacian =
-          -gray[idx - width - 1] -
-          gray[idx - width] -
-          gray[idx - width + 1] -
-          gray[idx - 1] +
-          8 * gray[idx] -
-          gray[idx + 1] -
-          gray[idx + width - 1] -
-          gray[idx + width] -
-          gray[idx + width + 1];
-
-        sum += laplacian;
-        sumSq += laplacian * laplacian;
-        sampleCount++;
-      }
-    }
-
-    if (sampleCount === 0) return { variance: 100, meanLuminance: 128 };
-    const mean = sum / sampleCount;
-    const variance = sumSq / sampleCount - mean * mean;
-    return {
-      variance: Math.round(variance * 10) / 10,
-      meanLuminance: Math.round(meanLuminance * 10) / 10
-    };
-  } catch {
-    return { variance: 100, meanLuminance: 128 };
-  }
-};
-
-// Dynamic Laplacian threshold calculator:
-// Base default = 70. Dynamically adapts based on camera capabilities, resolution, and exposure
-const calculateDynamicClarityThreshold = (
-  width: number,
-  height: number,
-  meanLuminance: number,
-  trackSettings?: MediaTrackSettings
-): { threshold: number; reasoning: string } => {
-  let multiplier = 1.0;
-  const factors: string[] = [`Base: ${DEFAULT_THRESHOLD}`];
-
-  // Resolution factor: higher pixel density naturally produces higher variance
-  const totalPixels = width * height;
-  if (totalPixels >= HD_RESOLUTION_THRESHOLD) {
-    multiplier *= 1.15;
-    factors.push('1080p+ (+15%)');
-  } else if (totalPixels <= SD_RESOLUTION_THRESHOLD) {
-    multiplier *= 0.85;
-    factors.push('SD Sensor (-15%)');
-  }
-
-  // Low-light / night compensation: lower threshold if scene is dark to prevent false alarms
-  if (meanLuminance < LOW_LIGHT_LUMINANCE_CUTOFF) {
-    const lowLightScale = Math.max(0.65, meanLuminance / LOW_LIGHT_LUMINANCE_CUTOFF);
-    multiplier *= lowLightScale;
-    factors.push(`Low-Light/Night (${Math.round((lowLightScale - 1) * 100)}%)`);
-  } else if (meanLuminance > HIGH_GLARE_LUMINANCE_CUTOFF) {
-    multiplier *= 0.90;
-    factors.push('High Glare (-10%)');
-  }
-
-  // Camera capability check: lower framerate or high exposure time
-  if (trackSettings?.frameRate && trackSettings.frameRate < LOW_FRAMERATE_CUTOFF) {
-    multiplier *= 0.90;
-    factors.push('Low FPS (-10%)');
-  }
-
-  const dynamicThreshold = Math.round(DEFAULT_THRESHOLD * multiplier * 10) / 10;
-  return {
-    threshold: dynamicThreshold,
-    reasoning: factors.join(' · ')
-  };
-};
-
 export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
   isOpen,
   onClose,
@@ -157,8 +53,8 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isUsingFallback, setIsUsingFallback] = useState<boolean>(false);
   const [blurrinessScore, setBlurrinessScore] = useState<number | null>(null);
-  const [activeThreshold, setActiveThreshold] = useState<number>(DEFAULT_THRESHOLD);
-  const [thresholdReasoning, setThresholdReasoning] = useState<string>(`Default: ${DEFAULT_THRESHOLD}`);
+  const [activeThreshold, setActiveThreshold] = useState<number>(DEFAULT_CLARITY_THRESHOLD);
+  const [thresholdReasoning, setThresholdReasoning] = useState<string>(`Default: ${DEFAULT_CLARITY_THRESHOLD}`);
   const [isBlurry, setIsBlurry] = useState<boolean>(false);
 
   // Initialize WebRTC Camera Stream
@@ -172,7 +68,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
       setCameraError(null);
       setBlurrinessScore(null);
       setIsBlurry(false);
-      setActiveThreshold(DEFAULT_THRESHOLD);
+      setActiveThreshold(DEFAULT_CLARITY_THRESHOLD);
       return;
     }
 
@@ -325,7 +221,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
 
     onCapture(capturedUrl, {
       isBlurry,
-      requiresManualVerification: false, // Live camera capture is automatically verified and approved
+      requiresManualVerification: true, // Always enter as unverified Submitted/Pending for Responder/Admin review
       varianceScore: blurrinessScore || 100,
       dynamicThreshold: activeThreshold,
       thresholdReasoning,
@@ -350,44 +246,44 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
   return (
     <DefaultFloatingModalCard isOpen={isOpen} onClose={handleDiscardAndClose} title={title} maxWidth="2xl">
       <div className="flex flex-col gap-4">
-        <p className="text-xs text-slate-300 leading-relaxed">{instructionText}</p>
+        <p className="text-sm text-[#5C313E] leading-relaxed">{instructionText}</p>
 
         {/* Live Viewfinder / Single Snapshot Freeze */}
-        <div className="relative aspect-video bg-black rounded-lg overflow-hidden border border-slate-700 flex items-center justify-center">
+        <div className="relative aspect-video bg-[#240812] rounded-2xl overflow-hidden border-2 border-[#E9D9D0] shadow-[inset_0_2px_6px_rgba(0,0,0,0.45)] flex items-center justify-center">
           {capturedUrl ? (
             <img src={capturedUrl} alt="Captured evidence" className="w-full h-full object-cover" />
           ) : !isUsingFallback ? (
             <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
           ) : (
-            <div className="flex flex-col items-center justify-center p-6 text-center text-slate-400 gap-2">
-              <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-rose-500">
+            <div className="flex flex-col items-center justify-center p-6 text-center text-[#E9D9D0] gap-2">
+              <div className="w-12 h-12 rounded-full bg-[#670626]/60 border border-[#A83B4D]/50 flex items-center justify-center text-[#F7F1EA]">
                 <Camera className="w-6 h-6" />
               </div>
-              <p className="text-xs font-semibold text-slate-200">Live Camera Standby</p>
-              <p className="text-[11px] text-slate-400 max-w-xs">{cameraError || 'Hardware camera unavailable in this environment. Synthetic emergency capture active.'}</p>
+              <p className="text-sm font-semibold text-[#F7F1EA]">Live Camera Standby</p>
+              <p className="text-xs text-[#E9D9D0]/80 max-w-xs">{cameraError || 'Hardware camera unavailable in this environment. Synthetic emergency capture active.'}</p>
             </div>
           )}
 
           {/* Tactical HUD Header */}
-          <div className="absolute top-2 left-2 px-2.5 py-1 bg-black/80 backdrop-blur-sm rounded text-[10px] font-mono text-emerald-400 flex items-center gap-2 border border-emerald-500/30">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+          <div className="absolute top-2.5 left-2.5 px-2.5 py-1 bg-[#F7F1EA]/95 backdrop-blur-md rounded-lg text-xs font-mono font-bold text-[#670626] flex items-center gap-2 border border-[#E9D9D0] shadow">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping" />
             <span>GPS: {coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}</span>
           </div>
         </div>
 
         {/* Quality Assessment & Blurriness Banner */}
         {capturedUrl && (
-          <div className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
+          <div className={`p-3 rounded-xl border text-sm flex items-center justify-between ${
             isBlurry
-              ? 'bg-amber-950/60 border-amber-500/50 text-amber-200'
-              : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+              ? 'bg-amber-50 border-amber-300 text-amber-900'
+              : 'bg-emerald-50 border-emerald-300 text-emerald-900'
           }`}>
             <div className="flex items-center gap-2">
               <span className="text-base">
                 {isBlurry ? (
-                  <AlertTriangle className="w-4 h-4 text-amber-400 inline-block" />
+                  <AlertTriangle className="w-4 h-4 text-amber-700 inline-block" />
                 ) : (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 inline-block" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 inline-block" />
                 )}
               </span>
               <div>
@@ -396,17 +292,17 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
                     ? `Low Clarity (${blurrinessScore} / ${activeThreshold})`
                     : `Clear Photo (${blurrinessScore} / ${activeThreshold})`}
                 </p>
-                <p className="text-[11px] opacity-80">
+                <p className="text-xs opacity-90">
                   {isBlurry
-                    ? 'Flagged for manual review. GPS locked.'
-                    : 'Validated. GPS locked.'}
+                    ? 'Flagged for manual clarity review. Submitted pending Responder/Admin verification.'
+                    : 'Clarity checked. Submitted pending Responder/Admin verification.'}
                 </p>
               </div>
             </div>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-              isBlurry ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'
+            <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold uppercase ${
+              isBlurry ? 'bg-amber-200/80 text-amber-950' : 'bg-emerald-200/80 text-emerald-950'
             }`}>
-              {isBlurry ? 'Manual Review' : 'Clear'}
+              {isBlurry ? 'Manual Review' : 'Pending Verify'}
             </span>
           </div>
         )}
@@ -415,7 +311,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
         <canvas ref={canvasRef} className="hidden" />
 
         {/* Action Controls - Zero Retake & Zero File Upload */}
-        <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+        <div className="flex items-center justify-between pt-3 border-t border-[#E9D9D0]">
           <Button variant="ghost" size="sm" onClick={handleDiscardAndClose}>
             Cancel
           </Button>

@@ -1,9 +1,9 @@
 // [Layer: LayoutBars]
-// Responsibility: Tactical alert notification drawer modal displaying real-time emergency broadcasts and incident notifications.
+// Responsibility: Emergency alert notification drawer modal displaying unit-scoped emergency broadcasts and incident notifications.
 // Dynamic synchronization with GET /api/alerts and POST /api/alerts/{reportId}/read.
-// Universal Lucide icon standard with strict typing (ZERO any) and universal arrow syntax.
+// Official Cherry (#670626) & Warm Ivory (#F7F1EA) Stitch claymorphism with strict typing (ZERO any) and arrow syntax.
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Bell,
   Check,
@@ -17,6 +17,7 @@ import {
   Clock
 } from 'lucide-react';
 import { requestJson } from '@/Endpoints/apiClient';
+import { useSession } from '@/Hooks/useSession';
 
 export interface AlertNotificationItem {
   reportId?: string;
@@ -33,6 +34,8 @@ export interface AlertNotificationItem {
   imageUrl?: string | null;
   reporterName?: string;
   type?: string;
+  targetUnit?: string;
+  recommendedAgencyUnit?: string;
 }
 
 export interface NotificationsModalProps {
@@ -44,7 +47,88 @@ const LOCAL_STORAGE_READ_KEY = 'resqtrack.alerts.read';
 const FALLBACK_CATEGORY_LABEL = 'INCIDENT';
 const MAX_ALERT_ITEMS_DISPLAY = 25;
 
+const normalizeUnitCode = (unit?: string): string => {
+  const upper = (unit || '').toUpperCase().trim();
+  if (upper === 'MEDIC') return 'RHU';
+  if (upper === 'BFP') return 'FIRE';
+  if (upper === 'SECURITY' || upper === 'POLICE') return 'PNP';
+  return upper;
+};
+
+const matchesResponderUnitAlert = (
+  item: AlertNotificationItem,
+  role?: string,
+  unit?: string
+): boolean => {
+  const normRole = (role || '').toLowerCase();
+  if (normRole !== 'responder') return true;
+
+  const normUnit = normalizeUnitCode(unit);
+  if (!normUnit || normUnit === 'NONE') return true;
+
+  const explicitTarget = normalizeUnitCode(item.targetUnit || item.recommendedAgencyUnit);
+  if (explicitTarget && explicitTarget !== 'NONE') {
+    return explicitTarget === normUnit;
+  }
+
+  const text = `${item.category || ''} ${item.type || ''} ${item.title || ''} ${item.referenceCode || ''}`.toUpperCase();
+
+  if (normUnit === 'FIRE') {
+    return (
+      text.includes('FIRE') ||
+      text.includes('HAZMAT') ||
+      text.includes('FLAME') ||
+      text.includes('SMOKE') ||
+      text.includes('ARSON') ||
+      text.includes('ELECTRICAL') ||
+      text.includes('SPARK') ||
+      text.includes('GAS') ||
+      text.includes('BFP')
+    );
+  }
+
+  if (normUnit === 'RHU') {
+    return (
+      text.includes('MEDICAL') ||
+      text.includes('MEDIC') ||
+      text.includes('RHU') ||
+      text.includes('TRAUMA') ||
+      text.includes('HEALTH') ||
+      text.includes('AMBULANCE') ||
+      text.includes('EMS') ||
+      text.includes('CASUALTY') ||
+      text.includes('PATIENT') ||
+      text.includes('PCR') ||
+      text.includes('CARDIAC') ||
+      text.includes('RESPIRATORY') ||
+      text.includes('LACERATION') ||
+      text.includes('INJURY')
+    );
+  }
+
+  if (normUnit === 'PNP') {
+    return (
+      text.includes('CRIME') ||
+      text.includes('SECURITY') ||
+      text.includes('PNP') ||
+      text.includes('POLICE') ||
+      text.includes('PATROL') ||
+      text.includes('VEHICULAR') ||
+      text.includes('TRAFFIC') ||
+      text.includes('COLLISION') ||
+      text.includes('GRIDLOCK') ||
+      text.includes('DISTURBANCE') ||
+      text.includes('BLOTTER') ||
+      text.includes('ASSAULT') ||
+      text.includes('THEFT')
+    );
+  }
+
+  return true;
+};
+
 export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, onClose }) => {
+  const { session } = useSession();
   const [alerts, setAlerts] = useState<AlertNotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [readIds, setReadIds] = useState<string[]>(() => {
@@ -63,7 +147,6 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
   const fetchAlerts = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Primary: sync with backend AlertsController /api/alerts
       try {
         const data = await requestJson<AlertNotificationItem[]>('/api/alerts', { method: 'GET' });
         if (Array.isArray(data) && data.length > 0) {
@@ -74,7 +157,6 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
         // Fallback to reports endpoint below
       }
 
-      // Secondary fallback if /api/reports envelope is present
       try {
         const repData = await requestJson<{ reports?: AlertNotificationItem[] } | AlertNotificationItem[]>('/api/reports', { method: 'GET' });
         if (Array.isArray(repData)) {
@@ -98,11 +180,15 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
     }
   }, [isOpen, fetchAlerts]);
 
+  const scopedAlerts = useMemo(
+    () => alerts.filter((item) => matchesResponderUnitAlert(item, session?.role, session?.unit)),
+    [alerts, session?.role, session?.unit]
+  );
+
   const markAlertAsRead = useCallback(
     async (alertKey: string) => {
       if (!alertKey) return;
 
-      // Optimistic state update
       setReadIds((prev) => {
         if (prev.includes(alertKey)) return prev;
         const next = [...prev, alertKey];
@@ -118,7 +204,6 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
         prev.map((item) => (getAlertKey(item) === alertKey ? { ...item, isRead: true } : item))
       );
 
-      // Backend sync
       try {
         await requestJson<{ message?: string }>(`/api/alerts/${encodeURIComponent(alertKey)}/read`, {
           method: 'POST'
@@ -133,7 +218,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
   );
 
   const handleMarkAllRead = useCallback(async () => {
-    const allKeys = alerts.map((a) => getAlertKey(a)).filter((k) => k.length > 0);
+    const allKeys = scopedAlerts.map((a) => getAlertKey(a)).filter((k) => k.length > 0);
     const combined = Array.from(new Set([...readIds, ...allKeys]));
     setReadIds(combined);
 
@@ -143,9 +228,10 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
       // Ignore quota error
     }
 
-    setAlerts((prev) => prev.map((item) => ({ ...item, isRead: true })));
+    setAlerts((prev) =>
+      prev.map((item) => (allKeys.includes(getAlertKey(item)) ? { ...item, isRead: true } : item))
+    );
 
-    // Asynchronously acknowledge on backend
     for (const key of allKeys) {
       try {
         await requestJson<{ message?: string }>(`/api/alerts/${encodeURIComponent(key)}/read`, {
@@ -157,96 +243,101 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
     }
 
     window.dispatchEvent(new CustomEvent('resqtrack:alerts-updated'));
-  }, [alerts, getAlertKey, readIds]);
+  }, [scopedAlerts, getAlertKey, readIds]);
 
   const renderCategoryIcon = (category?: string, severity?: string) => {
     const normCat = (category || '').toUpperCase();
     const normSev = (severity || '').toUpperCase();
 
     if (normCat.includes('FIRE') || normCat.includes('FLAME') || normCat.includes('HAZMAT')) {
-      return <Flame className="w-4 h-4 text-orange-400 flex-shrink-0" aria-hidden="true" />;
+      return <Flame className="w-4 h-4 text-[#670626] flex-shrink-0" aria-hidden="true" />;
     }
     if (normCat.includes('MEDIC') || normCat.includes('TRAUMA') || normCat.includes('HEALTH')) {
-      return <HeartPulse className="w-4 h-4 text-rose-400 flex-shrink-0" aria-hidden="true" />;
+      return <HeartPulse className="w-4 h-4 text-[#670626] flex-shrink-0" aria-hidden="true" />;
     }
     if (normCat.includes('POLICE') || normCat.includes('SECURITY') || normCat.includes('CRIME')) {
-      return <Shield className="w-4 h-4 text-sky-400 flex-shrink-0" aria-hidden="true" />;
+      return <Shield className="w-4 h-4 text-[#670626] flex-shrink-0" aria-hidden="true" />;
     }
     if (normSev === 'CRITICAL' || normSev === 'HIGH') {
-      return <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" aria-hidden="true" />;
+      return <AlertCircle className="w-4 h-4 text-[#670626] flex-shrink-0" aria-hidden="true" />;
     }
-    return <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" aria-hidden="true" />;
+    return <AlertCircle className="w-4 h-4 text-[#A83B4D] flex-shrink-0" aria-hidden="true" />;
   };
 
   if (!isOpen) return null;
 
-  const unreadAlertsCount = alerts.filter((item) => {
+  const unreadAlertsCount = scopedAlerts.filter((item) => {
     const key = getAlertKey(item);
     return !item.isRead && !readIds.includes(key);
   }).length;
 
   return (
     <section
-      className="alerts__panel z-[100001] border border-white/10 shadow-2xl rounded-xl bg-slate-950 overflow-hidden"
+      className="alerts__panel clay-surface z-[100001] overflow-hidden"
       id="alerts-panel"
       aria-label="Emergency Alerts and Notifications"
       role="region"
     >
-      <header className="alerts__head flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-white/10 select-none">
-        <div className="flex items-center gap-2">
-          <Bell className="w-4 h-4 text-rose-500 flex-shrink-0" aria-hidden="true" />
-          <h2 className="alerts__title text-xs font-bold font-mono tracking-wider text-white">
-            Emergency Alerts
-          </h2>
-          {unreadAlertsCount > 0 ? (
-            <span className="alerts__count px-1.5 py-0.5 text-[10px] font-mono font-bold bg-rose-600/30 text-rose-300 border border-rose-500/40 rounded">
-              {unreadAlertsCount} New
-            </span>
-          ) : (
-            <span className="alerts__count is-off text-[10px] font-mono text-slate-500">
-              All Clear
-            </span>
-          )}
-        </div>
+      <header className="alerts__head flex flex-col gap-1 px-4 py-3.5 bg-[#670626] text-[#F7F1EA] border-b border-[#FFD9DD]/20 select-none">
+        <div className="flex items-center justify-between w-full gap-2">
+          <div className="flex items-center gap-2">
+            <Bell className="w-4 h-4 text-[#FFD9DD] flex-shrink-0" aria-hidden="true" />
+            <h2 className="alerts__title text-sm font-extrabold font-sans tracking-wide text-[#F7F1EA]">
+              Notifications
+            </h2>
+            {unreadAlertsCount > 0 ? (
+              <span className="alerts__count px-2 py-0.5 text-xs font-mono font-bold bg-[#F7F1EA] text-[#670626] rounded-md">
+                {unreadAlertsCount} New
+              </span>
+            ) : (
+              <span className="alerts__count is-off text-xs font-mono text-[#FFD9DD]">
+                All Clear
+              </span>
+            )}
+          </div>
 
-        <div className="flex items-center gap-2">
-          {unreadAlertsCount > 0 && (
+          <div className="flex items-center gap-2">
+            {unreadAlertsCount > 0 && (
+              <button
+                type="button"
+                onClick={handleMarkAllRead}
+                className="flex items-center gap-1.5 text-xs font-mono font-semibold text-[#F7F1EA] hover:bg-[#4A041A] transition-colors px-2.5 py-1 rounded-lg border border-[#FFD9DD]/25"
+                title="Mark all notifications as read"
+              >
+                <CheckCheck className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+                <span>Mark All Read</span>
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={handleMarkAllRead}
-              className="flex items-center gap-1 text-[11px] font-mono font-medium text-rose-300 hover:text-rose-200 transition-colors px-2 py-1 rounded hover:bg-rose-950/40"
-              title="Mark all notifications as read"
+              onClick={onClose}
+              aria-label="Close alerts panel"
+              className="p-1.5 rounded-lg text-[#FFD9DD] hover:text-[#F7F1EA] hover:bg-[#4A041A] transition-colors"
             >
-              <CheckCheck className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
-              <span>Mark All Read</span>
+              <X className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close alerts panel"
-            className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <X className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-          </button>
+          </div>
         </div>
+        <p className="text-xs text-[#FFD9DD] font-medium leading-snug">
+          Emergency Advisories &amp; Warnings — Official LDRRMO safety notices &amp; dispatch alerts
+        </p>
       </header>
 
-      <ul className="alerts__list divide-y divide-white/5 max-h-[380px] overflow-y-auto" id="alerts-list">
-        {isLoading && alerts.length === 0 ? (
-          <li className="p-6 text-center text-xs text-slate-400 font-mono flex flex-col items-center gap-2">
-            <Clock className="w-5 h-5 text-slate-500 animate-spin" aria-hidden="true" />
+      <ul className="alerts__list divide-y divide-[#A83B4D]/15 max-h-[380px] overflow-y-auto bg-[#F7F1EA]" id="alerts-list">
+        {isLoading && scopedAlerts.length === 0 ? (
+          <li className="p-6 text-center text-sm text-[#670626] font-mono flex flex-col items-center gap-2">
+            <Clock className="w-5 h-5 text-[#A83B4D] animate-spin" aria-hidden="true" />
             <span>Loading alerts...</span>
           </li>
-        ) : alerts.length === 0 ? (
-          <li className="p-8 text-center text-slate-400 flex flex-col items-center justify-center">
-            <Info className="w-8 h-8 text-slate-600 mb-2 flex-shrink-0" aria-hidden="true" />
-            <p className="text-xs font-semibold text-slate-300">All Clear</p>
-            <p className="text-[11px] text-slate-500 font-mono mt-0.5">No pending emergency alerts.</p>
+        ) : scopedAlerts.length === 0 ? (
+          <li className="p-8 text-center text-[#2B010E] flex flex-col items-center justify-center">
+            <Info className="w-8 h-8 text-[#A83B4D] mb-2 flex-shrink-0" aria-hidden="true" />
+            <p className="text-sm font-bold text-[#670626]">All Clear</p>
+            <p className="text-xs text-[#A83B4D] font-mono mt-1">No pending emergency alerts for your unit.</p>
           </li>
         ) : (
-          alerts.map((report) => {
+          scopedAlerts.map((report) => {
             const key = getAlertKey(report);
             const isRead = Boolean(report.isRead || readIds.includes(key));
             const displayTitle = report.title || report.type || 'Incident Dispatch Alert';
@@ -257,8 +348,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
             return (
               <li
                 key={key || displayTitle}
-                className={`alert transition-all flex items-start gap-3 p-3 cursor-pointer select-none ${
-                  !isRead ? 'is-unread bg-rose-950/20 hover:bg-rose-950/30' : 'bg-transparent hover:bg-white/5 opacity-80 hover:opacity-100'
+                className={`alert transition-all flex items-start gap-3 p-3.5 cursor-pointer select-none ${
+                  !isRead ? 'is-unread bg-[#FAF5EE] hover:bg-[#E9D9D0]/75' : 'bg-[#F7F1EA] hover:bg-[#E9D9D0]/55 opacity-85 hover:opacity-100'
                 }`}
                 tabIndex={0}
                 role="button"
@@ -272,32 +363,31 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
               >
                 {report.hasImage && report.imageUrl ? (
                   <img
-                    className="alert__thumb w-12 h-12 rounded-lg object-cover border border-white/10 bg-slate-900 flex-shrink-0"
+                    className="alert__thumb w-12 h-12 rounded-xl object-cover border border-[#A83B4D]/25 bg-[#E9D9D0] flex-shrink-0"
                     src={report.imageUrl}
                     alt={displayTitle}
                     onError={(e) => {
-                      // Fallback gracefully on image load error
                       (e.currentTarget as HTMLElement).style.display = 'none';
                     }}
                   />
                 ) : (
-                  <div className="w-10 h-10 rounded-lg border border-white/10 bg-slate-900 flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 rounded-xl border border-[#A83B4D]/25 bg-[#E9D9D0] flex items-center justify-center flex-shrink-0">
                     {renderCategoryIcon(report.category, report.severity)}
                   </div>
                 )}
 
                 <div className="alert__body flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-1">
-                    <p className="alert__title text-xs font-semibold text-slate-200 truncate">
+                    <p className="alert__title text-sm font-bold text-[#2B010E] truncate">
                       {displayTitle}
                     </p>
                     {isRead ? (
-                      <Check className="w-3 h-3 text-[#ff5c74] flex-shrink-0" aria-label="Read" />
+                      <Check className="w-3.5 h-3.5 text-[#A83B4D] flex-shrink-0" aria-label="Read" />
                     ) : (
-                      <span className="w-2 h-2 rounded-full bg-rose-500 flex-shrink-0 animate-pulse" aria-hidden="true" />
+                      <span className="w-2 h-2 rounded-full bg-[#670626] flex-shrink-0 animate-pulse" aria-hidden="true" />
                     )}
                   </div>
-                  <p className="alert__meta text-[10px] font-mono text-slate-400 tracking-wider truncate mt-0.5">
+                  <p className="alert__meta text-xs font-mono text-[#A83B4D] tracking-wider truncate mt-0.5">
                     {displayCategory} &middot; {displayRef}{displayReporter}
                   </p>
                 </div>

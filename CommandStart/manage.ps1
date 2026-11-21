@@ -10,7 +10,10 @@
 [CmdletBinding()]
 param (
     [Parameter(Position = 0)]
-    [string]$Action = ""
+    [string]$Action = "",
+
+    [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
+    [string[]]$RemainingArgs = @()
 )
 
 $ErrorActionPreference = "Continue"
@@ -198,7 +201,7 @@ function Start-AllEngines {
     Push-Location $BackendDir
     try {
         # Auto-run EF Core database migration on boot for fresh clones
-        dotnet ef database update --no-build --nologo 2>$null
+        dotnet ef database update --no-build 2>$null
     } catch {
         Write-Warn "EF database update deferred (runtime EnsureCreatedAsync handles database setup on start)."
     } finally {
@@ -690,10 +693,10 @@ function Invoke-CleanRebuild {
 }
 
 function Invoke-DockerRebuild {
-    Write-Header "DOCKER BUILD / REBUILD"
+    Write-Header "DOCKER CLEAN BUILD / REBUILD"
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         Write-Err "Docker is not installed or docker daemon is not running."
-        Pause-Console
+        if (-not $Action) { Pause-Console }
         return
     }
 
@@ -703,14 +706,201 @@ function Invoke-DockerRebuild {
         docker compose down
         Write-Info "Rebuilding containers without cache..."
         docker compose build --no-cache
+        if ($LASTEXITCODE -ne 0) {
+            Write-Err "Docker build failed (exit code $LASTEXITCODE)."
+            if ($Action) { exit $LASTEXITCODE }
+            return
+        }
         Write-Info "Starting containers in detached mode..."
         docker compose up -d
+        if ($LASTEXITCODE -ne 0) {
+            Write-Err "Docker compose up failed (exit code $LASTEXITCODE)."
+            if ($Action) { exit $LASTEXITCODE }
+            return
+        }
         Write-Success "Docker containers deployed."
         docker compose ps
     } catch {
         Write-Err "Docker operation failed: $_"
     } finally {
         Pop-Location
+    }
+}
+
+function Invoke-DockerUpBuild {
+    Write-Header "DOCKER COMPOSE UP -D --BUILD"
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        Write-Err "Docker is not installed or docker daemon is not running."
+        if (-not $Action) { Pause-Console }
+        return
+    }
+
+    Push-Location $RootDir
+    try {
+        Write-Info "Building and starting Docker Compose services..."
+        docker compose up -d --build
+        if ($LASTEXITCODE -ne 0) {
+            Write-Err "Docker compose up --build failed (exit code $LASTEXITCODE)."
+            if ($Action) { exit $LASTEXITCODE }
+            return
+        }
+        Write-Success "Docker stack built and running."
+        docker compose ps
+    } catch {
+        Write-Err "Docker operation failed: $_"
+    } finally {
+        Pop-Location
+    }
+}
+
+function Invoke-AddMigration {
+    param([string[]]$MigrationArgs = @())
+    $migName = if ($MigrationArgs.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($MigrationArgs[0])) {
+        $MigrationArgs[0].Trim()
+    } else {
+        Read-Host "Enter New Migration Name (e.g. AddAuditIndexing)"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($migName)) {
+        Write-Warn "Migration name cannot be empty."
+        return
+    }
+
+    Push-Location $BackendDir
+    try {
+        Write-Info "Creating EF Core migration '$migName'..."
+        dotnet ef migrations add $migName
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Migration '$migName' created successfully."
+        } else {
+            Write-Err "Failed to add migration '$migName' (exit code $LASTEXITCODE)."
+            if ($Action) { exit $LASTEXITCODE }
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
+function Invoke-UpdateDatabase {
+    Push-Location $BackendDir
+    try {
+        Write-Info "Applying EF Core database migrations..."
+        dotnet ef database update
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Database migration update completed."
+        } else {
+            Write-Err "Database migration update failed (exit code $LASTEXITCODE)."
+            if ($Action) { exit $LASTEXITCODE }
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
+function Prompt-DockerAccountArgs {
+    param([string]$CommandName)
+    $email = Read-Host "Enter Email"
+    if ([string]::IsNullOrWhiteSpace($email)) { return @() }
+    $pass = Read-Host "Enter Password (min 12 chars)"
+    if ([string]::IsNullOrWhiteSpace($pass) -or $pass.Length -lt 12) {
+        Write-Warn "Password must be at least 12 characters."
+        return @()
+    }
+
+    switch ($CommandName) {
+        "createresponder" {
+            $unit = Read-Host "Enter Unit (RHU / FIRE / PNP)"
+            if ([string]::IsNullOrWhiteSpace($unit)) { $unit = "RHU" }
+            $fullName = Read-Host "Enter Full Name [optional]"
+            if ([string]::IsNullOrWhiteSpace($fullName)) { return @($email, $pass, $unit) }
+            return @($email, $pass, $unit, $fullName)
+        }
+        "createcustomresponder" {
+            $unit = Read-Host "Enter Unit (RHU / FIRE / PNP) [default: RHU]"
+            if ([string]::IsNullOrWhiteSpace($unit)) { $unit = "RHU" }
+            $fullName = Read-Host "Enter Full Name [optional]"
+            if ([string]::IsNullOrWhiteSpace($fullName)) { return @($email, $pass, $unit) }
+            return @($email, $pass, $unit, $fullName)
+        }
+        "createcustomsuperadmin" {
+            $unit = Read-Host "Enter Unit (LDRRMO / RHU / FIRE / PNP) [default: RHU]"
+            if ([string]::IsNullOrWhiteSpace($unit)) { $unit = "RHU" }
+            $fullName = Read-Host "Enter Full Name [optional]"
+            if ([string]::IsNullOrWhiteSpace($fullName)) { return @($email, $pass, $unit) }
+            return @($email, $pass, $unit, $fullName)
+        }
+        default {
+            $fullName = Read-Host "Enter Full Name [optional]"
+            if ([string]::IsNullOrWhiteSpace($fullName)) { return @($email, $pass) }
+            return @($email, $pass, $fullName)
+        }
+    }
+}
+
+function Invoke-DockerBackendCli {
+    param(
+        [string]$CommandName,
+        [string[]]$CliArgs = @()
+    )
+
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        Write-Err "Docker is not installed or docker daemon is not running."
+        return
+    }
+
+    $needsArgs = $CommandName -ne "updatedatabase" -and $CommandName -ne "listcliusers" -and $CommandName -ne "deleteallcliusers"
+    if ($needsArgs -and $CliArgs.Count -eq 0) {
+        $CliArgs = Prompt-DockerAccountArgs -CommandName $CommandName
+        if ($CliArgs.Count -eq 0) {
+            Write-Warn "Docker CLI operation cancelled."
+            return
+        }
+    }
+
+    Push-Location $RootDir
+    try {
+        $runningId = (& docker compose ps -q resqtrack-backend --status running 2>$null)
+        if (-not [string]::IsNullOrWhiteSpace(($runningId -join "").Trim())) {
+            Write-Info "Executing 'dotnet Backend.dll $CommandName' inside running resqtrack-backend container..."
+            & docker compose exec resqtrack-backend dotnet Backend.dll $CommandName @CliArgs
+        } else {
+            Write-Info "Container not running; executing one-shot 'docker compose run --rm resqtrack-backend dotnet Backend.dll $CommandName'..."
+            & docker compose run --rm resqtrack-backend dotnet Backend.dll $CommandName @CliArgs
+        }
+
+        if ($LASTEXITCODE -ne 0 -and $Action) {
+            exit $LASTEXITCODE
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
+function Show-DockerCliMenu {
+    Write-Header "DOCKER CLI OPERATIONS (BACKEND CONTAINER)"
+    Write-Host "  [1] Docker Up & Build (docker compose up -d --build)"
+    Write-Host "  [2] Docker Clean Build (down -> build --no-cache -> up -d)"
+    Write-Host "  [3] Docker Update Database (dotnet Backend.dll updatedatabase)"
+    Write-Host "  [4] Docker Create Superadmin (createsuperadmin)"
+    Write-Host "  [5] Docker Create Custom Superadmin (createcustomsuperadmin)"
+    Write-Host "  [6] Docker Create Responder (createresponder)"
+    Write-Host "  [7] Docker Create Custom Responder (createcustomresponder)"
+    Write-Host "  [8] Docker Create Civilian (createcivilian)"
+    Write-Host "  [9] Docker Create Custom Civilian (createcustomcivilian)"
+    Write-Host "  [0] Return to Main Menu`n"
+
+    $subChoice = Read-Host "Select Docker CLI Action (0-9)"
+    switch ($subChoice) {
+        "1" { Invoke-DockerUpBuild }
+        "2" { Invoke-DockerRebuild }
+        "3" { Invoke-DockerBackendCli -CommandName "updatedatabase" }
+        "4" { Invoke-DockerBackendCli -CommandName "createsuperadmin" }
+        "5" { Invoke-DockerBackendCli -CommandName "createcustomsuperadmin" }
+        "6" { Invoke-DockerBackendCli -CommandName "createresponder" }
+        "7" { Invoke-DockerBackendCli -CommandName "createcustomresponder" }
+        "8" { Invoke-DockerBackendCli -CommandName "createcivilian" }
+        "9" { Invoke-DockerBackendCli -CommandName "createcustomcivilian" }
+        default { return }
     }
 }
 
@@ -741,13 +931,15 @@ function Show-MainMenu {
         Write-Host " SYSTEM MAINTENANCE & CONTAINERS" -ForegroundColor DarkCyan
         Write-Host "  [13] HARD HOT REFRESH (Purge Vite caches & restart)"
         Write-Host "  [14] CLEAN BUILD / REBUILD (.NET clean & build, frontend check)"
-        Write-Host "  [15] DOCKER BUILD / REBUILD (Compose down, rebuild, boot)"
+        Write-Host "  [15] DOCKER CLEAN BUILD / REBUILD (Compose down, build --no-cache, up -d)"
         Write-Host "  [16] AUTO-INSTALL ALL REQUIREMENTS (.NET 10, Node.js, SSMS/PG, npm modules)" -ForegroundColor Yellow
+        Write-Host "  [17] DOCKER UP & BUILD (docker compose up -d --build)" -ForegroundColor DarkCyan
+        Write-Host "  [18] DOCKER CLI OPERATIONS (Superadmin / Responder / Civilian / DB Migrate)" -ForegroundColor DarkCyan
         Write-Host ""
         Write-Host "  [0]  Exit Console"
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
 
-        $choice = Read-Host "Select an Option [0-16]"
+        $choice = Read-Host "Select an Option [0-18]"
 
         switch ($choice) {
             "1"  { Start-AllEngines; Pause-Console }
@@ -774,8 +966,10 @@ function Show-MainMenu {
                 }
                 Pause-Console 
             }
+            "17" { Invoke-DockerUpBuild; Pause-Console }
+            "18" { Show-DockerCliMenu; Pause-Console }
             "0"  { Write-Host "Exiting ResQTrack Management Console. Goodbye!" -ForegroundColor Cyan; break }
-            default { Write-Warn "Invalid choice. Please enter a number between 0 and 16."; Start-Sleep -Milliseconds 800 }
+            default { Write-Warn "Invalid choice. Please enter a number between 0 and 18."; Start-Sleep -Milliseconds 800 }
         }
     }
 }
@@ -801,21 +995,39 @@ function Show-SystemStatus {
 # --- CLI Dispatcher Entrypoint ---
 if ($Action) {
     switch ($Action.ToLowerInvariant()) {
-        "start"         { Start-AllEngines }
-        "-start"        { Start-AllEngines }
-        "dev"           { Start-AllEngines }
-        "-dev"          { Start-AllEngines }
-        "stop"          { Stop-PortProcesses }
-        "status"        { Show-SystemStatus }
-        "migrate"       { Manage-DatabaseMigrations }
-        "superadmin"    { Create-SuperadminAccount }
-        "refresh"       { Invoke-HardHotRefresh }
-        "rebuild"       { Invoke-CleanRebuild }
-        "docker"        { Invoke-DockerRebuild }
-        "docker-build"  { Invoke-DockerRebuild }
-        "docker-up"     { Push-Location $RootDir; try { docker compose up -d } finally { Pop-Location } }
-        "docker-down"   { Push-Location $RootDir; try { docker compose down } finally { Pop-Location } }
-        "docker-status" { Push-Location $RootDir; try { docker compose ps } finally { Pop-Location } }
+        "start"                         { Start-AllEngines }
+        "-start"                        { Start-AllEngines }
+        "dev"                           { Start-AllEngines }
+        "-dev"                          { Start-AllEngines }
+        "stop"                          { Stop-PortProcesses }
+        "status"                        { Show-SystemStatus }
+        "migrate"                       { Manage-DatabaseMigrations }
+        "addmigration"                  { Invoke-AddMigration -MigrationArgs $RemainingArgs }
+        "updatedatabase"                { Invoke-UpdateDatabase }
+        "superadmin"                    { Create-SuperadminAccount }
+        "createsuperadmin"              { if ($RemainingArgs.Count -ge 2) { Write-Host ((Run-BackendCli -CliArgs (@("createsuperadmin") + $RemainingArgs)) -join "`n") } else { Create-SuperadminAccount } }
+        "createcustomsuperadmin"        { if ($RemainingArgs.Count -ge 2) { Write-Host ((Run-BackendCli -CliArgs (@("createcustomsuperadmin") + $RemainingArgs)) -join "`n") } else { Write-Host ((Run-BackendCli -CliArgs (@("createcustomsuperadmin") + (Prompt-DockerAccountArgs -CommandName "createcustomsuperadmin"))) -join "`n") } }
+        "createresponder"               { if ($RemainingArgs.Count -ge 3) { Write-Host ((Run-BackendCli -CliArgs (@("createresponder") + $RemainingArgs)) -join "`n") } else { Create-ResponderAccount } }
+        "createcustomresponder"         { if ($RemainingArgs.Count -ge 2) { Write-Host ((Run-BackendCli -CliArgs (@("createcustomresponder") + $RemainingArgs)) -join "`n") } else { Write-Host ((Run-BackendCli -CliArgs (@("createcustomresponder") + (Prompt-DockerAccountArgs -CommandName "createcustomresponder"))) -join "`n") } }
+        "createcivilian"                { if ($RemainingArgs.Count -ge 2) { Write-Host ((Run-BackendCli -CliArgs (@("createcivilian") + $RemainingArgs)) -join "`n") } else { Create-CivilianAccount } }
+        "createcustomcivilian"          { if ($RemainingArgs.Count -ge 2) { Write-Host ((Run-BackendCli -CliArgs (@("createcustomcivilian") + $RemainingArgs)) -join "`n") } else { Write-Host ((Run-BackendCli -CliArgs (@("createcustomcivilian") + (Prompt-DockerAccountArgs -CommandName "createcustomcivilian"))) -join "`n") } }
+        "refresh"                       { Invoke-HardHotRefresh }
+        "rebuild"                       { Invoke-CleanRebuild }
+        "cleanbuild"                    { Invoke-DockerRebuild }
+        "docker"                        { Invoke-DockerRebuild }
+        "docker-cleanbuild"             { Invoke-DockerRebuild }
+        "docker-rebuild"                { Invoke-DockerRebuild }
+        "docker-up"                     { Invoke-DockerUpBuild }
+        "docker-build"                  { Invoke-DockerUpBuild }
+        "docker-down"                   { Push-Location $RootDir; try { docker compose down } finally { Pop-Location } }
+        "docker-status"                 { Push-Location $RootDir; try { docker compose ps } finally { Pop-Location } }
+        "docker-updatedatabase"         { Invoke-DockerBackendCli -CommandName "updatedatabase" }
+        "docker-createsuperadmin"       { Invoke-DockerBackendCli -CommandName "createsuperadmin" -CliArgs $RemainingArgs }
+        "docker-createcustomsuperadmin" { Invoke-DockerBackendCli -CommandName "createcustomsuperadmin" -CliArgs $RemainingArgs }
+        "docker-createresponder"        { Invoke-DockerBackendCli -CommandName "createresponder" -CliArgs $RemainingArgs }
+        "docker-createcustomresponder"  { Invoke-DockerBackendCli -CommandName "createcustomresponder" -CliArgs $RemainingArgs }
+        "docker-createcivilian"         { Invoke-DockerBackendCli -CommandName "createcivilian" -CliArgs $RemainingArgs }
+        "docker-createcustomcivilian"   { Invoke-DockerBackendCli -CommandName "createcustomcivilian" -CliArgs $RemainingArgs }
         "install"       { 
             $installScript = Join-Path $PSScriptRoot "install_requirements.ps1"
             & $installScript

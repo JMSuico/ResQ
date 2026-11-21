@@ -56,6 +56,13 @@ const buildPointerSettingsPayload = (
   sortedVisibilityMode: hideNonMedic ? 'HIDE' : 'SHOW_PALE'
 });
 
+const getAgencyBadgeClass = (unit?: string): string => {
+  const norm = (unit || 'RHU').toUpperCase();
+  if (norm === 'FIRE') return 'bg-orange-100 text-orange-900 border-orange-700/30';
+  if (norm === 'PNP') return 'bg-indigo-100 text-indigo-900 border-indigo-700/30';
+  return 'bg-sky-100 text-sky-900 border-sky-700/30';
+};
+
 export const ResponderProfile: React.FC = () => {
   const { session } = useSession();
   const [radioFreq, setRadioFreq] = useState<string>('');
@@ -270,23 +277,28 @@ export const ResponderProfile: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full text-slate-100 select-none pb-10">
+    <div className="flex flex-col gap-6 w-full text-[#2B010E] select-none pb-10">
       {toastMessage && (
-        <div className="p-3.5 rounded-xl bg-sky-950/95 border border-sky-500 text-sky-200 text-xs font-medium flex items-center gap-3 shadow-lg shadow-sky-950/50">
-          <Check className="w-4 h-4 text-sky-400 flex-shrink-0" />
+        <div className="clay-surface p-4 rounded-xl bg-[#F7F1EA] border border-[#670626]/25 text-[#670626] text-sm font-bold flex items-center gap-3 shadow-lg">
+          <Check className="w-5 h-5 text-[#670626] flex-shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* Page Header: Profile Settings */}
-      <div>
-        <h1 className="text-2xl font-black text-white tracking-tight">Profile Settings</h1>
+      <div className="border-b border-[#F7F1EA]/20 pb-4">
+        <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#E9D9D0]">
+          Responder Account &amp; Telemetry
+        </span>
+        <h1 className="text-2xl md:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
+          Profile Settings
+        </h1>
       </div>
 
       {/* Responder Credentials & Apparatus Config Card */}
-      <div className="tactical-card p-6 flex flex-col gap-6 bg-slate-900/90 border border-slate-800 rounded-xl">
-        <div className="flex items-center gap-4 pb-6 border-b border-slate-800">
-          <div className="relative group w-16 h-16 rounded-2xl overflow-hidden border border-sky-400/50 shadow-lg bg-slate-950 flex items-center justify-center flex-shrink-0">
+      <div className="clay-surface p-6 flex flex-col gap-6 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 rounded-2xl shadow-[0_16px_38px_rgba(74,4,26,0.24)]">
+        <div className="flex items-center gap-4 pb-6 border-b border-[#670626]/15">
+          <div className="relative group w-20 h-20 rounded-2xl overflow-hidden border-2 border-[#670626]/25 shadow-sm bg-[#E9D9D0] flex items-center justify-center flex-shrink-0">
             {avatarUrl ? (
               <img
                 src={avatarUrl}
@@ -294,17 +306,17 @@ export const ResponderProfile: React.FC = () => {
                 className="w-full h-full object-cover"
               />
             ) : (
-              <div className="w-full h-full bg-gradient-to-tr from-sky-600 to-indigo-600 flex items-center justify-center text-2xl font-black text-white">
+              <div className="w-full h-full bg-[#670626] flex items-center justify-center text-3xl font-black text-[#F7F1EA]">
                 {session?.fullName?.charAt(0) || 'R'}
               </div>
             )}
 
             {/* Photo Upload Overlay Button */}
             <label
-              className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white text-[10px] font-mono font-bold"
+              className="absolute inset-0 bg-[#4A041A]/75 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-[#F7F1EA] text-xs font-mono font-bold"
               title="Upload Officer Photo"
             >
-              <Camera className="w-5 h-5 mb-0.5 text-sky-400" />
+              <Camera className="w-5 h-5 mb-0.5 text-[#F7F1EA]" />
               <span>Photo</span>
               <input
                 type="file"
@@ -316,21 +328,32 @@ export const ResponderProfile: React.FC = () => {
           </div>
 
           <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-bold text-white font-sans">{session?.fullName || 'Active Medic Officer'}</h3>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h3 className="text-xl font-black text-[#670626] font-sans">
+                {session?.fullName || 'Active Field Responder'}
+              </h3>
               {session?.faceVerified && (
-                <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-mono font-bold inline-flex items-center gap-1">
-                  <Shield className="w-3 h-3" />
+                <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-700/30 text-xs font-mono font-bold inline-flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5" />
                   <span>Verified</span>
                 </span>
               )}
+              <span
+                className={`px-3 py-1 rounded-full border text-xs font-mono font-bold ${getAgencyBadgeClass(
+                  session?.unit
+                )}`}
+              >
+                {session?.unit || 'RHU'}
+              </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5 font-mono">{session?.email || 'medic.rhu@resqtrack.gov.ph'}</p>
+            <p className="text-sm text-[#A83B4D] mt-0.5 font-mono">
+              {session?.email || 'responder@katipunan.gov.ph'}
+            </p>
 
             {/* Upload photo / Reset actions */}
-            <div className="flex items-center gap-3 mt-1.5">
-              <label className="text-[11px] font-mono font-bold text-sky-400 hover:text-sky-300 cursor-pointer flex items-center gap-1.5">
-                <Camera className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-4 mt-2">
+              <label className="text-xs font-mono font-bold text-[#670626] hover:text-[#4A041A] cursor-pointer flex items-center gap-1.5">
+                <Camera className="w-4 h-4" />
                 <span>Upload Photo</span>
                 <input
                   type="file"
@@ -343,7 +366,7 @@ export const ResponderProfile: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleResetAvatar}
-                  className="text-[11px] font-mono text-slate-400 hover:text-rose-400 underline transition-colors cursor-pointer"
+                  className="text-xs font-mono text-[#A83B4D] hover:text-[#670626] underline transition-colors cursor-pointer"
                 >
                   Reset to Default Photo
                 </button>
@@ -352,80 +375,94 @@ export const ResponderProfile: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
-          <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
-            <span className="text-slate-500 block text-[10px]">Role</span>
-            <span className="text-white font-bold">{session?.role || 'Responder'}</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm font-mono">
+          <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
+            <span className="text-[#A83B4D] block text-xs font-bold">Role</span>
+            <span className="text-[#670626] font-black text-base mt-0.5 block">
+              {session?.role || 'Responder'}
+            </span>
           </div>
 
-          <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
-            <span className="text-slate-500 block text-[10px]">Unit Agency</span>
-            <span className="text-sky-400 font-bold">{session?.unit || 'RHU'}</span>
+          <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
+            <span className="text-[#A83B4D] block text-xs font-bold">Unit Agency</span>
+            <span className="mt-1 inline-block">
+              <span
+                className={`px-2.5 py-0.5 rounded-lg border text-sm font-black ${getAgencyBadgeClass(
+                  session?.unit
+                )}`}
+              >
+                {session?.unit || 'RHU'}
+              </span>
+            </span>
           </div>
 
-          <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
-            <span className="text-slate-500 block text-[10px]">Employee ID</span>
-            <span className="text-white font-bold">{session?.employeeOrResidentId || 'RES-RHU-019'}</span>
+          <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
+            <span className="text-[#A83B4D] block text-xs font-bold">Employee ID</span>
+            <span className="text-[#670626] font-black text-base mt-0.5 block">
+              {session?.employeeOrResidentId || 'RES-KTN-019'}
+            </span>
           </div>
 
-          <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
-            <span className="text-slate-500 block text-[10px]">Rank / Title</span>
-            <span className="text-white font-bold">{session?.rankOrTitle || 'EMS Trauma Medic'}</span>
+          <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
+            <span className="text-[#A83B4D] block text-xs font-bold">Rank / Title</span>
+            <span className="text-[#670626] font-black text-base mt-0.5 block">
+              {session?.rankOrTitle || 'Field Responder'}
+            </span>
           </div>
         </div>
 
         {/* Tactical Field Apparatus & Radio Config */}
-        <form onSubmit={handleSave} className="flex flex-col gap-4 pt-4 border-t border-slate-800 text-xs font-mono">
+        <form onSubmit={handleSave} className="flex flex-col gap-4 pt-4 border-t border-[#670626]/15 text-sm font-mono">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-300 tracking-wider flex items-center gap-1.5">
-              <Radio className="w-3.5 h-3.5 text-sky-400" />
+            <span className="text-sm font-black text-[#670626] tracking-wider flex items-center gap-2">
+              <Radio className="w-4 h-4 text-[#A83B4D]" />
               <span>Unit &amp; Radio Settings</span>
             </span>
             {isSaved && (
-              <span className="text-emerald-400 font-bold inline-flex items-center gap-1">
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-emerald-800 font-bold inline-flex items-center gap-1.5 bg-emerald-100 border border-emerald-700/30 px-2.5 py-0.5 rounded-lg text-xs">
+                <Check className="w-4 h-4 text-emerald-700" />
                 <span>Saved</span>
               </span>
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-slate-400 text-[10px]">Radio Frequency</label>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[#670626] text-xs font-bold">Radio Frequency</label>
               <input
                 type="text"
                 value={radioFreq}
                 onChange={(e) => setRadioFreq(e.target.value)}
                 placeholder="e.g. 142.850 MHz"
-                className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:outline-none focus:border-sky-500 font-bold"
+                className="p-3 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#2B010E] placeholder-[#9B727D] focus:outline-none focus:border-[#670626] focus:ring-2 focus:ring-[#A83B4D]/25 font-bold"
               />
             </div>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-slate-400 text-[10px]">Unit Call Sign</label>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[#670626] text-xs font-bold">Unit Call Sign</label>
               <input
                 type="text"
                 value={apparatusPlate}
                 onChange={(e) => setApparatusPlate(e.target.value)}
-                placeholder="e.g. S-RHU-04"
-                className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:outline-none focus:border-sky-500 font-bold"
+                placeholder="e.g. RHU-MEDIC-01"
+                className="p-3 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#2B010E] placeholder-[#9B727D] focus:outline-none focus:border-[#670626] focus:ring-2 focus:ring-[#A83B4D]/25 font-bold"
               />
             </div>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-slate-400 text-[10px]">Duty Phone</label>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[#670626] text-xs font-bold">Operator Contact Number</label>
               <input
                 type="text"
                 value={emergencyPhone}
                 onChange={(e) => setEmergencyPhone(e.target.value)}
-                placeholder="e.g. +63 917 882 1928"
-                className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:outline-none focus:border-sky-500 font-bold"
+                placeholder="e.g. 0917 882 1928"
+                className="p-3 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#2B010E] placeholder-[#9B727D] focus:outline-none focus:border-[#670626] focus:ring-2 focus:ring-[#A83B4D]/25 font-bold"
               />
             </div>
           </div>
 
           <div className="flex justify-end pt-2">
-            <Button type="submit" variant="primary" size="sm" className="font-bold">
+            <Button type="submit" variant="primary" size="md" className="font-bold text-sm">
               Save Settings
             </Button>
           </div>
@@ -433,41 +470,41 @@ export const ResponderProfile: React.FC = () => {
       </div>
 
       {/* Map Pin Visibility Settings Card */}
-      <div className="tactical-card p-6 flex flex-col gap-5 bg-slate-900/90 border border-slate-800 rounded-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-800">
+      <div className="clay-surface p-6 flex flex-col gap-5 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 rounded-2xl shadow-[0_16px_38px_rgba(74,4,26,0.24)]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-[#670626]/15">
           <div>
             <div className="flex items-center gap-2">
-              <Radar className="w-4 h-4 text-sky-400" />
-              <h2 className="text-sm font-black font-mono tracking-wider text-white">
+              <Radar className="w-5 h-5 text-[#670626]" />
+              <h2 className="text-base font-black font-mono tracking-wider text-[#670626]">
                 Map Pin Visibility
               </h2>
             </div>
-            <p className="text-xs font-mono text-slate-400 mt-1">
+            <p className="text-sm font-mono text-[#A83B4D] mt-1">
               Control how non-medic pins render on the incident map.
             </p>
           </div>
         </div>
 
         {/* Setting 1 — Dim Non-Medic Pins */}
-        <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-3">
+        <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Palette className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-              <span className="text-xs font-mono font-bold text-white tracking-wide">
+              <Palette className="w-4 h-4 text-[#670626] flex-shrink-0" />
+              <span className="text-sm font-mono font-bold text-[#670626] tracking-wide">
                 Dim Non-Medic Pins
               </span>
             </div>
             <span
-              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border ${
                 paleNonMedicEnabled
-                  ? 'bg-sky-950 text-sky-300 border-sky-600'
-                  : 'bg-slate-900 text-slate-400 border-slate-700'
+                  ? 'bg-[#670626] text-[#F7F1EA] border-[#670626]'
+                  : 'bg-[#F7F1EA] text-[#7A4E59] border-[#D8C1B5]'
               }`}
             >
               {paleNonMedicEnabled ? 'Enabled' : 'Disabled'}
             </span>
           </div>
-          <p className="text-[11px] font-mono text-slate-400">
+          <p className="text-xs font-mono text-[#5C313E]">
             Desaturate non-medic pins so medical priorities stand out.
           </p>
 
@@ -480,10 +517,10 @@ export const ResponderProfile: React.FC = () => {
                   'Non-medic pin dimming enabled'
                 )
               }
-              className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+              className={`p-4 rounded-xl border transition-all cursor-pointer ${
                 paleNonMedicEnabled
-                  ? 'bg-sky-950/60 border-sky-500 shadow-md shadow-sky-950/50'
-                  : 'bg-slate-900/70 border-slate-800 hover:border-slate-700'
+                  ? 'bg-[#F7F1EA] border-[#670626] shadow-sm ring-1 ring-[#A83B4D]/35'
+                  : 'bg-[#F7F1EA]/65 border-[#D8C1B5] hover:border-[#A83B4D]'
               }`}
             >
               <RadioButton
@@ -510,10 +547,10 @@ export const ResponderProfile: React.FC = () => {
                   'Non-medic pin dimming disabled'
                 )
               }
-              className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+              className={`p-4 rounded-xl border transition-all cursor-pointer ${
                 !paleNonMedicEnabled
-                  ? 'bg-sky-950/60 border-sky-500 shadow-md shadow-sky-950/50'
-                  : 'bg-slate-900/70 border-slate-800 hover:border-slate-700'
+                  ? 'bg-[#F7F1EA] border-[#670626] shadow-sm ring-1 ring-[#A83B4D]/35'
+                  : 'bg-[#F7F1EA]/65 border-[#D8C1B5] hover:border-[#A83B4D]'
               }`}
             >
               <RadioButton
@@ -535,25 +572,25 @@ export const ResponderProfile: React.FC = () => {
         </div>
 
         {/* Setting 2 — Non-Medic Visibility When Filtered */}
-        <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-3">
+        <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Eye className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span className="text-xs font-mono font-bold text-white tracking-wide">
+              <Eye className="w-4 h-4 text-[#670626] flex-shrink-0" />
+              <span className="text-sm font-mono font-bold text-[#670626] tracking-wide">
                 Non-Medic Visibility
               </span>
             </div>
             <span
-              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border ${
                 !hideNonMedicWhenSorted
-                  ? 'bg-emerald-950 text-emerald-300 border-emerald-600'
-                  : 'bg-rose-950 text-rose-300 border-rose-600'
+                  ? 'bg-emerald-100 text-emerald-900 border-emerald-700/30'
+                  : 'bg-[#670626] text-[#F7F1EA] border-[#670626]'
               }`}
             >
               {!hideNonMedicWhenSorted ? 'Show Dimmed' : 'Hidden'}
             </span>
           </div>
-          <p className="text-[11px] font-mono text-slate-400">
+          <p className="text-xs font-mono text-[#5C313E]">
             Keep non-medic pins dimmed or hide them completely when sorted.
           </p>
 
@@ -566,10 +603,10 @@ export const ResponderProfile: React.FC = () => {
                   'Showing dimmed non-medic pins'
                 )
               }
-              className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+              className={`p-4 rounded-xl border transition-all cursor-pointer ${
                 !hideNonMedicWhenSorted
-                  ? 'bg-emerald-950/50 border-emerald-500 shadow-md shadow-emerald-950/50'
-                  : 'bg-slate-900/70 border-slate-800 hover:border-slate-700'
+                  ? 'bg-[#F7F1EA] border-emerald-700 shadow-sm ring-1 ring-emerald-700/25'
+                  : 'bg-[#F7F1EA]/65 border-[#D8C1B5] hover:border-[#A83B4D]'
               }`}
             >
               <RadioButton
@@ -596,10 +633,10 @@ export const ResponderProfile: React.FC = () => {
                   'Hiding non-medic pins'
                 )
               }
-              className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
+              className={`p-4 rounded-xl border transition-all cursor-pointer ${
                 hideNonMedicWhenSorted
-                  ? 'bg-rose-950/50 border-rose-500 shadow-md shadow-rose-950/50'
-                  : 'bg-slate-900/70 border-slate-800 hover:border-slate-700'
+                  ? 'bg-[#F7F1EA] border-[#670626] shadow-sm ring-1 ring-[#A83B4D]/35'
+                  : 'bg-[#F7F1EA]/65 border-[#D8C1B5] hover:border-[#A83B4D]'
               }`}
             >
               <RadioButton

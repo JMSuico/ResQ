@@ -13,7 +13,7 @@ export interface DutyUnit {
   status: 'OnDuty' | 'Dispatched' | 'Standby' | 'OffDuty';
   baseLatitude: number;
   baseLongitude: number;
-  contactHotline: string;
+  contactHotline?: string;
   activePersonnelCount: number;
   shiftSchedule: string;
   updatedAt: string;
@@ -268,6 +268,22 @@ const DISPATCH_STORAGE_KEY = 'resqtrack_dispatch_requests';
 const NOTIFICATION_STORAGE_KEY = 'resqtrack_responder_notifications';
 const SETTING_LEDGER_KEY = 'DISPATCH_REQUESTS_LEDGER';
 
+const buildDispatchEvidenceUri = (code: string, subtitle: string): string => {
+  const safeCode = code.replace(/[<>&"']/g, '');
+  const safeSub = subtitle.replace(/[<>&"']/g, '');
+  const svg = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">',
+    '<rect width="640" height="360" fill="#4A041A"/>',
+    '<rect x="24" y="24" width="592" height="312" rx="20" fill="#F7F1EA"/>',
+    '<rect x="44" y="44" width="180" height="32" rx="8" fill="#670626"/>',
+    `<text x="134" y="65" text-anchor="middle" font-family="monospace" font-size="13" font-weight="700" fill="#F7F1EA">${safeCode}</text>`,
+    `<text x="320" y="185" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18" font-weight="800" fill="#2B010E">${safeSub}</text>`,
+    '<text x="320" y="220" text-anchor="middle" font-family="monospace" font-size="12" fill="#A83B4D">RESQTRACK KATIPUNAN DISPATCH TELEMETRY</text>',
+    '</svg>'
+  ].join('');
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
 const buildInitialSeedRequests = (): DispatchRequestRecord[] => {
   const now = Date.now();
   return [
@@ -278,11 +294,10 @@ const buildInitialSeedRequests = (): DispatchRequestRecord[] => {
       incidentTitle: 'Multi-Vehicle Highway Collision - Trauma Triage',
       category: 'Medical / Trauma',
       severity: 'Critical',
-      location: 'MacArthur Highway, Brgy. San Vicente, Apalit',
-      coordinates: '14.9547° N, 120.7589° E',
+      location: 'National Highway, Brgy. Dos (Poblacion), Katipunan, ZN',
+      coordinates: '8.5119° N, 123.2814° E',
       ipAddress: '192.168.42.118',
-      evidenceUrl:
-        'https://images.unsplash.com/photo-1587745416684-47953f16f02f?auto=format&fit=crop&w=900&q=80',
+      evidenceUrl: buildDispatchEvidenceUri('RHU-2026-9041', 'Highway Trauma Triage'),
       responderId: 'MED-UNIT-01',
       responderName: 'Medic Alpha-1 (RHU EMS)',
       direction: 'MEDIC_REQUEST',
@@ -299,11 +314,10 @@ const buildInitialSeedRequests = (): DispatchRequestRecord[] => {
       incidentTitle: 'Acute Cardiac Arrest & Respiratory Distress',
       category: 'Medical Emergency',
       severity: 'Critical',
-      location: 'Purok 4, Brgy. Sampaloc, Apalit Municipal Plaza',
-      coordinates: '14.9612° N, 120.7634° E',
+      location: 'Purok 2, Brgy. Uno (Poblacion), Katipunan, ZN',
+      coordinates: '8.5162° N, 123.2858° E',
       ipAddress: '10.24.88.204',
-      evidenceUrl:
-        'https://images.unsplash.com/photo-1516574187841-cb9cc2ca948b?auto=format&fit=crop&w=900&q=80',
+      evidenceUrl: buildDispatchEvidenceUri('RHU-2026-9044', 'Cardiac & Respiratory Response'),
       responderId: 'MED-UNIT-01',
       responderName: 'Medic Alpha-1 (RHU EMS)',
       direction: 'ADMIN_ORDER',
@@ -471,17 +485,18 @@ export const getDispatchRequests = async (): Promise<DispatchRequestRecord[]> =>
 
       reports.slice(0, 8).forEach((rep, idx) => {
         if (!rep.id || existingIncidentIds.has(rep.id)) return;
+        const catLower = String(rep.category ?? '').toLowerCase();
         const isMedical =
-          !rep.category ||
-          rep.category.toLowerCase().includes('med') ||
-          rep.category.toLowerCase().includes('trauma') ||
-          rep.category.toLowerCase().includes('accident') ||
+          !catLower ||
+          catLower.includes('med') ||
+          catLower.includes('trauma') ||
+          catLower.includes('accident') ||
           idx < 2;
 
         if (!isMedical) return;
 
-        const lat = typeof rep.latitude === 'number' ? rep.latitude.toFixed(4) : '14.9580';
-        const lng = typeof rep.longitude === 'number' ? rep.longitude.toFixed(4) : '120.7610';
+        const lat = typeof rep.latitude === 'number' ? rep.latitude.toFixed(4) : '8.5119';
+        const lng = typeof rep.longitude === 'number' ? rep.longitude.toFixed(4) : '123.2814';
 
         merged.push({
           id: `REQ-SYNC-${rep.id.slice(0, 8).toUpperCase()}`,
@@ -490,12 +505,10 @@ export const getDispatchRequests = async (): Promise<DispatchRequestRecord[]> =>
           incidentTitle: rep.title || 'Emergency Medical Incident',
           category: rep.category || 'Medical / Trauma',
           severity: rep.severity || 'High',
-          location: rep.locationLabel || 'Apalit Municipal Sector',
+          location: rep.locationLabel || 'Katipunan Municipal Sector',
           coordinates: `${lat}° N, ${lng}° E`,
           ipAddress: `192.168.10.${110 + idx}`,
-          evidenceUrl:
-            rep.imageUrl ||
-            'https://images.unsplash.com/photo-1587745416684-47953f16f02f?auto=format&fit=crop&w=900&q=80',
+          evidenceUrl: rep.imageUrl || undefined,
           responderId: rep.allocatedUnitCode || 'MED-UNIT-01',
           responderName: 'Medic Alpha-1 (RHU EMS)',
           direction: idx % 2 === 0 ? 'ADMIN_ORDER' : 'MEDIC_REQUEST',
@@ -544,11 +557,9 @@ export const createMedicDispatchRequest = async (
     category: payload.category || 'Medical / Trauma',
     severity: payload.severity || 'Critical',
     location: payload.location,
-    coordinates: payload.coordinates || '14.9565° N, 120.7602° E',
+    coordinates: payload.coordinates || '8.5119° N, 123.2814° E',
     ipAddress: payload.ipAddress || `192.168.42.${Math.floor(20 + Math.random() * 200)}`,
-    evidenceUrl:
-      payload.evidenceUrl ||
-      'https://images.unsplash.com/photo-1587745416684-47953f16f02f?auto=format&fit=crop&w=900&q=80',
+    evidenceUrl: payload.evidenceUrl || undefined,
     responderId: payload.responderId || 'MED-UNIT-01',
     responderName: payload.responderName || 'Medic Alpha-1 (RHU EMS)',
     direction: 'MEDIC_REQUEST',

@@ -95,7 +95,7 @@ public static class DatabaseSeeder
                     ALTER TABLE [Users] ADD [Province] NVARCHAR(100) NOT NULL CONSTRAINT DF_Users_Province DEFAULT 'Zamboanga del Norte';
 
                 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'CityOrMunicipality')
-                    ALTER TABLE [Users] ADD [CityOrMunicipality] NVARCHAR(100) NOT NULL CONSTRAINT DF_Users_City DEFAULT 'Dipolog City';
+                    ALTER TABLE [Users] ADD [CityOrMunicipality] NVARCHAR(100) NOT NULL CONSTRAINT DF_Users_City DEFAULT 'Katipunan';
 
                 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Users') AND name = 'Barangay')
                     ALTER TABLE [Users] ADD [Barangay] NVARCHAR(100) NOT NULL CONSTRAINT DF_Users_Barangay DEFAULT '';
@@ -435,7 +435,7 @@ public static class DatabaseSeeder
             Sex = "Male",
             BloodType = "O+",
             Province = "Zamboanga del Norte",
-            CityOrMunicipality = "Dipolog City",
+            CityOrMunicipality = "Katipunan",
             Barangay = "Barangay Central",
             StreetOrPurok = "Purok 1, Rizal Avenue Extension",
             EmergencyContactName = "Elena Ramos",
@@ -473,7 +473,7 @@ public static class DatabaseSeeder
             Sex = "Female",
             BloodType = "A+",
             Province = "Zamboanga del Norte",
-            CityOrMunicipality = "Dipolog City",
+            CityOrMunicipality = "Katipunan",
             Barangay = "Barangay Barra",
             StreetOrPurok = "Purok Manga, Health Center Road",
             EmergencyContactName = "Dr. Manuel Santos",
@@ -481,7 +481,7 @@ public static class DatabaseSeeder
             EmergencyContactRelationship = "Spouse",
             MedicalLicenseNumber = "PRC-MED-0129482",
             MedicalCadre = "Emergency Trauma Physician",
-            StationHealthCenter = "Dipolog Main Rural Health Unit 1",
+            StationHealthCenter = "Katipunan Main Rural Health Unit (7109)",
             MedicalCertifications = "BLS, ACLS, PHTLS, Disaster Life Support Certified",
             AmbulanceCallSign = "MEDIC-AMB-01",
             PhoneNumber = "+63 918 222 3344",
@@ -513,7 +513,7 @@ public static class DatabaseSeeder
             Sex = "Male",
             BloodType = "B+",
             Province = "Zamboanga del Norte",
-            CityOrMunicipality = "Dipolog City",
+            CityOrMunicipality = "Katipunan",
             Barangay = "Barangay Biasong",
             StreetOrPurok = "Purok Bougainvillea, Fire Station Drive",
             EmergencyContactName = "Carmela Mendoza",
@@ -521,7 +521,7 @@ public static class DatabaseSeeder
             EmergencyContactRelationship = "Spouse",
             FirefighterRank = "Senior Inspector / Fire Captain",
             BfpBadgeNumber = "BFP-ZN-2016-0492",
-            FireStation = "Dipolog Central Fire Station - Engine Company 1",
+            FireStation = "Katipunan Central Fire Station - Engine Company 1",
             FireSpecialization = "Structural Fire Suppression, HazMat First Responder, High-Angle Rescue",
             ApparatusCallSign = "BFP-PUMPER-01",
             PhoneNumber = "+63 919 333 4455",
@@ -553,7 +553,7 @@ public static class DatabaseSeeder
             Sex = "Male",
             BloodType = "O+",
             Province = "Zamboanga del Norte",
-            CityOrMunicipality = "Dipolog City",
+            CityOrMunicipality = "Katipunan",
             Barangay = "Barangay Estaka",
             StreetOrPurok = "Purok Santol, Lopez Jaena St",
             EmergencyContactName = "Lorna Dalisay",
@@ -561,7 +561,7 @@ public static class DatabaseSeeder
             EmergencyContactRelationship = "Mother",
             PoliceRank = "Patrolman",
             PnpBadgeNumber = "PNP-REG9-88301",
-            PrecinctOrStation = "Dipolog City Police Station - Sector 3 Tactical Substation",
+            PrecinctOrStation = "Katipunan Municipal Police Station - Sector 1",
             PoliceAssignment = "Mobile Tactical Patrol & Rapid Incident Triage",
             SidearmSerial = "GLOCK-17-PH98342",
             PhoneNumber = "+63 920 444 5566",
@@ -593,7 +593,7 @@ public static class DatabaseSeeder
             Sex = "Male",
             BloodType = "AB+",
             Province = "Zamboanga del Norte",
-            CityOrMunicipality = "Dipolog City",
+            CityOrMunicipality = "Katipunan",
             Barangay = "Barangay San Antonio",
             StreetOrPurok = "Purok Pag-asa, Mabini Street",
             EmergencyContactName = "Maria Dela Cruz",
@@ -680,10 +680,10 @@ public static class DatabaseSeeder
         {
             var units = new List<DutyUnit>
             {
-                new() { UnitCode = "LDRRMO-HQ", UnitName = "LDRRMO Central Command", Agency = ResponderUnitType.LDRRMO, CommanderName = "Dir. Alejandro Ramos", Status = DutyStatus.OnDuty, BaseLatitude = 14.5995, BaseLongitude = 120.9842, ContactHotline = "911 / (02) 8888-0001", ActivePersonnelCount = 12, ShiftSchedule = "24/7 Operations" },
-                new() { UnitCode = "RHU-ALPHA", UnitName = "RHU Emergency Medical Unit Alpha", Agency = ResponderUnitType.RHU, CommanderName = "Dr. Maria Clara Santos", Status = DutyStatus.OnDuty, BaseLatitude = 14.6042, BaseLongitude = 120.9895, ContactHotline = "(02) 8888-0112", ActivePersonnelCount = 6, ShiftSchedule = "08:00 - 20:00 (Alpha)" },
-                new() { UnitCode = "BFP-ENGINE-01", UnitName = "BFP Engine Company 1", Agency = ResponderUnitType.FIRE, CommanderName = "Capt. Gabriel Mendoza", Status = DutyStatus.Standby, BaseLatitude = 14.5950, BaseLongitude = 120.9780, ContactHotline = "160 / (02) 8888-0160", ActivePersonnelCount = 8, ShiftSchedule = "24/7 Standby" },
-                new() { UnitCode = "PNP-SECTOR-01", UnitName = "PNP Patrol Sector 1 Tactical Unit", Agency = ResponderUnitType.PNP, CommanderName = "Lt. Col. Arthur Pendelton", Status = DutyStatus.OnDuty, BaseLatitude = 14.6100, BaseLongitude = 120.9820, ContactHotline = "117 / (02) 8888-0117", ActivePersonnelCount = 10, ShiftSchedule = "12-Hour Roving" }
+                new() { UnitCode = "LDRRMO-HQ", UnitName = "LDRRMO Katipunan Central Command", Agency = ResponderUnitType.LDRRMO, CommanderName = "Dir. Alejandro Ramos", Status = DutyStatus.OnDuty, BaseLatitude = 8.5136, BaseLongitude = 123.2856, ContactHotline = string.Empty, ActivePersonnelCount = 12, ShiftSchedule = "24/7 Operations" },
+                new() { UnitCode = "RHU-ALPHA", UnitName = "RHU Katipunan Emergency Medical Unit Alpha", Agency = ResponderUnitType.RHU, CommanderName = "Dr. Maria Clara Santos", Status = DutyStatus.OnDuty, BaseLatitude = 8.5142, BaseLongitude = 123.2862, ContactHotline = string.Empty, ActivePersonnelCount = 6, ShiftSchedule = "08:00 - 20:00 (Alpha)" },
+                new() { UnitCode = "BFP-ENGINE-01", UnitName = "BFP Katipunan Engine Company 1", Agency = ResponderUnitType.FIRE, CommanderName = "Capt. Gabriel Mendoza", Status = DutyStatus.Standby, BaseLatitude = 8.5128, BaseLongitude = 123.2848, ContactHotline = string.Empty, ActivePersonnelCount = 8, ShiftSchedule = "24/7 Standby" },
+                new() { UnitCode = "PNP-SECTOR-01", UnitName = "PNP Katipunan Patrol Sector 1 Tactical Unit", Agency = ResponderUnitType.PNP, CommanderName = "Lt. Col. Arthur Pendelton", Status = DutyStatus.OnDuty, BaseLatitude = 8.5160, BaseLongitude = 123.2835, ContactHotline = string.Empty, ActivePersonnelCount = 10, ShiftSchedule = "12-Hour Roving" }
             };
 
             await db.DutyUnits.AddRangeAsync(units);
@@ -695,9 +695,9 @@ public static class DatabaseSeeder
         {
             var fixtures = new List<IncidentFixture>
             {
-                new() { FixtureCode = "HYD-001", Title = "High-Pressure Fire Hydrant - Main Ave", Category = IncidentCategory.HazardFixture, Severity = IncidentSeverity.Low, Latitude = 14.6010, Longitude = 120.9855, AssignedUnitType = ResponderUnitType.FIRE, IsActive = true, Description = "Inspected monthly. Flow rate: 1200 GPM." },
-                new() { FixtureCode = "EVAC-001", Title = "University Sports Complex Evacuation Center", Category = IncidentCategory.NaturalDisaster, Severity = IncidentSeverity.Low, Latitude = 14.6080, Longitude = 120.9890, AssignedUnitType = ResponderUnitType.LDRRMO, IsActive = true, Description = "Capacity: 1,500 families with backup solar power and clean water cistern." },
-                new() { FixtureCode = "FLOOD-ZONE-A", Title = "Low-Lying Drainage Flood Monitor Zone", Category = IncidentCategory.NaturalDisaster, Severity = IncidentSeverity.Medium, Latitude = 14.5930, Longitude = 120.9800, AssignedUnitType = ResponderUnitType.LDRRMO, IsActive = true, Description = "Critical flash-flood area during heavy monsoon rains." }
+                new() { FixtureCode = "HYD-001", Title = "High-Pressure Fire Hydrant - Katipunan Main Ave", Category = IncidentCategory.HazardFixture, Severity = IncidentSeverity.Low, Latitude = 8.5145, Longitude = 123.2850, AssignedUnitType = ResponderUnitType.FIRE, IsActive = true, Description = "Inspected monthly. Flow rate: 1200 GPM." },
+                new() { FixtureCode = "EVAC-001", Title = "Katipunan Municipal Gymnasium Evacuation Center", Category = IncidentCategory.NaturalDisaster, Severity = IncidentSeverity.Low, Latitude = 8.5152, Longitude = 123.2858, AssignedUnitType = ResponderUnitType.LDRRMO, IsActive = true, Description = "Capacity: 1,500 families with backup solar power and clean water cistern." },
+                new() { FixtureCode = "FLOOD-ZONE-A", Title = "Dicayas-Katipunan River Flood Monitor Zone", Category = IncidentCategory.NaturalDisaster, Severity = IncidentSeverity.Medium, Latitude = 8.5130, Longitude = 123.2840, AssignedUnitType = ResponderUnitType.LDRRMO, IsActive = true, Description = "Critical flash-flood area during heavy monsoon rains." }
             };
 
             await db.IncidentFixtures.AddRangeAsync(fixtures);
@@ -790,9 +790,9 @@ public static class DatabaseSeeder
                     Category = IncidentCategory.VehicularAccident,
                     Severity = IncidentSeverity.Medium,
                     Status = ReportStatus.Allocated,
-                    Latitude = 14.6025,
-                    Longitude = 120.9860,
-                    LocationLabel = "Corner University Ave & Bonifacio St",
+                    Latitude = 8.5147,
+                    Longitude = 123.2842,
+                    LocationLabel = "Barangay Uno, Katipunan National Highway (7109)",
                     ImageCapturePath = sampleReportPath,
                     AllocatedUnitId = rhuUnit?.Id,
                     AllocatedUnitCode = rhuUnit?.UnitCode,

@@ -1,12 +1,14 @@
 // [Layer: UserRoles/Features/Pages/AdminsPanel/Components]
 // DeleteUserConfirmModal.tsx -- Danger-tier confirmation modal for soft-deleting users in LDRRMO Governance.
-// Uses Universal Lambdas (=>), Katipuneros architecture, and DefaultFloatingModalCard.
-// DO NOT hard delete emergency user records to preserve incident telemetry and audit logs.
+// Stitch Warm Ivory (#F7F1EA) + Soft Beige (#E9D9D0) + Cherry (#670626) claymorphic styling.
+// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis.
 
 import React, { useState } from 'react';
 import { AlertTriangle, ShieldAlert, Trash2 } from 'lucide-react';
-import { DefaultFloatingModalCard, Button } from '@/Shared';
 import { deleteUser, UserDetail, UserSummary } from '@/Endpoints/adminGovernanceApi';
+import { AdminButton } from '../Shared/AdminButton';
+import { AdminModalCard } from '../Shared/AdminModalCard';
+import { CLAY_WELL } from '../Shared/adminCommandHelpers';
 
 export interface DeleteUserConfirmModalProps {
   user: UserSummary | UserDetail | null;
@@ -21,7 +23,7 @@ export const DeleteUserConfirmModal: React.FC<DeleteUserConfirmModalProps> = ({
   isOpen,
   onClose,
   onDeleted,
-  showToast,
+  showToast
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -44,87 +46,67 @@ export const DeleteUserConfirmModal: React.FC<DeleteUserConfirmModalProps> = ({
   };
 
   return (
-    <DefaultFloatingModalCard
+    <AdminModalCard
       isOpen={isOpen}
       onClose={onClose}
       title="Revoke Account"
       subtitle="Soft-delete user access"
       maxWidth="md"
     >
-      <div className="space-y-4 text-xs text-slate-200">
+      <div className="space-y-4 text-sm text-[#670626]">
         {errorMessage && (
-          <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-600 text-rose-200 font-mono flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+          <div className="p-3.5 rounded-xl bg-[#670626] text-[#F7F1EA] text-sm font-mono flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             <span>{errorMessage}</span>
           </div>
         )}
 
-        {/* Hazard Notice */}
-        <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-800/80 flex items-start gap-3 shadow-[0_0_15px_rgba(244,63,94,0.2)]">
-          <div className="w-10 h-10 rounded-xl bg-rose-900/60 border border-rose-700/80 flex items-center justify-center flex-shrink-0 text-rose-300 shadow-inner">
-            <ShieldAlert className="w-5 h-5 text-rose-400" />
+        <div className={`${CLAY_WELL} p-4 flex items-start gap-3 border-l-4 border-l-[#670626]`}>
+          <div className="w-10 h-10 rounded-xl bg-[#670626] text-[#F7F1EA] flex items-center justify-center flex-shrink-0">
+            <ShieldAlert className="w-5 h-5" />
           </div>
           <div className="space-y-1">
-            <h4 className="font-bold text-rose-300 text-xs font-mono uppercase tracking-wider">
+            <h4 className="font-bold text-[#670626] text-xs font-mono uppercase tracking-wider">
               Access Revocation
             </h4>
-            <p className="text-slate-300 text-[11px] leading-relaxed">
+            <p className="text-[#A83B4D] text-xs leading-relaxed">
               This revokes active sessions. Incident logs and audit trails are preserved.
             </p>
           </div>
         </div>
 
-        {/* Structured Target Official Dossier Preview */}
         {user && (
-          <div className="p-3.5 rounded-xl bg-[#071522] border border-[#1d3c5c] space-y-2 shadow-inner">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-white text-sm font-display tracking-wide">{user.fullName}</span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#0a1a2b] text-sky-300 border border-sky-800/60">
+          <div className={`${CLAY_WELL} p-4 space-y-2`}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold text-[#670626] text-base">{user.fullName}</span>
+              <span className="px-2.5 py-0.5 rounded-md text-xs font-mono font-bold uppercase bg-[#670626] text-[#F7F1EA]">
                 {user.role} {user.unit !== 'None' ? `(${user.unit})` : ''}
               </span>
             </div>
-            <div className="text-slate-400 font-mono text-[11px]">{user.email}</div>
-            <div className="flex items-center justify-between pt-1 border-t border-[#1d3c5c]/60 text-[10px] font-mono">
-              <span className="text-sky-400">
-                ID: {user.employeeOrResidentId || 'N/A'}
-              </span>
-              <span className="text-slate-500">
-                {user.departmentOrBarangay || 'Central Dispatch'}
-              </span>
+            <div className="text-[#A83B4D] font-mono text-xs">{user.email}</div>
+            <div className="flex items-center justify-between pt-2 border-t border-[#670626]/15 text-xs font-mono">
+              <span className="font-bold">ID: {user.employeeOrResidentId || 'N/A'}</span>
+              <span className="text-[#A83B4D]">{user.departmentOrBarangay || 'Katipunan Command'}</span>
             </div>
           </div>
         )}
 
-        {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-2.5 pt-3.5 border-t border-[#1d3c5c]">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            disabled={isDeleting}
-          >
+        <div className="flex items-center justify-end gap-2.5 pt-3.5 border-t border-[#670626]/15">
+          <AdminButton type="button" variant="outline" size="sm" onClick={onClose} disabled={isDeleting}>
             Cancel
-          </Button>
-          <button
+          </AdminButton>
+          <AdminButton
             type="button"
-            disabled={isDeleting}
-            onClick={handleDelete}
-            className="px-4 py-2 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-[#e8114c] hover:bg-[#ff2b4a] text-white shadow-[0_0_15px_rgba(232,17,76,0.45)] transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2 border border-[#ff5c74]/50"
+            variant="danger"
+            size="sm"
+            isLoading={isDeleting}
+            onClick={() => void handleDelete()}
+            icon={<Trash2 className="w-4 h-4" />}
           >
-            {isDeleting ? (
-              <>
-                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Revoking Access…
-              </>
-            ) : (
-              <>
-                <Trash2 className="w-3.5 h-3.5" /> Confirm Revocation
-              </>
-            )}
-          </button>
+            {isDeleting ? 'Revoking Access…' : 'Confirm Revocation'}
+          </AdminButton>
         </div>
       </div>
-    </DefaultFloatingModalCard>
+    </AdminModalCard>
   );
 };

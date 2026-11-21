@@ -1,6 +1,6 @@
 // [Layer: LayoutBars]
 // Responsibility: Master layout wrappers connecting Header, dynamic role-tailored Sidebar, and page views.
-// Ensures authentic RISKQTRAK app-shell structure with dynamic role-based session hydration.
+// Ensures Official Cherry & Warm Ivory Stitch app-shell structure with dynamic role-based session hydration.
 
 import React from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
@@ -17,28 +17,37 @@ export interface LayoutWrappersProps {
   defaultUnit?: string;
 }
 
-const getTabSession = (): { unit?: string; fullName?: string; displayName?: string; employeeOrResidentId?: string; employeeId?: string; role?: string; status?: string; faceVerified?: boolean } | null => {
+const getTabSession = (): {
+  unit?: string;
+  fullName?: string;
+  displayName?: string;
+  employeeOrResidentId?: string;
+  employeeId?: string;
+  role?: string;
+  status?: string;
+  faceVerified?: boolean;
+} | null => {
   if (typeof window === 'undefined') return null;
   try {
     // 1. Tab-isolated session storage (Guarantees independent sessions across tabs)
     const tabRaw = sessionStorage.getItem('resqtrack_session') || sessionStorage.getItem('resqtrack_user');
-    if (tabRaw) return JSON.parse(tabRaw);
+    if (tabRaw) return JSON.parse(tabRaw) as { unit?: string; fullName?: string; displayName?: string; employeeOrResidentId?: string; employeeId?: string; role?: string; status?: string; faceVerified?: boolean };
 
     // 2. Active tab unit-specific local storage
     const tabUnit = (sessionStorage.getItem('resqtrack_unit') || '').toLowerCase().trim();
     if (tabUnit && tabUnit !== 'none') {
       const unitRaw = localStorage.getItem(`resqtrack_session_${tabUnit}`) || localStorage.getItem(`resqtrack_user_${tabUnit}`);
-      if (unitRaw) return JSON.parse(unitRaw);
+      if (unitRaw) return JSON.parse(unitRaw) as { unit?: string; fullName?: string; displayName?: string; employeeOrResidentId?: string; employeeId?: string; role?: string; status?: string; faceVerified?: boolean };
     }
 
-    const port = window.location.port || '5173';
-    if (port === '5174') {
-      const adminRaw = localStorage.getItem('resqtrack_session_5174') || localStorage.getItem('resqtrack_user_5174');
-      if (adminRaw) return JSON.parse(adminRaw);
+    const port = window.location.port || '1997';
+    if (port === '1996') {
+      const adminRaw = localStorage.getItem('resqtrack_session_1996') || localStorage.getItem('resqtrack_user_1996');
+      if (adminRaw) return JSON.parse(adminRaw) as { unit?: string; fullName?: string; displayName?: string; employeeOrResidentId?: string; employeeId?: string; role?: string; status?: string; faceVerified?: boolean };
     } else {
       const portRaw = localStorage.getItem(`resqtrack_session_${port}`) || localStorage.getItem(`resqtrack_user_${port}`);
       if (portRaw) {
-        const parsed = JSON.parse(portRaw);
+        const parsed = JSON.parse(portRaw) as { unit?: string; fullName?: string; displayName?: string; employeeOrResidentId?: string; employeeId?: string; role?: string; status?: string; faceVerified?: boolean };
         if (!(parsed.role || '').toLowerCase().includes('admin')) {
           return parsed;
         }
@@ -63,11 +72,11 @@ export const LayoutWrappers: React.FC<LayoutWrappersProps> = ({
   const activeRole = tabSession?.role || session?.role || defaultRole;
   const activeUnit = tabSession?.unit || session?.unit || defaultUnit;
 
-  // Strict port 5174 enforcement: Port 5174 will NEVER display Responder or Civilian views
+  // Strict port 1996 enforcement: Port 1996 will NEVER display Responder or Civilian views
   const rawRoleLower = (activeRole || '').toLowerCase();
   const isAdmin = rawRoleLower.includes('admin') || rawRoleLower.includes('ldrrmo') || rawRoleLower === '1';
 
-  if (currentPort === '5174' && !isAdmin) {
+  if (currentPort === '1996' && !isAdmin) {
     return <Navigate to="/admin/login" replace />;
   }
 
@@ -82,12 +91,12 @@ export const LayoutWrappers: React.FC<LayoutWrappersProps> = ({
 
   return (
     <DrawerSidebarProvider>
-      <div className="app-shell">
+      <div className="app-shell bg-[#4A041A] text-[#F7F1EA]">
         <ResQTrackSvgSprite />
         <Header user={user} />
-        <div className="dash relative z-10 flex flex-1 min-h-0 w-full overflow-hidden bg-slate-950">
+        <div className="dash relative z-10 flex flex-1 min-h-0 w-full overflow-hidden bg-[#4A041A]">
           <Sidebar userRole={activeRole} userUnit={activeUnit} />
-          <main className="dash__main flex-1 w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-6 sm:px-8 sm:py-8 md:px-10 md:py-8 lg:px-12 bg-slate-950/95 transition-all">
+          <main className="dash__main flex-1 w-full min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-6 pb-24 md:pb-8 sm:px-8 sm:py-8 md:px-10 md:py-8 lg:px-12 bg-gradient-to-br from-[#670626] via-[#4A041A] to-[#400014] transition-all">
             <div className="w-full flex-1 min-h-0 flex flex-col max-w-[1720px] mx-auto">
               {children || (
                 <PageErrorBoundary>
@@ -104,7 +113,7 @@ export const LayoutWrappers: React.FC<LayoutWrappersProps> = ({
 
 export const LandingLayout: React.FC = () => {
   return (
-    <div className="landing-shell">
+    <div className="landing-shell bg-[#4A041A] text-[#F7F1EA]">
       <ResQTrackSvgSprite />
       <Outlet />
     </div>
@@ -114,18 +123,17 @@ export const LandingLayout: React.FC = () => {
 export const AdminLayout: React.FC = () => {
   const { session } = useSession();
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
-  const host = typeof window !== 'undefined' ? (window.location.hostname || '127.0.0.1') : '127.0.0.1';
   const tabSession = getTabSession();
 
   const activeRole = (tabSession?.role || session?.role || '').toLowerCase();
   const isAdmin = activeRole.includes('admin') || activeRole.includes('ldrrmo') || activeRole === '1';
 
-  if (currentPort === '5174') {
+  if (currentPort === '1996') {
     if (!isAdmin) {
       return <Navigate to="/admin/login" replace />;
     }
-  } else if (currentPort === '5173') {
-    // Single-port / Unified dev mode: Allow seamless direct rendering of Admin Executive Command
+  } else if (currentPort === '1997' || currentPort === '1998') {
+    // Unified dev mode fallback: Allow direct rendering of Admin Executive Command
     return <LayoutWrappers defaultRole="LDRRMO_Admin" defaultUnit="LDRRMO" />;
   }
 
@@ -136,7 +144,7 @@ export { ResponderLayout } from './ResponderLayout';
 
 export const CivilianLayout: React.FC = () => {
   const currentPort = typeof window !== 'undefined' ? window.location.port : '';
-  if (currentPort === '5174') {
+  if (currentPort === '1996') {
     return <Navigate to="/admin/login" replace />;
   }
   return <LayoutWrappers defaultRole="Civilian" defaultUnit="None" />;

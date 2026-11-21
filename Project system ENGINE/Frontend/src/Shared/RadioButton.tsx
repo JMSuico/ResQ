@@ -38,15 +38,15 @@ export const RadioButton: FC<RadioButtonProps> = ({
           className="peer sr-only"
           {...props}
         />
-        <div className="w-4 h-4 rounded-full border border-slate-600 bg-slate-900 peer-checked:border-sky-500 peer-checked:bg-sky-500 transition-all duration-150 flex items-center justify-center shadow-sm peer-focus:ring-2 peer-focus:ring-sky-500/40">
-          <div className="w-1.5 h-1.5 rounded-full bg-slate-950 opacity-0 peer-checked:opacity-100 transition-opacity" />
+        <div className="w-4 h-4 rounded-full border border-[#D4B8AA] bg-[#FFFBF7] peer-checked:border-[#670626] peer-checked:bg-[#670626] transition-all duration-150 flex items-center justify-center shadow-sm peer-focus:ring-2 peer-focus:ring-[#A83B4D]/35">
+          <div className="w-1.5 h-1.5 rounded-full bg-[#F7F1EA] opacity-0 peer-checked:opacity-100 transition-opacity" />
         </div>
       </div>
 
       {(label || description) && (
-        <div className="flex flex-col text-xs">
-          {label && <span className={`font-semibold ${checked ? 'text-slate-100' : 'text-slate-300'}`}>{label}</span>}
-          {description && <span className="text-[11px] text-slate-400 mt-0.5">{description}</span>}
+        <div className="flex flex-col text-sm">
+          {label && <span className={`font-semibold ${checked ? 'text-[#670626]' : 'text-[#3B1722]'}`}>{label}</span>}
+          {description && <span className="text-xs text-[#7A4E59] mt-0.5">{description}</span>}
         </div>
       )}
     </label>
@@ -85,7 +85,7 @@ export const RadioGroup: FC<RadioGroupProps> = ({
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
       {label && (
-        <span className="text-xs uppercase tracking-wider font-semibold text-slate-400">
+        <span className="text-xs uppercase tracking-wider font-bold text-[#7A4E59]">
           {label}
         </span>
       )}
@@ -111,10 +111,10 @@ export const RadioGroup: FC<RadioGroupProps> = ({
           return (
             <label
               key={opt.value}
-              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl border text-xs cursor-pointer transition-all duration-150 select-none ${
+              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl border text-sm cursor-pointer transition-all duration-150 select-none ${
                 isSelected
-                  ? 'bg-sky-950/70 border-sky-500 text-sky-300 font-bold shadow-md shadow-sky-950/40 ring-1 ring-sky-500/30'
-                  : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:bg-slate-800/80 hover:border-slate-600 hover:text-slate-100'
+                  ? 'bg-[#F3E4E7] border-[#670626] text-[#670626] font-bold shadow-sm ring-1 ring-[#A83B4D]/35'
+                  : 'bg-[#F7F1EA] border-[#D8C1B5] text-[#5C313E] hover:bg-[#E9D9D0]/60 hover:border-[#A83B4D] hover:text-[#3B1722]'
               }`}
             >
               <input
@@ -123,20 +123,20 @@ export const RadioGroup: FC<RadioGroupProps> = ({
                 value={opt.value}
                 checked={isSelected}
                 onChange={() => onChange(opt.value)}
-                className="w-4 h-4 accent-sky-500 cursor-pointer"
+                className="w-4 h-4 accent-[#670626] cursor-pointer"
               />
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1.5">
-                  {opt.icon && <span className="material-symbols-outlined text-[18px] text-sky-400">{opt.icon}</span>}
+                  {opt.icon && <span className="material-symbols-outlined text-[18px] text-[#A83B4D]">{opt.icon}</span>}
                   <span className="truncate">{opt.label}</span>
                   {opt.badge !== undefined && (
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300">
+                    <span className="px-1.5 py-0.5 rounded-full text-xs font-bold bg-[#E9D9D0] text-[#670626]">
                       {opt.badge}
                     </span>
                   )}
                 </div>
                 {opt.description && (
-                  <span className="text-[11px] text-slate-400 mt-0.5">
+                  <span className="text-xs text-[#7A4E59] mt-0.5">
                     {opt.description}
                   </span>
                 )}

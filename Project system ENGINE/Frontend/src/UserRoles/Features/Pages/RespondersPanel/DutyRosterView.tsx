@@ -1,7 +1,9 @@
 // [Layer: UserRoles/Features/Pages/RespondersPanel]
-// Responsibility: Tactical duty roster check-in, RHU Ambulance Crew organizational hierarchy,
-// colleague performance leaderboard, and shift schedule inspection for responders.
-// DO NOT mutate shift assignments without recording operational timestamp.
+// Responsibility: Unit-scoped Responders directory, agency chain of command,
+// OnDuty & Dispatched leaderboard ranked by response speed and mission succession rate,
+// and shift handover controls.
+// Stitch Official Cherry (#670626) / Warm Ivory (#F7F1EA) / Soft Beige (#E9D9D0) / Muted Cherry (#A83B4D) Clay Design System.
+// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis, ZERO hotline/tel links.
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
@@ -14,35 +16,35 @@ import {
   SearchBar,
   TableCardToggle,
   useTableCardView,
-  DefaultFloatingModalCard,
-  Button,
   Dropdown
 } from '@/Shared';
 import { getDutyRoster, updateUnitDutyStatus, DutyUnit } from '@/Endpoints/responderOpsApi';
 import { getAgencyReports } from '@/Endpoints/reportsApi';
 import { formatGpsCoord } from '@/Libs/Assets/formatters';
+import { ResponderButton } from './Shared/ResponderButton';
+import { ResponderModalCard } from './Shared/ResponderModalCard';
 import {
   Ambulance,
   Flame,
   Shield,
-  AlertTriangle,
   ClipboardList,
-  Phone,
   Users,
   MapPin,
   Navigation,
   Award,
   Radio,
-  Stethoscope,
   ChevronRight,
   ChevronLeft,
   CheckCircle2,
-  HeartPulse,
   Filter,
   BadgeCheck,
   GitBranch,
-  Trophy
+  Trophy,
+  Gauge,
+  TrendingUp
 } from 'lucide-react';
+
+export type AgencyScope = 'RHU' | 'FIRE' | 'PNP';
 
 export type ColleagueDutyStatus = 'OnDuty' | 'Dispatched' | 'Standby' | 'OffDuty';
 
@@ -53,9 +55,9 @@ export type StatusFilterOption =
   | 'STANDBY'
   | 'OFF_DUTY';
 
-export type ColleagueSortOption = 'HIERARCHY' | 'LEADERBOARD' | 'AVAILABILITY';
+export type ColleagueSortOption = 'LEADERBOARD' | 'HIERARCHY' | 'AVAILABILITY';
 
-export type MedicHierarchyTier = 1 | 2 | 3 | 4;
+export type HierarchyTier = 1 | 2 | 3 | 4;
 
 export interface ColleagueResponder {
   id: string;
@@ -63,69 +65,80 @@ export interface ColleagueResponder {
   callsign: string;
   unitCode: string;
   unitName: string;
-  agency: 'RHU' | 'FIRE' | 'PNP';
+  agency: AgencyScope;
   rankTitle: string;
-  roleCategory:
-    | 'RHU Medical Officer'
-    | 'Triage Nurse'
-    | 'EMT Paramedic'
-    | 'Ambulance Driver / Medic'
-    | 'BFP Fire Officer'
-    | 'PNP Police Officer';
-  hierarchyTier: MedicHierarchyTier;
-  hierarchyTierLabel:
-    | 'HEAD CHIEF (Municipal Health Officer / RHU Chief)'
-    | 'MEDICAL OFFICER III'
-    | 'SENIOR EMS PARAMEDIC / TRIAGE LEAD'
-    | 'AMBULANCE CREW MEMBERS';
+  roleCategory: string;
+  hierarchyTier: HierarchyTier;
   specialization: string;
   licenseOrBadge: string;
   status: ColleagueDutyStatus;
   resolvedMissions: number;
   activeDispatches: number;
-  responseReadiness: number;
+  missionSuccessRate: number;
+  avgResponseSeconds: number;
   avgResponseTime: string;
   sectorAssignment: string;
   shiftSchedule: string;
   radioChannel: string;
-  contactHotline: string;
   baseLatitude: number;
   baseLongitude: number;
   certifications: string[];
   yearsOfService: number;
 }
 
+interface ActiveUnitSummary {
+  id: string;
+  unitCode: string;
+  unitName: string;
+  agency: AgencyScope;
+  commanderName: string;
+  status: ColleagueDutyStatus;
+  baseLatitude: number;
+  baseLongitude: number;
+  activePersonnelCount: number;
+  shiftSchedule: string;
+}
+
+const resolveActiveAgency = (rawUnit?: string | null): AgencyScope => {
+  const normalized = (rawUnit || '').trim().toUpperCase();
+  if (normalized === 'FIRE' || normalized === 'BFP') return 'FIRE';
+  if (normalized === 'PNP' || normalized === 'POLICE') return 'PNP';
+  return 'RHU';
+};
+
+const computePerformanceScore = (responder: ColleagueResponder): number =>
+  responder.missionSuccessRate * 10 - responder.avgResponseSeconds * 0.25;
+
 const INITIAL_COLLEAGUE_ROSTER: ColleagueResponder[] = [
-  // TIER 1: HEAD CHIEF (Municipal Health Officer / RHU Chief)
+  // ============================================================================
+  // RHU MEDICAL / AMBULANCE RESPONDERS (Katipunan, Zamboanga del Norte)
+  // ============================================================================
   {
     id: 'medic-col-01',
     fullName: 'Dr. Rafael Lorenzo Mendoza MD, MPH',
     callsign: 'RHU-CHIEF-01',
     unitCode: 'MED-HQ-01',
-    unitName: 'RHU Municipal Health Command Center',
+    unitName: 'RHU Katipunan Health Command Center',
     agency: 'RHU',
-    rankTitle: 'HEAD CHIEF (Municipal Health Officer / RHU Chief)',
+    rankTitle: 'HEAD CHIEF — Municipal Health Officer',
     roleCategory: 'RHU Medical Officer',
     hierarchyTier: 1,
-    hierarchyTierLabel: 'HEAD CHIEF (Municipal Health Officer / RHU Chief)',
     specialization: 'Municipal Disaster Medicine & Mass-Casualty Command',
     licenseOrBadge: 'PRC-MD-0084921',
     status: 'OnDuty',
     resolvedMissions: 342,
     activeDispatches: 1,
-    responseReadiness: 99.8,
-    avgResponseTime: '2m 45s',
-    sectorAssignment: 'Sector 0 - Municipal Health Command & All-Sector Oversight',
+    missionSuccessRate: 99.8,
+    avgResponseSeconds: 162,
+    avgResponseTime: '2m 42s',
+    sectorAssignment: 'Sector 0 — Poblacion Health Command, Katipunan, ZN',
     shiftSchedule: '06:00 - 18:00 (Alpha Command Shift)',
     radioChannel: 'MED-COM CH-1 (155.340 MHz)',
-    contactHotline: '+63 917 800 1101',
-    baseLatitude: 14.5995,
-    baseLongitude: 120.9842,
+    baseLatitude: 8.5165,
+    baseLongitude: 123.2861,
     certifications: ['ATLS Director', 'ACLS Master', 'FEMA ICS-400', 'Public Health Emergency Chief'],
     yearsOfService: 16
   },
-
-  // TIER 2: MEDICAL OFFICER III (Dr. Maria Clara Santos MD & Peer MO III)
   {
     id: 'medic-col-02',
     fullName: 'Dr. Maria Clara Santos MD',
@@ -136,20 +149,19 @@ const INITIAL_COLLEAGUE_ROSTER: ColleagueResponder[] = [
     rankTitle: 'MEDICAL OFFICER III',
     roleCategory: 'RHU Medical Officer',
     hierarchyTier: 2,
-    hierarchyTierLabel: 'MEDICAL OFFICER III',
     specialization: 'Emergency Trauma Resuscitation & Field Triage Command',
     licenseOrBadge: 'PRC-MD-0104382',
     status: 'OnDuty',
     resolvedMissions: 289,
     activeDispatches: 2,
-    responseReadiness: 99.5,
-    avgResponseTime: '3m 05s',
-    sectorAssignment: 'Sector 1 - Poblacion Central & Primary Trauma Grid',
+    missionSuccessRate: 99.6,
+    avgResponseSeconds: 170,
+    avgResponseTime: '2m 50s',
+    sectorAssignment: 'Sector 1 — Barangay Uno (Poblacion) Trauma Grid',
     shiftSchedule: '06:00 - 18:00 (Alpha Field Shift)',
     radioChannel: 'MED-TAC CH-1 (155.340 MHz)',
-    contactHotline: '+63 917 555 0142',
-    baseLatitude: 14.6012,
-    baseLongitude: 120.9865,
+    baseLatitude: 8.5159,
+    baseLongitude: 123.2848,
     certifications: ['ATLS Certified', 'ACLS Provider', 'PALS Certified', 'Pre-Hospital Trauma Lead'],
     yearsOfService: 9
   },
@@ -163,25 +175,22 @@ const INITIAL_COLLEAGUE_ROSTER: ColleagueResponder[] = [
     rankTitle: 'MEDICAL OFFICER III',
     roleCategory: 'RHU Medical Officer',
     hierarchyTier: 2,
-    hierarchyTierLabel: 'MEDICAL OFFICER III',
     specialization: 'Acute Cardiac Life Support & Highway Extraction Medicine',
     licenseOrBadge: 'PRC-MD-0109844',
     status: 'Dispatched',
     resolvedMissions: 254,
-    activeDispatches: 3,
-    responseReadiness: 98.4,
-    avgResponseTime: '3m 18s',
-    sectorAssignment: 'Sector 2 - North Highway Arterial & Viaduct Corridor',
+    activeDispatches: 2,
+    missionSuccessRate: 98.9,
+    avgResponseSeconds: 188,
+    avgResponseTime: '3m 08s',
+    sectorAssignment: 'Sector 2 — National Highway, Barangay Dos, Katipunan, ZN',
     shiftSchedule: '06:00 - 18:00 (Bravo Rapid Shift)',
     radioChannel: 'MED-TAC CH-2 (155.400 MHz)',
-    contactHotline: '+63 917 555 0148',
-    baseLatitude: 14.6088,
-    baseLongitude: 120.9912,
+    baseLatitude: 8.5129,
+    baseLongitude: 123.2819,
     certifications: ['ATLS Certified', 'ACLS Experienced', 'Airway Management Specialist'],
     yearsOfService: 8
   },
-
-  // TIER 3: SENIOR EMS PARAMEDIC / TRIAGE LEAD
   {
     id: 'medic-col-04',
     fullName: 'RN Elena Gabriela Reyes, BSN, EMT-P',
@@ -192,20 +201,19 @@ const INITIAL_COLLEAGUE_ROSTER: ColleagueResponder[] = [
     rankTitle: 'SENIOR EMS PARAMEDIC / TRIAGE LEAD',
     roleCategory: 'Triage Nurse',
     hierarchyTier: 3,
-    hierarchyTierLabel: 'SENIOR EMS PARAMEDIC / TRIAGE LEAD',
     specialization: 'START Mass-Casualty Triage & Critical Care Nursing',
     licenseOrBadge: 'PRC-RN-0492811',
     status: 'OnDuty',
     resolvedMissions: 231,
     activeDispatches: 1,
-    responseReadiness: 99.1,
-    avgResponseTime: '3m 12s',
-    sectorAssignment: 'Sector 1 - Central Mass-Casualty Triage Hub',
+    missionSuccessRate: 99.2,
+    avgResponseSeconds: 181,
+    avgResponseTime: '3m 01s',
+    sectorAssignment: 'Sector 1 — Central Mass-Casualty Triage Hub, Katipunan',
     shiftSchedule: '06:00 - 18:00 (Alpha Field Shift)',
     radioChannel: 'MED-TAC CH-1 (155.340 MHz)',
-    contactHotline: '+63 917 555 0163',
-    baseLatitude: 14.6012,
-    baseLongitude: 120.9865,
+    baseLatitude: 8.5153,
+    baseLongitude: 123.2830,
     certifications: ['CEN Certified Emergency Nurse', 'EMT-Paramedic', 'BLS Instructor'],
     yearsOfService: 7
   },
@@ -219,20 +227,19 @@ const INITIAL_COLLEAGUE_ROSTER: ColleagueResponder[] = [
     rankTitle: 'SENIOR EMS PARAMEDIC / TRIAGE LEAD',
     roleCategory: 'EMT Paramedic',
     hierarchyTier: 3,
-    hierarchyTierLabel: 'SENIOR EMS PARAMEDIC / TRIAGE LEAD',
     specialization: 'Advanced Life Support (ALS) & Cardiac Defibrillation Lead',
     licenseOrBadge: 'DOH-EMTP-22910',
     status: 'Dispatched',
     resolvedMissions: 218,
     activeDispatches: 2,
-    responseReadiness: 97.9,
-    avgResponseTime: '3m 29s',
-    sectorAssignment: 'Sector 3 - Coastal & Industrial Trauma Zone',
+    missionSuccessRate: 98.4,
+    avgResponseSeconds: 196,
+    avgResponseTime: '3m 16s',
+    sectorAssignment: 'Sector 3 — Coastal Boulevard, Barangay Tambo, Katipunan',
     shiftSchedule: '06:00 - 18:00 (Bravo Rapid Shift)',
     radioChannel: 'MED-TAC CH-2 (155.400 MHz)',
-    contactHotline: '+63 917 555 0177',
-    baseLatitude: 14.6088,
-    baseLongitude: 120.9912,
+    baseLatitude: 8.5182,
+    baseLongitude: 123.2798,
     certifications: ['National EMT-Paramedic', 'ITLS Advanced', 'HazMat EMS Level II'],
     yearsOfService: 6
   },
@@ -246,25 +253,22 @@ const INITIAL_COLLEAGUE_ROSTER: ColleagueResponder[] = [
     rankTitle: 'SENIOR EMS PARAMEDIC / TRIAGE LEAD',
     roleCategory: 'Triage Nurse',
     hierarchyTier: 3,
-    hierarchyTierLabel: 'SENIOR EMS PARAMEDIC / TRIAGE LEAD',
     specialization: 'Emergency Obstetric, Pediatric & Evacuation Triage Lead',
     licenseOrBadge: 'PRC-RN-0518390',
     status: 'Standby',
     resolvedMissions: 186,
     activeDispatches: 0,
-    responseReadiness: 96.8,
-    avgResponseTime: '3m 40s',
-    sectorAssignment: 'Sector 4 - East Barangay Evacuation Staging',
+    missionSuccessRate: 97.6,
+    avgResponseSeconds: 215,
+    avgResponseTime: '3m 35s',
+    sectorAssignment: 'Sector 4 — Barangay Tuburan Evacuation Staging',
     shiftSchedule: '14:00 - 02:00 (Swing Standby Shift)',
     radioChannel: 'MED-TAC CH-3 (155.475 MHz)',
-    contactHotline: '+63 917 555 0184',
-    baseLatitude: 14.5941,
-    baseLongitude: 120.9934,
+    baseLatitude: 8.5042,
+    baseLongitude: 123.2923,
     certifications: ['NRP Neonatal Resuscitation', 'PALS Provider', 'Disaster Triage Lead'],
     yearsOfService: 5
   },
-
-  // TIER 4: AMBULANCE CREW MEMBERS (EMT Paramedics, Triage Nurses, Ambulance Drivers/Medics)
   {
     id: 'medic-col-07',
     fullName: 'Med-Op Jerome Kristoffer Navarro',
@@ -272,23 +276,22 @@ const INITIAL_COLLEAGUE_ROSTER: ColleagueResponder[] = [
     unitCode: 'AMB-RHU-01',
     unitName: 'RHU Advanced Life Support Ambulance Alpha-1',
     agency: 'RHU',
-    rankTitle: 'AMBULANCE CREW — TACTICAL EMS DRIVER / MEDIC',
+    rankTitle: 'AMBULANCE CREW — Tactical EMS Driver',
     roleCategory: 'Ambulance Driver / Medic',
     hierarchyTier: 4,
-    hierarchyTierLabel: 'AMBULANCE CREW MEMBERS',
     specialization: 'Emergency Vehicle Operations (EVOC) & Extrication Rigging',
     licenseOrBadge: 'LTO-EVOC-88319',
     status: 'OnDuty',
     resolvedMissions: 210,
     activeDispatches: 1,
-    responseReadiness: 99.2,
+    missionSuccessRate: 99.4,
+    avgResponseSeconds: 175,
     avgResponseTime: '2m 55s',
-    sectorAssignment: 'Sector 1 - Poblacion Central High-Speed Extraction',
+    sectorAssignment: 'Sector 1 — Poblacion Central Extraction Corridor',
     shiftSchedule: '06:00 - 18:00 (Alpha Field Shift)',
     radioChannel: 'MED-TAC CH-1 (155.340 MHz)',
-    contactHotline: '+63 917 555 0219',
-    baseLatitude: 14.6012,
-    baseLongitude: 120.9865,
+    baseLatitude: 8.5102,
+    baseLongitude: 123.2851,
     certifications: ['EVOC Master Driver', 'EMT-Basic', 'Hydraulic Extrication Support'],
     yearsOfService: 7
   },
@@ -299,250 +302,491 @@ const INITIAL_COLLEAGUE_ROSTER: ColleagueResponder[] = [
     unitCode: 'AMB-RHU-01',
     unitName: 'RHU Advanced Life Support Ambulance Alpha-1',
     agency: 'RHU',
-    rankTitle: 'AMBULANCE CREW — EMT PARAMEDIC RESPONDER',
+    rankTitle: 'AMBULANCE CREW — EMT Paramedic Responder',
     roleCategory: 'EMT Paramedic',
     hierarchyTier: 4,
-    hierarchyTierLabel: 'AMBULANCE CREW MEMBERS',
     specialization: 'Hemorrhage Control, Spinal Immobilization & Splinting',
     licenseOrBadge: 'DOH-EMTB-34012',
     status: 'OnDuty',
     resolvedMissions: 195,
     activeDispatches: 1,
-    responseReadiness: 98.7,
+    missionSuccessRate: 98.7,
+    avgResponseSeconds: 190,
     avgResponseTime: '3m 10s',
-    sectorAssignment: 'Sector 1 - Poblacion Central & Trauma Grid',
+    sectorAssignment: 'Sector 1 — Poblacion Central & Trauma Grid',
     shiftSchedule: '06:00 - 18:00 (Alpha Field Shift)',
     radioChannel: 'MED-TAC CH-1 (155.340 MHz)',
-    contactHotline: '+63 917 555 0191',
-    baseLatitude: 14.6012,
-    baseLongitude: 120.9865,
+    baseLatitude: 8.5102,
+    baseLongitude: 123.2866,
     certifications: ['EMT-Basic', 'Stop the Bleed Instructor', 'BLS Healthcare Provider'],
     yearsOfService: 4
   },
   {
     id: 'medic-col-09',
-    fullName: 'RN Sofia Isabel Mercado, BSN',
-    callsign: 'CREW-NURSE-05',
-    unitCode: 'AMB-RHU-01',
-    unitName: 'RHU Advanced Life Support Ambulance Alpha-1',
-    agency: 'RHU',
-    rankTitle: 'AMBULANCE CREW — FIELD TRIAGE NURSE',
-    roleCategory: 'Triage Nurse',
-    hierarchyTier: 4,
-    hierarchyTierLabel: 'AMBULANCE CREW MEMBERS',
-    specialization: 'Pre-Hospital IV Therapy, Vitals Telemetry & PCR Documentation',
-    licenseOrBadge: 'PRC-RN-0602145',
-    status: 'OnDuty',
-    resolvedMissions: 174,
-    activeDispatches: 1,
-    responseReadiness: 98.4,
-    avgResponseTime: '3m 15s',
-    sectorAssignment: 'Sector 1 - Poblacion Central & Trauma Grid',
-    shiftSchedule: '06:00 - 18:00 (Alpha Field Shift)',
-    radioChannel: 'MED-TAC CH-1 (155.340 MHz)',
-    contactHotline: '+63 917 555 0205',
-    baseLatitude: 14.6012,
-    baseLongitude: 120.9865,
-    certifications: ['Registered Nurse', 'IV Therapy Certified', 'ACLS Provider'],
-    yearsOfService: 4
-  },
-  {
-    id: 'medic-col-10',
-    fullName: 'EMT-P Hannah Grace Lim',
-    callsign: 'CREW-MEDIC-06',
-    unitCode: 'AMB-RHU-02',
-    unitName: 'RHU Mobile Trauma ICU Ambulance Bravo-2',
-    agency: 'RHU',
-    rankTitle: 'AMBULANCE CREW — EMT PARAMEDIC RESPONDER',
-    roleCategory: 'EMT Paramedic',
-    hierarchyTier: 4,
-    hierarchyTierLabel: 'AMBULANCE CREW MEMBERS',
-    specialization: 'Airway Intubation, Capnography & Vehicular Trauma Care',
-    licenseOrBadge: 'DOH-EMTP-38920',
-    status: 'Dispatched',
-    resolvedMissions: 162,
-    activeDispatches: 2,
-    responseReadiness: 97.5,
-    avgResponseTime: '3m 32s',
-    sectorAssignment: 'Sector 2 - North Highway Arterial Corridor',
-    shiftSchedule: '06:00 - 18:00 (Bravo Rapid Shift)',
-    radioChannel: 'MED-TAC CH-2 (155.400 MHz)',
-    contactHotline: '+63 917 555 0233',
-    baseLatitude: 14.6088,
-    baseLongitude: 120.9912,
-    certifications: ['EMT-Paramedic', 'PHTLS Provider', 'Advanced Airway Tech'],
-    yearsOfService: 3
-  },
-  {
-    id: 'medic-col-11',
-    fullName: 'Med-Op Noel Christian Aquino',
-    callsign: 'AMB-DRIVER-02',
-    unitCode: 'AMB-RHU-02',
-    unitName: 'RHU Mobile Trauma ICU Ambulance Bravo-2',
-    agency: 'RHU',
-    rankTitle: 'AMBULANCE CREW — TACTICAL EMS DRIVER / MEDIC',
-    roleCategory: 'Ambulance Driver / Medic',
-    hierarchyTier: 4,
-    hierarchyTierLabel: 'AMBULANCE CREW MEMBERS',
-    specialization: 'Night Navigation, Siren Corridor Clearing & Oxygen Manifold Ops',
-    licenseOrBadge: 'LTO-EVOC-90412',
-    status: 'Dispatched',
-    resolvedMissions: 158,
-    activeDispatches: 2,
-    responseReadiness: 97.1,
-    avgResponseTime: '3m 20s',
-    sectorAssignment: 'Sector 2 - North Highway Arterial Corridor',
-    shiftSchedule: '06:00 - 18:00 (Bravo Rapid Shift)',
-    radioChannel: 'MED-TAC CH-2 (155.400 MHz)',
-    contactHotline: '+63 917 555 0247',
-    baseLatitude: 14.6088,
-    baseLongitude: 120.9912,
-    certifications: ['EVOC Certified', 'BLS Responder', 'Tactical Radio Operator'],
-    yearsOfService: 5
-  },
-  {
-    id: 'medic-col-12',
-    fullName: 'EMT-B Bea Katrina Ocampo',
-    callsign: 'CREW-MEDIC-07',
-    unitCode: 'AMB-RHU-03',
-    unitName: 'RHU Bravo-3 Basic Life Support & Evacuation Rig',
-    agency: 'RHU',
-    rankTitle: 'AMBULANCE CREW — EMT PARAMEDIC RESPONDER',
-    roleCategory: 'EMT Paramedic',
-    hierarchyTier: 4,
-    hierarchyTierLabel: 'AMBULANCE CREW MEMBERS',
-    specialization: 'Thermal Burn Dressing, Fracture Stabilization & Rehab Triage',
-    licenseOrBadge: 'DOH-EMTB-41205',
-    status: 'Standby',
-    resolvedMissions: 143,
-    activeDispatches: 0,
-    responseReadiness: 96.0,
-    avgResponseTime: '3m 48s',
-    sectorAssignment: 'Sector 4 - East Barangay Evacuation Staging',
-    shiftSchedule: '14:00 - 02:00 (Swing Standby Shift)',
-    radioChannel: 'MED-TAC CH-3 (155.475 MHz)',
-    contactHotline: '+63 917 555 0260',
-    baseLatitude: 14.5941,
-    baseLongitude: 120.9934,
-    certifications: ['EMT-Basic', 'Burn Trauma Care', 'BLS Provider'],
-    yearsOfService: 3
-  },
-  {
-    id: 'medic-col-13',
     fullName: 'Med-Op Dennis Paul Tolentino',
     callsign: 'AMB-DRIVER-03',
     unitCode: 'AMB-RHU-03',
     unitName: 'RHU Bravo-3 Basic Life Support & Evacuation Rig',
     agency: 'RHU',
-    rankTitle: 'AMBULANCE CREW — TACTICAL EMS DRIVER / MEDIC',
+    rankTitle: 'AMBULANCE CREW — Relief EMS Driver',
     roleCategory: 'Ambulance Driver / Medic',
     hierarchyTier: 4,
-    hierarchyTierLabel: 'AMBULANCE CREW MEMBERS',
-    specialization: 'Apparatus Preventive Maintenance, Defibrillator & O2 Logistics',
+    specialization: 'Apparatus Preventive Maintenance & O2 Manifold Logistics',
     licenseOrBadge: 'LTO-EVOC-94108',
     status: 'OffDuty',
     resolvedMissions: 129,
     activeDispatches: 0,
-    responseReadiness: 94.5,
+    missionSuccessRate: 96.2,
+    avgResponseSeconds: 245,
     avgResponseTime: '4m 05s',
-    sectorAssignment: 'Sector 5 - RHU Base Motorpool / Relief Reserve',
+    sectorAssignment: 'Sector 5 — RHU Base Motorpool Relief Reserve',
     shiftSchedule: '18:00 - 06:00 (Night Relief Shift)',
     radioChannel: 'MED-TAC CH-3 (155.475 MHz)',
-    contactHotline: '+63 917 555 0278',
-    baseLatitude: 14.5941,
-    baseLongitude: 120.9934,
+    baseLatitude: 8.5085,
+    baseLongitude: 123.2775,
     certifications: ['EVOC Certified', 'Apparatus Telemetry Tech', 'First Aid Responder'],
     yearsOfService: 2
   },
 
-  // BFP FIRE & PNP POLICE COLLEAGUES (Retained for Fire/Police role support when non-RHU role logs in)
+  // ============================================================================
+  // BFP FIRE SUPPRESSION & RESCUE RESPONDERS (Katipunan, Zamboanga del Norte)
+  // ============================================================================
   {
     id: 'fire-col-01',
     fullName: 'SINSP Ricardo Dalisay BFP',
-    callsign: 'BFP-ENGINE-01',
-    unitCode: 'FIRE-ENG-01',
-    unitName: 'BFP Central Fire Station Pumper Truck 01',
+    callsign: 'BFP-MARSHAL-01',
+    unitCode: 'FIRE-HQ-01',
+    unitName: 'BFP Katipunan Central Fire Command',
     agency: 'FIRE',
     rankTitle: 'MUNICIPAL FIRE MARSHAL / SENIOR INSPECTOR',
-    roleCategory: 'BFP Fire Officer',
+    roleCategory: 'BFP Fire Commander',
     hierarchyTier: 1,
-    hierarchyTierLabel: 'HEAD CHIEF (Municipal Health Officer / RHU Chief)',
     specialization: 'Structural Fire Suppression & HazMat Incident Command',
     licenseOrBadge: 'BFP-SINSP-11024',
     status: 'OnDuty',
-    resolvedMissions: 198,
+    resolvedMissions: 264,
     activeDispatches: 1,
-    responseReadiness: 98.9,
-    avgResponseTime: '3m 40s',
-    sectorAssignment: 'Sector 1 - Central Commercial Fire Grid',
-    shiftSchedule: '24-Hour Tactical Fire Shift',
-    radioChannel: 'BFP-TAC CH-1 (154.280 MHz)',
-    contactHotline: '+63 917 888 0911',
-    baseLatitude: 14.6025,
-    baseLongitude: 120.9821,
+    missionSuccessRate: 99.6,
+    avgResponseSeconds: 172,
+    avgResponseTime: '2m 52s',
+    sectorAssignment: 'Sector 0 — Katipunan Central Fire Station, Brgy. Uno',
+    shiftSchedule: '24-Hour Tactical Fire Watch',
+    radioChannel: 'BFP-COM CH-1 (154.280 MHz)',
+    baseLatitude: 8.5122,
+    baseLongitude: 123.2825,
     certifications: ['NFPA 1001 Fire Officer III', 'HazMat Operations', 'High-Angle Rescue'],
-    yearsOfService: 12
+    yearsOfService: 14
   },
+  {
+    id: 'fire-col-02',
+    fullName: 'SFO4 Arturo Pendelton BFP',
+    callsign: 'BFP-ENGINE-01',
+    unitCode: 'FIRE-ENG-01',
+    unitName: 'BFP Katipunan Pumper Engine 01',
+    agency: 'FIRE',
+    rankTitle: 'SENIOR FIRE OFFICER IV — Engine Boss',
+    roleCategory: 'BFP Fire Officer',
+    hierarchyTier: 2,
+    specialization: 'High-Rise Hose Deployment & Electrical Feeder Isolation',
+    licenseOrBadge: 'BFP-SFO4-22190',
+    status: 'OnDuty',
+    resolvedMissions: 238,
+    activeDispatches: 1,
+    missionSuccessRate: 99.3,
+    avgResponseSeconds: 184,
+    avgResponseTime: '3m 04s',
+    sectorAssignment: 'Sector 1 — Public Market & Poblacion Fire Grid',
+    shiftSchedule: '06:00 - 18:00 (Alpha Suppression Shift)',
+    radioChannel: 'BFP-TAC CH-1 (154.280 MHz)',
+    baseLatitude: 8.5138,
+    baseLongitude: 123.2904,
+    certifications: ['Structural Fire Tactics', 'SCBA Master Instructor', 'Hydrant Ops'],
+    yearsOfService: 11
+  },
+  {
+    id: 'fire-col-03',
+    fullName: 'SFO2 Ernesto Macapagal BFP',
+    callsign: 'BFP-RESCUE-02',
+    unitCode: 'FIRE-RSC-02',
+    unitName: 'BFP Rapid Rescue & Extrication Unit 02',
+    agency: 'FIRE',
+    rankTitle: 'SENIOR FIRE OFFICER II — Rescue Lead',
+    roleCategory: 'BFP Rescue Specialist',
+    hierarchyTier: 2,
+    specialization: 'Vehicular Hydraulic Extrication & Collapsed Structure SAR',
+    licenseOrBadge: 'BFP-SFO2-30941',
+    status: 'Dispatched',
+    resolvedMissions: 215,
+    activeDispatches: 2,
+    missionSuccessRate: 98.8,
+    avgResponseSeconds: 192,
+    avgResponseTime: '3m 12s',
+    sectorAssignment: 'Sector 2 — National Highway & Brgy. Dos Corridor',
+    shiftSchedule: '06:00 - 18:00 (Bravo Rescue Shift)',
+    radioChannel: 'BFP-TAC CH-2 (154.340 MHz)',
+    baseLatitude: 8.5155,
+    baseLongitude: 123.2829,
+    certifications: ['USAR Collapse Rescue', 'Hydraulic Extrication Lead', 'Swiftwater SAR'],
+    yearsOfService: 9
+  },
+  {
+    id: 'fire-col-04',
+    fullName: 'FO3 Ramon Magsaysay BFP',
+    callsign: 'BFP-NOZZLE-03',
+    unitCode: 'FIRE-ENG-01',
+    unitName: 'BFP Katipunan Pumper Engine 01',
+    agency: 'FIRE',
+    rankTitle: 'FIRE OFFICER III — Attack Nozzle Lead',
+    roleCategory: 'BFP Fire Officer',
+    hierarchyTier: 3,
+    specialization: 'Interior Fire Attack, Thermal Imaging & Ventilation',
+    licenseOrBadge: 'BFP-FO3-41802',
+    status: 'OnDuty',
+    resolvedMissions: 184,
+    activeDispatches: 1,
+    missionSuccessRate: 99.1,
+    avgResponseSeconds: 179,
+    avgResponseTime: '2m 59s',
+    sectorAssignment: 'Sector 1 — Commercial District & Rizal Ave, Katipunan',
+    shiftSchedule: '06:00 - 18:00 (Alpha Suppression Shift)',
+    radioChannel: 'BFP-TAC CH-1 (154.280 MHz)',
+    baseLatitude: 8.5125,
+    baseLongitude: 123.2840,
+    certifications: ['Thermal Imaging Ops', 'RIT Rapid Intervention', 'NFPA 1001 FF-II'],
+    yearsOfService: 7
+  },
+  {
+    id: 'fire-col-05',
+    fullName: 'FO2 Marisol Navarro BFP',
+    callsign: 'BFP-HAZMAT-04',
+    unitCode: 'FIRE-RSC-02',
+    unitName: 'BFP Rapid Rescue & Extrication Unit 02',
+    agency: 'FIRE',
+    rankTitle: 'FIRE OFFICER II — HazMat & First Aid Tech',
+    roleCategory: 'BFP Rescue Specialist',
+    hierarchyTier: 3,
+    specialization: 'LPG Tank Leak Containment & Decontamination Ops',
+    licenseOrBadge: 'BFP-FO2-52714',
+    status: 'Dispatched',
+    resolvedMissions: 162,
+    activeDispatches: 1,
+    missionSuccessRate: 98.2,
+    avgResponseSeconds: 204,
+    avgResponseTime: '3m 24s',
+    sectorAssignment: 'Sector 3 — Brgy. Daanglungsod Industrial Strip',
+    shiftSchedule: '06:00 - 18:00 (Bravo Rescue Shift)',
+    radioChannel: 'BFP-TAC CH-2 (154.340 MHz)',
+    baseLatitude: 8.5085,
+    baseLongitude: 123.2775,
+    certifications: ['HazMat Technician', 'Firefighter First Responder', 'Confined Space'],
+    yearsOfService: 5
+  },
+  {
+    id: 'fire-col-06',
+    fullName: 'FO1 Danilo Velasco BFP',
+    callsign: 'BFP-PUMP-05',
+    unitCode: 'FIRE-TNK-03',
+    unitName: 'BFP Water Tanker Support 03',
+    agency: 'FIRE',
+    rankTitle: 'FIRE OFFICER I — Pump & Hydrant Operator',
+    roleCategory: 'BFP Pump Operator',
+    hierarchyTier: 4,
+    specialization: 'High-Pressure Pump Relay & Municipal Hydrant Drafting',
+    licenseOrBadge: 'BFP-FO1-66410',
+    status: 'Standby',
+    resolvedMissions: 135,
+    activeDispatches: 0,
+    missionSuccessRate: 97.4,
+    avgResponseSeconds: 218,
+    avgResponseTime: '3m 38s',
+    sectorAssignment: 'Sector 4 — Brgy. Tuburan Hydrant Staging',
+    shiftSchedule: '14:00 - 02:00 (Swing Water Support)',
+    radioChannel: 'BFP-TAC CH-3 (154.410 MHz)',
+    baseLatitude: 8.5042,
+    baseLongitude: 123.2923,
+    certifications: ['EVOC Heavy Apparatus', 'Pump Hydraulics Certified', 'SCBA Tech'],
+    yearsOfService: 4
+  },
+  {
+    id: 'fire-col-07',
+    fullName: 'FO1 Cedric Villanueva BFP',
+    callsign: 'BFP-CREW-06',
+    unitCode: 'FIRE-TNK-03',
+    unitName: 'BFP Water Tanker Support 03',
+    agency: 'FIRE',
+    rankTitle: 'FIRE OFFICER I — Relief Hoseman',
+    roleCategory: 'BFP Fire Officer',
+    hierarchyTier: 4,
+    specialization: 'Brush Fire Containment & Salvage Operations',
+    licenseOrBadge: 'BFP-FO1-68902',
+    status: 'OffDuty',
+    resolvedMissions: 98,
+    activeDispatches: 0,
+    missionSuccessRate: 96.0,
+    avgResponseSeconds: 242,
+    avgResponseTime: '4m 02s',
+    sectorAssignment: 'Sector 5 — Central Fire Station Relief Reserve',
+    shiftSchedule: '18:00 - 06:00 (Night Relief Shift)',
+    radioChannel: 'BFP-TAC CH-3 (154.410 MHz)',
+    baseLatitude: 8.5122,
+    baseLongitude: 123.2825,
+    certifications: ['Wildland Brush Suppression', 'BLS Responder'],
+    yearsOfService: 2
+  },
+
+  // ============================================================================
+  // PNP POLICE TACTICAL PATROL RESPONDERS (Katipunan, Zamboanga del Norte)
+  // ============================================================================
   {
     id: 'pnp-col-01',
     fullName: 'PMAJ Victorino Magtanggol PNP',
-    callsign: 'PNP-PATROL-01',
-    unitCode: 'PNP-MOB-01',
-    unitName: 'PNP Municipal Tactical Patrol Unit 01',
+    callsign: 'PNP-CHIEF-01',
+    unitCode: 'PNP-HQ-01',
+    unitName: 'PNP Katipunan Municipal Police Command',
     agency: 'PNP',
     rankTitle: 'CHIEF OF POLICE / POLICE MAJOR',
-    roleCategory: 'PNP Police Officer',
+    roleCategory: 'PNP Command Officer',
     hierarchyTier: 1,
-    hierarchyTierLabel: 'HEAD CHIEF (Municipal Health Officer / RHU Chief)',
     specialization: 'Tactical Crowd Control, Crime Scene Lockdown & Escort',
     licenseOrBadge: 'PNP-PMAJ-77412',
     status: 'OnDuty',
-    resolvedMissions: 245,
+    resolvedMissions: 275,
     activeDispatches: 1,
-    responseReadiness: 99.0,
-    avgResponseTime: '3m 15s',
-    sectorAssignment: 'Sector 1 - Municipal Peace & Security Grid',
-    shiftSchedule: '08:00 - 20:00 (Alpha Patrol Watch)',
-    radioChannel: 'PNP-TAC CH-1 (156.100 MHz)',
-    contactHotline: '+63 917 777 0117',
-    baseLatitude: 14.6001,
-    baseLongitude: 120.9855,
+    missionSuccessRate: 99.7,
+    avgResponseSeconds: 168,
+    avgResponseTime: '2m 48s',
+    sectorAssignment: 'Sector 0 — Katipunan Municipal Police HQ, Brgy. Uno',
+    shiftSchedule: '06:00 - 18:00 (Alpha Command Watch)',
+    radioChannel: 'PNP-COM CH-1 (156.100 MHz)',
+    baseLatitude: 8.5178,
+    baseLongitude: 123.2874,
     certifications: ['PNP SWAT Command', 'Crisis Negotiation', 'Tactical Perimeter Lead'],
-    yearsOfService: 14
+    yearsOfService: 15
+  },
+  {
+    id: 'pnp-col-02',
+    fullName: 'PCPT Gregorio del Pilar PNP',
+    callsign: 'PNP-PATROL-01',
+    unitCode: 'PNP-MOB-01',
+    unitName: 'PNP Katipunan Tactical Mobile Patrol 01',
+    agency: 'PNP',
+    rankTitle: 'POLICE CAPTAIN — Operations Lead',
+    roleCategory: 'PNP Patrol Commander',
+    hierarchyTier: 2,
+    specialization: 'Highway Intercept, Checkpoint Security & Armed Response',
+    licenseOrBadge: 'PNP-PCPT-81205',
+    status: 'OnDuty',
+    resolvedMissions: 249,
+    activeDispatches: 1,
+    missionSuccessRate: 99.4,
+    avgResponseSeconds: 176,
+    avgResponseTime: '2m 56s',
+    sectorAssignment: 'Sector 1 — Bonifacio Commercial Strip & Poblacion',
+    shiftSchedule: '06:00 - 18:00 (Alpha Patrol Watch)',
+    radioChannel: 'PNP-TAC CH-1 (156.100 MHz)',
+    baseLatitude: 8.5171,
+    baseLongitude: 123.2849,
+    certifications: ['Highway Interdiction', 'Active Threat Response', 'SOCO Coordination'],
+    yearsOfService: 11
+  },
+  {
+    id: 'pnp-col-03',
+    fullName: 'PLT Clarissa Dimaculangan PNP',
+    callsign: 'PNP-SOCO-02',
+    unitCode: 'PNP-MOB-02',
+    unitName: 'PNP Rapid Investigation & Traffic Unit 02',
+    agency: 'PNP',
+    rankTitle: 'POLICE LIEUTENANT — Investigation Lead',
+    roleCategory: 'PNP Investigator',
+    hierarchyTier: 2,
+    specialization: 'Forensic Blotter Sealing, CCTV Trace & Missing Person SAR',
+    licenseOrBadge: 'PNP-PLT-84930',
+    status: 'Dispatched',
+    resolvedMissions: 212,
+    activeDispatches: 2,
+    missionSuccessRate: 98.9,
+    avgResponseSeconds: 191,
+    avgResponseTime: '3m 11s',
+    sectorAssignment: 'Sector 2 — Sitio Malugas Bridge, Brgy. Daanglungsod',
+    shiftSchedule: '06:00 - 18:00 (Bravo Patrol Watch)',
+    radioChannel: 'PNP-TAC CH-2 (156.180 MHz)',
+    baseLatitude: 8.5085,
+    baseLongitude: 123.2775,
+    certifications: ['Crime Scene Investigation', 'Digital Forensics', 'Traffic Accident Recon'],
+    yearsOfService: 8
+  },
+  {
+    id: 'pnp-col-04',
+    fullName: 'PSMS Mateo Bonifacio PNP',
+    callsign: 'PNP-SWAT-03',
+    unitCode: 'PNP-MOB-01',
+    unitName: 'PNP Katipunan Tactical Mobile Patrol 01',
+    agency: 'PNP',
+    rankTitle: 'POLICE SENIOR MASTER SERGEANT — Tactical Team Lead',
+    roleCategory: 'PNP Tactical Officer',
+    hierarchyTier: 3,
+    specialization: 'Perimeter Containment, Escort Protection & Checkpoint Ops',
+    licenseOrBadge: 'PNP-PSMS-90124',
+    status: 'OnDuty',
+    resolvedMissions: 196,
+    activeDispatches: 1,
+    missionSuccessRate: 99.1,
+    avgResponseSeconds: 182,
+    avgResponseTime: '3m 02s',
+    sectorAssignment: 'Sector 3 — Boundary Checkpoint, Brgy. Balok, Katipunan',
+    shiftSchedule: '06:00 - 18:00 (Alpha Patrol Watch)',
+    radioChannel: 'PNP-TAC CH-1 (156.100 MHz)',
+    baseLatitude: 8.4935,
+    baseLongitude: 123.2958,
+    certifications: ['SWAT Operator', 'Defensive Tactics Instructor', 'Radio C2'],
+    yearsOfService: 10
+  },
+  {
+    id: 'pnp-col-05',
+    fullName: 'PMSg Katrina Alcaraz PNP',
+    callsign: 'PNP-MARITIME-04',
+    unitCode: 'PNP-MOB-02',
+    unitName: 'PNP Rapid Investigation & Traffic Unit 02',
+    agency: 'PNP',
+    rankTitle: 'POLICE MASTER SERGEANT — Coastal Patrol',
+    roleCategory: 'PNP Maritime Officer',
+    hierarchyTier: 3,
+    specialization: 'Coastal Wharf Security & Bantay Dagat Joint Operations',
+    licenseOrBadge: 'PNP-PMSG-92341',
+    status: 'Dispatched',
+    resolvedMissions: 171,
+    activeDispatches: 1,
+    missionSuccessRate: 98.5,
+    avgResponseSeconds: 198,
+    avgResponseTime: '3m 18s',
+    sectorAssignment: 'Sector 4 — Fisherman Wharf, Brgy. Tambo, Katipunan',
+    shiftSchedule: '06:00 - 18:00 (Bravo Patrol Watch)',
+    radioChannel: 'PNP-TAC CH-2 (156.180 MHz)',
+    baseLatitude: 8.5188,
+    baseLongitude: 123.2835,
+    certifications: ['Maritime Law Enforcement', 'Coastal SAR', 'Bantay Dagat Liaison'],
+    yearsOfService: 7
+  },
+  {
+    id: 'pnp-col-06',
+    fullName: 'PCpl Lorenzo Aguinaldo PNP',
+    callsign: 'PNP-UNIT-05',
+    unitCode: 'PNP-PAT-03',
+    unitName: 'PNP Plaza & Barangay Beat Patrol 03',
+    agency: 'PNP',
+    rankTitle: 'POLICE CORPORAL — Beat Patrol Responder',
+    roleCategory: 'PNP Beat Officer',
+    hierarchyTier: 4,
+    specialization: 'Public Disturbance De-escalation & Barangay Tanod Liaison',
+    licenseOrBadge: 'PNP-PCPL-95418',
+    status: 'Standby',
+    resolvedMissions: 148,
+    activeDispatches: 0,
+    missionSuccessRate: 97.8,
+    avgResponseSeconds: 210,
+    avgResponseTime: '3m 30s',
+    sectorAssignment: 'Sector 1 — Plaza Covered Court, Brgy. Uno, Katipunan',
+    shiftSchedule: '14:00 - 02:00 (Swing Beat Watch)',
+    radioChannel: 'PNP-TAC CH-3 (156.250 MHz)',
+    baseLatitude: 8.5103,
+    baseLongitude: 123.2869,
+    certifications: ['Conflict De-escalation', 'Community Policing', 'First Aid'],
+    yearsOfService: 4
+  },
+  {
+    id: 'pnp-col-07',
+    fullName: 'Pat Rafael Ibarra PNP',
+    callsign: 'PNP-UNIT-06',
+    unitCode: 'PNP-PAT-03',
+    unitName: 'PNP Plaza & Barangay Beat Patrol 03',
+    agency: 'PNP',
+    rankTitle: 'PATROLMAN — Night Relief Patrol',
+    roleCategory: 'PNP Beat Officer',
+    hierarchyTier: 4,
+    specialization: 'Night Curfew Sweep & Motorpool Dispatch Readiness',
+    licenseOrBadge: 'PNP-PAT-98112',
+    status: 'OffDuty',
+    resolvedMissions: 109,
+    activeDispatches: 0,
+    missionSuccessRate: 96.4,
+    avgResponseSeconds: 236,
+    avgResponseTime: '3m 56s',
+    sectorAssignment: 'Sector 5 — Municipal Police Station Relief Reserve',
+    shiftSchedule: '18:00 - 06:00 (Night Relief Watch)',
+    radioChannel: 'PNP-TAC CH-3 (156.250 MHz)',
+    baseLatitude: 8.5178,
+    baseLongitude: 123.2874,
+    certifications: ['EVOC Patrol Driver', 'Radio Communications'],
+    yearsOfService: 2
   }
 ];
 
+const AGENCY_THEME: Record<
+  AgencyScope,
+  {
+    title: string;
+    subtitle: string;
+    badgeLabel: string;
+    personnelNoun: string;
+    tiers: Array<{ tier: HierarchyTier; code: string; title: string; subtitle: string }>;
+  }
+> = {
+  RHU: {
+    title: 'RHU Medical Responders',
+    subtitle: 'RHU Emergency Medical Services — Unit-Scoped Roster & Speed Leaderboard',
+    badgeLabel: 'RHU Ambulance Crew',
+    personnelNoun: 'Medics',
+    tiers: [
+      { tier: 1, code: 'Tier 1', title: 'Head Chief', subtitle: 'Municipal Health Officer' },
+      { tier: 2, code: 'Tier 2', title: 'Medical Officer III', subtitle: 'Field Trauma Command' },
+      { tier: 3, code: 'Tier 3', title: 'Senior Paramedic / Triage Lead', subtitle: 'Triage & ALS Lead' },
+      { tier: 4, code: 'Tier 4', title: 'Ambulance Crew', subtitle: 'EMTs, Nurses & Drivers' }
+    ]
+  },
+  FIRE: {
+    title: 'BFP Fire Responders',
+    subtitle: 'Bureau of Fire Protection — Unit-Scoped Roster & Speed Leaderboard',
+    badgeLabel: 'BFP Fire Suppression',
+    personnelNoun: 'Firefighters',
+    tiers: [
+      { tier: 1, code: 'Tier 1', title: 'Fire Marshal', subtitle: 'Municipal Fire Command' },
+      { tier: 2, code: 'Tier 2', title: 'Engine & Rescue Boss', subtitle: 'Suppression & Extrication' },
+      { tier: 3, code: 'Tier 3', title: 'Fire Attack & HazMat Lead', subtitle: 'Interior & Containment' },
+      { tier: 4, code: 'Tier 4', title: 'Apparatus & Hose Crew', subtitle: 'Pump Operators & Crew' }
+    ]
+  },
+  PNP: {
+    title: 'PNP Police Responders',
+    subtitle: 'Philippine National Police — Unit-Scoped Roster & Speed Leaderboard',
+    badgeLabel: 'PNP Tactical Patrol',
+    personnelNoun: 'Officers',
+    tiers: [
+      { tier: 1, code: 'Tier 1', title: 'Chief of Police', subtitle: 'Municipal Police Command' },
+      { tier: 2, code: 'Tier 2', title: 'Operations & SOCO Lead', subtitle: 'Patrol & Investigation' },
+      { tier: 3, code: 'Tier 3', title: 'Tactical & Maritime Lead', subtitle: 'Perimeter & Coastal SAR' },
+      { tier: 4, code: 'Tier 4', title: 'Beat Patrol Responders', subtitle: 'Mobile & Barangay Patrol' }
+    ]
+  }
+};
+
 export const DutyRosterView: React.FC = () => {
   const { session } = useSession();
+  const activeAgency = useMemo<AgencyScope>(() => resolveActiveAgency(session?.unit), [session?.unit]);
+  const agencyMeta = AGENCY_THEME[activeAgency];
+
   const [roster, setRoster] = useState<DutyUnit[]>([]);
   const [colleagues, setColleagues] = useState<ColleagueResponder[]>(INITIAL_COLLEAGUE_ROSTER);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Determine if operator is RHU Medic / Ambulance Crew (default true unless explicitly FIRE or PNP)
-  const isFireOrPoliceSession = session?.unit === 'FIRE' || session?.unit === 'PNP';
-  const [agencyFilter, setAgencyFilter] = useState<'ALL' | 'RHU' | 'FIRE' | 'PNP'>(() =>
-    isFireOrPoliceSession ? (session?.unit as 'FIRE' | 'PNP') : 'RHU'
-  );
-  const [isAmbulanceCrewOnly, setIsAmbulanceCrewOnly] = useState<boolean>(() => !isFireOrPoliceSession);
-
-  // Colleague Status Filter Buttons (Requirement 4)
   const [statusFilter, setStatusFilter] = useState<StatusFilterOption>('ALL_COLLEAGUES');
-  // Hierarchy Tier Filter (Requirement 2 interactive org chart)
-  const [selectedTierFilter, setSelectedTierFilter] = useState<MedicHierarchyTier | 'ALL'>('ALL');
-  // Sort Selector (Requirement 5)
-  const [sortBy, setSortBy] = useState<ColleagueSortOption>('HIERARCHY');
+  const [selectedTierFilter, setSelectedTierFilter] = useState<HierarchyTier | 'ALL'>('ALL');
+  const [sortBy, setSortBy] = useState<ColleagueSortOption>('LEADERBOARD');
 
-  // Search with useDebounce (Requirement 5)
   const [searchQuery, setSearchQuery] = useState<string>('');
   const debouncedSearch = useDebounce(searchQuery, 250);
-
-  // Table/Card view toggle (Requirement 5)
   const { viewMode, setViewMode } = useTableCardView('card');
 
-  // Selected Colleague for DefaultFloatingModalCard inspection (Requirement 5)
   const [selectedColleague, setSelectedColleague] = useState<ColleagueResponder | null>(null);
-
-  // Leaderboard display toggle (Requirement 3)
   const [showFullLeaderboard, setShowFullLeaderboard] = useState<boolean>(false);
 
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
@@ -551,34 +795,24 @@ export const DutyRosterView: React.FC = () => {
   const [handoverEquipment, setHandoverEquipment] = useState({
     fuelLevel: 'Full (100%)',
     radioComm: 'Channel 1 Tested OK',
-    medicalKit: 'Inspected & Sealed (ALS Trauma & O2 Full)',
-    notes: 'All RHU ambulance apparatus & defibrillators operational.'
+    gearReadiness: 'Inspected & Sealed (Mission Ready)',
+    notes: 'All unit apparatus, telemetry beacons, and tactical kits operational.'
   });
-
-  // Sync agency filter if session loads RHU
-  useEffect(() => {
-    if (session?.unit === 'RHU') {
-      setAgencyFilter('RHU');
-      setIsAmbulanceCrewOnly(true);
-    } else if (session?.unit === 'FIRE' || session?.unit === 'PNP') {
-      setAgencyFilter(session.unit);
-      setIsAmbulanceCrewOnly(false);
-    }
-  }, [session?.unit]);
 
   const loadData = useCallback(async () => {
     try {
-      const data = await getDutyRoster();
+      const data = await getDutyRoster(activeAgency);
       setRoster(data);
 
-      // Sync live unit statuses into colleague records when matching unitCode exists
       if (data && data.length > 0) {
         setColleagues((prev) =>
           prev.map((col) => {
+            if (col.agency !== activeAgency) return col;
             const matchingUnit = data.find(
               (u) =>
                 u.unitCode === col.unitCode ||
-                (u.agency === col.agency && u.commanderName.toLowerCase() === col.fullName.toLowerCase())
+                (resolveActiveAgency(u.agency) === col.agency &&
+                  u.commanderName.toLowerCase() === col.fullName.toLowerCase())
             );
             if (matchingUnit) {
               return {
@@ -593,15 +827,16 @@ export const DutyRosterView: React.FC = () => {
         );
       }
 
-      const targetUnit = session?.unit && session.unit !== 'None' ? session.unit : 'RHU';
-      const reps = await getAgencyReports(targetUnit).catch(() => []);
-      setActiveDispatchesCount(reps.filter((r) => r.status !== 'Resolved').length);
+      const reps = await getAgencyReports(activeAgency).catch(() => []);
+      setActiveDispatchesCount(
+        reps.filter((r) => r.status !== 'Resolved' && r.status !== 'Rejected').length
+      );
     } catch (err) {
       console.error('Failed to load duty roster data:', err);
     } finally {
       setLoading(false);
     }
-  }, [session]);
+  }, [activeAgency]);
 
   useValueRefreshAuto(loadData, {
     intervalMs: 8000,
@@ -609,55 +844,79 @@ export const DutyRosterView: React.FC = () => {
   });
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
-  // Identify active unit for the top readiness banner (fallback to RHU Alpha-1 for RHU Medic)
-  const myUnit: DutyUnit = useMemo(() => {
-    const targetAgency = session?.unit && session.unit !== 'None' ? session.unit : 'RHU';
-    const found = roster.find((u) => u.agency === targetAgency);
-    if (found) return found;
-    const primaryMedic = colleagues.find((c) => c.id === 'medic-col-02') || colleagues[0];
+  // Strict agency-scoped responder list (FIRE sees only FIRE, RHU sees only RHU, PNP sees only PNP)
+  const agencyScopedColleagues = useMemo(
+    () => colleagues.filter((c) => c.agency === activeAgency),
+    [colleagues, activeAgency]
+  );
+
+  // Active unit banner derived strictly from the signed-in agency
+  const myUnit: ActiveUnitSummary = useMemo(() => {
+    const found = roster.find((u) => resolveActiveAgency(u.agency) === activeAgency);
+    const primaryResponder =
+      agencyScopedColleagues.find((c) => c.hierarchyTier === 2) || agencyScopedColleagues[0];
+    if (found) {
+      return {
+        id: found.id,
+        unitCode: found.unitCode,
+        unitName: found.unitName,
+        agency: activeAgency,
+        commanderName: found.commanderName,
+        status: found.status,
+        baseLatitude: found.baseLatitude,
+        baseLongitude: found.baseLongitude,
+        activePersonnelCount: found.activePersonnelCount,
+        shiftSchedule: found.shiftSchedule
+      };
+    }
     return {
-      id: 'rhu-unit-alpha-01',
-      unitCode: primaryMedic.unitCode,
-      unitName: primaryMedic.unitName,
-      agency: 'RHU',
-      commanderName: primaryMedic.fullName,
-      status: primaryMedic.status,
-      baseLatitude: primaryMedic.baseLatitude,
-      baseLongitude: primaryMedic.baseLongitude,
-      contactHotline: primaryMedic.contactHotline,
-      activePersonnelCount: colleagues.filter((c) => c.agency === 'RHU' && c.status !== 'OffDuty').length,
-      shiftSchedule: primaryMedic.shiftSchedule,
-      updatedAt: new Date().toISOString()
+      id: `${activeAgency.toLowerCase()}-unit-01`,
+      unitCode: primaryResponder.unitCode,
+      unitName: primaryResponder.unitName,
+      agency: activeAgency,
+      commanderName: primaryResponder.fullName,
+      status: primaryResponder.status,
+      baseLatitude: primaryResponder.baseLatitude,
+      baseLongitude: primaryResponder.baseLongitude,
+      activePersonnelCount: agencyScopedColleagues.filter(
+        (c) => c.status === 'OnDuty' || c.status === 'Dispatched'
+      ).length,
+      shiftSchedule: primaryResponder.shiftSchedule
     };
-  }, [roster, session?.unit, colleagues]);
+  }, [roster, activeAgency, agencyScopedColleagues]);
 
   const showToast = useCallback((msg: string) => {
     setStatusFeedback(msg);
-    setTimeout(() => setStatusFeedback(null), 3200);
+    window.setTimeout(() => setStatusFeedback(null), 3200);
   }, []);
 
   const handleToggleDuty = useCallback(
     async (newStatus: ColleagueDutyStatus) => {
-      // Optimistically update local colleague commander & unit status immediately
-      setColleagues((prev) =>
-        prev.map((c) => (c.id === 'medic-col-02' ? { ...c, status: newStatus } : c))
-      );
+      const targetResponder =
+        agencyScopedColleagues.find((c) => c.unitCode === myUnit.unitCode) ||
+        agencyScopedColleagues[0];
+
+      if (targetResponder) {
+        setColleagues((prev) =>
+          prev.map((c) => (c.id === targetResponder.id ? { ...c, status: newStatus } : c))
+        );
+      }
       setRoster((prev) =>
         prev.map((u) => (u.id === myUnit.id ? { ...u, status: newStatus } : u))
       );
 
       try {
         await updateUnitDutyStatus(myUnit.id, newStatus);
-        showToast(`Status updated: ${newStatus}`);
+        showToast(`Status updated to ${newStatus}`);
         await loadData();
       } catch {
-        showToast(`Status: ${newStatus}`);
+        showToast(`Status updated locally: ${newStatus}`);
       }
     },
-    [myUnit.id, loadData, showToast]
+    [agencyScopedColleagues, myUnit.id, myUnit.unitCode, loadData, showToast]
   );
 
   const handleQuickNavigate = useCallback((lat: number, lng: number) => {
@@ -674,80 +933,60 @@ export const DutyRosterView: React.FC = () => {
     [showToast]
   );
 
-  // 1. MEDIC-ONLY COLLEAGUES FILTER (Requirement 1)
-  // When logged in as an RHU Medic or viewing AMBULANCE CREW, strictly filter to RHU Medic colleagues only
-  const agencyScopedColleagues = useMemo(() => {
-    if (session?.unit === 'RHU' || isAmbulanceCrewOnly || agencyFilter === 'RHU') {
-      return colleagues.filter((c) => c.agency === 'RHU');
-    }
-    if (agencyFilter === 'ALL') {
-      return colleagues;
-    }
-    return colleagues.filter((c) => c.agency === agencyFilter);
-  }, [colleagues, session?.unit, isAmbulanceCrewOnly, agencyFilter]);
-
-  // Pure RHU Medics list for the RHU Org Structure & Medic Leaderboard
-  const rhuMedicColleagues = useMemo(
-    () => colleagues.filter((c) => c.agency === 'RHU'),
-    [colleagues]
+  const statusCounts = useMemo(
+    () => ({
+      ALL_COLLEAGUES: agencyScopedColleagues.length,
+      ACTIVE_AVAILABLE: agencyScopedColleagues.filter((c) => c.status === 'OnDuty').length,
+      BEING_DISPATCHED: agencyScopedColleagues.filter((c) => c.status === 'Dispatched').length,
+      STANDBY: agencyScopedColleagues.filter((c) => c.status === 'Standby').length,
+      OFF_DUTY: agencyScopedColleagues.filter((c) => c.status === 'OffDuty').length
+    }),
+    [agencyScopedColleagues]
   );
 
-  // Status counts for the 5 exact Status Toggle Filter Buttons (Requirement 4)
-  const statusCounts = useMemo(() => {
-    const base = agencyScopedColleagues;
-    return {
-      ALL_COLLEAGUES: base.length,
-      ACTIVE_AVAILABLE: base.filter((c) => c.status === 'OnDuty').length,
-      BEING_DISPATCHED: base.filter((c) => c.status === 'Dispatched').length,
-      STANDBY: base.filter((c) => c.status === 'Standby').length,
-      OFF_DUTY: base.filter((c) => c.status === 'OffDuty').length
-    };
-  }, [agencyScopedColleagues]);
+  // Leaderboard: ONLY OnDuty & Dispatched personnel of the active agency,
+  // ranked top-to-bottom by response speed & mission succession rate
+  const activeLeaderboard = useMemo(
+    () =>
+      agencyScopedColleagues
+        .filter((c) => c.status === 'OnDuty' || c.status === 'Dispatched')
+        .sort((a, b) => {
+          const scoreDiff = computePerformanceScore(b) - computePerformanceScore(a);
+          if (Math.abs(scoreDiff) > 0.01) return scoreDiff;
+          if (a.avgResponseSeconds !== b.avgResponseSeconds) {
+            return a.avgResponseSeconds - b.avgResponseSeconds;
+          }
+          return b.missionSuccessRate - a.missionSuccessRate;
+        }),
+    [agencyScopedColleagues]
+  );
 
-  // 3. LEADERBOARD RANKING VIEW (Requirement 3)
-  // Ranks duty colleague medics by Resolved Missions, Active Dispatches, Response Readiness, and Sector Assignment
-  const medicLeaderboard = useMemo(() => {
-    return [...rhuMedicColleagues].sort((a, b) => {
-      if (b.resolvedMissions !== a.resolvedMissions) {
-        return b.resolvedMissions - a.resolvedMissions;
-      }
-      if (b.responseReadiness !== a.responseReadiness) {
-        return b.responseReadiness - a.responseReadiness;
-      }
-      return b.activeDispatches - a.activeDispatches;
-    });
-  }, [rhuMedicColleagues]);
-
-  // Map each colleague ID to their 1-based leaderboard rank
   const leaderboardRankMap = useMemo(() => {
     const map = new Map<string, number>();
-    medicLeaderboard.forEach((m, idx) => {
+    activeLeaderboard.forEach((m, idx) => {
       map.set(m.id, idx + 1);
     });
     return map;
-  }, [medicLeaderboard]);
+  }, [activeLeaderboard]);
 
-  // Filtered + Debounced Search + Sorted Colleagues (Requirements 1, 2, 4, 5)
   const processedColleagues = useMemo(() => {
     const query = debouncedSearch.trim().toLowerCase();
 
     const filtered = agencyScopedColleagues.filter((c) => {
-      // Status toggle filter (Requirement 4)
       if (statusFilter === 'ACTIVE_AVAILABLE' && c.status !== 'OnDuty') return false;
       if (statusFilter === 'BEING_DISPATCHED' && c.status !== 'Dispatched') return false;
       if (statusFilter === 'STANDBY' && c.status !== 'Standby') return false;
       if (statusFilter === 'OFF_DUTY' && c.status !== 'OffDuty') return false;
 
-      // Org structure tier filter (Requirement 2)
       if (selectedTierFilter !== 'ALL' && c.hierarchyTier !== selectedTierFilter) return false;
 
-      // Debounced search query (Requirement 5)
       if (query) {
         const matchesName = c.fullName.toLowerCase().includes(query);
         const matchesCallsign = c.callsign.toLowerCase().includes(query);
         const matchesRank = c.rankTitle.toLowerCase().includes(query);
         const matchesRole = c.roleCategory.toLowerCase().includes(query);
-        const matchesUnit = c.unitCode.toLowerCase().includes(query) || c.unitName.toLowerCase().includes(query);
+        const matchesUnit =
+          c.unitCode.toLowerCase().includes(query) || c.unitName.toLowerCase().includes(query);
         const matchesSector = c.sectorAssignment.toLowerCase().includes(query);
         if (
           !matchesName &&
@@ -764,7 +1003,6 @@ export const DutyRosterView: React.FC = () => {
       return true;
     });
 
-    // Sort selector (Requirement 5)
     const statusPriority: Record<ColleagueDutyStatus, number> = {
       OnDuty: 1,
       Dispatched: 2,
@@ -773,23 +1011,23 @@ export const DutyRosterView: React.FC = () => {
     };
 
     return [...filtered].sort((a, b) => {
+      if (sortBy === 'LEADERBOARD') {
+        const aActive = a.status === 'OnDuty' || a.status === 'Dispatched';
+        const bActive = b.status === 'OnDuty' || b.status === 'Dispatched';
+        if (aActive !== bActive) return aActive ? -1 : 1;
+        return computePerformanceScore(b) - computePerformanceScore(a);
+      }
       if (sortBy === 'HIERARCHY') {
         if (a.hierarchyTier !== b.hierarchyTier) return a.hierarchyTier - b.hierarchyTier;
-        return b.resolvedMissions - a.resolvedMissions;
+        return computePerformanceScore(b) - computePerformanceScore(a);
       }
-      if (sortBy === 'LEADERBOARD') {
-        if (b.resolvedMissions !== a.resolvedMissions) return b.resolvedMissions - a.resolvedMissions;
-        return b.responseReadiness - a.responseReadiness;
-      }
-      // AVAILABILITY
       if (statusPriority[a.status] !== statusPriority[b.status]) {
         return statusPriority[a.status] - statusPriority[b.status];
       }
-      return a.hierarchyTier - b.hierarchyTier;
+      return computePerformanceScore(b) - computePerformanceScore(a);
     });
   }, [agencyScopedColleagues, statusFilter, selectedTierFilter, debouncedSearch, sortBy]);
 
-  // Pagination integration (Requirement 5)
   const {
     currentPage,
     pageSize,
@@ -811,47 +1049,13 @@ export const DutyRosterView: React.FC = () => {
     pageSizeOptions: [6, 10, 25, 50]
   });
 
-  // Hierarchy Tiers summary for Section 2 (From Head Chief to Member)
   const organizationTiers = useMemo(
-    () => [
-      {
-        tier: 1 as MedicHierarchyTier,
-        code: 'Tier 1',
-        title: 'Head Chief',
-        subtitle: 'Municipal Health Officer',
-        accent: 'border-emerald-500/80 bg-emerald-950/30 text-emerald-300',
-        badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50',
-        members: rhuMedicColleagues.filter((c) => c.hierarchyTier === 1)
-      },
-      {
-        tier: 2 as MedicHierarchyTier,
-        code: 'Tier 2',
-        title: 'Medical Officer III',
-        subtitle: 'Field Trauma Command',
-        accent: 'border-sky-500/80 bg-sky-950/30 text-sky-300',
-        badgeClass: 'bg-sky-500/20 text-sky-300 border-sky-400/50',
-        members: rhuMedicColleagues.filter((c) => c.hierarchyTier === 2)
-      },
-      {
-        tier: 3 as MedicHierarchyTier,
-        code: 'Tier 3',
-        title: 'Senior Paramedic / Triage Lead',
-        subtitle: 'Triage & ALS Lead',
-        accent: 'border-cyan-500/80 bg-cyan-950/30 text-cyan-300',
-        badgeClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/50',
-        members: rhuMedicColleagues.filter((c) => c.hierarchyTier === 3)
-      },
-      {
-        tier: 4 as MedicHierarchyTier,
-        code: 'Tier 4',
-        title: 'Ambulance Crew',
-        subtitle: 'EMTs, Nurses & Drivers',
-        accent: 'border-indigo-500/80 bg-indigo-950/30 text-indigo-300',
-        badgeClass: 'bg-indigo-500/20 text-indigo-300 border-indigo-400/50',
-        members: rhuMedicColleagues.filter((c) => c.hierarchyTier === 4)
-      }
-    ],
-    [rhuMedicColleagues]
+    () =>
+      agencyMeta.tiers.map((tierSpec) => ({
+        ...tierSpec,
+        members: agencyScopedColleagues.filter((c) => c.hierarchyTier === tierSpec.tier)
+      })),
+    [agencyMeta.tiers, agencyScopedColleagues]
   );
 
   const getStatusBadgeStyle = useCallback((status: ColleagueDutyStatus) => {
@@ -859,63 +1063,63 @@ export const DutyRosterView: React.FC = () => {
       case 'OnDuty':
         return {
           label: 'On Duty',
-          pill: 'bg-emerald-950 text-emerald-300 border-emerald-500/80',
-          dot: 'bg-emerald-400 animate-ping'
+          pill: 'bg-emerald-100 text-emerald-900 border-emerald-700/30',
+          dot: 'bg-emerald-600'
         };
       case 'Dispatched':
         return {
           label: 'Dispatched',
-          pill: 'bg-amber-950 text-amber-300 border-amber-500/80 animate-pulse',
-          dot: 'bg-amber-400 animate-ping'
+          pill: 'bg-amber-100 text-amber-900 border-amber-700/35',
+          dot: 'bg-amber-600 animate-pulse'
         };
       case 'Standby':
         return {
           label: 'Standby',
-          pill: 'bg-sky-950 text-sky-300 border-sky-500/80',
-          dot: 'bg-sky-400'
+          pill: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/40',
+          dot: 'bg-[#A83B4D]'
         };
       default:
         return {
           label: 'Off Duty',
-          pill: 'bg-slate-900 text-slate-400 border-slate-700',
-          dot: 'bg-slate-500'
+          pill: 'bg-stone-200 text-stone-700 border-stone-400/50',
+          dot: 'bg-stone-500'
         };
     }
   }, []);
 
-  const getAgencyBadge = useCallback((agency: string) => {
+  const AgencyIcon = useMemo(() => {
+    if (activeAgency === 'FIRE') return Flame;
+    if (activeAgency === 'PNP') return Shield;
+    return Ambulance;
+  }, [activeAgency]);
+
+  const getAgencySemanticBadge = useCallback((agency: AgencyScope) => {
     switch (agency) {
-      case 'RHU':
-        return {
-          label: 'RHU Ambulance Crew',
-          color: 'bg-sky-500/20 text-sky-300 border-sky-500/50',
-          icon: Ambulance
-        };
       case 'FIRE':
         return {
           label: 'BFP Fire Rescue',
-          color: 'bg-orange-500/20 text-orange-300 border-orange-500/50',
+          color: 'bg-amber-100 text-amber-900 border-amber-700/30',
           icon: Flame
         };
       case 'PNP':
         return {
           label: 'PNP Police',
-          color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50',
+          color: 'bg-sky-100 text-sky-900 border-sky-700/30',
           icon: Shield
         };
       default:
         return {
-          label: 'LDRRMO Command',
-          color: 'bg-rose-500/20 text-rose-300 border-rose-500/50',
-          icon: AlertTriangle
+          label: 'RHU Medical',
+          color: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/40',
+          icon: Ambulance
         };
     }
   }, []);
 
   const sortOptions = useMemo(
     () => [
-      { value: 'HIERARCHY' as ColleagueSortOption, label: 'Sort: Hierarchy' },
-      { value: 'LEADERBOARD' as ColleagueSortOption, label: 'Sort: Leaderboard' },
+      { value: 'LEADERBOARD' as ColleagueSortOption, label: 'Sort: Speed & Success Rate' },
+      { value: 'HIERARCHY' as ColleagueSortOption, label: 'Sort: Command Hierarchy' },
       { value: 'AVAILABILITY' as ColleagueSortOption, label: 'Sort: Availability' }
     ],
     []
@@ -931,311 +1135,329 @@ export const DutyRosterView: React.FC = () => {
   );
 
   return (
-    <div className="flex flex-col gap-6 text-slate-100 select-none pb-10 w-full">
+    <div className="flex flex-col gap-6 text-[#F7F1EA] select-none pb-10 w-full">
       {/* Toast Feedback */}
       {statusFeedback && (
-        <div className="fixed top-5 right-5 z-50 px-4 py-2.5 rounded-lg bg-slate-900 border-2 border-emerald-400 text-emerald-300 font-mono text-xs font-bold shadow-2xl flex items-center gap-2 animate-bounce">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+        <div className="fixed top-20 right-6 z-50 px-4 py-3 rounded-2xl bg-[#F7F1EA] border-2 border-[#670626] text-[#670626] font-mono text-sm font-bold shadow-[0_14px_34px_rgba(74,4,26,0.35)] flex items-center gap-2.5">
+          <CheckCircle2 className="w-4 h-4 text-emerald-700 flex-shrink-0" />
           <span>{statusFeedback}</span>
         </div>
       )}
 
-      {/* Header & Role Scope Control */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+      {/* Header & Unit Scope Bar */}
+      <div className="clay-surface p-5 sm:p-6 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-            <span className="text-xs font-mono font-bold text-sky-400">
-              RHU Ambulance Crew
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#E9D9D0] border border-[#A83B4D]/35 text-xs font-mono font-bold text-[#670626]">
+              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+              <span>{agencyMeta.badgeLabel}</span>
             </span>
-            <span className="text-slate-600">·</span>
-            <span className="text-xs font-mono text-emerald-300 font-semibold">
-              {isAmbulanceCrewOnly || agencyFilter === 'RHU' ? 'Medics Only' : agencyFilter}
+            <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#A83B4D]">
+              Katipunan, Zamboanga del Norte (7109)
             </span>
           </div>
-          <h1 className="text-xl md:text-2xl font-black text-white tracking-wide flex items-center gap-2.5">
-            <Ambulance className="w-6 h-6 text-sky-400" />
-            <span>Duty Roster</span>
+          <h1 className="text-2xl md:text-3xl font-black text-[#670626] tracking-tight flex items-center gap-2.5">
+            <AgencyIcon className="w-7 h-7 text-[#670626]" />
+            <span>Responders</span>
           </h1>
-          <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Command hierarchy, mission leaderboard, and unit availability
-          </p>
+          <p className="text-sm text-[#6E3B46] font-medium mt-0.5">{agencyMeta.subtitle}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Scope Lock Toggle: Ambulance Crew Medics Only vs Multi-Agency */}
-          <button
-            type="button"
-            onClick={() => {
-              setIsAmbulanceCrewOnly(true);
-              setAgencyFilter('RHU');
-              showToast('Filter: RHU Medics');
-            }}
-            className={`px-3.5 py-2 rounded-lg font-mono text-xs font-bold border transition-all inline-flex items-center gap-2 cursor-pointer ${
-              isAmbulanceCrewOnly || agencyFilter === 'RHU'
-                ? 'bg-sky-500 text-slate-950 border-white shadow-[0_0_15px_rgba(14,165,233,0.5)]'
-                : 'bg-slate-900 text-sky-400 border-slate-700 hover:bg-slate-800'
-            }`}
-          >
-            <Stethoscope className="w-4 h-4" />
-            <span>RHU Medics</span>
-          </button>
+          <div className="px-3.5 py-2 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 font-mono text-xs font-bold text-[#670626] flex items-center gap-2">
+            <Users className="w-4 h-4 text-[#A83B4D]" />
+            <span>
+              {activeLeaderboard.length} Active {agencyMeta.personnelNoun}
+            </span>
+          </div>
 
-          {isFireOrPoliceSession && (
-            <div className="flex items-center gap-1.5 font-mono text-xs">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAmbulanceCrewOnly(false);
-                  setAgencyFilter('FIRE');
-                }}
-                className={`px-3 py-2 rounded-lg border transition-colors inline-flex items-center gap-1 cursor-pointer ${
-                  !isAmbulanceCrewOnly && agencyFilter === 'FIRE'
-                    ? 'bg-orange-600 text-white border-orange-400 font-bold'
-                    : 'bg-slate-900 text-orange-400 border-slate-700 hover:bg-slate-800'
-                }`}
-              >
-                <Flame className="w-3.5 h-3.5" />
-                <span>Fire</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAmbulanceCrewOnly(false);
-                  setAgencyFilter('PNP');
-                }}
-                className={`px-3 py-2 rounded-lg border transition-colors inline-flex items-center gap-1 cursor-pointer ${
-                  !isAmbulanceCrewOnly && agencyFilter === 'PNP'
-                    ? 'bg-indigo-600 text-white border-indigo-400 font-bold'
-                    : 'bg-slate-900 text-indigo-400 border-slate-700 hover:bg-slate-800'
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5" />
-                <span>PNP</span>
-              </button>
-            </div>
-          )}
-
-          <button
-            type="button"
+          <ResponderButton
+            variant="primary"
+            size="sm"
             onClick={() => setIsHandoverOpen(true)}
-            className="px-3.5 py-2 rounded-lg bg-emerald-950 border border-emerald-500/70 text-emerald-300 font-mono text-xs font-bold hover:bg-emerald-900 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+            icon={<ClipboardList className="w-4 h-4" />}
           >
-            <ClipboardList className="w-4 h-4" />
-            <span>Shift Handover</span>
-          </button>
+            Shift Handover
+          </ResponderButton>
         </div>
       </div>
 
-      {/* Field Status Banner */}
-      <div
-        className={`tactical-card p-6 rounded-xl border-2 transition-all duration-300 shadow-2xl ${
-          myUnit.status === 'OnDuty'
-            ? 'bg-slate-900/95 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.25)]'
-            : myUnit.status === 'Dispatched'
-            ? 'bg-slate-900/95 border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.25)]'
-            : myUnit.status === 'Standby'
-            ? 'bg-slate-900/95 border-sky-500 shadow-[0_0_20px_rgba(14,165,233,0.25)]'
-            : 'bg-slate-950/95 border-slate-700'
-        }`}
-      >
+      {/* Active Unit Readiness Banner */}
+      <div className="clay-surface p-5 sm:p-6 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
           <div>
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              <span className="px-2.5 py-0.5 rounded bg-sky-950 text-sky-400 font-mono text-xs font-bold border border-sky-700 inline-flex items-center gap-1.5">
-                <HeartPulse className="w-3.5 h-3.5 text-sky-400" />
+            <div className="flex flex-wrap items-center gap-2.5 mb-2">
+              <span className="px-3 py-1 rounded-lg bg-[#670626] text-[#F7F1EA] font-mono text-xs font-bold inline-flex items-center gap-1.5">
+                <AgencyIcon className="w-3.5 h-3.5" />
                 <span>{myUnit.unitCode}</span>
               </span>
-              <span className="text-slate-600">·</span>
-              <span className="font-mono text-xs text-emerald-300 font-bold">
+              <span className="font-mono text-sm text-[#670626] font-bold">
                 Lead: {myUnit.commanderName}
               </span>
             </div>
 
-            <h2 className="text-2xl font-black text-white tracking-wide">{myUnit.unitName}</h2>
+            <h2 className="text-xl md:text-2xl font-black text-[#2B010E] tracking-tight">
+              {myUnit.unitName}
+            </h2>
 
-            <div className="flex flex-wrap items-center gap-4 mt-2 text-xs font-mono text-slate-300">
-              <span className="flex items-center gap-1.5">
-                <span className="text-slate-400">Status:</span>
+            <div className="flex flex-wrap items-center gap-3 mt-2.5 text-xs sm:text-sm font-mono text-[#5B2A35]">
+              <span className="flex items-center gap-2">
+                <span className="text-[#A83B4D] font-bold">Status:</span>
                 <span
-                  className={`font-bold px-2 py-0.5 rounded border ${
-                    myUnit.status === 'OnDuty'
-                      ? 'bg-emerald-950 text-emerald-400 border-emerald-500'
-                      : myUnit.status === 'Dispatched'
-                      ? 'bg-amber-950 text-amber-400 border-amber-500 animate-pulse'
-                      : myUnit.status === 'Standby'
-                      ? 'bg-sky-950 text-sky-400 border-sky-500'
-                      : 'bg-slate-900 text-slate-400 border-slate-700'
+                  className={`font-bold px-2.5 py-0.5 rounded-lg border ${
+                    getStatusBadgeStyle(myUnit.status).pill
                   }`}
                 >
-                  {myUnit.status === 'OnDuty'
-                    ? 'On Duty'
-                    : myUnit.status === 'Dispatched'
-                    ? 'Dispatched'
-                    : myUnit.status === 'Standby'
-                    ? 'Standby'
-                    : 'Off Duty'}
+                  {getStatusBadgeStyle(myUnit.status).label}
                 </span>
               </span>
-              <span className="text-slate-600">|</span>
+              <span className="text-[#A83B4D]/50">|</span>
               <span>
-                Shift: <strong className="text-white">{myUnit.shiftSchedule}</strong>
+                Shift: <strong className="text-[#2B010E]">{myUnit.shiftSchedule}</strong>
               </span>
-              <span className="text-slate-600">|</span>
+              <span className="text-[#A83B4D]/50">|</span>
               <span>
-                Roster: <strong className="text-emerald-400">{rhuMedicColleagues.length} Medics</strong>
+                Unit Roster:{' '}
+                <strong className="text-[#670626]">
+                  {agencyScopedColleagues.length} {agencyMeta.personnelNoun}
+                </strong>
               </span>
             </div>
           </div>
 
-          {/* Base Telemetry */}
-          <div className="px-4 py-2.5 bg-slate-950 rounded-lg border border-slate-800 flex flex-col items-end font-mono">
-            <span className="text-[10px] text-slate-400 font-bold">Base GPS</span>
-            <span className="text-xs font-bold text-sky-400 tracking-wider">
+          <div className="clay-well px-4 py-3 bg-[#E9D9D0] border border-[#670626]/15 flex flex-col items-start lg:items-end font-mono">
+            <span className="text-xs text-[#A83B4D] font-bold uppercase tracking-wider">
+              Base Telemetry GPS
+            </span>
+            <span className="text-sm font-bold text-[#670626] tracking-wider mt-0.5">
               {formatGpsCoord(myUnit.baseLatitude, myUnit.baseLongitude)}
             </span>
-            <span className="text-[10px] text-slate-400 mt-0.5">Hotline: {myUnit.contactHotline}</span>
+            <span className="text-xs text-[#5B2A35] mt-0.5">
+              Scope Locked: {activeAgency} Unit Only
+            </span>
           </div>
         </div>
 
-        {/* Unit Status Toggle Buttons */}
-        <div className="mt-5 pt-4 border-t border-slate-800">
-          <span className="text-xs font-mono font-bold text-slate-300 block mb-2">
-            Unit Status
+        {/* Unit Duty Status Selector */}
+        <div className="mt-5 pt-4 border-t border-[#670626]/15">
+          <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#A83B4D] block mb-2.5">
+            Update Unit Duty Status
           </span>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <button
-              type="button"
-              onClick={() => handleToggleDuty('OnDuty')}
-              className={`py-2.5 px-3 rounded-lg font-mono font-black text-xs transition-all duration-150 border-2 active:scale-95 flex items-center justify-center gap-2 cursor-pointer ${
-                myUnit.status === 'OnDuty'
-                  ? 'bg-emerald-500 text-slate-950 border-white shadow-[0_0_18px_rgba(16,185,129,0.7)] scale-[1.01]'
-                  : 'bg-slate-900/90 text-emerald-400 border-emerald-600/40 hover:bg-emerald-950/40 hover:border-emerald-500'
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  myUnit.status === 'OnDuty' ? 'bg-slate-950' : 'bg-emerald-400'
-                }`}
-              />
-              <span>On Duty</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleToggleDuty('Dispatched')}
-              className={`py-2.5 px-3 rounded-lg font-mono font-black text-xs transition-all duration-150 border-2 active:scale-95 flex items-center justify-center gap-2 cursor-pointer ${
-                myUnit.status === 'Dispatched'
-                  ? 'bg-amber-400 text-slate-950 border-white shadow-[0_0_18px_rgba(245,158,11,0.7)] scale-[1.01]'
-                  : 'bg-slate-900/90 text-amber-400 border-amber-600/40 hover:bg-amber-950/40 hover:border-amber-500'
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  myUnit.status === 'Dispatched' ? 'bg-slate-950 animate-ping' : 'bg-amber-400'
-                }`}
-              />
-              <span>Dispatched</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleToggleDuty('Standby')}
-              className={`py-2.5 px-3 rounded-lg font-mono font-black text-xs transition-all duration-150 border-2 active:scale-95 flex items-center justify-center gap-2 cursor-pointer ${
-                myUnit.status === 'Standby'
-                  ? 'bg-sky-400 text-slate-950 border-white shadow-[0_0_18px_rgba(56,189,248,0.7)] scale-[1.01]'
-                  : 'bg-slate-900/90 text-sky-400 border-sky-600/40 hover:bg-sky-950/40 hover:border-sky-500'
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  myUnit.status === 'Standby' ? 'bg-slate-950' : 'bg-sky-400'
-                }`}
-              />
-              <span>Standby</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleToggleDuty('OffDuty')}
-              className={`py-2.5 px-3 rounded-lg font-mono font-black text-xs transition-all duration-150 border-2 active:scale-95 flex items-center justify-center gap-2 cursor-pointer ${
-                myUnit.status === 'OffDuty'
-                  ? 'bg-rose-600 text-white border-white shadow-[0_0_18px_rgba(225,29,72,0.7)] scale-[1.01]'
-                  : 'bg-slate-900/90 text-slate-400 border-slate-700 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  myUnit.status === 'OffDuty' ? 'bg-white' : 'bg-slate-500'
-                }`}
-              />
-              <span>Off Duty</span>
-            </button>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {(
+              [
+                { key: 'OnDuty', label: 'On Duty', activeClass: 'bg-emerald-700 text-[#F7F1EA] border-emerald-800 shadow-md' },
+                { key: 'Dispatched', label: 'Dispatched', activeClass: 'bg-amber-600 text-[#F7F1EA] border-amber-700 shadow-md' },
+                { key: 'Standby', label: 'Standby', activeClass: 'bg-[#670626] text-[#F7F1EA] border-[#4A041A] shadow-md' },
+                { key: 'OffDuty', label: 'Off Duty', activeClass: 'bg-stone-700 text-[#F7F1EA] border-stone-800 shadow-md' }
+              ] as Array<{ key: ColleagueDutyStatus; label: string; activeClass: string }>
+            ).map((btn) => {
+              const isActive = myUnit.status === btn.key;
+              return (
+                <button
+                  key={btn.key}
+                  type="button"
+                  onClick={() => handleToggleDuty(btn.key)}
+                  className={`py-2.5 px-3 rounded-xl font-mono font-bold text-sm transition-all duration-150 border active:scale-95 flex items-center justify-center gap-2 cursor-pointer ${
+                    isActive
+                      ? btn.activeClass
+                      : 'bg-[#E9D9D0] text-[#670626] border-[#670626]/20 hover:bg-[#DFC9BE]'
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isActive ? 'bg-[#F7F1EA]' : getStatusBadgeStyle(btn.key).dot
+                    }`}
+                  />
+                  <span>{btn.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* Command Hierarchy */}
-      <div className="tactical-card p-5 rounded-xl bg-slate-900/95 border border-sky-500/40 shadow-xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+      {/* Responders Leaderboard (OnDuty & Dispatched ranked by Response Speed & Mission Succession Rate) */}
+      <div className="clay-surface p-5 sm:p-6 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-[#670626]/15">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Trophy className="w-4 h-4 text-[#670626]" />
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#A83B4D]">
+                {activeAgency} Active Leaderboard — On Duty &amp; Dispatched
+              </span>
+              {activeDispatchesCount > 0 && (
+                <span className="px-2.5 py-0.5 rounded-lg bg-[#670626] text-[#F7F1EA] font-mono text-xs font-bold">
+                  {activeDispatchesCount} Active Incidents
+                </span>
+              )}
+            </div>
+            <h2 className="text-lg md:text-xl font-black text-[#670626] tracking-tight mt-0.5">
+              Top Responders by Response Speed &amp; Mission Succession Rate
+            </h2>
+          </div>
+
+          <ResponderButton
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowFullLeaderboard((prev) => !prev)}
+          >
+            {showFullLeaderboard
+              ? 'Show Top 5'
+              : `View All Active (${activeLeaderboard.length})`}
+          </ResponderButton>
+        </div>
+
+        <div className="overflow-x-auto mt-4 rounded-xl border border-[#670626]/15 bg-[#FAF5EE]">
+          <table className="w-full text-left text-sm font-mono">
+            <thead className="bg-[#E9D9D0] text-[#670626] text-xs uppercase border-b border-[#670626]/15">
+              <tr>
+                <th className="p-3.5">Rank</th>
+                <th className="p-3.5">Responder</th>
+                <th className="p-3.5">Role</th>
+                <th className="p-3.5">Response Speed</th>
+                <th className="p-3.5">Succession Rate</th>
+                <th className="p-3.5">Resolved</th>
+                <th className="p-3.5">Sector</th>
+                <th className="p-3.5 text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#670626]/10">
+              {(showFullLeaderboard ? activeLeaderboard : activeLeaderboard.slice(0, 5)).map(
+                (member, idx) => {
+                  const rank = idx + 1;
+                  const statusBadge = getStatusBadgeStyle(member.status);
+                  return (
+                    <tr
+                      key={member.id}
+                      onClick={() => setSelectedColleague(member)}
+                      className="hover:bg-[#E9D9D0]/55 transition-colors cursor-pointer group"
+                    >
+                      <td className="p-3.5 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center justify-center w-8 h-8 rounded-lg font-black text-xs border ${
+                            rank === 1
+                              ? 'bg-[#670626] text-[#F7F1EA] border-[#4A041A] shadow-sm'
+                              : rank === 2
+                              ? 'bg-[#A83B4D] text-[#F7F1EA] border-[#670626]'
+                              : rank === 3
+                              ? 'bg-[#E9D9D0] text-[#670626] border-[#670626]/40'
+                              : 'bg-[#FAF5EE] text-[#5B2A35] border-[#670626]/20'
+                          }`}
+                        >
+                          #{rank}
+                        </span>
+                      </td>
+                      <td className="p-3.5">
+                        <div className="font-sans font-bold text-[#2B010E] group-hover:text-[#670626] flex items-center gap-1.5 text-sm">
+                          <span>{member.fullName}</span>
+                          {rank <= 3 && <Award className="w-4 h-4 text-[#A83B4D] flex-shrink-0" />}
+                        </div>
+                        <div className="text-xs text-[#A83B4D] font-bold">
+                          {member.callsign} · {member.unitCode}
+                        </div>
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        <span className="px-2.5 py-1 rounded-lg bg-[#E9D9D0] text-[#670626] border border-[#670626]/15 text-xs font-bold">
+                          {member.roleCategory}
+                        </span>
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5 text-sm font-black text-[#670626] tabular-nums">
+                          <Gauge className="w-4 h-4 text-[#A83B4D]" />
+                          <span>{member.avgResponseTime}</span>
+                        </span>
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5 text-sm font-black text-emerald-800 tabular-nums">
+                          <TrendingUp className="w-4 h-4 text-emerald-700" />
+                          <span>{member.missionSuccessRate.toFixed(1)}%</span>
+                        </span>
+                      </td>
+                      <td className="p-3.5 whitespace-nowrap">
+                        <span className="text-base font-black text-[#2B010E] tabular-nums">
+                          {member.resolvedMissions}
+                        </span>
+                      </td>
+                      <td
+                        className="p-3.5 text-[#5B2A35] max-w-[220px] truncate text-xs"
+                        title={member.sectorAssignment}
+                      >
+                        {member.sectorAssignment}
+                      </td>
+                      <td className="p-3.5 text-right whitespace-nowrap">
+                        <span
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${statusBadge.pill}`}
+                        >
+                          {statusBadge.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                }
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Unit Chain of Command Hierarchy */}
+      <div className="clay-surface p-5 sm:p-6 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-[#670626]/15">
           <div>
             <div className="flex items-center gap-2">
-              <GitBranch className="w-4 h-4 text-sky-400" />
-              <span className="text-xs font-mono font-bold text-sky-400">
-                Chain of Command
+              <GitBranch className="w-4 h-4 text-[#A83B4D]" />
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#A83B4D]">
+                {activeAgency} Chain of Command
               </span>
             </div>
-            <h2 className="text-base md:text-lg font-black text-white tracking-wide mt-0.5">
+            <h2 className="text-lg md:text-xl font-black text-[#670626] tracking-tight mt-0.5">
               Command Hierarchy
             </h2>
           </div>
 
-          <div className="flex items-center gap-2">
-            {selectedTierFilter !== 'ALL' && (
-              <button
-                type="button"
-                onClick={() => setSelectedTierFilter('ALL')}
-                className="px-3 py-1.5 rounded-lg bg-sky-500/20 border border-sky-400 text-sky-300 font-mono text-xs font-bold hover:bg-sky-500/30 transition-colors cursor-pointer"
-              >
-                Show All Tiers
-              </button>
-            )}
-          </div>
+          {selectedTierFilter !== 'ALL' && (
+            <ResponderButton
+              variant="secondary"
+              size="sm"
+              onClick={() => setSelectedTierFilter('ALL')}
+            >
+              Show All Tiers
+            </ResponderButton>
+          )}
         </div>
 
-        {/* Interactive 4-Tier Chain of Command Flow */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3.5 mt-4">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mt-4">
           {organizationTiers.map((tierObj, index) => {
             const isTierSelected = selectedTierFilter === tierObj.tier;
             return (
               <div
                 key={tierObj.tier}
-                className={`relative rounded-xl border-2 p-4 transition-all flex flex-col justify-between ${
+                className={`clay-well rounded-2xl border p-4 transition-all duration-200 flex flex-col justify-between ${
                   isTierSelected
-                    ? 'border-sky-400 bg-sky-950/40 shadow-[0_0_18px_rgba(56,189,248,0.25)]'
-                    : `${tierObj.accent} hover:border-sky-400/70`
+                    ? 'border-[#670626] bg-[#E9D9D0] ring-2 ring-[#670626]/25'
+                    : 'bg-[#E9D9D0]/80 border-[#670626]/15 hover:border-[#A83B4D]'
                 }`}
               >
                 <div>
-                  {/* Tier Header & Chain Arrow */}
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-black border ${tierObj.badgeClass}`}
-                    >
+                  <div className="flex items-center justify-between gap-2 mb-2.5">
+                    <span className="px-2.5 py-0.5 rounded-lg text-xs font-mono font-black bg-[#670626] text-[#F7F1EA]">
                       {tierObj.code}
                     </span>
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() =>
-                          setSelectedTierFilter((prev) => (prev === tierObj.tier ? 'ALL' : tierObj.tier))
+                          setSelectedTierFilter((prev) =>
+                            prev === tierObj.tier ? 'ALL' : tierObj.tier
+                          )
                         }
-                        className="px-2 py-0.5 rounded bg-slate-900/90 hover:bg-slate-800 text-[10px] font-mono font-bold text-slate-200 border border-slate-700 inline-flex items-center gap-1 cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-[#F7F1EA] hover:bg-white text-xs font-mono font-bold text-[#670626] border border-[#670626]/20 inline-flex items-center gap-1 cursor-pointer"
                       >
                         {isTierSelected ? (
                           <>
-                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
                             <span>Filtered</span>
                           </>
                         ) : (
@@ -1243,19 +1465,17 @@ export const DutyRosterView: React.FC = () => {
                         )}
                       </button>
                       {index < organizationTiers.length - 1 && (
-                        <ChevronRight className="hidden lg:inline-block w-4 h-4 text-sky-400" />
+                        <ChevronRight className="hidden lg:inline-block w-4 h-4 text-[#A83B4D]" />
                       )}
                     </div>
                   </div>
 
-                  {/* Tier Title */}
-                  <h3 className="text-xs font-black font-mono text-white leading-snug">
+                  <h3 className="text-sm font-black font-mono text-[#670626] leading-snug">
                     {tierObj.title}
                   </h3>
-                  <p className="text-[11px] text-slate-300 mt-0.5">{tierObj.subtitle}</p>
+                  <p className="text-xs text-[#5B2A35] mt-0.5">{tierObj.subtitle}</p>
 
-                  {/* Assigned Officers in this Tier */}
-                  <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex flex-col gap-1.5">
+                  <div className="mt-3 pt-2.5 border-t border-[#670626]/15 flex flex-col gap-2">
                     {tierObj.members.map((member) => {
                       const statusStyle = getStatusBadgeStyle(member.status);
                       return (
@@ -1263,18 +1483,18 @@ export const DutyRosterView: React.FC = () => {
                           key={member.id}
                           type="button"
                           onClick={() => setSelectedColleague(member)}
-                          className="w-full text-left p-2 rounded-lg bg-slate-950/85 hover:bg-slate-900 border border-slate-800 hover:border-sky-500/60 transition-all flex items-center justify-between gap-2 group cursor-pointer"
+                          className="w-full text-left p-2.5 rounded-xl bg-[#F7F1EA] hover:bg-white border border-[#670626]/15 hover:border-[#670626]/45 transition-all flex items-center justify-between gap-2 group cursor-pointer"
                         >
                           <div className="min-w-0">
-                            <div className="text-xs font-bold text-white group-hover:text-sky-300 truncate flex items-center gap-1">
-                              <span>{member.fullName}</span>
+                            <div className="text-sm font-bold text-[#2B010E] group-hover:text-[#670626] truncate">
+                              {member.fullName}
                             </div>
-                            <div className="text-[10px] font-mono text-slate-400 truncate">
-                              {member.callsign} · {member.roleCategory}
+                            <div className="text-xs font-mono text-[#A83B4D] truncate">
+                              {member.callsign} · {member.avgResponseTime}
                             </div>
                           </div>
                           <span
-                            className={`w-2 h-2 rounded-full flex-shrink-0 ${statusStyle.dot}`}
+                            className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${statusStyle.dot}`}
                             title={statusStyle.label}
                           />
                         </button>
@@ -1283,11 +1503,15 @@ export const DutyRosterView: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[10px] font-mono text-slate-400">
-                  <span>Online</span>
-                  <span className="text-emerald-400 font-bold">
-                    {tierObj.members.filter((m) => m.status === 'OnDuty' || m.status === 'Dispatched').length} /{' '}
-                    {tierObj.members.length}
+                <div className="mt-3 pt-2.5 border-t border-[#670626]/15 flex items-center justify-between text-xs font-mono text-[#5B2A35]">
+                  <span>Active Duty</span>
+                  <span className="text-emerald-800 font-bold">
+                    {
+                      tierObj.members.filter(
+                        (m) => m.status === 'OnDuty' || m.status === 'Dispatched'
+                      ).length
+                    }{' '}
+                    / {tierObj.members.length}
                   </span>
                 </div>
               </div>
@@ -1296,230 +1520,65 @@ export const DutyRosterView: React.FC = () => {
         </div>
       </div>
 
-      {/* Leaderboard Ranking */}
-      <div className="tactical-card p-5 rounded-xl bg-slate-900/95 border border-amber-500/40 shadow-xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-slate-800">
-          <div>
-            <div className="flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-mono font-bold text-amber-400">
-                Leaderboard
-              </span>
-              {activeDispatchesCount > 0 && (
-                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono text-[10px] font-bold">
-                  {activeDispatchesCount} Active
-                </span>
-              )}
-            </div>
-            <h2 className="text-base md:text-lg font-black text-white tracking-wide mt-0.5">
-              Duty Medic Ranking
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowFullLeaderboard((prev) => !prev)}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-mono text-xs font-bold transition-colors cursor-pointer"
-            >
-              {showFullLeaderboard
-                ? 'Show Top 5'
-                : `View All (${medicLeaderboard.length})`}
-            </button>
-          </div>
-        </div>
-
-        {/* Leaderboard Table */}
-        <div className="overflow-x-auto mt-4">
-          <table className="w-full text-left text-xs font-mono">
-            <thead className="bg-slate-950/90 text-slate-400 text-[11px] border-b border-slate-800">
-              <tr>
-                <th className="p-3">Rank</th>
-                <th className="p-3">Medic</th>
-                <th className="p-3">Role</th>
-                <th className="p-3">Resolved</th>
-                <th className="p-3">Active</th>
-                <th className="p-3">Readiness</th>
-                <th className="p-3">Sector</th>
-                <th className="p-3 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/70">
-              {(showFullLeaderboard ? medicLeaderboard : medicLeaderboard.slice(0, 5)).map((medic, idx) => {
-                const rank = idx + 1;
-                const statusBadge = getStatusBadgeStyle(medic.status);
-                return (
-                  <tr
-                    key={medic.id}
-                    onClick={() => setSelectedColleague(medic)}
-                    className="hover:bg-slate-800/60 transition-colors cursor-pointer group"
-                  >
-                    <td className="p-3 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center justify-center w-7 h-7 rounded-lg font-black text-xs border ${
-                          rank === 1
-                            ? 'bg-amber-400 text-slate-950 border-white shadow-[0_0_12px_rgba(251,191,36,0.5)]'
-                            : rank === 2
-                            ? 'bg-slate-300 text-slate-950 border-white'
-                            : rank === 3
-                            ? 'bg-amber-700 text-white border-amber-400'
-                            : 'bg-slate-900 text-slate-300 border-slate-700'
-                        }`}
-                      >
-                        #{rank}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <div className="font-sans font-bold text-white group-hover:text-sky-300 flex items-center gap-1.5">
-                        <span>{medic.fullName}</span>
-                        {rank <= 3 && <Award className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
-                      </div>
-                      <div className="text-[10px] text-sky-400 font-bold">
-                        {medic.callsign} · {medic.unitCode}
-                      </div>
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-bold">
-                        {medic.roleCategory}
-                      </span>
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      <span className="text-sm font-black text-emerald-400">{medic.resolvedMissions}</span>
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                          medic.activeDispatches > 0
-                            ? 'bg-amber-950/90 text-amber-300 border-amber-500/60'
-                            : 'bg-slate-900 text-slate-400 border-slate-800'
-                        }`}
-                      >
-                        {medic.activeDispatches}
-                      </span>
-                    </td>
-                    <td className="p-3 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sky-300 font-black">{medic.responseReadiness.toFixed(1)}%</span>
-                        <span className="text-[10px] text-slate-400">({medic.avgResponseTime})</span>
-                      </div>
-                    </td>
-                    <td className="p-3 text-slate-300 max-w-[230px] truncate" title={medic.sectorAssignment}>
-                      {medic.sectorAssignment}
-                    </td>
-                    <td className="p-3 text-right whitespace-nowrap">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${statusBadge.pill}`}>
-                        {statusBadge.label}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Status Filter Buttons + Search, Sort, Table/Card Toggle & Pagination */}
+      {/* Status Filter Buttons + Search, Sort, Toggle & Directory */}
       <div className="flex flex-col gap-4">
-        <div className="tactical-card p-4 rounded-xl bg-slate-900/90 border border-slate-800">
-          <div className="flex items-center justify-between mb-2.5">
-            <span className="text-xs font-mono font-bold text-slate-300 flex items-center gap-1.5">
-              <Filter className="w-3.5 h-3.5 text-sky-400" />
-              <span>Filter by Status</span>
+        <div className="clay-surface p-4 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#A83B4D] flex items-center gap-2">
+              <Filter className="w-4 h-4 text-[#670626]" />
+              <span>Filter {activeAgency} Personnel by Duty Status</span>
             </span>
-            <span className="text-xs font-mono text-sky-400 font-bold">
+            <span className="text-xs font-mono text-[#670626] font-bold">
               {processedColleagues.length} of {agencyScopedColleagues.length}
             </span>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-            <button
-              type="button"
-              onClick={() => setStatusFilter('ALL_COLLEAGUES')}
-              className={`py-2.5 px-3 rounded-lg font-mono text-xs font-bold border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                statusFilter === 'ALL_COLLEAGUES'
-                  ? 'bg-sky-500 text-slate-950 border-white shadow-[0_0_14px_rgba(14,165,233,0.5)]'
-                  : 'bg-slate-950 text-slate-300 border-slate-700 hover:border-sky-500/60'
-              }`}
-            >
-              <span>All</span>
-              <span className="px-1.5 py-0.5 rounded bg-slate-900/80 text-sky-300 text-[10px]">
-                {statusCounts.ALL_COLLEAGUES}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setStatusFilter('ACTIVE_AVAILABLE')}
-              className={`py-2.5 px-3 rounded-lg font-mono text-xs font-bold border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                statusFilter === 'ACTIVE_AVAILABLE'
-                  ? 'bg-emerald-500 text-slate-950 border-white shadow-[0_0_14px_rgba(16,185,129,0.5)]'
-                  : 'bg-slate-950 text-emerald-400 border-emerald-600/40 hover:border-emerald-500'
-              }`}
-            >
-              <span>On Duty</span>
-              <span className="px-1.5 py-0.5 rounded bg-slate-900/80 text-emerald-300 text-[10px]">
-                {statusCounts.ACTIVE_AVAILABLE}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setStatusFilter('BEING_DISPATCHED')}
-              className={`py-2.5 px-3 rounded-lg font-mono text-xs font-bold border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                statusFilter === 'BEING_DISPATCHED'
-                  ? 'bg-amber-400 text-slate-950 border-white shadow-[0_0_14px_rgba(245,158,11,0.5)]'
-                  : 'bg-slate-950 text-amber-400 border-amber-600/40 hover:border-amber-500'
-              }`}
-            >
-              <span>Dispatched</span>
-              <span className="px-1.5 py-0.5 rounded bg-slate-900/80 text-amber-300 text-[10px]">
-                {statusCounts.BEING_DISPATCHED}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setStatusFilter('STANDBY')}
-              className={`py-2.5 px-3 rounded-lg font-mono text-xs font-bold border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                statusFilter === 'STANDBY'
-                  ? 'bg-sky-400 text-slate-950 border-white shadow-[0_0_14px_rgba(56,189,248,0.5)]'
-                  : 'bg-slate-950 text-sky-400 border-sky-600/40 hover:border-sky-500'
-              }`}
-            >
-              <span>Standby</span>
-              <span className="px-1.5 py-0.5 rounded bg-slate-900/80 text-sky-300 text-[10px]">
-                {statusCounts.STANDBY}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setStatusFilter('OFF_DUTY')}
-              className={`py-2.5 px-3 rounded-lg font-mono text-xs font-bold border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                statusFilter === 'OFF_DUTY'
-                  ? 'bg-rose-600 text-white border-white shadow-[0_0_14px_rgba(225,29,72,0.5)]'
-                  : 'bg-slate-950 text-slate-400 border-slate-700 hover:border-slate-500'
-              }`}
-            >
-              <span>Off Duty</span>
-              <span className="px-1.5 py-0.5 rounded bg-slate-900/80 text-slate-300 text-[10px]">
-                {statusCounts.OFF_DUTY}
-              </span>
-            </button>
+            {(
+              [
+                { key: 'ALL_COLLEAGUES', label: 'All', count: statusCounts.ALL_COLLEAGUES },
+                { key: 'ACTIVE_AVAILABLE', label: 'On Duty', count: statusCounts.ACTIVE_AVAILABLE },
+                { key: 'BEING_DISPATCHED', label: 'Dispatched', count: statusCounts.BEING_DISPATCHED },
+                { key: 'STANDBY', label: 'Standby', count: statusCounts.STANDBY },
+                { key: 'OFF_DUTY', label: 'Off Duty', count: statusCounts.OFF_DUTY }
+              ] as Array<{ key: StatusFilterOption; label: string; count: number }>
+            ).map((btn) => {
+              const isSelected = statusFilter === btn.key;
+              return (
+                <button
+                  key={btn.key}
+                  type="button"
+                  onClick={() => setStatusFilter(btn.key)}
+                  className={`py-2.5 px-3.5 rounded-xl font-mono text-sm font-bold border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#670626] text-[#F7F1EA] border-[#4A041A] shadow-md'
+                      : 'bg-[#E9D9D0] text-[#670626] border-[#670626]/15 hover:bg-[#DFC9BE]'
+                  }`}
+                >
+                  <span>{btn.label}</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-lg text-xs ${
+                      isSelected
+                        ? 'bg-[#F7F1EA]/20 text-[#F7F1EA]'
+                        : 'bg-[#F7F1EA] text-[#670626]'
+                    }`}
+                  >
+                    {btn.count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Control Bar */}
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 pt-1 border-b border-slate-800 pb-3">
+        <div className="clay-surface p-4 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <Users className="w-5 h-5 text-sky-400" />
-            <h2 className="text-base font-black text-white tracking-wide">
-              {isAmbulanceCrewOnly || agencyFilter === 'RHU'
-                ? 'RHU Crew Roster'
-                : `${agencyFilter} Roster`}
+            <Users className="w-5 h-5 text-[#670626]" />
+            <h2 className="text-lg font-black text-[#670626] tracking-tight">
+              {activeAgency} Personnel Directory
             </h2>
-            <span className="px-2.5 py-0.5 rounded bg-sky-500/20 border border-sky-500/40 text-sky-300 font-mono text-xs font-bold">
+            <span className="px-3 py-0.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] font-mono text-sm font-bold">
               {processedColleagues.length}
             </span>
           </div>
@@ -1536,7 +1595,7 @@ export const DutyRosterView: React.FC = () => {
               options={sortOptions}
               value={sortBy}
               onChange={setSortBy}
-              menuWidth="w-56"
+              menuWidth="w-60"
               align="right"
             />
 
@@ -1544,15 +1603,15 @@ export const DutyRosterView: React.FC = () => {
           </div>
         </div>
 
-        {/* Colleagues Roster Grid or Table */}
+        {/* Directory Grid / Table */}
         {loading ? (
-          <div className="tactical-card p-12 text-center text-sky-400 font-mono text-sm animate-pulse">
-            Loading roster...
+          <div className="clay-surface p-12 text-center text-[#670626] font-mono text-base animate-pulse bg-[#F7F1EA]">
+            Loading {activeAgency} responder roster...
           </div>
         ) : paginatedColleagues.length === 0 ? (
-          <div className="tactical-card p-12 text-center text-slate-400 font-mono text-xs flex flex-col items-center gap-3">
-            <span>No matching responders.</span>
-            <Button
+          <div className="clay-surface p-12 text-center text-[#5B2A35] font-mono text-sm flex flex-col items-center gap-3 bg-[#F7F1EA]">
+            <span>No matching {activeAgency} responders.</span>
+            <ResponderButton
               variant="outline"
               size="sm"
               onClick={() => {
@@ -1562,12 +1621,12 @@ export const DutyRosterView: React.FC = () => {
               }}
             >
               Reset Filters
-            </Button>
+            </ResponderButton>
           </div>
         ) : viewMode === 'card' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {paginatedColleagues.map((colleague) => {
-              const badge = getAgencyBadge(colleague.agency);
+              const badge = getAgencySemanticBadge(colleague.agency);
               const statusStyle = getStatusBadgeStyle(colleague.status);
               const leaderboardRank = leaderboardRankMap.get(colleague.id);
 
@@ -1575,122 +1634,124 @@ export const DutyRosterView: React.FC = () => {
                 <div
                   key={colleague.id}
                   onClick={() => setSelectedColleague(colleague)}
-                  className={`tactical-card p-5 border rounded-xl shadow-lg flex flex-col justify-between transition-all cursor-pointer group ${
-                    colleague.status === 'OnDuty'
-                      ? 'border-emerald-600/60 bg-slate-900/90 hover:border-emerald-400'
-                      : colleague.status === 'Dispatched'
-                      ? 'border-amber-600/60 bg-slate-900/90 hover:border-amber-400'
-                      : colleague.status === 'Standby'
-                      ? 'border-sky-600/60 bg-slate-900/90 hover:border-sky-400'
-                      : 'border-slate-800 bg-slate-950/85 hover:border-slate-600'
-                  }`}
+                  className="clay-surface p-5 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 hover:border-[#670626]/45 flex flex-col justify-between hover:-translate-y-0.5 transition-all duration-200 cursor-pointer group"
                 >
                   <div>
-                    {/* Top Badges Row */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                      <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border inline-flex items-center gap-1 ${badge.color}`}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border inline-flex items-center gap-1.5 ${badge.color}`}
                         >
-                          <badge.icon className="w-3 h-3" />
+                          <badge.icon className="w-3.5 h-3.5" />
                           <span>{colleague.roleCategory}</span>
                         </span>
-                        <span className="font-mono text-xs font-bold text-sky-400">{colleague.callsign}</span>
+                        <span className="font-mono text-sm font-bold text-[#670626]">
+                          {colleague.callsign}
+                        </span>
                         {leaderboardRank !== undefined && (
-                          <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono text-[10px] font-black inline-flex items-center gap-1">
-                            <Trophy className="w-3 h-3 text-amber-400" />
+                          <span className="px-2.5 py-1 rounded-lg bg-[#670626] text-[#F7F1EA] font-mono text-xs font-black inline-flex items-center gap-1">
+                            <Trophy className="w-3.5 h-3.5" />
                             <span>#{leaderboardRank}</span>
                           </span>
                         )}
                       </div>
 
                       <span
-                        className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold border flex items-center gap-1.5 ${statusStyle.pill}`}
+                        className={`px-3 py-1 rounded-lg text-xs font-mono font-bold border flex items-center gap-1.5 ${statusStyle.pill}`}
                       >
-                        <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+                        <span className={`w-2 h-2 rounded-full ${statusStyle.dot}`} />
                         <span>{statusStyle.label}</span>
                       </span>
                     </div>
 
-                    {/* Medic Name & Official Rank */}
-                    <h3 className="text-base font-black text-white group-hover:text-sky-300 transition-colors">
+                    <h3 className="text-lg font-black text-[#2B010E] group-hover:text-[#670626] transition-colors">
                       {colleague.fullName}
                     </h3>
-                    <p className="text-xs font-mono text-emerald-300 font-bold mt-0.5">{colleague.rankTitle}</p>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      <strong className="text-slate-200">{colleague.unitName}</strong> · {colleague.unitCode}
+                    <p className="text-sm font-mono text-[#A83B4D] font-bold mt-0.5">
+                      {colleague.rankTitle}
+                    </p>
+                    <p className="text-xs text-[#5B2A35] mt-1">
+                      <strong className="text-[#2B010E]">{colleague.unitName}</strong> ·{' '}
+                      {colleague.unitCode}
                     </p>
 
-                    {/* Metrics Grid */}
-                    <div className="grid grid-cols-3 gap-2 mt-3.5 pt-3 border-t border-slate-800/80 text-[11px] font-mono">
-                      <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800/80">
-                        <span className="text-slate-500 block text-[10px]">Resolved</span>
-                        <span className="text-emerald-400 font-black text-sm">{colleague.resolvedMissions}</span>
+                    <div className="grid grid-cols-3 gap-2.5 mt-4 pt-3.5 border-t border-[#670626]/15 text-xs font-mono">
+                      <div className="clay-well p-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10">
+                        <span className="text-[#A83B4D] block text-xs">Avg Speed</span>
+                        <span className="text-[#670626] font-black text-base tabular-nums">
+                          {colleague.avgResponseTime}
+                        </span>
                       </div>
-                      <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800/80">
-                        <span className="text-slate-500 block text-[10px]">Active</span>
-                        <span className="text-amber-400 font-black text-sm">{colleague.activeDispatches}</span>
+                      <div className="clay-well p-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10">
+                        <span className="text-[#A83B4D] block text-xs">Succession</span>
+                        <span className="text-emerald-800 font-black text-base tabular-nums">
+                          {colleague.missionSuccessRate.toFixed(1)}%
+                        </span>
                       </div>
-                      <div className="p-2 rounded-lg bg-slate-950/70 border border-slate-800/80">
-                        <span className="text-slate-500 block text-[10px]">Readiness</span>
-                        <span className="text-sky-400 font-black text-sm">
-                          {colleague.responseReadiness.toFixed(1)}%
+                      <div className="clay-well p-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10">
+                        <span className="text-[#A83B4D] block text-xs">Resolved</span>
+                        <span className="text-[#2B010E] font-black text-base tabular-nums">
+                          {colleague.resolvedMissions}
                         </span>
                       </div>
                     </div>
 
-                    {/* Sector & Radio Channel */}
-                    <div className="mt-3 flex flex-col gap-1 text-[11px] font-mono text-slate-300">
+                    <div className="mt-3.5 flex flex-col gap-1.5 text-xs font-mono text-[#5B2A35]">
                       <div className="truncate">
-                        <span className="text-slate-500">Sector: </span>
-                        <span className="text-slate-200 font-semibold">{colleague.sectorAssignment}</span>
+                        <span className="text-[#A83B4D] font-bold">Sector: </span>
+                        <span className="text-[#2B010E] font-semibold">
+                          {colleague.sectorAssignment}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-1 text-sky-400">
-                          <Radio className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1.5 text-[#670626] font-bold">
+                          <Radio className="w-3.5 h-3.5 text-[#A83B4D]" />
                           <span>{colleague.radioChannel}</span>
                         </span>
-                        <a
-                          href={`tel:${colleague.contactHotline}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center gap-1 text-emerald-400 hover:underline font-bold"
-                        >
-                          <Phone className="w-3 h-3" />
-                          <span>{colleague.contactHotline}</span>
-                        </a>
+                        <span className="text-xs font-bold text-[#A83B4D]">
+                          Active Dispatches: {colleague.activeDispatches}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Card Footer */}
-                  <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between font-mono text-xs">
+                  <div className="mt-4 pt-3 border-t border-[#670626]/15 flex items-center justify-between font-mono text-xs">
                     <span
                       onClick={(e) => {
                         e.stopPropagation();
                         copyCoordinates(colleague.baseLatitude, colleague.baseLongitude);
                       }}
-                      className="text-slate-400 hover:text-sky-300 cursor-pointer truncate max-w-[190px] inline-flex items-center gap-1"
+                      className="text-[#5B2A35] hover:text-[#670626] cursor-pointer truncate max-w-[190px] inline-flex items-center gap-1"
                       title="Copy GPS coordinates"
                     >
-                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{formatGpsCoord(colleague.baseLatitude, colleague.baseLongitude)}</span>
+                      <MapPin className="w-4 h-4 text-[#A83B4D]" />
+                      <span>
+                        {formatGpsCoord(colleague.baseLatitude, colleague.baseLongitude)}
+                      </span>
                     </span>
 
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
+                      <ResponderButton
+                        variant="secondary"
+                        size="xs"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleQuickNavigate(colleague.baseLatitude, colleague.baseLongitude);
                         }}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-500/40 text-[10px] font-mono font-bold cursor-pointer"
+                        icon={<Navigation className="w-3.5 h-3.5" />}
                       >
-                        <Navigation className="w-3 h-3" />
-                        <span>GPS</span>
-                      </button>
-                      <span className="px-2.5 py-1 rounded bg-sky-500/20 text-sky-300 border border-sky-500/40 text-[10px] font-mono font-bold group-hover:bg-sky-500 group-hover:text-slate-950 transition-colors">
+                        GPS
+                      </ResponderButton>
+                      <ResponderButton
+                        variant="primary"
+                        size="xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedColleague(colleague);
+                        }}
+                      >
                         Inspect
-                      </span>
+                      </ResponderButton>
                     </div>
                   </div>
                 </div>
@@ -1698,21 +1759,21 @@ export const DutyRosterView: React.FC = () => {
             })}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/90 shadow-2xl">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-slate-950 text-slate-400 text-[11px] border-b border-slate-800">
+          <div className="clay-surface overflow-x-auto rounded-2xl border border-[#670626]/15 bg-[#F7F1EA]">
+            <table className="w-full text-left text-sm font-mono">
+              <thead className="bg-[#E9D9D0] text-[#670626] text-xs uppercase border-b border-[#670626]/15">
                 <tr>
-                  <th className="p-3.5">Callsign</th>
-                  <th className="p-3.5">Name</th>
-                  <th className="p-3.5">Role</th>
-                  <th className="p-3.5">Status</th>
-                  <th className="p-3.5">Missions</th>
-                  <th className="p-3.5">Sector</th>
-                  <th className="p-3.5">Comms</th>
-                  <th className="p-3.5 text-right">Action</th>
+                  <th className="p-4">Callsign</th>
+                  <th className="p-4">Name</th>
+                  <th className="p-4">Role</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4">Speed &amp; Success</th>
+                  <th className="p-4">Sector</th>
+                  <th className="p-4">Radio Channel</th>
+                  <th className="p-4 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 bg-slate-950/40">
+              <tbody className="divide-y divide-[#670626]/10 bg-[#FAF5EE]">
                 {paginatedColleagues.map((colleague) => {
                   const statusStyle = getStatusBadgeStyle(colleague.status);
                   const leaderboardRank = leaderboardRankMap.get(colleague.id);
@@ -1720,57 +1781,64 @@ export const DutyRosterView: React.FC = () => {
                     <tr
                       key={colleague.id}
                       onClick={() => setSelectedColleague(colleague)}
-                      className="hover:bg-slate-900/80 transition-colors cursor-pointer"
+                      className="hover:bg-[#E9D9D0]/55 transition-colors cursor-pointer"
                     >
-                      <td className="p-3.5 whitespace-nowrap">
-                        <div className="text-sky-400 font-bold">{colleague.callsign}</div>
-                        <div className="text-[10px] text-slate-400">{colleague.unitCode}</div>
+                      <td className="p-4 whitespace-nowrap">
+                        <div className="text-[#670626] font-bold">{colleague.callsign}</div>
+                        <div className="text-xs text-[#A83B4D]">{colleague.unitCode}</div>
                       </td>
-                      <td className="p-3.5">
-                        <div className="text-white font-sans font-bold">{colleague.fullName}</div>
+                      <td className="p-4">
+                        <div className="text-[#2B010E] font-sans font-bold">
+                          {colleague.fullName}
+                        </div>
                         {leaderboardRank !== undefined && (
-                          <span className="text-[10px] text-amber-400 font-bold">
-                            Rank #{leaderboardRank}
+                          <span className="text-xs text-[#670626] font-bold">
+                            Active Rank #{leaderboardRank}
                           </span>
                         )}
                       </td>
-                      <td className="p-3.5">
-                        <div className="text-emerald-300 font-bold text-[11px]">{colleague.rankTitle}</div>
-                        <div className="text-[10px] text-slate-400">{colleague.roleCategory}</div>
+                      <td className="p-4">
+                        <div className="text-[#670626] font-bold text-xs">
+                          {colleague.rankTitle}
+                        </div>
+                        <div className="text-xs text-[#5B2A35]">{colleague.roleCategory}</div>
                       </td>
-                      <td className="p-3.5 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${statusStyle.pill}`}>
+                      <td className="p-4 whitespace-nowrap">
+                        <span
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${statusStyle.pill}`}
+                        >
                           {statusStyle.label}
                         </span>
                       </td>
-                      <td className="p-3.5 whitespace-nowrap">
-                        <span className="text-emerald-400 font-bold">{colleague.resolvedMissions} Resolved</span>
-                        <span className="text-slate-600"> · </span>
-                        <span className="text-amber-300 font-bold">{colleague.activeDispatches} Active</span>
+                      <td className="p-4 whitespace-nowrap text-xs">
+                        <span className="text-[#670626] font-bold">{colleague.avgResponseTime}</span>
+                        <span className="text-[#A83B4D]"> · </span>
+                        <span className="text-emerald-800 font-bold">
+                          {colleague.missionSuccessRate.toFixed(1)}%
+                        </span>
                       </td>
-                      <td className="p-3.5 text-slate-300 max-w-[200px] truncate">{colleague.sectorAssignment}</td>
-                      <td className="p-3.5 whitespace-nowrap">
-                        <div className="text-sky-400 text-[10px]">{colleague.radioChannel}</div>
-                        <a
-                          href={`tel:${colleague.contactHotline}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-emerald-400 hover:underline text-[11px] inline-flex items-center gap-1"
-                        >
-                          <Phone className="w-3 h-3" />
-                          <span>{colleague.contactHotline}</span>
-                        </a>
+                      <td className="p-4 text-[#5B2A35] max-w-[200px] truncate text-xs">
+                        {colleague.sectorAssignment}
                       </td>
-                      <td className="p-3.5 text-right whitespace-nowrap">
-                        <button
-                          type="button"
+                      <td className="p-4 whitespace-nowrap">
+                        <div className="text-[#670626] font-semibold text-xs">
+                          {colleague.radioChannel}
+                        </div>
+                        <div className="text-xs text-[#A83B4D]">
+                          {colleague.resolvedMissions} Resolved
+                        </div>
+                      </td>
+                      <td className="p-4 text-right whitespace-nowrap">
+                        <ResponderButton
+                          variant="primary"
+                          size="xs"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedColleague(colleague);
                           }}
-                          className="px-2.5 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] transition-colors cursor-pointer"
                         >
                           Inspect
-                        </button>
+                        </ResponderButton>
                       </td>
                     </tr>
                   );
@@ -1781,12 +1849,14 @@ export const DutyRosterView: React.FC = () => {
         )}
 
         {/* Pagination Controls Bar */}
-        <div className="tactical-card p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-xs">
-          <div className="flex items-center gap-3 text-slate-400">
+        <div className="clay-surface p-4 rounded-2xl bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-sm">
+          <div className="flex items-center gap-3 text-[#5B2A35]">
             <span>
-              <strong className="text-white">{totalItems === 0 ? 0 : startIndex + 1}</strong>–
-              <strong className="text-white">{endIndex}</strong> of{' '}
-              <strong className="text-sky-400">{totalItems}</strong>
+              <strong className="text-[#670626]">
+                {totalItems === 0 ? 0 : startIndex + 1}
+              </strong>
+              –<strong className="text-[#670626]">{endIndex}</strong> of{' '}
+              <strong className="text-[#670626]">{totalItems}</strong>
             </span>
             <Dropdown<string>
               variant="pagination"
@@ -1797,206 +1867,203 @@ export const DutyRosterView: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
+            <ResponderButton
+              variant="secondary"
+              size="xs"
               disabled={!canPrevPage}
               onClick={prevPage}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-200 disabled:opacity-40 hover:border-sky-500 transition-colors inline-flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+              icon={<ChevronLeft className="w-4 h-4" />}
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Prev</span>
-            </button>
+              Prev
+            </ResponderButton>
 
             {Array.from({ length: totalPages }, (_, idx) => idx + 1).map((pageNum) => (
               <button
                 key={pageNum}
                 type="button"
                 onClick={() => goToPage(pageNum)}
-                className={`w-8 h-8 rounded-lg font-bold text-xs border transition-colors cursor-pointer ${
+                className={`w-9 h-9 rounded-xl font-bold text-sm border transition-colors cursor-pointer ${
                   pageNum === currentPage
-                    ? 'bg-sky-500 text-slate-950 border-white font-black'
-                    : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-600'
+                    ? 'bg-[#670626] text-[#F7F1EA] border-[#4A041A] font-black'
+                    : 'bg-[#E9D9D0] text-[#670626] border-[#670626]/15 hover:bg-[#DFC9BE]'
                 }`}
               >
                 {pageNum}
               </button>
             ))}
 
-            <button
-              type="button"
+            <ResponderButton
+              variant="secondary"
+              size="xs"
               disabled={!canNextPage}
               onClick={nextPage}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-200 disabled:opacity-40 hover:border-sky-500 transition-colors inline-flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+              icon={<ChevronRight className="w-4 h-4" />}
+              iconPosition="right"
             >
-              <span>Next</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+              Next
+            </ResponderButton>
           </div>
         </div>
       </div>
 
-      {/* Colleague Profile Modal */}
+      {/* Responder Profile Modal */}
       {selectedColleague && (
-        <DefaultFloatingModalCard
+        <ResponderModalCard
           isOpen={Boolean(selectedColleague)}
           onClose={() => setSelectedColleague(null)}
           title={selectedColleague.fullName}
           subtitle={`${selectedColleague.callsign} · ${selectedColleague.unitCode}`}
           maxWidth="max-w-2xl"
         >
-          <div className="flex flex-col gap-4 text-slate-200 text-xs font-mono">
-            {/* Top Identity Banner */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-sky-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-col gap-4 text-[#2B010E] text-sm font-mono">
+            <div className="clay-well p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <span className="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/40 text-[10px] font-bold">
+                <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                  <span className="px-2.5 py-0.5 rounded-lg bg-[#670626] text-[#F7F1EA] text-xs font-bold">
                     Tier {selectedColleague.hierarchyTier} · {selectedColleague.roleCategory}
                   </span>
-                  <span className="text-slate-400 text-[11px]">
-                    ID: <strong className="text-white">{selectedColleague.licenseOrBadge}</strong>
+                  <span className="text-[#5B2A35] text-xs">
+                    ID: <strong className="text-[#2B010E]">{selectedColleague.licenseOrBadge}</strong>
                   </span>
                 </div>
-                <h3 className="text-lg font-black text-white font-sans">{selectedColleague.fullName}</h3>
-                <p className="text-emerald-300 text-xs font-bold mt-0.5">{selectedColleague.specialization}</p>
+                <h3 className="text-xl font-black text-[#670626] font-sans">
+                  {selectedColleague.fullName}
+                </h3>
+                <p className="text-[#A83B4D] text-sm font-bold mt-0.5">
+                  {selectedColleague.specialization}
+                </p>
               </div>
 
-              <div className="flex flex-col sm:items-end gap-1">
+              <div className="flex flex-col sm:items-end gap-1.5">
                 <span
-                  className={`px-3 py-1 rounded text-xs font-bold border ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold border ${
                     getStatusBadgeStyle(selectedColleague.status).pill
                   }`}
                 >
                   {getStatusBadgeStyle(selectedColleague.status).label}
                 </span>
                 {leaderboardRankMap.get(selectedColleague.id) && (
-                  <span className="text-[11px] text-amber-400 font-bold">
-                    Rank #{leaderboardRankMap.get(selectedColleague.id)}
+                  <span className="text-xs text-[#670626] font-bold">
+                    Active Rank #{leaderboardRankMap.get(selectedColleague.id)}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Operational Telemetry Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Resolved</span>
-                <span className="text-lg font-black text-emerald-400">{selectedColleague.resolvedMissions}</span>
-              </div>
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Active</span>
-                <span className="text-lg font-black text-amber-400">{selectedColleague.activeDispatches}</span>
-              </div>
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Readiness</span>
-                <span className="text-lg font-black text-sky-400">
-                  {selectedColleague.responseReadiness.toFixed(1)}%
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10">
+                <span className="text-xs text-[#A83B4D] block">Resolved</span>
+                <span className="text-xl font-black text-[#2B010E]">
+                  {selectedColleague.resolvedMissions}
                 </span>
               </div>
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Avg Response</span>
-                <span className="text-lg font-black text-white">{selectedColleague.avgResponseTime}</span>
+              <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10">
+                <span className="text-xs text-[#A83B4D] block">Active</span>
+                <span className="text-xl font-black text-amber-800">
+                  {selectedColleague.activeDispatches}
+                </span>
+              </div>
+              <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10">
+                <span className="text-xs text-[#A83B4D] block">Success Rate</span>
+                <span className="text-xl font-black text-emerald-800">
+                  {selectedColleague.missionSuccessRate.toFixed(1)}%
+                </span>
+              </div>
+              <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10">
+                <span className="text-xs text-[#A83B4D] block">Avg Speed</span>
+                <span className="text-xl font-black text-[#670626]">
+                  {selectedColleague.avgResponseTime}
+                </span>
               </div>
             </div>
 
-            {/* Unit Assignment, Sector & Direct Radio/Contact Links */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] text-slate-400 font-bold">Unit</span>
-                <span className="text-white font-bold">
+                <span className="text-xs text-[#A83B4D] font-bold">Unit</span>
+                <span className="text-[#2B010E] font-bold">
                   {selectedColleague.unitName} ({selectedColleague.unitCode})
                 </span>
-                <span className="text-[11px] text-slate-400">Shift: {selectedColleague.shiftSchedule}</span>
+                <span className="text-xs text-[#5B2A35]">
+                  Shift: {selectedColleague.shiftSchedule}
+                </span>
               </div>
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] text-slate-400 font-bold">Sector</span>
-                <span className="text-sky-300 font-bold">{selectedColleague.sectorAssignment}</span>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-xs text-[#A83B4D] font-bold">Sector</span>
+                <span className="text-[#670626] font-bold">
+                  {selectedColleague.sectorAssignment}
+                </span>
+                <span className="text-xs text-[#5B2A35]">
                   Tenure: {selectedColleague.yearsOfService} yrs
                 </span>
               </div>
-              <div className="flex flex-col gap-1 pt-2 border-t border-slate-800">
-                <span className="text-[10px] text-slate-400 font-bold">Radio</span>
-                <span className="text-emerald-400 font-bold inline-flex items-center gap-1.5">
-                  <Radio className="w-3.5 h-3.5" />
+              <div className="flex flex-col gap-1 pt-2 border-t border-[#670626]/15 sm:col-span-2">
+                <span className="text-xs text-[#A83B4D] font-bold">Radio Dispatch Channel</span>
+                <span className="text-[#670626] font-bold inline-flex items-center gap-1.5">
+                  <Radio className="w-4 h-4 text-[#A83B4D]" />
                   <span>{selectedColleague.radioChannel}</span>
                 </span>
               </div>
-              <div className="flex flex-col gap-1 pt-2 border-t border-slate-800">
-                <span className="text-[10px] text-slate-400 font-bold">Hotline</span>
-                <a
-                  href={`tel:${selectedColleague.contactHotline}`}
-                  className="text-sky-400 hover:underline font-bold inline-flex items-center gap-1.5"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>{selectedColleague.contactHotline}</span>
-                </a>
-              </div>
             </div>
 
-            {/* Certifications */}
             <div>
-              <span className="text-[10px] text-slate-400 font-bold block mb-1.5">
+              <span className="text-xs text-[#A83B4D] font-bold block mb-2">
                 Certifications
               </span>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-2">
                 {selectedColleague.certifications.map((cert) => (
                   <span
                     key={cert}
-                    className="px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold inline-flex items-center gap-1"
+                    className="px-3 py-1 rounded-lg bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] text-xs font-bold inline-flex items-center gap-1.5"
                   >
-                    <BadgeCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <BadgeCheck className="w-4 h-4 text-emerald-700" />
                     <span>{cert}</span>
                   </span>
                 ))}
               </div>
             </div>
 
-            {/* Modal Footer Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
-              <div className="flex items-center gap-2">
-                <a
-                  href={`tel:${selectedColleague.contactHotline}`}
-                  className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs inline-flex items-center gap-1.5 transition-colors"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>Call</span>
-                </a>
-                <button
-                  type="button"
-                  onClick={() => {
-                    showToast(`Radio ping sent to ${selectedColleague.callsign}`);
-                  }}
-                  className="px-3 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-slate-950 font-bold text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Radio className="w-3.5 h-3.5" />
-                  <span>Ping Radio</span>
-                </button>
-              </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#670626]/15">
+              <ResponderButton
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  showToast(`Radio ping sent to ${selectedColleague.callsign}`);
+                }}
+                icon={<Radio className="w-4 h-4" />}
+              >
+                Ping Radio
+              </ResponderButton>
 
-              <Button variant="outline" size="sm" onClick={() => setSelectedColleague(null)}>
+              <ResponderButton
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedColleague(null)}
+              >
                 Close
-              </Button>
+              </ResponderButton>
             </div>
           </div>
-        </DefaultFloatingModalCard>
+        </ResponderModalCard>
       )}
 
       {/* Shift Handover Equipment Verification Modal */}
       {isHandoverOpen && (
-        <DefaultFloatingModalCard
+        <ResponderModalCard
           isOpen={isHandoverOpen}
           onClose={() => setIsHandoverOpen(false)}
-          title="Shift Handover Log"
+          title={`${activeAgency} Shift Handover Log`}
           maxWidth="max-w-xl"
         >
-          <div className="flex flex-col gap-4 text-slate-200 text-xs font-mono">
-            <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-4 text-[#2B010E] text-sm font-mono">
+            <div className="grid grid-cols-2 gap-3.5">
               <div className="flex flex-col gap-1.5">
-                <label className="text-slate-400 text-[11px] font-bold">Fuel Level</label>
+                <label className="text-[#670626] text-xs font-bold">Fuel Level</label>
                 <select
                   value={handoverEquipment.fuelLevel}
-                  onChange={(e) => setHandoverEquipment({ ...handoverEquipment, fuelLevel: e.target.value })}
-                  className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white"
+                  onChange={(e) =>
+                    setHandoverEquipment({ ...handoverEquipment, fuelLevel: e.target.value })
+                  }
+                  className="px-3.5 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#2B010E] focus:outline-none focus:border-[#670626]"
                 >
                   <option value="Full (100%)">Full (100%)</option>
                   <option value="3/4 Tank (75%)">3/4 Tank (75%)</option>
@@ -2006,11 +2073,13 @@ export const DutyRosterView: React.FC = () => {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-slate-400 text-[11px] font-bold">Radio Comms</label>
+                <label className="text-[#670626] text-xs font-bold">Radio Comms</label>
                 <select
                   value={handoverEquipment.radioComm}
-                  onChange={(e) => setHandoverEquipment({ ...handoverEquipment, radioComm: e.target.value })}
-                  className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white"
+                  onChange={(e) =>
+                    setHandoverEquipment({ ...handoverEquipment, radioComm: e.target.value })
+                  }
+                  className="px-3.5 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#2B010E] focus:outline-none focus:border-[#670626]"
                 >
                   <option value="Channel 1 Tested OK">Channel 1 OK</option>
                   <option value="Channel 2 Primary Backup">Channel 2 Backup</option>
@@ -2020,47 +2089,53 @@ export const DutyRosterView: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-slate-400 text-[11px] font-bold">Medical Kit</label>
+              <label className="text-[#670626] text-xs font-bold">Unit Equipment Readiness</label>
               <input
                 type="text"
-                value={handoverEquipment.medicalKit}
-                onChange={(e) => setHandoverEquipment({ ...handoverEquipment, medicalKit: e.target.value })}
-                className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white"
+                value={handoverEquipment.gearReadiness}
+                onChange={(e) =>
+                  setHandoverEquipment({ ...handoverEquipment, gearReadiness: e.target.value })
+                }
+                className="px-3.5 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#2B010E] focus:outline-none focus:border-[#670626]"
                 placeholder="Equipment status..."
               />
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-slate-400 text-[11px] font-bold">Handover Notes</label>
+              <label className="text-[#670626] text-xs font-bold">Handover Notes</label>
               <textarea
                 value={handoverEquipment.notes}
-                onChange={(e) => setHandoverEquipment({ ...handoverEquipment, notes: e.target.value })}
+                onChange={(e) =>
+                  setHandoverEquipment({ ...handoverEquipment, notes: e.target.value })
+                }
                 rows={2}
-                className="px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-white"
+                className="px-3.5 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#2B010E] focus:outline-none focus:border-[#670626]"
                 placeholder="Shift notes..."
               />
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-              <Button variant="outline" size="sm" onClick={() => setIsHandoverOpen(false)}>
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#670626]/15">
+              <ResponderButton
+                variant="outline"
+                size="sm"
+                onClick={() => setIsHandoverOpen(false)}
+              >
                 Cancel
-              </Button>
-              <Button
+              </ResponderButton>
+              <ResponderButton
                 variant="primary"
                 size="sm"
                 onClick={() => {
-                  showToast('Shift handover logged');
+                  showToast(`${activeAgency} shift handover logged`);
                   setIsHandoverOpen(false);
                 }}
+                icon={<CheckCircle2 className="w-4 h-4" />}
               >
-                <span className="inline-flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Submit Handover</span>
-                </span>
-              </Button>
+                Submit Handover
+              </ResponderButton>
             </div>
           </div>
-        </DefaultFloatingModalCard>
+        </ResponderModalCard>
       )}
     </div>
   );

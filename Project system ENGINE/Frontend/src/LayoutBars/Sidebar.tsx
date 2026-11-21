@@ -1,10 +1,9 @@
 // [Layer: LayoutBars]
-// Responsibility: Role-tailored dynamic sidebar navigation for LDRRMO Admin, RHU Medic, BFP Fire, PNP Police, and Civilians.
-// 100% CSS class integrity with .sidebar, .nav, .nav__item, and .is-active via NavLink.
-// Universal Lucide icon standard with strict typing (ZERO any) and universal arrow syntax.
+// Responsibility: Role-tailored dynamic sidebar navigation & mobile clay dock for LDRRMO Admin, RHU Medic, BFP Fire, PNP Police, and Civilians.
+// Official Cherry (#400014 / #670626) & Warm Ivory (#F7F1EA) Stitch design with strict typing (ZERO any) and universal arrow syntax.
 
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard,
@@ -16,18 +15,9 @@ import {
   ShieldCheck,
   HeartPulse,
   Flame,
-  Radio,
   FileText,
-  Building2,
-  Truck,
-  ShieldAlert,
-  Award,
-  Lock,
-  Compass,
-  MapPin,
   Home,
   Camera,
-  PhoneCall,
   User,
   Shield,
   Bell,
@@ -51,9 +41,6 @@ interface NavMenuItem {
 interface AgencyIdentity {
   badge: string;
   name: string;
-  color: string;
-  border: string;
-  glow: string;
   category: string;
 }
 
@@ -67,6 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   userUnit = DEFAULT_USER_UNIT
 }) => {
   const { isCollapsed } = useDrawerSidebar();
+  const location = useLocation();
   const normRole = (userRole || '').toLowerCase();
   const normUnit = (userUnit || '').toUpperCase();
 
@@ -80,9 +68,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   let agencyInfo: AgencyIdentity = {
     badge: 'LDRRMO',
     name: 'Central Command',
-    color: '#dc2626',
-    border: '#f59e0b',
-    glow: 'rgba(220, 38, 38, 0.3)',
     category: 'Command'
   };
 
@@ -92,17 +77,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     agencyInfo = {
       badge: 'LDRRMO',
       name: 'Central Command',
-      color: '#dc2626',
-      border: '#f59e0b',
-      glow: 'rgba(220, 38, 38, 0.35)',
-      category: 'Command'
+      category: 'Executive Dispatch'
     };
     menuItems = [
       { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/admin/strategic-map', label: 'Strategic Map', icon: Map },
-      { to: '/admin/incidents', label: 'Incidents & Triage', icon: AlertTriangle },
+      { to: '/admin/incidents', label: 'Dispatch Manager', icon: AlertTriangle },
       { to: '/admin/submitted-reports', label: 'Submitted Reports', icon: FileCheck },
-      { to: '/admin/roster', label: 'Fleet Roster', icon: Users },
+      { to: '/admin/responders', label: 'Responders', icon: Users },
       { to: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
       { to: '/admin/users', label: 'Users', icon: ShieldCheck },
       { to: '/admin/alerts', label: 'Broadcasts', icon: Bell },
@@ -112,77 +94,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
     agencyInfo = {
       badge: 'RHU Medic',
       name: 'EMS & Trauma',
-      color: '#0284c7',
-      border: '#38bdf8',
-      glow: 'rgba(2, 132, 199, 0.35)',
-      category: 'Medical'
+      category: 'Medical Corps'
     };
     menuItems = [
-      { to: '/responder', label: 'Dashboard', icon: HeartPulse },
+      { to: '/responder/dashboard', label: 'Dashboard', icon: HeartPulse },
       { to: '/responder/incidents', label: 'Dispatches', icon: AlertTriangle },
       { to: '/responder/request-deploy', label: 'Request & Deploy', icon: Send },
-      { to: '/responder/roster', label: 'Crew Roster', icon: Users },
-      { to: '/responder/reports', label: 'Incident Logs', icon: FileText },
+      { to: '/responder/duty-roster', label: 'Responders', icon: Users },
+      { to: '/responder/my-reports', label: 'Incident Logs', icon: FileText },
       { to: '/responder/profile', label: 'Profile', icon: User }
     ];
   } else if (isResponder && normUnit === 'FIRE') {
     agencyInfo = {
       badge: 'BFP Fire',
       name: 'Engine Company',
-      color: '#ea580c',
-      border: '#f97316',
-      glow: 'rgba(234, 88, 12, 0.35)',
       category: 'Fire & Hazmat'
     };
     menuItems = [
       { to: '/responder/dashboard', label: 'Dashboard', icon: Flame },
-      { to: '/responder/incidents', label: 'Hazmat & 2-Alarm', icon: AlertTriangle },
-      { to: '/responder/roster', label: 'Apparatus', icon: Truck },
-      { to: '/responder/my-reports', label: 'Incident Logs', icon: FileText },
-      { to: '/responder/alerts', label: 'Alerts', icon: Bell },
+      { to: '/responder/incidents', label: 'Unit Feed', icon: AlertTriangle },
+      { to: '/responder/duty-roster', label: 'Responders', icon: Users },
+      { to: '/responder/request-deploy', label: 'Request & Deploy', icon: Send },
+      { to: '/responder/my-reports', label: 'Reports', icon: FileText },
       { to: '/responder/profile', label: 'Profile', icon: User }
     ];
   } else if (isResponder && (normUnit === 'PNP' || normUnit === 'SECURITY')) {
     agencyInfo = {
       badge: 'PNP Police',
       name: 'Patrol Unit',
-      color: '#3b82f6',
-      border: '#60a5fa',
-      glow: 'rgba(59, 130, 246, 0.35)',
       category: 'Law Enforcement'
     };
     menuItems = [
       { to: '/responder/dashboard', label: 'Dashboard', icon: Shield },
-      { to: '/responder/incidents', label: 'Dispatches', icon: AlertTriangle },
-      { to: '/responder/roster', label: 'Patrol Roster', icon: Users },
-      { to: '/responder/my-reports', label: 'Incident Logs', icon: FileText },
-      { to: '/responder/alerts', label: 'Alerts', icon: Bell },
+      { to: '/responder/request-deploy', label: 'Request & Deploy', icon: Send },
+      { to: '/responder/duty-roster', label: 'Responders', icon: Users },
+      { to: '/responder/my-reports', label: 'Reports', icon: FileText },
       { to: '/responder/profile', label: 'Profile', icon: User }
     ];
   } else if (isResponder) {
     agencyInfo = {
       badge: 'Responder',
       name: 'Field Operations',
-      color: '#64748b',
-      border: '#94a3b8',
-      glow: 'rgba(100, 116, 139, 0.35)',
       category: 'Field Response'
     };
     menuItems = [
       { to: '/responder/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/responder/incidents', label: 'Incidents', icon: AlertTriangle },
-      { to: '/responder/roster', label: 'Duty Roster', icon: Users },
-      { to: '/responder/my-reports', label: 'Action Reports', icon: FileText },
-      { to: '/responder/alerts', label: 'Alerts', icon: Bell },
+      { to: '/responder/incidents', label: 'Unit Feed', icon: AlertTriangle },
+      { to: '/responder/request-deploy', label: 'Request & Deploy', icon: Send },
+      { to: '/responder/duty-roster', label: 'Responders', icon: Users },
+      { to: '/responder/my-reports', label: 'Reports', icon: FileText },
       { to: '/responder/profile', label: 'Profile', icon: User }
     ];
   } else {
     agencyInfo = {
       badge: 'Civilian',
       name: 'Resident Portal',
-      color: '#8b5cf6',
-      border: '#a78bfa',
-      glow: 'rgba(139, 92, 246, 0.35)',
       category: 'Resident Services'
     };
     menuItems = [
@@ -190,96 +156,136 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { to: '/civilian/live-map', label: 'Live Map', icon: Map },
       { to: '/civilian/report', label: 'Report SOS', icon: Camera },
       { to: '/civilian/my-reports', label: 'My Reports', icon: AlertTriangle },
-      { to: '/civilian/alerts', label: 'Warnings', icon: Bell },
-      { to: '/civilian/hotlines', label: 'Hotlines', icon: PhoneCall },
-      { to: '/civilian/profile', label: 'Identity', icon: User }
+      { to: '/civilian/profile', label: 'Profile', icon: User }
     ];
   }
 
+  const isNavItemActive = (itemTo: string, routerIsActive: boolean): boolean => {
+    if (routerIsActive) return true;
+    if (itemTo === '/responder/dashboard' && location.pathname === '/responder') return true;
+    if (itemTo === '/civilian/dashboard' && location.pathname === '/civilian') return true;
+    if (itemTo === '/civilian/profile' && location.pathname === '/civilian/identity') return true;
+    return false;
+  };
+
+  const mobileDockItems = menuItems.slice(0, 5);
+
   return (
-    <aside
-      className={`sidebar transition-all duration-200 select-none border-r border-rose-950/80 shadow-2xl shadow-black/80 z-[600] relative pointer-events-auto flex flex-col flex-shrink-0 ${
-        isCollapsed ? 'is-collapsed w-[72px] min-w-[72px] max-w-[72px]' : 'w-[260px] min-w-[260px] max-w-[260px]'
-      }`}
-      style={{
-        width: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : EXPANDED_SIDEBAR_VAR,
-        minWidth: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : EXPANDED_SIDEBAR_VAR
-      }}
-      aria-label="Role Navigation Sidebar"
-    >
-      {/* Agency Identity Emblem + Drawer Toggle Button */}
-      <div className={`pt-3 pb-2 mb-2 border-b border-white/10 ${isCollapsed ? 'px-2 flex flex-col items-center' : 'px-4'}`}>
-        <div className="flex items-center justify-between w-full mb-1">
-          {!isCollapsed ? (
-            <span
-              className="text-[10px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded"
-              style={{
-                backgroundColor: `${agencyInfo.color}35`,
-                color: agencyInfo.border
-              }}
-            >
-              {agencyInfo.badge}
-            </span>
-          ) : (
-            <span
-              className="w-2 h-2 rounded-full animate-pulse mx-auto mb-1"
-              style={{ backgroundColor: agencyInfo.border }}
-              title={agencyInfo.badge}
-            />
+    <>
+      <aside
+        className={`sidebar hidden md:flex transition-all duration-200 select-none bg-[#400014] border-r border-[#FFD9DD]/15 shadow-[12px_0_36px_rgba(43,1,14,0.45)] z-[600] relative pointer-events-auto flex-col flex-shrink-0 ${
+          isCollapsed ? 'is-collapsed w-[72px] min-w-[72px] max-w-[72px]' : 'w-[260px] min-w-[260px] max-w-[260px]'
+        }`}
+        style={{
+          width: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : EXPANDED_SIDEBAR_VAR,
+          minWidth: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : EXPANDED_SIDEBAR_VAR,
+          backgroundColor: 'var(--resq-cherry-sidebar, #400014)'
+        }}
+        aria-label="Role Navigation Sidebar"
+      >
+        {/* Agency Identity Emblem + Drawer Toggle Button */}
+        <div className={`pt-3 pb-3 mb-2 border-b border-[#FFD9DD]/15 ${isCollapsed ? 'px-2 flex flex-col items-center' : 'px-4'}`}>
+          <div className="flex items-center justify-between w-full mb-2">
+            {!isCollapsed ? (
+              <span className="text-xs font-mono font-bold tracking-wider px-2.5 py-0.5 rounded-lg bg-[#670626] text-[#F7F1EA] border border-[#FFD9DD]/25 shadow-sm">
+                {agencyInfo.badge}
+              </span>
+            ) : (
+              <span
+                className="w-2.5 h-2.5 rounded-full bg-[#FFD9DD] animate-pulse mx-auto mb-1"
+                title={agencyInfo.badge}
+              />
+            )}
+            <ToggleDrawerSidebarMenu />
+          </div>
+
+          {!isCollapsed && (
+            <div className="clay-surface-cream rounded-2xl p-3 flex flex-col gap-0.5">
+              <span className="text-sm font-extrabold text-[#2B010E] tracking-tight truncate">
+                {agencyInfo.name}
+              </span>
+              <span className="text-xs font-mono font-semibold text-[#A83B4D] uppercase tracking-wider">
+                {agencyInfo.category}
+              </span>
+            </div>
           )}
-          <ToggleDrawerSidebarMenu />
         </div>
 
-        {!isCollapsed && (
-          <div
-            className="rounded-lg p-2 flex flex-col gap-0.5 border shadow-sm transition-all"
-            style={{
-              backgroundColor: `${agencyInfo.color}15`,
-              borderColor: `${agencyInfo.border}50`,
-              boxShadow: `0 0 12px ${agencyInfo.glow}`
-            }}
-          >
-            <span className="text-xs font-bold text-white tracking-tight truncate">{agencyInfo.name}</span>
-            <span className="text-[9px] font-mono text-slate-400 uppercase tracking-widest">{agencyInfo.category}</span>
-          </div>
-        )}
-      </div>
+        <nav className="nav flex flex-col gap-1.5 px-2 pb-4 overflow-y-auto" aria-label="Primary Role Navigation">
+          {menuItems.map((item) => {
+            const IconComponent = item.icon;
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) => {
+                  const activeMatch = isNavItemActive(item.to, isActive);
+                  return `nav__item group flex items-center transition-all rounded-xl ${
+                    isCollapsed ? 'justify-center px-0 h-11 w-full' : 'gap-3 px-3.5 h-11'
+                  } ${
+                    activeMatch
+                      ? 'is-active bg-[#F7F1EA] text-[#670626] font-bold shadow-[0_8px_18px_-6px_rgba(43,1,14,0.5),inset_0_2px_2px_rgba(255,255,255,0.9)]'
+                      : 'text-[#FFD9DD] hover:bg-[#670626]/75 hover:text-[#F7F1EA]'
+                  }`;
+                }}
+                title={item.label}
+              >
+                {({ isActive }) => {
+                  const activeMatch = isNavItemActive(item.to, isActive);
+                  return (
+                    <>
+                      <IconComponent
+                        className={`nav__icon flex-shrink-0 w-5 h-5 transition-colors ${
+                          activeMatch ? 'text-[#670626]' : 'text-[#FFD9DD]/85 group-hover:text-[#F7F1EA]'
+                        }`}
+                        aria-hidden="true"
+                      />
+                      {!isCollapsed && (
+                        <>
+                          <span className="nav__label truncate flex-1 text-sm font-semibold">
+                            {item.label}
+                          </span>
+                          {item.badge && (
+                            <span className="nav__badge text-xs font-mono px-1.5 py-0.5 rounded bg-[#E9D9D0] text-[#670626]">
+                              {item.badge}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </>
+                  );
+                }}
+              </NavLink>
+            );
+          })}
+        </nav>
+      </aside>
 
-      <nav className="nav flex flex-col gap-1 px-1" aria-label="Primary Role Navigation">
-        {menuItems.map((item) => {
+      {/* Mobile Fixed Bottom Navigation Dock (#400014) */}
+      <nav className="clay-dock" aria-label="Mobile Navigation Dock">
+        {mobileDockItems.map((item) => {
           const IconComponent = item.icon;
           return (
             <NavLink
-              key={item.to}
+              key={`dock-${item.to}`}
               to={item.to}
-              end={item.to === '/responder'}
               className={({ isActive }) => {
-                const activeMatch =
-                  isActive ||
-                  (item.to === '/responder' &&
-                    typeof window !== 'undefined' &&
-                    window.location.pathname === '/responder/dashboard');
-                return `nav__item group flex items-center transition-all rounded-md ${
-                  isCollapsed ? 'justify-center px-0 h-10 w-full' : 'gap-3 px-3 h-10'
-                } ${activeMatch ? 'is-active' : ''}`;
+                const activeMatch = isNavItemActive(item.to, isActive);
+                return `flex-1 flex flex-col items-center justify-center gap-1 py-1 px-1 rounded-xl min-w-0 transition-all ${
+                  activeMatch
+                    ? 'bg-[#F7F1EA] text-[#670626] font-bold shadow-sm'
+                    : 'text-[#FFD9DD] hover:text-[#F7F1EA]'
+                }`;
               }}
               title={item.label}
             >
-              <IconComponent
-                className="nav__icon flex-shrink-0 w-5 h-5 text-slate-400 group-hover:text-white transition-colors"
-                aria-hidden="true"
-              />
-              {!isCollapsed && (
-                <>
-                  <span className="nav__label truncate flex-1 text-sm font-medium">{item.label}</span>
-                  {item.badge && <span className="nav__badge text-[10px] font-mono px-1.5 py-0.5 rounded">{item.badge}</span>}
-                </>
-              )}
+              <IconComponent className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+              <span className="text-xs leading-tight truncate max-w-full">{item.label}</span>
             </NavLink>
           );
         })}
       </nav>
-    </aside>
+    </>
   );
 };
 

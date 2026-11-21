@@ -40,6 +40,7 @@ import {
 import { trackSkinFace } from '@/Libs/Vision/idScanner/face/skinFaceTracker';
 import {
   claudeFacialBiometricStrategy,
+  buildAlignedGeometricSignature,
   type ClaudeFacialGeometryAnalysisResult
 } from '@/Libs/Biometrics/claudeFacialBiometricStrategy';
 
@@ -130,6 +131,28 @@ const buildIdBindingSignature = (
   return `${tokenPart}::${imagePart}`;
 };
 
+const buildPoseFramesSignature = (
+  counts: { CENTER: number; RIGHT: number; LEFT: number; BLINK: number; total: number },
+  frames: Record<BiometricPose, string>
+): string =>
+  `${counts.CENTER}:${frames.CENTER?.length ?? 0}:${frames.CENTER?.slice(-24) ?? ''}|` +
+  `${counts.RIGHT}:${frames.RIGHT?.length ?? 0}:${frames.RIGHT?.slice(-24) ?? ''}|` +
+  `${counts.LEFT}:${frames.LEFT?.length ?? 0}:${frames.LEFT?.slice(-24) ?? ''}|` +
+  `${counts.BLINK}:${frames.BLINK?.length ?? 0}:${frames.BLINK?.slice(-24) ?? ''}`;
+
+interface CachedTrainedPackage {
+  readonly signature: string;
+  readonly idBindingKey: string;
+  readonly descriptorVector: number[];
+  readonly vectorNorm: number;
+  readonly hasTrackedRealFace: boolean;
+  readonly geometricSignatureJson: string;
+  readonly poseFramesJson: string;
+  readonly aiBiometricStrategyName: string;
+  readonly geometryAnalysis?: ClaudeFacialGeometryAnalysisResult;
+  readonly includesRemoteFaceToId: boolean;
+}
+
 interface PoseGuideConfig {
   id: BiometricPose;
   title: string;
@@ -150,57 +173,57 @@ const POSE_CONFIGS: Record<BiometricPose, PoseGuideConfig> = {
     id: 'CENTER',
     title: 'Face Forward',
     angleTag: '0° Center Lock',
-    instruction: 'Face forward directly and position your face inside the oval guide for 4.0 seconds.',
-    guidanceShort: 'HOLD STEADY (4.0s) // 30-60 FPS',
+    instruction: 'Face forward directly inside the oval guide for 2.0 seconds.',
+    guidanceShort: 'HOLD STEADY (2.0s) // 30-60 FPS',
     nextPose: 'RIGHT',
-    durationSeconds: 4,
-    minDurationSeconds: 4,
-    maxDurationSeconds: 4,
-    pacingNote: '4.0s Hold Steady',
-    targetFramesAt30Fps: 120,
-    targetFramesAt60Fps: 240
+    durationSeconds: 2,
+    minDurationSeconds: 2,
+    maxDurationSeconds: 2,
+    pacingNote: '2.0s Hold Steady',
+    targetFramesAt30Fps: 60,
+    targetFramesAt60Fps: 120
   },
   RIGHT: {
     id: 'RIGHT',
     title: 'Face Right',
     angleTag: '+25° Turn',
-    instruction: 'Slowly turn your head to the RIGHT (+25°) over 5 to 7 seconds.',
-    guidanceShort: 'SLOW TURN RIGHT (+25°) // 5 TO 7 SECONDS',
+    instruction: 'Slowly turn your head to the RIGHT (+25°) over 2.5 seconds.',
+    guidanceShort: 'TURN RIGHT (+25°) // 2.5 SECONDS',
     nextPose: 'LEFT',
-    durationSeconds: 6,
-    minDurationSeconds: 5,
-    maxDurationSeconds: 7,
-    pacingNote: '5 to 7s Slowly Facing',
-    targetFramesAt30Fps: 180,
-    targetFramesAt60Fps: 360
+    durationSeconds: 2.5,
+    minDurationSeconds: 2.5,
+    maxDurationSeconds: 2.5,
+    pacingNote: '2.5s Turn Right',
+    targetFramesAt30Fps: 75,
+    targetFramesAt60Fps: 150
   },
   LEFT: {
     id: 'LEFT',
     title: 'Face Left',
     angleTag: '-25° Turn',
-    instruction: 'Slowly turn your head to the LEFT (-25°) over 5 to 7 seconds.',
-    guidanceShort: 'SLOW TURN LEFT (-25°) // 5 TO 7 SECONDS',
+    instruction: 'Slowly turn your head to the LEFT (-25°) over 2.5 seconds.',
+    guidanceShort: 'TURN LEFT (-25°) // 2.5 SECONDS',
     nextPose: 'BLINK',
-    durationSeconds: 6,
-    minDurationSeconds: 5,
-    maxDurationSeconds: 7,
-    pacingNote: '5 to 7s Slowly Facing',
-    targetFramesAt30Fps: 180,
-    targetFramesAt60Fps: 360
+    durationSeconds: 2.5,
+    minDurationSeconds: 2.5,
+    maxDurationSeconds: 2.5,
+    pacingNote: '2.5s Turn Left',
+    targetFramesAt30Fps: 75,
+    targetFramesAt60Fps: 150
   },
   BLINK: {
     id: 'BLINK',
     title: 'Face Blink',
     angleTag: 'Eye Blink Liveness',
-    instruction: 'Blink both eyes naturally for 4.0 seconds for eye liveness detection.',
-    guidanceShort: 'BLINK NATURALLY (4.0s) // EYE LIVENESS',
+    instruction: 'Blink both eyes naturally for 2.0 seconds for eye liveness.',
+    guidanceShort: 'BLINK NATURALLY (2.0s) // EYE LIVENESS',
     nextPose: undefined,
-    durationSeconds: 4,
-    minDurationSeconds: 4,
-    maxDurationSeconds: 4,
-    pacingNote: '4.0s Natural Blinking',
-    targetFramesAt30Fps: 120,
-    targetFramesAt60Fps: 240
+    durationSeconds: 2,
+    minDurationSeconds: 2,
+    maxDurationSeconds: 2,
+    pacingNote: '2.0s Natural Blinking',
+    targetFramesAt30Fps: 60,
+    targetFramesAt60Fps: 120
   },
   UP: {
     id: 'UP',
@@ -364,6 +387,8 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     'ClaudeVisionFacialBiometricStrategy v2.0 Ready'
   );
   const lastTrainedTotalRef = useRef<number>(0);
+  const lastTrainedSignatureRef = useRef<string>('');
+  const lastTrainedPackageRef = useRef<CachedTrainedPackage | null>(null);
   const matchedIdBindingRef = useRef<string | null>(null);
   const onCaptureResetRef = useRef<() => void>(onCaptureReset);
   onCaptureResetRef.current = onCaptureReset;
@@ -727,6 +752,8 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     resetFaceMatchVerification();
     poseAdvanceLockRef.current = false;
     prevGrayRef.current = undefined;
+    lastTrainedSignatureRef.current = '';
+    lastTrainedPackageRef.current = null;
     biometricFrameCache.clearPose(pose);
     setPoseCounts(biometricFrameCache.getPoseCounts());
     setBestFrames(biometricFrameCache.getBestFrames());
@@ -753,6 +780,8 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
     setIsFaceDetected(false);
     poseAdvanceLockRef.current = false;
     prevGrayRef.current = undefined;
+    lastTrainedSignatureRef.current = '';
+    lastTrainedPackageRef.current = null;
     biometricFrameCache.clear();
     setPoseCounts(biometricFrameCache.getPoseCounts());
     setBestFrames(biometricFrameCache.getBestFrames());
@@ -1073,38 +1102,91 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       aiBiometricStrategyName: string;
       geometryAnalysis?: ClaudeFacialGeometryAnalysisResult;
     }> => {
-      const trainedProfile = await synthesizeMultiPoseTrainedProfile(biometricFrameCache);
+      const liveCounts = biometricFrameCache.getPoseCounts();
+      const liveBest = biometricFrameCache.getBestFrames();
+      const currentSignature = buildPoseFramesSignature(liveCounts, liveBest);
+      const cachedPkg = lastTrainedPackageRef.current;
+      const hasMatchingSignature =
+        cachedPkg !== null && lastTrainedSignatureRef.current === currentSignature;
+
+      if (hasMatchingSignature && !options?.callRemoteFaceToId) {
+        setTrainedVectorNorm(cachedPkg.vectorNorm);
+        setTrainedGeometricSignatureJson(cachedPkg.geometricSignatureJson);
+        setTrainedPoseFramesJson(cachedPkg.poseFramesJson);
+        setClaudeGeometryTelemetryStatus(
+          'ClaudeVisionFacialBiometricStrategy v2.0 // 4-Pose Deterministic Ready'
+        );
+        return cachedPkg;
+      }
+
+      if (
+        hasMatchingSignature &&
+        options?.callRemoteFaceToId &&
+        cachedPkg.includesRemoteFaceToId &&
+        cachedPkg.idBindingKey === currentIdBindingKey
+      ) {
+        setTrainedVectorNorm(cachedPkg.vectorNorm);
+        setTrainedGeometricSignatureJson(cachedPkg.geometricSignatureJson);
+        setTrainedPoseFramesJson(cachedPkg.poseFramesJson);
+        return cachedPkg;
+      }
+
+      // Reuse already synthesized 128-D profile when pose frames haven't changed
+      const trainedProfile = hasMatchingSignature
+        ? {
+            descriptorVector: cachedPkg.descriptorVector,
+            hasTrackedRealFace: cachedPkg.hasTrackedRealFace
+          }
+        : await synthesizeMultiPoseTrainedProfile(biometricFrameCache);
+
       const rawNorm = Math.sqrt(
         trainedProfile.descriptorVector.reduce((acc, val) => acc + val * val, 0)
       );
-      const vectorNorm = rawNorm > 0 ? Number(rawNorm.toFixed(4)) : 1.0;
+      const vectorNorm = hasMatchingSignature
+        ? cachedPkg.vectorNorm
+        : rawNorm > 0
+        ? Number(rawNorm.toFixed(4))
+        : 1.0;
 
-      const liveCounts = biometricFrameCache.getPoseCounts();
-      const liveBest = biometricFrameCache.getBestFrames();
+      const rightFrames = biometricFrameCache.getFrames('RIGHT');
+      const leftFrames = biometricFrameCache.getFrames('LEFT');
+      const computeAverageTrackedYaw = (
+        entries: ReadonlyArray<{ yaw?: number }>,
+        fallback: number
+      ): number => {
+        const yaws = entries
+          .map((e) => e.yaw)
+          .filter((y): y is number => typeof y === 'number' && Number.isFinite(y));
+        if (yaws.length === 0) return fallback;
+        const avg = yaws.reduce((acc, v) => acc + v, 0) / yaws.length;
+        return Number(avg.toFixed(2));
+      };
 
-      const localGeometricSignatureJson = JSON.stringify({
-        strategy: claudeFacialBiometricStrategy.strategyName,
-        version: '2.0',
-        samplingFps: 60,
-        ovalCenterAlignment: 0.98,
-        yawRightDeg: 26.5,
-        yawLeftDeg: -26.4,
-        blinkEarDelta: 0.21,
-        anthropometricRatios: {
-          interOcularRatio: 0.382,
-          nasalBridgeRatio: 0.441,
-          jawSymmetryIndex: 0.976
-        },
-        vectorNorm,
-        trainedAtUtc: new Date().toISOString()
-      });
+      const localGeometricSignatureJson = JSON.stringify(
+        buildAlignedGeometricSignature(trainedProfile.descriptorVector, {
+          strategy: claudeFacialBiometricStrategy.strategyName,
+          version: '2.0',
+          samplingFps: measuredFps || 60,
+          yawRightDeg: computeAverageTrackedYaw(rightFrames, 0),
+          yawLeftDeg: computeAverageTrackedYaw(leftFrames, 0),
+          vectorNorm,
+          trainedAtUtc: new Date().toISOString()
+        })
+      );
 
+      const poseSamples = biometricFrameCache.getBestFramesMulti(3);
       const knowledgePkg = await claudeFacialBiometricStrategy.analyzeFourPoseEnrollment(
         {
           CENTER: liveBest.CENTER || bestFrames.CENTER || '',
           RIGHT: liveBest.RIGHT || bestFrames.RIGHT || '',
           LEFT: liveBest.LEFT || bestFrames.LEFT || '',
           BLINK: liveBest.BLINK || bestFrames.BLINK || '',
+          poseSamples: {
+            CENTER: poseSamples.CENTER,
+            RIGHT: poseSamples.RIGHT,
+            LEFT: poseSamples.LEFT,
+            BLINK: poseSamples.BLINK
+          },
           fps: measuredFps || 60,
           targetFpsRange: '30-60 FPS',
           frameCounts: liveCounts
@@ -1144,17 +1226,24 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
         );
       }
 
-      return {
+      const nextPkg: CachedTrainedPackage = {
+        signature: currentSignature,
+        idBindingKey: currentIdBindingKey,
         descriptorVector: knowledgePkg.descriptorVector128D,
         vectorNorm,
         hasTrackedRealFace: trainedProfile.hasTrackedRealFace,
         geometricSignatureJson: knowledgePkg.geometricSignatureJson,
         poseFramesJson: knowledgePkg.poseFramesJson,
         aiBiometricStrategyName: knowledgePkg.strategyName,
-        geometryAnalysis: knowledgePkg.geometryAnalysis
+        geometryAnalysis: knowledgePkg.geometryAnalysis,
+        includesRemoteFaceToId: Boolean(options?.callRemoteFaceToId)
       };
+      lastTrainedSignatureRef.current = currentSignature;
+      lastTrainedPackageRef.current = nextPkg;
+
+      return nextPkg;
     },
-    [bestFrames, frontIdCaptureDataUrl, idVerificationToken, measuredFps]
+    [bestFrames, currentIdBindingKey, frontIdCaptureDataUrl, idVerificationToken, measuredFps]
   );
 
   const isAllPosesComplete =
@@ -1165,7 +1254,16 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
 
   // Automatically synthesize 128-D vector and local geometry package when all 4 poses finish caching
   useEffect(() => {
-    if (isAllPosesComplete && poseCounts.total !== lastTrainedTotalRef.current) {
+    if (!isAllPosesComplete) {
+      return;
+    }
+    const liveCounts = biometricFrameCache.getPoseCounts();
+    const liveBest = biometricFrameCache.getBestFrames();
+    const currentSignature = buildPoseFramesSignature(liveCounts, liveBest);
+    if (
+      poseCounts.total !== lastTrainedTotalRef.current ||
+      currentSignature !== lastTrainedSignatureRef.current
+    ) {
       lastTrainedTotalRef.current = poseCounts.total;
       void computeClaudeGeometryAndFramesPackage({ callRemoteFaceToId: false });
     }
@@ -1478,14 +1576,14 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       />
 
       {/* Compact 4-Pose Requirement Header */}
-      <div className="px-3.5 py-2.5 rounded-xl bg-[#14020a]/90 border border-rose-500/30 font-mono text-[10.5px] text-rose-200 flex flex-wrap items-center justify-between gap-2">
+      <div className="clay-surface px-4 py-3 rounded-2xl bg-[#F7F1EA] border border-[#D8C2B8] font-mono text-xs sm:text-sm text-[#670626] flex flex-wrap items-center justify-between gap-2 shadow-[0_8px_20px_-6px_rgba(74,4,26,0.12)]">
         <div className="flex items-center gap-2">
-          <Shield className="w-4 h-4 text-[#ff5c74] shrink-0" />
-          <span className="font-bold uppercase tracking-wider text-rose-100">
+          <Shield className="w-4 h-4 text-[#670626] shrink-0" />
+          <span className="font-bold uppercase tracking-wider text-[#670626] text-xs sm:text-sm">
             4-Pose Facial Scan (30-60 FPS) &middot; RA 10173
           </span>
         </div>
-        <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/40 text-rose-300 text-[9px] font-bold uppercase tracking-wider">
+        <span className="px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#D5BEB3] text-[#670626] text-xs font-bold uppercase tracking-wider">
           {faceMatchState === 'matched' && issuedFacialToken && !isStaticFileUpload
             ? 'FACE-TO-ID MATCHED'
             : faceMatchState === 'rejected'
@@ -1497,17 +1595,18 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       </div>
 
       {/* Biometric Model Training & Calibration Indicator */}
-      <div className="w-full rounded-xl border border-rose-500/40 bg-rose-950/30 p-3 font-mono text-xs flex flex-col gap-1.5" id="biometric-training-banner">
+      <div className="clay-surface w-full rounded-2xl border border-[#D8C2B8] bg-[#F7F1EA] p-4 font-mono text-xs sm:text-sm flex flex-col gap-2.5 shadow-[0_10px_24px_-8px_rgba(74,4,26,0.14)]" id="biometric-training-banner">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="font-bold text-rose-400 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
-            <Cpu className="w-3.5 h-3.5 text-[#ff5c74]" />
-            <span>Biometric Calibration &middot; 30 to 60 frames per second (FPS)</span>
+          <span className="font-bold text-[#670626] flex items-center gap-1.5 uppercase tracking-wider text-xs sm:text-sm">
+            <Cpu className="w-4 h-4 text-[#A83B4D]" />
+            <span>Biometric Calibration &middot; 30-60 FPS</span>
           </span>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/50 text-rose-300 font-bold text-[10px] tracking-wider">
-              ● 30-60 FPS HD VIDEO STREAM
+            <span className="px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#D5BEB3] text-[#670626] font-bold text-xs tracking-wider inline-flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#A83B4D]" />
+              <span>30-60 FPS HD VIDEO</span>
             </span>
-            <span className="text-rose-300 font-bold text-[10.5px]">
+            <span className="text-[#670626] font-bold text-xs sm:text-sm">
               {Math.min(
                 100,
                 Math.round(
@@ -1522,9 +1621,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
             </span>
           </div>
         </div>
-        <div className="w-full bg-[#14020a] rounded-full h-1.5 overflow-hidden border border-rose-950/60">
+        <div className="w-full bg-[#E9D9D0] rounded-full h-2.5 overflow-hidden border border-[#D5BEB3]">
           <div
-            className="bg-gradient-to-r from-[#a5002e] via-[#e8114c] to-[#ff5c74] h-full transition-all duration-300"
+            className="bg-gradient-to-r from-[#670626] via-[#8E1538] to-[#A83B4D] h-full transition-all duration-300"
             style={{
               width: `${Math.min(
                 100,
@@ -1543,48 +1642,51 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
         {/* Claude AI Geometric Pattern & 4-Pose Frame Cache Status Card */}
         <div
           id="biometric-training-status-card"
-          className="mt-1 p-2.5 rounded-lg bg-[#14020a]/95 border border-rose-500/40 font-mono text-[10px] space-y-1.5"
+          className="mt-1 p-3 rounded-xl bg-[#EFE4DD] border border-[#D5BEB3] font-mono text-xs space-y-2"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-bold text-rose-200 uppercase tracking-wider flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#ff5c74]" />
+            <span className="font-bold text-[#670626] uppercase tracking-wider flex items-center gap-1.5 text-xs sm:text-sm">
+              <Sparkles className="w-4 h-4 text-[#A83B4D]" />
               <span>128-D Geometric &amp; 4-Pose Cache</span>
             </span>
             <span
               id="badge-biometric-trained"
-              className={`px-2 py-0.5 rounded border font-bold text-[9.5px] ${
+              className={`px-2.5 py-1 rounded-lg border font-bold text-xs ${
                 isAllPosesComplete
-                  ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300'
-                  : 'bg-rose-950/60 border-rose-500/40 text-rose-300'
+                  ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
+                  : 'bg-[#F7F1EA] border-[#D5BEB3] text-[#A83B4D]'
               }`}
             >
               {isAllPosesComplete
-                ? `128-D Vector Norm ${trainedVectorNorm.toFixed(4)} // Claude AI Geometry Ready`
+                ? `128-D Vector Norm ${trainedVectorNorm.toFixed(4)} // Ready`
                 : 'Calibrating 30-60 FPS 4-Pose Cache'}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[9.5px] text-rose-200/90">
-            <div className="px-2 py-1 rounded bg-rose-950/30 border border-rose-500/20 truncate">
-              <span className="text-rose-400 font-semibold">Strategy:</span>{' '}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-[#670626]">
+            <div className="px-2.5 py-1.5 rounded-lg bg-[#F7F1EA] border border-[#D5BEB3] truncate">
+              <span className="text-[#A83B4D] font-semibold">Strategy:</span>{' '}
               <span>{claudeGeometryTelemetryStatus}</span>
             </div>
-            <div className="px-2 py-1 rounded bg-rose-950/30 border border-rose-500/20">
-              <span className="text-rose-400 font-semibold">4-Pose Cache:</span>{' '}
+            <div className="px-2.5 py-1.5 rounded-lg bg-[#F7F1EA] border border-[#D5BEB3]">
+              <span className="text-[#A83B4D] font-semibold">4-Pose Cache:</span>{' '}
               <span>
                 CENTER: {poseCounts.CENTER}f &bull; RIGHT: {poseCounts.RIGHT}f &bull; LEFT: {poseCounts.LEFT}f &bull; BLINK: {poseCounts.BLINK}f
               </span>
             </div>
           </div>
+          <p className="text-[11.5px] font-sans text-[#7D2B3D] m-0">
+            Up to 3 sharpest frames per pose (oval, forward, right, left, blink) are packaged for 5-minute AI enrollment study upon registration.
+          </p>
         </div>
       </div>
 
       {/* Main Viewfinder / Review Container */}
-      <div className="rounded-xl border border-rose-500/40 bg-[#14020a]/95 p-4 flex flex-col items-center">
+      <div className="clay-surface rounded-2xl border border-[#D8C2B8] bg-[#F7F1EA] p-4 flex flex-col items-center shadow-[0_12px_28px_-10px_rgba(74,4,26,0.16)]">
         {/* Viewfinder Header */}
-        <div className="w-full flex items-center justify-between mb-3 font-mono text-[10px]">
-          <span className="text-rose-200 font-bold uppercase tracking-wider flex items-center gap-1.5">
-            <Camera className="w-3.5 h-3.5 text-[#ff5c74]" />
+        <div className="w-full flex flex-wrap items-center justify-between gap-2 mb-3 font-mono text-xs">
+          <span className="text-[#670626] font-bold uppercase tracking-wider flex items-center gap-1.5 text-xs sm:text-sm">
+            <Camera className="w-4 h-4 text-[#A83B4D]" />
             <span>
               {draftDataUrl
                 ? 'Compiled 4-Pose Biometric Record'
@@ -1596,23 +1698,24 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           <div className="flex items-center gap-2">
             {cameraState === 'streaming' && (
               <>
-                <span className="px-2 py-0.5 rounded bg-rose-950/90 border border-rose-500/60 text-rose-300 font-bold animate-pulse flex items-center gap-1">
-                  ● REC [30-60 FPS]
+                <span className="px-2.5 py-1 rounded-lg bg-[#670626] border border-[#4A041A] text-[#F7F1EA] font-bold animate-pulse flex items-center gap-1.5 text-xs">
+                  <span className="w-2 h-2 rounded-full bg-[#F7F1EA]" />
+                  <span>REC [30-60 FPS]</span>
                 </span>
-                <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/50 text-rose-300 font-bold">
+                <span className="px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#D5BEB3] text-[#670626] font-bold text-xs">
                   {measuredFps} FPS
                 </span>
               </>
             )}
             <span
-              className={`px-2 py-0.5 rounded border font-bold ${
+              className={`px-2.5 py-1 rounded-lg border font-bold text-xs ${
                 isConfirmed && draftDataUrl
-                  ? 'bg-rose-950/90 border-rose-500/80 text-rose-200'
+                  ? 'bg-emerald-50 border-emerald-600/40 text-emerald-800'
                   : isAllPosesComplete && !draftDataUrl
-                  ? 'bg-rose-950/80 border-rose-500/60 text-rose-300'
+                  ? 'bg-[#670626] border-[#4A041A] text-[#F7F1EA]'
                   : cameraState === 'streaming'
-                  ? 'bg-rose-950/80 border-rose-500/50 text-rose-300'
-                  : 'bg-rose-950/40 border-rose-950/80 text-rose-400/60'
+                  ? 'bg-[#E9D9D0] border-[#A83B4D]/50 text-[#670626]'
+                  : 'bg-[#E9D9D0] border-[#D5BEB3] text-[#7D2B3D]'
               }`}
             >
               {isConfirmed && draftDataUrl
@@ -1628,25 +1731,25 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           </div>
         </div>
 
-        {/* Guided Pose Instructions Banner (Rigid layout, fixed min-height to prevent vertical shift & shaking) */}
+        {/* Guided Pose Instructions Banner */}
         {!draftDataUrl && (
-          <div className="w-full max-w-md min-h-[66px] mb-3 p-2.5 rounded-lg bg-[#16030b] border border-rose-500/40 flex items-center justify-between gap-2 font-mono text-xs overflow-hidden select-none">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <span className="w-6 h-6 rounded-full bg-rose-950/80 border border-rose-500/40 text-rose-300 flex items-center justify-center font-bold text-[11px] shrink-0">
+          <div className="w-full max-w-md min-h-[76px] mb-3 p-3 rounded-xl bg-[#E9D9D0] border border-[#D5BEB3] flex items-center justify-between gap-2.5 font-mono text-xs sm:text-sm overflow-hidden select-none">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <span className="w-7 h-7 rounded-full bg-[#670626] text-[#F7F1EA] flex items-center justify-center font-bold text-xs shrink-0 shadow-sm">
                 {currentPose === 'CENTER' ? '1' : currentPose === 'RIGHT' ? '2' : currentPose === 'LEFT' ? '3' : '4'}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="font-bold text-white uppercase tracking-wider flex items-center gap-1.5 truncate">
+                <div className="font-bold text-[#670626] uppercase tracking-wider flex items-center gap-1.5 truncate text-xs sm:text-sm">
                   <span>{currentPoseConfig.title}</span>
-                  <span className="text-[10px] text-[#ff5c74]">({currentPoseConfig.angleTag})</span>
+                  <span className="text-xs text-[#A83B4D]">({currentPoseConfig.angleTag})</span>
                 </div>
-                <div className="text-[11px] text-rose-200/80 font-sans truncate">{currentPoseConfig.instruction}</div>
-                <div className="text-[10px] text-rose-400 font-mono font-semibold flex items-center gap-1.5 mt-0.5 truncate">
-                  <span className="text-[#ff5c74] inline-flex items-center gap-1">
-                    <Clock className="w-3 h-3 shrink-0" />
+                <div className="text-xs text-[#591529] font-sans truncate">{currentPoseConfig.instruction}</div>
+                <div className="text-xs text-[#A83B4D] font-mono font-semibold flex items-center gap-1.5 mt-0.5 truncate">
+                  <span className="text-[#670626] inline-flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 shrink-0" />
                     <span>{currentPoseConfig.pacingNote}</span>
                   </span>
-                  <span>•</span>
+                  <span>&middot;</span>
                   <span>Target: {currentPoseConfig.targetFramesAt30Fps}–{currentPoseConfig.targetFramesAt60Fps} frames</span>
                 </div>
               </div>
@@ -1654,10 +1757,10 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
 
             {cameraState === 'streaming' && (
               <div className="flex items-center gap-1.5 shrink-0">
-                <span className="w-[62px] text-center px-1.5 py-1 rounded bg-rose-950/80 border border-rose-500/40 text-rose-300 text-[10px] font-mono tabular-nums inline-block">
+                <span className="w-[68px] text-center px-2 py-1 rounded-lg bg-[#F7F1EA] border border-[#D5BEB3] text-[#670626] text-xs font-mono tabular-nums inline-block">
                   {measuredFps} FPS
                 </span>
-                <span className="w-[78px] text-right px-1.5 py-1 rounded bg-rose-950/80 border border-rose-500/40 text-rose-300 text-[10px] font-mono tabular-nums inline-block">
+                <span className="w-[82px] text-right px-2 py-1 rounded-lg bg-[#F7F1EA] border border-[#D5BEB3] text-[#670626] text-xs font-mono tabular-nums inline-block">
                   {Math.round(lastLaplacian)} Var
                 </span>
               </div>
@@ -1665,42 +1768,42 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           </div>
         )}
 
-        {/* Real-time Streaming Telemetry & Buffer Fill HUD (Rigid container with fixed height) */}
+        {/* Real-time Streaming Telemetry & Buffer Fill HUD */}
         {cameraState === 'streaming' && !draftDataUrl && (
-          <div className="w-full max-w-md min-h-[62px] mb-3 p-2.5 rounded-lg bg-[#14020a] border border-rose-500/40 flex flex-col justify-center gap-1.5 font-mono text-[10px] overflow-hidden select-none">
+          <div className="w-full max-w-md min-h-[70px] mb-3 p-3 rounded-xl bg-[#E9D9D0] border border-[#D5BEB3] flex flex-col justify-center gap-1.5 font-mono text-xs overflow-hidden select-none">
             <div className="flex items-center justify-between flex-nowrap gap-2">
               <div className="flex items-center gap-1.5 shrink-0">
-                <span className="px-2 py-0.5 rounded bg-rose-950/90 border border-rose-500/60 text-rose-300 font-bold flex items-center gap-1 shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                  ● REC [30-60 FPS]
+                <span className="px-2 py-0.5 rounded-md bg-[#670626] text-[#F7F1EA] font-bold flex items-center gap-1 shrink-0 text-xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#F7F1EA] animate-pulse" />
+                  <span>REC</span>
                 </span>
-                <span className="w-[58px] text-center px-1 py-0.5 rounded bg-rose-950/80 border border-rose-500/50 text-rose-300 font-bold tabular-nums shrink-0">
+                <span className="w-[64px] text-center px-1.5 py-0.5 rounded-md bg-[#F7F1EA] border border-[#D5BEB3] text-[#670626] font-bold tabular-nums shrink-0 text-xs">
                   {measuredFps} FPS
                 </span>
-                <span className="px-1.5 py-0.5 rounded bg-rose-950/60 border border-rose-500/30 text-rose-300 truncate hidden xs:inline-block">
+                <span className="px-2 py-0.5 rounded-md bg-[#F7F1EA] border border-[#D5BEB3] text-[#7D2B3D] truncate hidden xs:inline-block text-xs">
                   {fpsBracket}
                 </span>
               </div>
-              <span className="text-rose-300 font-bold text-[10.5px] tabular-nums shrink-0 text-right">
-                BUFFER: {poseCounts[currentPose]}/60 FRAMES ({Math.min(100, Math.round(((poseCounts[currentPose] || 0) / 60) * 100))}%)
+              <span className="text-[#670626] font-bold text-xs tabular-nums shrink-0 text-right">
+                BUFFER: {poseCounts[currentPose]}/60 ({Math.min(100, Math.round(((poseCounts[currentPose] || 0) / 60) * 100))}%)
               </span>
             </div>
 
             {/* Active Pacing & Live Duration Timer Row */}
-            <div className="flex items-center justify-between text-[9.5px] tabular-nums text-rose-300">
-              <span className="flex items-center gap-1 text-[#ff5c74] font-bold">
-                <Clock className="w-3 h-3 shrink-0" />
-                <span>TIME: {poseElapsedSeconds.toFixed(1)}s / {currentPoseConfig.durationSeconds}.0s</span>
-                <span className="text-rose-400 font-normal">({currentPoseConfig.pacingNote})</span>
+            <div className="flex items-center justify-between text-xs tabular-nums text-[#670626]">
+              <span className="flex items-center gap-1 text-[#670626] font-bold">
+                <Clock className="w-3.5 h-3.5 shrink-0 text-[#A83B4D]" />
+                <span>TIME: {poseElapsedSeconds.toFixed(1)}s / {currentPoseConfig.durationSeconds.toFixed(1)}s</span>
+                <span className="text-[#A83B4D] font-normal">({currentPoseConfig.pacingNote})</span>
               </span>
-              <span className="text-rose-400 font-semibold">
-                TARGET: {currentPoseConfig.targetFramesAt30Fps}–{currentPoseConfig.targetFramesAt60Fps} FRAMES
+              <span className="text-[#7D2B3D] font-semibold">
+                TARGET: {currentPoseConfig.targetFramesAt30Fps}–{currentPoseConfig.targetFramesAt60Fps}f
               </span>
             </div>
 
-            <div className="w-full bg-[#14020a] rounded-full h-1.5 overflow-hidden border border-rose-950/60">
+            <div className="w-full bg-[#F7F1EA] rounded-full h-2 overflow-hidden border border-[#D5BEB3]">
               <div
-                className="bg-gradient-to-r from-[#a5002e] via-[#e8114c] to-[#ff5c74] h-full transition-all duration-150"
+                className="bg-gradient-to-r from-[#670626] via-[#8E1538] to-[#A83B4D] h-full transition-all duration-150"
                 style={{
                   width: `${Math.min(100, Math.round((poseElapsedSeconds / currentPoseConfig.durationSeconds) * 100))}%`
                 }}
@@ -1711,7 +1814,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
 
         {/* Viewport Viewfinder Container with SVG Oval Guide */}
         <div
-          className="relative w-full max-w-md overflow-hidden rounded-lg border border-rose-500/40 bg-black flex items-center justify-center"
+          className="relative w-full max-w-md overflow-hidden rounded-2xl border-2 border-[#670626]/30 bg-[#24030D] flex items-center justify-center shadow-inner"
           style={{ aspectRatio: '4 / 3', minHeight: '260px' }}
         >
           {draftDataUrl ? (
@@ -1748,30 +1851,27 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                   <rect width="640" height="480" fill="url(#ovalGlow)" />
 
                   {/* Corner Viewfinder Targeting Brackets */}
-                  <path d="M 30 60 L 30 30 L 60 30" stroke="#f43f5e" strokeWidth="3" fill="none" opacity="0.8" />
-                  <path d="M 610 60 L 610 30 L 580 30" stroke="#f43f5e" strokeWidth="3" fill="none" opacity="0.8" />
-                  <path d="M 30 420 L 30 450 L 60 450" stroke="#f43f5e" strokeWidth="3" fill="none" opacity="0.8" />
-                  <path d="M 610 420 L 610 450 L 580 450" stroke="#f43f5e" strokeWidth="3" fill="none" opacity="0.8" />
+                  <path d="M 30 60 L 30 30 L 60 30" stroke="#F7F1EA" strokeWidth="3" fill="none" opacity="0.85" />
+                  <path d="M 610 60 L 610 30 L 580 30" stroke="#F7F1EA" strokeWidth="3" fill="none" opacity="0.85" />
+                  <path d="M 30 420 L 30 450 L 60 450" stroke="#F7F1EA" strokeWidth="3" fill="none" opacity="0.85" />
+                  <path d="M 610 420 L 610 450 L 580 450" stroke="#F7F1EA" strokeWidth="3" fill="none" opacity="0.85" />
 
-                  {/* Corner Video Recording HUD Telemetry */}
-                  {/* Top Left: REC ● 30-60 FPS */}
                   <text
                     x="30"
                     y="22"
-                    fill="#f43f5e"
-                    fontSize="11"
+                    fill="#F7F1EA"
+                    fontSize="12"
                     fontWeight="bold"
                     fontFamily="monospace"
                   >
-                    REC ● 30-60 FPS
+                    REC 30-60 FPS
                   </text>
 
-                  {/* Top Right: SAMPLING: 30-60 FPS HD */}
                   <text
                     x="610"
                     y="22"
-                    fill="#ff5c74"
-                    fontSize="11"
+                    fill="#E9D9D0"
+                    fontSize="12"
                     fontWeight="bold"
                     fontFamily="monospace"
                     textAnchor="end"
@@ -1798,110 +1898,106 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                     y1="200"
                     x2="440"
                     y2="200"
-                    stroke="#ffb4ab"
+                    stroke="#E9D9D0"
                     strokeWidth="1.5"
                     strokeDasharray="4 4"
-                    opacity="0.6"
+                    opacity="0.65"
                   />
-                  <circle cx="270" cy="200" r="4" fill="none" stroke="#ff5c74" strokeWidth="1.5" />
-                  <circle cx="370" cy="200" r="4" fill="none" stroke="#ff5c74" strokeWidth="1.5" />
+                  <circle cx="270" cy="200" r="4" fill="none" stroke="#F7F1EA" strokeWidth="1.5" />
+                  <circle cx="370" cy="200" r="4" fill="none" stroke="#F7F1EA" strokeWidth="1.5" />
 
-                  {/* Directional Visual Cues for Specific Poses with Live Timer & Pacing */}
                   {currentPose === 'CENTER' && (
                     <g>
-                      <circle cx="320" cy="235" r="14" fill="none" stroke="#ff5c74" strokeWidth="2" opacity="0.8" />
-                      <line x1="320" y1="215" x2="320" y2="255" stroke="#ff5c74" strokeWidth="1.5" opacity="0.8" />
-                      <line x1="300" y1="235" x2="340" y2="235" stroke="#ff5c74" strokeWidth="1.5" opacity="0.8" />
-                      <text x="320" y="275" fill="#ffb4ab" fontSize="10" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
-                        {`FACE FORWARD [4.0s HOLD // ${poseElapsedSeconds.toFixed(1)}s]`}
+                      <circle cx="320" cy="235" r="14" fill="none" stroke="#F7F1EA" strokeWidth="2" opacity="0.85" />
+                      <line x1="320" y1="215" x2="320" y2="255" stroke="#F7F1EA" strokeWidth="1.5" opacity="0.85" />
+                      <line x1="300" y1="235" x2="340" y2="235" stroke="#F7F1EA" strokeWidth="1.5" opacity="0.85" />
+                      <text x="320" y="275" fill="#F7F1EA" fontSize="12" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                        {`FACE FORWARD [2.0s HOLD // ${poseElapsedSeconds.toFixed(1)}s]`}
                       </text>
                     </g>
                   )}
 
                   {currentPose === 'RIGHT' && (
                     <g>
-                      {/* Animated arrows pointing to the right */}
-                      <path d="M 430 220 L 460 235 L 430 250" fill="none" stroke="#ff5c74" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M 465 220 L 495 235 L 465 250" fill="none" stroke="#ff5c74" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                      <text x="460" y="275" fill="#ff5c74" fontSize="12" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                      <path d="M 430 220 L 460 235 L 430 250" fill="none" stroke="#F7F1EA" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M 465 220 L 495 235 L 465 250" fill="none" stroke="#F7F1EA" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                      <text x="460" y="275" fill="#F7F1EA" fontSize="13" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
                         TURN RIGHT +25°
                       </text>
-                      <text x="460" y="292" fill="#ffb4ab" fontSize="9.5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
-                        {`[SLOW 5-7s // ${poseElapsedSeconds.toFixed(1)}s]`}
+                      <text x="460" y="294" fill="#E9D9D0" fontSize="12" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                        {`[2.5s TURN // ${poseElapsedSeconds.toFixed(1)}s]`}
                       </text>
                     </g>
                   )}
 
                   {currentPose === 'LEFT' && (
                     <g>
-                      {/* Animated arrows pointing to the left */}
-                      <path d="M 210 220 L 180 235 L 210 250" fill="none" stroke="#ff5c74" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M 175 220 L 145 235 L 175 250" fill="none" stroke="#ff5c74" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                      <text x="180" y="275" fill="#ff5c74" fontSize="12" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                      <path d="M 210 220 L 180 235 L 210 250" fill="none" stroke="#F7F1EA" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M 175 220 L 145 235 L 175 250" fill="none" stroke="#F7F1EA" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                      <text x="180" y="275" fill="#F7F1EA" fontSize="13" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
                         TURN LEFT -25°
                       </text>
-                      <text x="180" y="292" fill="#ffb4ab" fontSize="9.5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
-                        {`[SLOW 5-7s // ${poseElapsedSeconds.toFixed(1)}s]`}
+                      <text x="180" y="294" fill="#E9D9D0" fontSize="12" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                        {`[2.5s TURN // ${poseElapsedSeconds.toFixed(1)}s]`}
                       </text>
                     </g>
                   )}
 
                   {currentPose === 'BLINK' && (
                     <g>
-                      {/* Eyelid caliper indicator */}
-                      <path d="M 290 225 Q 320 205 350 225" fill="none" stroke="#ff5c74" strokeWidth="3" strokeLinecap="round" />
-                      <path d="M 290 245 Q 320 265 350 245" fill="none" stroke="#ff5c74" strokeWidth="3" strokeLinecap="round" />
-                      <text x="320" y="285" fill="#ff5c74" fontSize="12" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                      <path d="M 290 225 Q 320 205 350 225" fill="none" stroke="#F7F1EA" strokeWidth="3" strokeLinecap="round" />
+                      <path d="M 290 245 Q 320 265 350 245" fill="none" stroke="#F7F1EA" strokeWidth="3" strokeLinecap="round" />
+                      <text x="320" y="285" fill="#F7F1EA" fontSize="13" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
                         BLINK BOTH EYES
                       </text>
-                      <text x="320" y="302" fill="#ffb4ab" fontSize="9.5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
-                        {`[NATURAL BLINK 4.0s // ${poseElapsedSeconds.toFixed(1)}s]`}
+                      <text x="320" y="304" fill="#E9D9D0" fontSize="12" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                        {`[NATURAL BLINK 2.0s // ${poseElapsedSeconds.toFixed(1)}s]`}
                       </text>
                     </g>
                   )}
 
                   {/* Top Distance Guidance Badge */}
-                  <text x="320" y="45" fill="#ffb4ab" fontSize="10.5" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                  <text x="320" y="45" fill="#E9D9D0" fontSize="12" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
                     DISTANCE: OPTIMAL (45-60 CM) // {currentPoseConfig.guidanceShort}
                   </text>
 
-                  {/* Bottom Center HUD: 60 Frames/Sec High-Speed Biometric Buffer */}
+                  {/* Bottom Center HUD */}
                   <rect
-                    x="110"
-                    y="450"
-                    width="420"
-                    height="22"
-                    rx="4"
-                    fill="#14020a"
-                    fillOpacity="0.9"
-                    stroke="#881337"
+                    x="95"
+                    y="448"
+                    width="450"
+                    height="24"
+                    rx="6"
+                    fill="#3B0315"
+                    fillOpacity="0.88"
+                    stroke="rgba(247, 241, 234, 0.25)"
                     strokeWidth="1"
                   />
                   <text
                     x="320"
-                    y="465"
-                    fill="#ff5c74"
-                    fontSize="10"
+                    y="464"
+                    fill="#F7F1EA"
+                    fontSize="12"
                     fontWeight="bold"
                     fontFamily="monospace"
                     textAnchor="middle"
                     letterSpacing="0.5"
                   >
-                    {`60 FRAMES/SEC HIGH-SPEED BIOMETRIC BUFFER // ${Math.round(lastLaplacian)} VAR`}
+                    {`60 FPS BIOMETRIC BUFFER // ${Math.round(lastLaplacian)} VAR`}
                   </text>
                 </svg>
               )}
 
               {/* Standby Viewport Placeholder */}
               {cameraState !== 'streaming' && (
-                <div className="p-6 text-center space-y-2">
-                  <div className="w-11 h-11 rounded-full bg-rose-950/60 border border-rose-500/40 flex items-center justify-center mx-auto text-[#ff5c74]">
-                    <Video className="w-5 h-5" />
+                <div className="p-6 text-center space-y-2.5">
+                  <div className="w-12 h-12 rounded-full bg-[#4A041A] border border-[#E9D9D0]/30 flex items-center justify-center mx-auto text-[#F7F1EA]">
+                    <Video className="w-6 h-6" />
                   </div>
-                  <p className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                  <p className="font-mono text-sm sm:text-base font-bold text-[#F7F1EA] uppercase tracking-wider">
                     4-Pose Facial Video Engine
                   </p>
-                  <p className="font-mono text-[11px] text-rose-200/90 max-w-xs mx-auto">
+                  <p className="font-mono text-xs sm:text-sm text-[#E9D9D0] max-w-xs mx-auto">
                     Align face inside oval guide &middot; 4 poses
                   </p>
                 </div>
@@ -1913,21 +2009,21 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                 role="status"
                 aria-live="polite"
                 data-face-detected={isFaceDetected ? 'true' : 'false'}
-                className={`absolute bottom-8 left-2.5 z-10 px-2.5 py-1 rounded-md border font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-sm pointer-events-none ${
+                className={`absolute bottom-8 left-2.5 z-10 px-3 py-1 rounded-lg border font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-md pointer-events-none ${
                   cameraState !== 'streaming'
-                    ? 'bg-slate-950/90 border-slate-500/50 text-slate-300'
+                    ? 'bg-[#2B0210]/90 border-[#E9D9D0]/25 text-[#E9D9D0]'
                     : isFaceDetected
-                    ? 'bg-emerald-950/90 border-emerald-500/60 text-emerald-200'
-                    : 'bg-rose-950/90 border-rose-500/60 text-rose-200'
+                    ? 'bg-emerald-950/85 border-emerald-400/60 text-emerald-200'
+                    : 'bg-[#670626]/90 border-[#E9D9D0]/40 text-[#F7F1EA]'
                 }`}
               >
                 <span
                   className={`w-2 h-2 rounded-full shrink-0 ${
                     cameraState !== 'streaming'
-                      ? 'bg-slate-400'
+                      ? 'bg-[#E9D9D0]/70'
                       : isFaceDetected
                       ? 'bg-emerald-400'
-                      : 'bg-rose-500 animate-pulse'
+                      : 'bg-rose-400 animate-pulse'
                   }`}
                 />
                 <span>
@@ -1942,15 +2038,15 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           )}
         </div>
 
-        {/* Viewfinder Action Controls (Rigid anchored container, touch-manipulation, no jitter) */}
-        <div className="mt-4 w-full max-w-md min-h-[44px] flex flex-wrap items-center justify-center gap-2 select-none">
+        {/* Viewfinder Action Controls */}
+        <div className="mt-4 w-full max-w-md min-h-[46px] flex flex-wrap items-center justify-center gap-2.5 select-none">
           {!draftDataUrl && cameraState !== 'streaming' && (
             <>
               <button
                 type="button"
                 id="btn-request-camera"
                 onClick={() => requestCameraPermission('CENTER')}
-                className="h-[42px] px-4 rounded-lg bg-gradient-to-r from-[#a5002e] via-[#d9093e] to-[#ff2b4a] hover:brightness-110 active:scale-[0.98] text-white font-mono text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center gap-2 shadow-lg shadow-[#e8114c]/25 touch-manipulation transition-transform"
+                className="h-[44px] px-4 rounded-xl bg-[#670626] hover:bg-[#4A041A] active:scale-[0.98] text-[#F7F1EA] font-mono text-xs sm:text-sm font-bold uppercase tracking-wider cursor-pointer flex items-center gap-2 shadow-md shadow-[#4A041A]/25 touch-manipulation transition-all"
               >
                 <Camera className="w-4 h-4 shrink-0" />
                 <span>Start 4-Pose Video</span>
@@ -1961,9 +2057,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                 id="btn-synthetic-test-mode"
                 onClick={handleGenerateSyntheticTestRecord}
                 disabled={isSynthesizing}
-                className="h-[42px] px-3.5 rounded-lg border border-rose-500/40 bg-rose-950/50 hover:bg-rose-900/60 active:scale-[0.98] text-rose-200 font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 touch-manipulation transition-transform"
+                className="h-[44px] px-3.5 rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] active:scale-[0.98] text-[#670626] font-mono text-xs sm:text-sm font-semibold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 touch-manipulation transition-all"
               >
-                <Sparkles className="w-3.5 h-3.5 text-[#ff5c74] shrink-0" />
+                <Sparkles className="w-4 h-4 text-[#A83B4D] shrink-0" />
                 <span>{isSynthesizing ? 'Generating...' : 'Synthetic Test'}</span>
               </button>
 
@@ -1971,9 +2067,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                 type="button"
                 id="btn-upload-facial-photo"
                 onClick={() => fileInputRef.current?.click()}
-                className="h-[42px] px-3 rounded-lg border border-rose-500/30 bg-rose-950/30 hover:bg-rose-900/50 active:scale-[0.98] text-rose-200 font-mono text-xs cursor-pointer flex items-center gap-1.5 touch-manipulation transition-transform"
+                className="h-[44px] px-3.5 rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] active:scale-[0.98] text-[#670626] font-mono text-xs sm:text-sm cursor-pointer flex items-center gap-1.5 touch-manipulation transition-all"
               >
-                <Upload className="w-3.5 h-3.5 text-[#ff5c74] shrink-0" />
+                <Upload className="w-4 h-4 text-[#A83B4D] shrink-0" />
                 <span>Upload Photo</span>
               </button>
             </>
@@ -1985,7 +2081,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                 type="button"
                 id="btn-lock-next-pose"
                 onClick={handleLockAndAdvancePose}
-                className="w-full h-[42px] px-4 rounded-lg bg-gradient-to-r from-[#a5002e] via-[#d9093e] to-[#ff2b4a] hover:brightness-110 active:scale-[0.99] text-white font-mono text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-[#e8114c]/30 border border-rose-500/50 touch-manipulation transition-colors select-none whitespace-nowrap"
+                className="w-full h-[44px] px-4 rounded-xl bg-[#670626] hover:bg-[#4A041A] active:scale-[0.99] text-[#F7F1EA] font-mono text-xs sm:text-sm font-bold uppercase tracking-wider cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-[#4A041A]/25 touch-manipulation transition-all select-none whitespace-nowrap"
               >
                 <Check className="w-4 h-4 shrink-0" />
                 <span>
@@ -2000,9 +2096,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                   type="button"
                   id="btn-recapture-current-pose"
                   onClick={() => handleRetakePose(currentPose)}
-                  className="w-full h-[40px] px-3 py-2 rounded-lg border border-rose-500/40 bg-rose-950/60 hover:bg-rose-900 active:scale-[0.99] text-rose-200 font-mono text-xs font-semibold cursor-pointer flex items-center justify-center gap-1.5 touch-manipulation transition-colors select-none whitespace-nowrap truncate"
+                  className="w-full h-[42px] px-3 py-2 rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] active:scale-[0.99] text-[#670626] font-mono text-xs sm:text-sm font-semibold cursor-pointer flex items-center justify-center gap-1.5 touch-manipulation transition-colors select-none whitespace-nowrap truncate"
                 >
-                  <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+                  <RefreshCw className="w-4 h-4 shrink-0 text-[#A83B4D]" />
                   <span className="truncate">Retry {currentPoseConfig.title}</span>
                 </button>
 
@@ -2012,7 +2108,7 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                     stopCameraStream();
                     setCameraState('idle');
                   }}
-                  className="w-full h-[40px] px-3 py-2 rounded-lg border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 active:scale-[0.99] text-rose-200 font-mono text-xs cursor-pointer flex items-center justify-center touch-manipulation transition-colors select-none whitespace-nowrap"
+                  className="w-full h-[42px] px-3 py-2 rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] active:scale-[0.99] text-[#670626] font-mono text-xs sm:text-sm cursor-pointer flex items-center justify-center touch-manipulation transition-colors select-none whitespace-nowrap"
                 >
                   Pause Video
                 </button>
@@ -2026,9 +2122,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                 type="button"
                 id="btn-retake-photograph"
                 onClick={handleRetakeAll}
-                className="px-4 py-2 rounded-lg border border-rose-500/40 bg-rose-950/50 hover:bg-rose-900/60 text-rose-200 font-mono text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-2.5 rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626] font-mono text-xs sm:text-sm font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-colors"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
+                <RotateCcw className="w-4 h-4 text-[#A83B4D]" />
                 <span>Retry All 4 Poses</span>
               </button>
 
@@ -2036,9 +2132,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                 type="button"
                 id="btn-replace-facial-photo"
                 onClick={() => fileInputRef.current?.click()}
-                className="px-3 py-2 rounded-lg border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200 font-mono text-xs cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-2.5 rounded-xl border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626] font-mono text-xs sm:text-sm cursor-pointer flex items-center gap-1.5 transition-colors"
               >
-                <Upload className="w-3.5 h-3.5 text-[#ff5c74]" />
+                <Upload className="w-4 h-4 text-[#A83B4D]" />
                 <span>Select Another File</span>
               </button>
             </>
@@ -2047,11 +2143,11 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       </div>
 
       {/* 4-Card Pose Thumbnail Strip with Dedicated Retry Buttons */}
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[11px] text-rose-200 px-1">
-          <span className="font-bold uppercase tracking-wider flex items-center gap-1.5">
-            <Target className="w-3.5 h-3.5 text-[#ff5c74]" />
-            <span>4-Pose Biometric Frame Cache Strip (30–60 FPS High-Speed Sampling)</span>
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-[#670626] px-1">
+          <span className="font-bold uppercase tracking-wider flex items-center gap-1.5 text-xs sm:text-sm">
+            <Target className="w-4 h-4 text-[#A83B4D]" />
+            <span>4-Pose Frame Cache (30–60 FPS)</span>
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -2059,25 +2155,25 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
               id="btn-simulate-4pose-capture"
               onClick={handleGenerateSyntheticTestRecord}
               disabled={isSynthesizing}
-              className="px-2.5 py-1 rounded bg-rose-950/70 hover:bg-rose-900/70 border border-rose-500/40 text-rose-200 text-[9.5px] font-bold tracking-wider uppercase cursor-pointer flex items-center gap-1 transition-colors"
+              className="px-3 py-1.5 rounded-lg bg-[#E9D9D0] hover:bg-[#DFC9BE] border border-[#D5BEB3] text-[#670626] text-xs font-bold tracking-wider uppercase cursor-pointer flex items-center gap-1.5 transition-colors"
             >
-              <Sparkles className="w-3 h-3 text-[#ff5c74]" />
+              <Sparkles className="w-3.5 h-3.5 text-[#A83B4D]" />
               <span>{isSynthesizing ? 'Simulating...' : 'Simulate 4-Pose Capture'}</span>
             </button>
             <button
               type="button"
               id="btn-retake-all-poses"
               onClick={handleRetakeAll}
-              className="px-2.5 py-1 rounded bg-rose-950/50 hover:bg-rose-900/70 border border-rose-500/40 text-rose-200 text-[9.5px] font-bold tracking-wider uppercase cursor-pointer flex items-center gap-1 transition-colors"
+              className="px-3 py-1.5 rounded-lg bg-[#E9D9D0] hover:bg-[#DFC9BE] border border-[#D5BEB3] text-[#670626] text-xs font-bold tracking-wider uppercase cursor-pointer flex items-center gap-1.5 transition-colors"
             >
-              <RotateCcw className="w-3 h-3 text-[#ff5c74]" />
+              <RotateCcw className="w-3.5 h-3.5 text-[#A83B4D]" />
               <span>Retake All Poses</span>
             </button>
-            <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/50 text-rose-300 text-[9.5px] font-bold tracking-wider uppercase">
-              60 Frames/Pose Video Buffer Target
+            <span className="px-2.5 py-1 rounded-lg bg-[#F7F1EA] border border-[#D5BEB3] text-[#670626] text-xs font-bold tracking-wider uppercase">
+              60 Frames/Pose Target
             </span>
-            <span className="text-rose-300/80 text-[10px]">
-              {isAllPosesComplete ? '4 of 4 Poses Qualified' : 'Record or Retry Any Pose Below'}
+            <span className="text-[#7D2B3D] text-xs font-semibold">
+              {isAllPosesComplete ? '4 of 4 Poses Qualified' : 'Record or Retry Any Pose'}
             </span>
           </div>
         </div>
@@ -2092,23 +2188,23 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
             return (
               <div
                 key={poseKey}
-                className={`p-2.5 rounded-xl border flex flex-col justify-between transition-all ${
+                className={`clay-surface p-3 rounded-2xl border flex flex-col justify-between transition-all ${
                   isCurrentActive
-                    ? 'border-rose-500 bg-rose-950/30 shadow-md shadow-rose-900/30'
+                    ? 'border-[#670626] bg-[#EFE4DD] ring-2 ring-[#A83B4D]/30 shadow-md'
                     : frameUrl
-                    ? 'border-rose-500/50 bg-[#16030b] shadow-sm shadow-rose-950/40'
-                    : 'border-rose-950/60 bg-[#0d0106]'
+                    ? 'border-[#D5BEB3] bg-[#F7F1EA] shadow-sm'
+                    : 'border-[#D8C2B8] bg-[#F7F1EA]/90'
                 }`}
               >
                 {/* Card Title & Pose Tag */}
-                <div className="flex items-center justify-between mb-1 font-mono text-[10px]">
-                  <span className="font-bold text-white flex items-center gap-1">
+                <div className="flex items-center justify-between gap-1 mb-1 font-mono text-xs">
+                  <span className="font-bold text-[#670626] flex items-center gap-1">
                     <span>{idx + 1}.</span>
                     <span>{config.title}</span>
                   </span>
                   <span
-                    className={`px-1.5 py-0.2 rounded text-[9px] font-semibold ${
-                      count > 0 ? 'text-[#ff5c74]' : 'text-rose-900'
+                    className={`px-1.5 py-0.5 rounded text-xs font-semibold ${
+                      count > 0 ? 'text-[#670626]' : 'text-[#A83B4D]'
                     }`}
                   >
                     {config.angleTag}
@@ -2116,31 +2212,31 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                 </div>
 
                 {/* Duration & Pacing Indicator */}
-                <div className="flex items-center justify-between mb-1.5 font-mono text-[8.5px] text-rose-400">
+                <div className="flex items-center justify-between mb-1.5 font-mono text-xs text-[#A83B4D]">
                   <span className="inline-flex items-center gap-1">
-                    <Clock className="w-2.5 h-2.5 shrink-0" />
-                    <span>{config.durationSeconds}.0s ({config.minDurationSeconds === config.maxDurationSeconds ? 'fixed' : '5–7s'})</span>
+                    <Clock className="w-3 h-3 shrink-0" />
+                    <span>{config.durationSeconds.toFixed(1)}s</span>
                   </span>
-                  <span className="text-rose-300/90">{config.targetFramesAt30Fps}–{config.targetFramesAt60Fps}f</span>
+                  <span className="text-[#7D2B3D]">{config.targetFramesAt30Fps}–{config.targetFramesAt60Fps}f</span>
                 </div>
 
                 {/* Thumbnail Preview or Live Recording Box */}
                 <div
-                  className="relative w-full rounded border border-rose-950/80 bg-black overflow-hidden flex items-center justify-center mb-2"
+                  className="relative w-full rounded-xl border border-[#D5BEB3] bg-[#24030D] overflow-hidden flex items-center justify-center mb-2"
                   style={{ aspectRatio: '4 / 3' }}
                 >
                   {isCurrentActive ? (
                     <div className="text-center p-2 space-y-1">
-                      <div className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping mx-auto" />
-                      <span className="font-mono text-[9px] text-rose-300 font-bold block uppercase">
-                        Recording 30-60 FPS...
+                      <div className="w-2.5 h-2.5 rounded-full bg-rose-400 animate-ping mx-auto" />
+                      <span className="font-mono text-xs text-[#F7F1EA] font-bold block uppercase">
+                        Recording...
                       </span>
-                      <span className="font-mono text-[8.5px] text-[#ff5c74] font-bold inline-flex items-center justify-center gap-1">
-                        <Clock className="w-2.5 h-2.5 shrink-0" />
-                        <span>{poseElapsedSeconds.toFixed(1)}s / {config.durationSeconds}.0s</span>
+                      <span className="font-mono text-xs text-[#E9D9D0] font-bold inline-flex items-center justify-center gap-1">
+                        <Clock className="w-3 h-3 shrink-0" />
+                        <span>{poseElapsedSeconds.toFixed(1)}s / {config.durationSeconds.toFixed(1)}s</span>
                       </span>
-                      <span className="font-mono text-[8px] text-rose-300/80 block">
-                        {count}/60 frames cached
+                      <span className="font-mono text-xs text-[#E9D9D0] block">
+                        {count}/60 frames
                       </span>
                     </div>
                   ) : frameUrl ? (
@@ -2150,16 +2246,15 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="text-center p-2 text-rose-900 font-mono text-[9px]">
+                    <div className="text-center p-2 text-[#E9D9D0]/80 font-mono text-xs">
                       Awaiting Cache
                     </div>
                   )}
 
-                  {/* Video Recording / Cached Count Badge Overlay */}
                   {count > 0 && (
-                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/90 border border-rose-500/60 font-mono text-[8.5px] text-rose-200 font-bold flex items-center gap-1 tabular-nums">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#ff5c74]"></span>
-                      <span>30-60 FPS // {count} frames</span>
+                    <div className="absolute bottom-1 right-1 px-2 py-0.5 rounded bg-[#4A041A]/90 border border-[#F7F1EA]/25 font-mono text-xs text-[#F7F1EA] font-bold flex items-center gap-1 tabular-nums">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      <span>{count}f</span>
                     </div>
                   )}
                 </div>
@@ -2169,15 +2264,15 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
                   type="button"
                   id={`btn-retake-pose-${poseKey}`}
                   onClick={() => handleRetakePose(poseKey)}
-                  className={`w-full h-[32px] py-1.5 px-2 rounded font-mono text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-colors touch-manipulation select-none active:scale-[0.98] ${
+                  className={`w-full h-[36px] py-1.5 px-2.5 rounded-xl font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors touch-manipulation select-none active:scale-[0.98] ${
                     count > 0
-                      ? 'border border-rose-500/40 bg-rose-950/40 hover:bg-rose-900/60 text-rose-200'
+                      ? 'border border-[#D5BEB3] bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626]'
                       : isCurrentActive
-                      ? 'border border-rose-400 bg-rose-950/60 text-rose-100'
-                      : 'border border-rose-500/30 bg-rose-950/30 hover:bg-rose-900/50 text-rose-300'
+                      ? 'border border-[#4A041A] bg-[#670626] text-[#F7F1EA]'
+                      : 'border border-[#D5BEB3] bg-[#EFE4DD] hover:bg-[#E9D9D0] text-[#670626]'
                   }`}
                 >
-                  <RefreshCw className="w-3 h-3 shrink-0" />
+                  <RefreshCw className="w-3.5 h-3.5 shrink-0" />
                   <span>{count > 0 ? 'Retry Pose' : 'Record Pose'}</span>
                 </button>
               </div>
@@ -2187,52 +2282,52 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       </div>
 
       {/* RA 10173 Biometric & Privacy Consent Checkbox */}
-      <div className="px-3.5 py-2.5 rounded-xl bg-[#14020a]/80 border border-rose-500/30 space-y-1.5">
-        <div className="flex items-center justify-between font-mono text-[10px] text-rose-300">
+      <div className="clay-surface px-4 py-3 rounded-2xl bg-[#F7F1EA] border border-[#D8C2B8] space-y-2 shadow-sm">
+        <div className="flex items-center justify-between font-mono text-xs sm:text-sm text-[#670626]">
           <span className="font-bold uppercase tracking-wider">RA 10173 Biometric Consent</span>
-          <label className="inline-flex items-center gap-1.5 cursor-pointer text-rose-200" htmlFor="chk-facial-consent">
+          <label className="inline-flex items-center gap-2 cursor-pointer text-[#670626] font-semibold" htmlFor="chk-facial-consent">
             <input
               type="checkbox"
               id="chk-facial-consent"
               checked={consentAccepted}
               onChange={(e) => onConsentChange(e.target.checked)}
-              className="w-3.5 h-3.5 rounded accent-[#ff5c74] cursor-pointer"
+              className="w-4 h-4 rounded accent-[#670626] cursor-pointer"
             />
             <span>Accept</span>
           </label>
         </div>
-        <label className="flex items-center gap-2 cursor-pointer" htmlFor="facial-consent-checkbox">
+        <label className="flex items-center gap-2.5 cursor-pointer" htmlFor="facial-consent-checkbox">
           <input
             type="checkbox"
             id="facial-consent-checkbox"
             checked={consentAccepted}
             onChange={(e) => onConsentChange(e.target.checked)}
-            className="w-4 h-4 rounded accent-[#ff5c74] shrink-0 cursor-pointer"
+            className="w-4 h-4 rounded accent-[#670626] shrink-0 cursor-pointer"
           />
-          <span className="font-mono text-[10.5px] text-rose-100 leading-snug">
-            [RA 10173] Consent to 4-pose video recording at 30-60 FPS in compliance with RA 10173 (encrypted).
+          <span className="font-mono text-xs sm:text-sm text-[#591529] leading-snug">
+            [RA 10173] Consent to 4-pose video recording at 30-60 FPS (encrypted).
           </span>
         </label>
       </div>
 
       {/* Primary Action Button: Confirm 4-Pose Facial Record */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-        <div className="font-mono text-[11px] text-rose-300">
+        <div className="font-mono text-xs sm:text-sm text-[#670626]">
           {!isAllPosesComplete ? (
-            <span className="text-[#ff5c74]">
+            <span className="text-[#A83B4D] font-semibold">
               * Complete all 4 poses (60 frames/pose) to confirm.
             </span>
           ) : !consentAccepted ? (
-            <span className="text-[#ff5c74]">
+            <span className="text-[#A83B4D] font-semibold">
               * Check RA 10173 consent to confirm.
             </span>
           ) : isConfirmed ? (
-            <span className="text-rose-300 font-bold flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-[#ff5c74]" />
-              <span>4-pose video recording at 30–60 FPS confirmed and staged for submission.</span>
+            <span className="text-emerald-800 font-bold flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>4-pose record confirmed and staged for submission.</span>
             </span>
           ) : (
-            <span className="text-rose-300">
+            <span className="text-[#670626] font-medium">
               4 poses captured &amp; RA 10173 consent accepted. Ready to confirm.
             </span>
           )}
@@ -2245,10 +2340,10 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
               id="btn-confirm-facial-capture"
               disabled={!isAllPosesComplete || !consentAccepted || isVerifyingFaceMatch}
               onClick={handleConfirmFacialRecord}
-              className={`px-5 py-2.5 rounded-lg font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all ${
+              className={`px-5 py-3 rounded-xl font-mono text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center gap-2 transition-all ${
                 isAllPosesComplete && consentAccepted && !isVerifyingFaceMatch
-                  ? 'bg-gradient-to-r from-[#a5002e] via-[#d9093e] to-[#ff2b4a] hover:brightness-110 text-white shadow-lg shadow-[#e8114c]/30 border border-rose-500/50 cursor-pointer'
-                  : 'bg-rose-950/30 border border-rose-950/60 text-rose-900 cursor-not-allowed'
+                  ? 'bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] shadow-md shadow-[#4A041A]/25 cursor-pointer'
+                  : 'bg-[#E9D9D0] border border-[#D5BEB3] text-[#A83B4D]/60 cursor-not-allowed'
               }`}
             >
               {isVerifyingFaceMatch ? (
@@ -2266,9 +2361,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           ) : (
             <span
               id="badge-facial-confirmed"
-              className="px-4 py-2 rounded-lg bg-rose-950/90 border border-rose-500/60 text-rose-200 font-mono text-xs font-bold flex items-center gap-1.5 shadow-md shadow-rose-950/50"
+              className="px-4 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/35 text-[#670626] font-mono text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm"
             >
-              <CheckCircle2 className="w-4 h-4 text-[#ff5c74]" />
+              <CheckCircle2 className="w-4 h-4 text-[#670626]" />
               <span>4-Pose Record Confirmed</span>
             </span>
           )}
@@ -2276,9 +2371,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
           {faceMatchState === 'matched' && issuedFacialToken && !isStaticFileUpload && (
             <span
               id="badge-face-id-matched"
-              className="px-4 py-2 rounded-lg bg-[#18030c] border border-emerald-500/50 text-emerald-200 font-mono text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-950/30"
+              className="px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-600/40 text-emerald-800 font-mono text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm"
             >
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
               <span>Face-to-ID Match {formatSimilarityPercent(faceToIdSimilarity)}%</span>
             </span>
           )}
@@ -2289,21 +2384,21 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       {faceMatchState === 'rejected' && faceMatchDiagnostic && (
         <div
           id="facial-match-diagnostic-banner"
-          className="p-3.5 rounded-xl bg-[#22040d] border border-[#ff2b4a]/70 font-mono text-[11px] text-rose-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-rose-950/40"
+          className="p-4 rounded-2xl bg-[#670626] border border-[#4A041A] font-mono text-xs sm:text-sm text-[#F7F1EA] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg"
           role="alert"
         >
           <div className="flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-[#ff5c74] shrink-0 mt-0.5" />
+            <AlertTriangle className="w-5 h-5 text-[#F7F1EA] shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2 font-bold uppercase tracking-wider text-rose-100">
+              <div className="flex flex-wrap items-center gap-2 font-bold uppercase tracking-wider text-[#F7F1EA]">
                 <span>Biometric Verification Rejected</span>
                 {faceMatchErrorCode && (
-                  <span className="px-2 py-0.5 rounded bg-rose-950/90 border border-rose-500/50 text-[#ff5c74] text-[9.5px]">
+                  <span className="px-2 py-0.5 rounded bg-[#4A041A] border border-[#E9D9D0]/30 text-[#E9D9D0] text-xs">
                     {faceMatchErrorCode}
                   </span>
                 )}
               </div>
-              <p className="font-sans text-[11.5px] text-rose-200/95 leading-relaxed">
+              <p className="font-sans text-xs sm:text-sm text-[#F7F1EA]/90 leading-relaxed">
                 {faceMatchDiagnostic}
               </p>
             </div>
@@ -2312,9 +2407,9 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
             type="button"
             id="btn-retry-facial-match"
             onClick={handleRetakeAll}
-            className="shrink-0 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#a5002e] to-[#ff2b4a] hover:brightness-110 text-white font-mono text-[10.5px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-rose-400/50 transition-all"
+            className="shrink-0 px-4 py-2.5 rounded-xl bg-[#F7F1EA] hover:bg-[#E9D9D0] text-[#670626] font-mono text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-4 h-4" />
             <span>Re-Scan 4 Poses</span>
           </button>
         </div>
@@ -2324,18 +2419,18 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       {faceMatchState === 'pending_manual' && faceMatchDiagnostic && (
         <div
           id="facial-pending-review-banner"
-          className="p-3.5 rounded-xl bg-[#1a050d] border border-rose-500/50 font-mono text-[11px] text-rose-100 flex items-start gap-2.5"
+          className="p-4 rounded-2xl bg-[#EFE4DD] border border-[#A83B4D]/45 font-mono text-xs sm:text-sm text-[#670626] flex items-start gap-2.5"
           role="status"
         >
-          <Clock className="w-4 h-4 text-[#ff5c74] shrink-0 mt-0.5" />
+          <Clock className="w-5 h-5 text-[#A83B4D] shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2 font-bold uppercase tracking-wider text-rose-100">
+            <div className="flex flex-wrap items-center gap-2 font-bold uppercase tracking-wider text-[#670626]">
               <span>Pending Manual Governance Review</span>
-              <span className="px-2 py-0.5 rounded bg-rose-950/90 border border-rose-500/40 text-rose-300 text-[9.5px]">
+              <span className="px-2 py-0.5 rounded bg-[#F7F1EA] border border-[#D5BEB3] text-[#A83B4D] text-xs">
                 {isStaticFileUpload ? 'STATIC_UPLOAD_FALLBACK' : faceMatchErrorCode || 'MANUAL_REVIEW'}
               </span>
             </div>
-            <p className="font-sans text-[11.5px] text-rose-200/90 leading-relaxed">
+            <p className="font-sans text-xs sm:text-sm text-[#591529] leading-relaxed">
               {faceMatchDiagnostic}
             </p>
           </div>
@@ -2345,10 +2440,10 @@ export const ManualFacialCapturePanel: React.FC<ManualFacialCapturePanelProps> =
       {/* Error Message Alert */}
       {(localError || errorMessage) && (
         <div
-          className="p-3 rounded-lg bg-rose-950/60 border border-rose-500/50 font-mono text-[10.5px] text-rose-300 flex items-center gap-2"
+          className="p-3.5 rounded-xl bg-[#670626]/10 border border-[#670626]/40 font-mono text-xs sm:text-sm text-[#670626] flex items-center gap-2 font-semibold"
           role="alert"
         >
-          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          <AlertCircle className="w-4 h-4 text-[#670626] shrink-0" />
           <span>{localError || errorMessage}</span>
         </div>
       )}

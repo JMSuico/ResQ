@@ -26,6 +26,12 @@ public class Report
 
     public UserRole ReporterRole { get; set; } = UserRole.Civilian;
 
+    [MaxLength(64)]
+    public string? SubmittedIpAddress { get; set; }
+
+    [MaxLength(40)]
+    public string? ReporterContactNumber { get; set; }
+
     [Required, MaxLength(200)]
     public string Title { get; set; } = string.Empty;
 
@@ -82,4 +88,34 @@ public class Report
     public DateTime? VerifiedAt { get; set; }
 
     public DateTime? ResolvedAt { get; set; }
+
+    [MaxLength(120)]
+    public string? RoboflowModelId { get; set; } = "accident-and-non-accident-label-image-dataset/14";
+
+    [MaxLength(64)]
+    public string? RoboflowPrediction { get; set; }
+
+    public double? RoboflowConfidence { get; set; }
+
+    public bool RoboflowNeedsReview { get; set; } = true;
+
+    [MaxLength(64)]
+    public string? ClaudeModelUsed { get; set; }
+
+    [MaxLength(64)]
+    public string? ClaudeIncidentCategory { get; set; }
+
+    [MaxLength(1000)]
+    public string? ClaudeSituationSummary { get; set; }
+
+    [MaxLength(600)]
+    public string? ClaudeVisibleHazards { get; set; }
+
+    [MaxLength(600)]
+    public string? ClaudeUncertaintyNotes { get; set; }
+
+    [MaxLength(40)]
+    public string? PointerIconType { get; set; }
+
+    public string? AiAnalysisJson { get; set; }
 }

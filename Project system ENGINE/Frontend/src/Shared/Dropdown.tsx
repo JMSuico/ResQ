@@ -5,6 +5,7 @@
 // DO NOT put feature-specific or API business logic here.
 
 import React, { ReactNode, useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { Check, ChevronDown, Search, X } from 'lucide-react';
 
 export interface DropdownItem<T = string> {
   id?: string;
@@ -190,45 +191,43 @@ export const Dropdown = <T = string,>({
           onClick={() => setIsOpen(!isOpen)}
           aria-haspopup="listbox"
           aria-expanded={isOpen}
-          className={`w-full flex items-center justify-between gap-2 bg-slate-900/90 hover:bg-slate-800/60 backdrop-blur-sm border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-sm text-left hover:border-slate-500 transition-all duration-150 cursor-pointer select-none ${
-            isOpen ? 'ring-2 ring-sky-500/40 border-sky-500 bg-slate-800' : ''
+          className={`w-full flex items-center justify-between gap-2 bg-[#FFFBF7] hover:bg-[#F7F1EA] border border-[#D8C1B5] px-3.5 py-2.5 rounded-xl text-sm text-left hover:border-[#A83B4D] transition-all duration-150 cursor-pointer select-none ${
+            isOpen ? 'ring-2 ring-[#A83B4D]/35 border-[#670626] bg-[#FFFBF7]' : ''
           } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           <span className="flex items-center gap-2 min-w-0">
             {(selectedItem?.icon ?? icon) && (
-              <span className="material-symbols-outlined text-[18px] text-sky-400 flex-shrink-0">
+              <span className="material-symbols-outlined text-[18px] text-[#A83B4D] flex-shrink-0">
                 {selectedItem?.icon ?? icon}
               </span>
             )}
-            <span className={`truncate ${selectedItem ? 'text-slate-100 font-semibold' : 'text-slate-400'}`}>
+            <span className={`truncate ${selectedItem ? 'text-[#3B1722] font-semibold' : 'text-[#9B727D]'}`}>
               {selectedItem?.label ?? placeholder}
             </span>
           </span>
-          <span
-            className={`material-symbols-outlined text-[18px] text-slate-400 flex-shrink-0 transition-transform duration-200 ${
-              isOpen ? 'rotate-180 text-sky-400' : ''
+          <ChevronDown
+            className={`w-4 h-4 text-[#7A4E59] flex-shrink-0 transition-transform duration-200 ${
+              isOpen ? 'rotate-180 text-[#670626]' : ''
             }`}
-          >
-            expand_more
-          </span>
+            aria-hidden="true"
+          />
         </button>
       ) : isPagination ? (
         <button
           type="button"
           disabled={disabled}
           onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center justify-between gap-1.5 bg-slate-900/90 hover:bg-slate-800/60 backdrop-blur-sm border border-slate-700/80 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-200 hover:border-slate-500 transition-all duration-150 cursor-pointer select-none ${
-            isOpen ? 'ring-2 ring-sky-500/30 border-sky-500 bg-slate-800' : ''
+          className={`flex items-center justify-between gap-1.5 bg-[#F7F1EA] hover:bg-[#E9D9D0]/70 border border-[#D4B8AA] px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#670626] hover:border-[#A83B4D] transition-all duration-150 cursor-pointer select-none ${
+            isOpen ? 'ring-2 ring-[#A83B4D]/30 border-[#670626]' : ''
           } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           <span>{selectedItem?.label ?? String(effectiveSelectedValue ?? '')}</span>
-          <span
-            className={`material-symbols-outlined text-[14px] transition-transform duration-200 ${
-              isOpen ? 'rotate-180 text-sky-400' : ''
+          <ChevronDown
+            className={`w-3.5 h-3.5 transition-transform duration-200 ${
+              isOpen ? 'rotate-180 text-[#670626]' : ''
             }`}
-          >
-            expand_more
-          </span>
+            aria-hidden="true"
+          />
         </button>
       ) : (
         <button
@@ -236,38 +235,37 @@ export const Dropdown = <T = string,>({
           type="button"
           disabled={disabled}
           onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center gap-2 bg-slate-900/90 hover:bg-slate-800/60 backdrop-blur-sm border border-slate-700/80 px-3.5 py-2 rounded-xl text-xs text-slate-300 hover:border-slate-500 transition-all duration-150 cursor-pointer select-none ${
-            isOpen ? 'ring-2 ring-sky-500/30 border-sky-500 bg-slate-800' : ''
+          className={`flex items-center gap-2 bg-[#F7F1EA] hover:bg-[#E9D9D0]/70 border border-[#D4B8AA] px-3.5 py-2 rounded-xl text-sm text-[#5C313E] hover:border-[#A83B4D] transition-all duration-150 cursor-pointer select-none ${
+            isOpen ? 'ring-2 ring-[#A83B4D]/30 border-[#670626]' : ''
           } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          {icon && <span className="material-symbols-outlined text-[16px] text-sky-400">{icon}</span>}
-          {label && <span className="text-slate-400">{label}:</span>}
-          <span className="text-slate-100 font-semibold truncate max-w-[140px]">
+          {icon && <span className="material-symbols-outlined text-[16px] text-[#A83B4D]">{icon}</span>}
+          {label && <span className="text-[#7A4E59]">{label}:</span>}
+          <span className="text-[#3B1722] font-semibold truncate max-w-[140px]">
             {selectedItem?.label ?? placeholder}
           </span>
-          <span
-            className={`material-symbols-outlined text-[16px] text-slate-400 transition-transform duration-200 ${
-              isOpen ? 'rotate-180 text-sky-400' : ''
+          <ChevronDown
+            className={`w-4 h-4 text-[#7A4E59] transition-transform duration-200 ${
+              isOpen ? 'rotate-180 text-[#670626]' : ''
             }`}
-          >
-            expand_more
-          </span>
+            aria-hidden="true"
+          />
         </button>
       )}
 
       {/* Dropdown Menu Panel */}
       {isOpen && (
         <div
-          className={`absolute ${
+          className={`clay-surface absolute ${
             actualDirection === 'up' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
           } ${
             align === 'right' ? 'right-0' : 'left-0'
-          } ${effectiveMenuWidth} bg-slate-900/98 backdrop-blur-xl rounded-xl shadow-2xl shadow-black/80 border border-slate-700/80 py-1.5 z-50 animate-scaleUp overflow-hidden`}
+          } ${effectiveMenuWidth} bg-[#F7F1EA] rounded-xl shadow-[0_18px_40px_-10px_rgba(103,6,38,0.28)] border border-[#E9D9D0] py-1.5 z-50 animate-scaleUp overflow-hidden`}
         >
           {searchable && (
-            <div className="px-2 pt-1.5 pb-1 border-b border-slate-800">
-              <div className="flex items-center gap-2 bg-slate-800/80 rounded-lg px-2.5 py-1.5 border border-slate-700/60 focus-within:ring-2 focus-within:ring-sky-500/40">
-                <span className="material-symbols-outlined text-[16px] text-slate-400">search</span>
+            <div className="px-2 pt-1.5 pb-1 border-b border-[#E9D9D0]">
+              <div className="flex items-center gap-2 bg-[#FFFBF7] rounded-lg px-2.5 py-1.5 border border-[#D8C1B5] focus-within:ring-2 focus-within:ring-[#A83B4D]/30">
+                <Search className="w-4 h-4 text-[#7A4E59] shrink-0" aria-hidden="true" />
                 <input
                   ref={searchInputRef}
                   type="text"
@@ -279,7 +277,7 @@ export const Dropdown = <T = string,>({
                   onKeyDown={handleSearchKeyDown}
                   placeholder={searchPlaceholder}
                   aria-label={searchPlaceholder}
-                  className="flex-1 min-w-0 bg-transparent outline-none border-none text-xs text-slate-200 placeholder:text-slate-500"
+                  className="flex-1 min-w-0 bg-transparent outline-none border-none text-sm text-[#3B1722] placeholder:text-[#9B727D]"
                 />
                 {query && (
                   <button
@@ -288,10 +286,10 @@ export const Dropdown = <T = string,>({
                       setQuery('');
                       searchInputRef.current?.focus();
                     }}
-                    className="material-symbols-outlined text-[16px] text-slate-400 hover:text-white cursor-pointer"
+                    className="text-[#7A4E59] hover:text-[#670626] cursor-pointer flex items-center justify-center"
                     aria-label="Clear search"
                   >
-                    close
+                    <X className="w-4 h-4" aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -299,7 +297,7 @@ export const Dropdown = <T = string,>({
           )}
           <div className="max-h-64 overflow-y-auto p-1 space-y-0.5" role="listbox">
             {searchable && visibleItems.length === 0 && (
-              <div className="px-3 py-3 text-center text-xs text-slate-400">{emptyMessage}</div>
+              <div className="px-3 py-3 text-center text-sm text-[#7A4E59]">{emptyMessage}</div>
             )}
             {visibleItems.map((item, index) => {
               const isSelected = item.value === effectiveSelectedValue;
@@ -316,8 +314,8 @@ export const Dropdown = <T = string,>({
                       item.disabled
                         ? 'opacity-40 cursor-not-allowed'
                         : isSelected
-                        ? 'bg-sky-600 text-white font-bold'
-                        : 'text-slate-200 hover:bg-slate-800'
+                        ? 'bg-[#670626] text-[#F7F1EA] font-bold'
+                        : 'text-[#3B1722] hover:bg-[#E9D9D0]/70'
                     }`}
                   >
                     {item.label}
@@ -331,23 +329,23 @@ export const Dropdown = <T = string,>({
                   type="button"
                   disabled={item.disabled}
                   onClick={() => handleSelect(item)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition-all duration-150 cursor-pointer select-none ${
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center justify-between transition-all duration-150 cursor-pointer select-none ${
                     item.disabled
                       ? 'opacity-40 cursor-not-allowed'
                       : isSelected
-                      ? 'bg-sky-950/70 text-sky-300 font-bold border border-sky-800/60 shadow-sm'
+                      ? 'bg-[#F3E4E7] text-[#670626] font-bold border border-[#A83B4D]/35 shadow-sm'
                       : isActive
-                      ? 'bg-slate-800 text-sky-400 ring-1 ring-sky-500/30'
+                      ? 'bg-[#E9D9D0]/80 text-[#670626] ring-1 ring-[#A83B4D]/30'
                       : item.danger
-                      ? 'text-rose-400 hover:bg-rose-950/40 hover:text-rose-200'
-                      : 'text-slate-200 hover:bg-slate-800/80 hover:text-white'
+                      ? 'text-[#991B1B] hover:bg-rose-100'
+                      : 'text-[#3B1722] hover:bg-[#E9D9D0]/70 hover:text-[#670626]'
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     {item.icon && (
                       <span
                         className={`material-symbols-outlined text-[18px] transition-colors ${
-                          item.danger ? 'text-rose-400' : isSelected ? 'text-sky-400' : 'text-slate-400'
+                          item.danger ? 'text-[#991B1B]' : isSelected ? 'text-[#670626]' : 'text-[#7A4E59]'
                         }`}
                       >
                         {item.icon}
@@ -356,7 +354,7 @@ export const Dropdown = <T = string,>({
                     <div className="flex flex-col min-w-0">
                       <span className="truncate">{item.label}</span>
                       {item.description && (
-                        <span className="text-[11px] text-slate-400 truncate">
+                        <span className="text-xs text-[#7A4E59] truncate">
                           {item.description}
                         </span>
                       )}
@@ -365,12 +363,12 @@ export const Dropdown = <T = string,>({
 
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     {item.badge !== undefined && (
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                      <span className="px-1.5 py-0.5 rounded-full text-xs font-mono font-bold bg-[#E9D9D0] text-[#670626] border border-[#D4B8AA]">
                         {item.badge}
                       </span>
                     )}
                     {isSelected && (
-                      <span className="material-symbols-outlined text-sky-400 text-[18px]">check</span>
+                      <Check className="w-4 h-4 text-[#670626] flex-shrink-0" aria-hidden="true" />
                     )}
                   </div>
                 </button>

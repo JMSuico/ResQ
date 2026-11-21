@@ -37,28 +37,28 @@ const computeTacticalStatus = (value: number, totalVal: number): TacticalStatus 
   if (share >= 0.40) {
     return {
       label: 'PRIMARY DISPATCH LOAD',
-      color: 'text-amber-400',
-      badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+      color: 'text-amber-800',
+      badge: 'bg-amber-100 text-amber-900 border-amber-300'
     };
   }
   if (share >= 0.25) {
     return {
       label: 'ACTIVE RESPONSE VOLUME',
-      color: 'text-sky-400',
-      badge: 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+      color: 'text-[#670626]',
+      badge: 'bg-[#F3E4E7] text-[#670626] border-[#A83B4D]/40'
     };
   }
   if (share >= 0.15) {
     return {
       label: 'TACTICAL SUPPORT SQUAD',
-      color: 'text-indigo-400',
-      badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+      color: 'text-sky-800',
+      badge: 'bg-sky-100 text-sky-900 border-sky-300'
     };
   }
   return {
     label: 'STANDBY READY',
-    color: 'text-emerald-400',
-    badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+    color: 'text-emerald-800',
+    badge: 'bg-emerald-100 text-emerald-900 border-emerald-300'
   };
 };
 
@@ -141,7 +141,7 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative flex flex-col gap-2 p-4 bg-slate-900/55 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_12px_32px_-8px_rgba(2,6,23,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] select-none"
+      className="clay-surface relative flex flex-col gap-2 p-4 bg-[#F7F1EA] border border-[#E9D9D0] rounded-2xl shadow-[0_14px_32px_-10px_rgba(103,6,38,0.14),inset_0_2px_4px_rgba(255,255,255,0.85)] select-none text-[#3B1722]"
       onMouseMove={handleMouseMove}
       onMouseLeave={() => {
         setHoveredSliceIndex(null);
@@ -149,15 +149,15 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
       }}
     >
       {/* Title & Status Indicator */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         {title && (
           <div className="flex items-center gap-1.5">
-            <PieChart className="w-3.5 h-3.5 text-sky-400" />
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">{title}</h4>
+            <PieChart className="w-4 h-4 text-[#670626]" />
+            <h4 className="text-sm font-extrabold text-[#670626] uppercase tracking-wider">{title}</h4>
           </div>
         )}
-        <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        <span className="text-xs font-mono text-[#7A4E59] uppercase tracking-wider flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
           RADAR ACTIVE
         </span>
       </div>
@@ -167,7 +167,7 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
         <div className="relative flex items-center justify-center">
           <svg
             viewBox={`0 0 ${CENTER_X * 2} ${CENTER_Y * 2}`}
-            className="w-40 h-40 overflow-visible drop-shadow-md"
+            className="w-40 h-40 overflow-visible drop-shadow-sm"
           >
             {/* Empty state donut ring when zero calls */}
             {realTotal === 0 && (
@@ -176,9 +176,9 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                 cy={CENTER_Y}
                 r={(DONUT_RADIUS + INNER_HOLE_RADIUS) / 2}
                 fill="none"
-                stroke="#1e293b"
+                stroke="#E9D9D0"
                 strokeWidth={DONUT_RADIUS - INNER_HOLE_RADIUS}
-                className="opacity-70"
+                className="opacity-90"
               />
             )}
 
@@ -192,13 +192,13 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                   key={i}
                   d={s.pathD}
                   fill={s.color}
-                  stroke={isHovered ? '#ffffff' : '#0f172a'}
-                  strokeWidth={isHovered ? 1.5 : 0.5}
+                  stroke="#F7F1EA"
+                  strokeWidth={isHovered ? 2 : 1}
                   style={{
                     transform: isHovered ? `translate(${s.dx}px, ${s.dy}px)` : 'translate(0px, 0px)',
                     transition: 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out, filter 200ms ease-out',
                     opacity: isDimmed ? 0.35 : 1,
-                    filter: isHovered ? 'drop-shadow(0 0 8px rgba(255,255,255,0.3))' : 'none',
+                    filter: isHovered ? 'drop-shadow(0 4px 10px rgba(103,6,38,0.25))' : 'none',
                     transformOrigin: `${CENTER_X}px ${CENTER_Y}px`
                   }}
                   className="transition-all duration-200 ease-out cursor-pointer"
@@ -213,10 +213,10 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
               cx={CENTER_X}
               cy={CENTER_Y}
               r={INNER_HOLE_RADIUS}
-              fill="#090d16"
-              stroke="#1e293b"
+              fill="#F7F1EA"
+              stroke="#E9D9D0"
               strokeWidth="2"
-              className="pointer-events-none drop-shadow-inner"
+              className="pointer-events-none"
             />
 
             {/* Dynamic Center Donut Content */}
@@ -224,9 +224,9 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
               <g className="pointer-events-none select-none transition-all duration-200">
                 <text
                   x={CENTER_X}
-                  y={CENTER_Y - 3}
+                  y={CENTER_Y - 2}
                   textAnchor="middle"
-                  fill="#f8fafc"
+                  fill="#670626"
                   fontSize="16"
                   fontWeight="bold"
                   fontFamily="monospace"
@@ -235,12 +235,12 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                 </text>
                 <text
                   x={CENTER_X}
-                  y={CENTER_Y + 12}
+                  y={CENTER_Y + 13}
                   textAnchor="middle"
-                  fill="#64748b"
-                  fontSize="8"
+                  fill="#7A4E59"
+                  fontSize="10"
                   fontWeight="bold"
-                  letterSpacing="0.1em"
+                  letterSpacing="0.08em"
                 >
                   TOTAL
                 </text>
@@ -252,9 +252,9 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                   y={CENTER_Y - 12}
                   textAnchor="middle"
                   fill={slices[hoveredSliceIndex].color}
-                  fontSize="8"
+                  fontSize="9.5"
                   fontWeight="bold"
-                  letterSpacing="0.04em"
+                  letterSpacing="0.03em"
                 >
                   {slices[hoveredSliceIndex].label.length > 10
                     ? slices[hoveredSliceIndex].label.slice(0, 9) + '…'
@@ -262,10 +262,10 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                 </text>
                 <text
                   x={CENTER_X}
-                  y={CENTER_Y + 3}
+                  y={CENTER_Y + 4}
                   textAnchor="middle"
-                  fill="#f8fafc"
-                  fontSize="13"
+                  fill="#670626"
+                  fontSize="14"
                   fontWeight="900"
                   fontFamily="monospace"
                 >
@@ -273,10 +273,10 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                 </text>
                 <text
                   x={CENTER_X}
-                  y={CENTER_Y + 16}
+                  y={CENTER_Y + 17}
                   textAnchor="middle"
-                  fill="#94a3b8"
-                  fontSize="8"
+                  fill="#7A4E59"
+                  fontSize="9.5"
                   fontWeight="bold"
                 >
                   {slices[hoveredSliceIndex].value} CALLS
@@ -299,10 +299,10 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                 onMouseLeave={() => setHoveredSliceIndex(null)}
                 className={`flex items-center justify-between gap-3 px-2.5 py-1.5 rounded-lg border cursor-pointer transition-all duration-150 ${
                   isHovered
-                    ? 'bg-slate-800/90 border-slate-600 shadow-md ring-1 ring-sky-500/50 translate-x-1'
+                    ? 'bg-[#E9D9D0] border-[#A83B4D]/50 shadow-sm translate-x-1'
                     : isDimmed
                     ? 'opacity-35 border-transparent'
-                    : 'border-transparent hover:bg-slate-800/40'
+                    : 'border-transparent hover:bg-[#E9D9D0]/55'
                 }`}
               >
                 <div className="flex items-center gap-2 min-w-0">
@@ -314,15 +314,15 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                       boxShadow: isHovered ? `0 0 8px ${d.color}` : 'none'
                     }}
                   />
-                  <span className={`truncate text-xs ${isHovered ? 'text-white font-bold' : 'text-slate-300 font-medium'}`}>
+                  <span className={`truncate text-sm ${isHovered ? 'text-[#670626] font-bold' : 'text-[#3B1722] font-medium'}`}>
                     {d.label}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0 font-mono text-xs">
-                  <span className="text-slate-400 text-[10px]">
+                  <span className="text-[#7A4E59] text-xs">
                     {d.percentage}%
                   </span>
-                  <span className={`font-bold ${isHovered ? 'text-white' : 'text-slate-200'}`}>
+                  <span className={`font-bold text-sm ${isHovered ? 'text-[#670626]' : 'text-[#3B1722]'}`}>
                     {d.value}
                   </span>
                 </div>
@@ -332,7 +332,7 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
         </div>
       </div>
 
-      {/* Floating Tactical HUD Tooltip */}
+      {/* Floating Claymorphic Tooltip */}
       {hoveredSliceIndex !== null && activeSlice && activeStatus && (
         <div
           className="pointer-events-none absolute z-30 transition-all duration-100 ease-out"
@@ -344,25 +344,25 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
             transform: 'translate(-50%, -100%)'
           }}
         >
-          <div className="bg-slate-950/95 backdrop-blur-md border border-slate-700/90 rounded-lg shadow-2xl p-2.5 min-w-[190px] flex flex-col gap-1 text-[11px] font-mono">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-1">
-              <div className="flex items-center gap-1.5 font-bold text-slate-100">
+          <div className="clay-surface bg-[#F7F1EA] border border-[#E9D9D0] rounded-xl shadow-xl p-3 min-w-[205px] flex flex-col gap-1 text-xs font-mono text-[#3B1722]">
+            <div className="flex items-center justify-between border-b border-[#E9D9D0] pb-1">
+              <div className="flex items-center gap-1.5 font-bold text-[#670626]">
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: activeSlice.color }} />
                 <span>{activeSlice.label}</span>
               </div>
-              <span className="text-[10px] text-slate-400 font-semibold">{activeSlice.percentage}%</span>
+              <span className="text-xs text-[#7A4E59] font-semibold">{activeSlice.percentage}%</span>
             </div>
-            <div className="flex justify-between text-slate-300 pt-0.5">
-              <span className="text-slate-500">Active Load:</span>
-              <span className="font-bold text-white">{activeSlice.value} Dispatches</span>
+            <div className="flex justify-between text-[#5C313E] pt-0.5">
+              <span className="text-[#7A4E59]">Active Load:</span>
+              <span className="font-bold text-[#3B1722]">{activeSlice.value} Dispatches</span>
             </div>
-            <div className="flex justify-between text-slate-300">
-              <span className="text-slate-500">Fleet Share:</span>
-              <span className="text-sky-400 font-semibold">{activeSlice.percentage}% Workload</span>
+            <div className="flex justify-between text-[#5C313E]">
+              <span className="text-[#7A4E59]">Fleet Share:</span>
+              <span className="text-[#670626] font-semibold">{activeSlice.percentage}% Workload</span>
             </div>
-            <div className="mt-1 pt-1 border-t border-slate-800/80 flex items-center justify-between">
-              <span className="text-[9px] text-slate-400 uppercase tracking-wider">Tactical Status:</span>
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${activeStatus.badge}`}>
+            <div className="mt-1 pt-1 border-t border-[#E9D9D0] flex items-center justify-between gap-2">
+              <span className="text-xs text-[#7A4E59] uppercase tracking-wider">Status:</span>
+              <span className={`text-xs font-bold px-1.5 py-0.5 rounded border ${activeStatus.badge}`}>
                 {activeStatus.label}
               </span>
             </div>
@@ -372,24 +372,24 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
 
       {/* Persistent Status Telemetry Pill */}
       {activeSlice && activeStatus ? (
-        <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs transition-all duration-150">
+        <div className="mt-2 pt-2 border-t border-[#E9D9D0] flex items-center justify-between text-xs transition-all duration-150">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="w-2 h-2 rounded-full flex-shrink-0 animate-ping" style={{ backgroundColor: activeSlice.color }} />
-            <span className="font-semibold text-slate-200 truncate">{activeSlice.label} Focus</span>
+            <span className="font-semibold text-[#670626] truncate">{activeSlice.label} Focus</span>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${activeStatus.badge}`}>
+            <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold border ${activeStatus.badge}`}>
               {activeStatus.label}
             </span>
-            <span className="font-mono text-slate-300 text-xs font-semibold">
+            <span className="font-mono text-[#3B1722] text-xs font-semibold">
               {activeSlice.value} Dispatches ({activeSlice.percentage}%)
             </span>
           </div>
         </div>
       ) : (
-        <div className="mt-2 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px] font-mono text-slate-500">
+        <div className="mt-2 pt-2 border-t border-[#E9D9D0] flex items-center justify-between text-xs font-mono text-[#7A4E59]">
           <span>HOVER SLICE OR LEGEND FOR FLEET TELEMETRY</span>
-          <span className="text-slate-400 font-semibold">{data.length} AGENCIES LOGGED</span>
+          <span className="text-[#670626] font-bold">{data.length} AGENCIES LOGGED</span>
         </div>
       )}
     </div>

@@ -20,11 +20,11 @@ export interface AdminEscalateModalProps {
 }
 
 const SEVERITY_LEVELS: { key: string; label: string; color: string }[] = [
-  { key: 'LOW', label: 'Level 1 - Low', color: 'text-slate-300 border-slate-700 bg-slate-900' },
-  { key: 'MODERATE', label: 'Level 2 - Moderate', color: 'text-sky-400 border-sky-800 bg-sky-950/40' },
-  { key: 'HIGH', label: 'Level 3 - High', color: 'text-amber-400 border-amber-800 bg-amber-950/40' },
-  { key: 'CRITICAL', label: 'Level 4 - Critical', color: 'text-rose-400 border-rose-800 bg-rose-950/40' },
-  { key: 'DISASTER', label: 'Level 5 - Disaster', color: 'text-red-500 border-red-700 bg-red-950/50' }
+  { key: 'LOW', label: 'Level 1 - Low', color: 'text-[#5C313E]' },
+  { key: 'MODERATE', label: 'Level 2 - Moderate', color: 'text-sky-800' },
+  { key: 'HIGH', label: 'Level 3 - High', color: 'text-amber-800' },
+  { key: 'CRITICAL', label: 'Level 4 - Critical', color: 'text-[#A83B4D]' },
+  { key: 'DISASTER', label: 'Level 5 - Disaster', color: 'text-[#670626]' }
 ];
 
 export const AdminEscalateModal: FC<AdminEscalateModalProps> = ({
@@ -67,16 +67,16 @@ export const AdminEscalateModal: FC<AdminEscalateModalProps> = ({
       subtitle={`Incident Ref: ${incidentId} - ${incidentTitle}`}
       maxWidth="xl"
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-slate-100">
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-rose-950/30 border border-rose-800/50 text-rose-300 text-xs font-mono">
-          <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-[#3B1722]">
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-50 border border-rose-300 text-[#991B1B] text-sm font-mono">
+          <AlertTriangle className="w-4 h-4 text-[#991B1B] flex-shrink-0" />
           <span>
             Current: <strong>{currentSeverity.toUpperCase()}</strong>
           </span>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-mono font-bold tracking-wide text-slate-400 uppercase">
+          <label className="text-sm font-mono font-bold tracking-wide text-[#670626] uppercase">
             Severity Tier
           </label>
           <div className="grid grid-cols-1 gap-2">
@@ -87,14 +87,14 @@ export const AdminEscalateModal: FC<AdminEscalateModalProps> = ({
                   type="button"
                   key={lvl.key}
                   onClick={() => setSelectedSeverity(lvl.key)}
-                  className={`flex items-center justify-between p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                  className={`flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
                     isSelected
-                      ? 'border-rose-500 bg-rose-950/40 ring-1 ring-rose-500/50'
-                      : 'border-slate-800 bg-slate-950/80 hover:border-slate-700'
+                      ? 'border-[#670626] bg-[#F3E4E7] ring-1 ring-[#A83B4D]/40 shadow-sm'
+                      : 'border-[#D8C1B5] bg-[#E9D9D0]/55 hover:border-[#A83B4D]'
                   }`}
                 >
-                  <span className={`text-xs font-mono font-bold ${lvl.color}`}>{lvl.label}</span>
-                  {isSelected && <Activity className="w-4 h-4 text-rose-400 flex-shrink-0" />}
+                  <span className={`text-sm font-mono font-bold ${lvl.color}`}>{lvl.label}</span>
+                  {isSelected && <Activity className="w-4 h-4 text-[#670626] flex-shrink-0" />}
                 </button>
               );
             })}
@@ -102,7 +102,7 @@ export const AdminEscalateModal: FC<AdminEscalateModalProps> = ({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="escalation-justification" className="text-xs font-mono font-bold tracking-wide text-slate-400 uppercase">
+          <label htmlFor="escalation-justification" className="text-sm font-mono font-bold tracking-wide text-[#670626] uppercase">
             Justification
           </label>
           <textarea
@@ -112,37 +112,37 @@ export const AdminEscalateModal: FC<AdminEscalateModalProps> = ({
             rows={3}
             required
             placeholder="Reason for escalation..."
-            className="w-full p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-xs font-mono placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-rose-500"
+            className="w-full p-3 rounded-xl bg-[#FFFBF7] border border-[#D8C1B5] text-[#3B1722] text-sm font-mono placeholder:text-[#9B727D] focus:outline-none focus:border-[#670626]"
           />
         </div>
 
-        <label className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer select-none">
+        <label className="flex items-center gap-2 p-3 rounded-xl bg-[#E9D9D0]/55 border border-[#D8C1B5] cursor-pointer select-none">
           <input
             type="checkbox"
             checked={triggerSiren}
             onChange={(e) => setTriggerSiren(e.target.checked)}
-            className="w-4 h-4 rounded border-slate-700 text-rose-600 bg-slate-900 focus:ring-rose-500"
+            className="w-4 h-4 rounded border-[#D4B8AA] accent-[#670626]"
           />
-          <Radio className="w-4 h-4 text-rose-400" />
-          <span className="text-xs font-mono text-slate-300">
+          <Radio className="w-4 h-4 text-[#A83B4D]" />
+          <span className="text-sm font-mono text-[#3B1722]">
             Broadcast siren alert to responders
           </span>
         </label>
 
-        <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#E9D9D0]">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono font-bold transition-colors cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-[#E9D9D0] hover:bg-[#DFC9BE] border border-[#D4B8AA] text-[#670626] text-sm font-mono font-bold transition-colors cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isSubmitting || !justification.trim()}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-mono font-bold transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#670626] hover:bg-[#7D0A30] disabled:opacity-50 text-[#F7F1EA] text-sm font-mono font-bold transition-colors cursor-pointer shadow"
           >
-            <Send className="w-3.5 h-3.5" />
+            <Send className="w-4 h-4" />
             <span>{isSubmitting ? 'Escalating...' : 'Authorize Escalation'}</span>
           </button>
         </div>
@@ -200,9 +200,9 @@ export const AdminBroadcastModal: FC<AdminBroadcastModalProps> = ({
       subtitle="Send alert to all portals"
       maxWidth="lg"
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-slate-100">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-[#3B1722]">
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="broadcast-title" className="text-xs font-mono font-bold tracking-wide text-slate-400 uppercase">
+          <label htmlFor="broadcast-title" className="text-sm font-mono font-bold tracking-wide text-[#670626] uppercase">
             Alert Headline
           </label>
           <input
@@ -212,20 +212,20 @@ export const AdminBroadcastModal: FC<AdminBroadcastModalProps> = ({
             onChange={(e) => setTitle(e.target.value)}
             required
             placeholder="Alert headline..."
-            className="w-full p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-xs font-mono placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            className="w-full p-2.5 rounded-xl bg-[#FFFBF7] border border-[#D8C1B5] text-[#3B1722] text-sm font-mono placeholder:text-[#9B727D] focus:outline-none focus:border-[#670626]"
           />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="broadcast-category" className="text-xs font-mono font-bold tracking-wide text-slate-400 uppercase">
+            <label htmlFor="broadcast-category" className="text-sm font-mono font-bold tracking-wide text-[#670626] uppercase">
               Incident Category
             </label>
             <select
               id="broadcast-category"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="w-full p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sky-500"
+              className="w-full p-2.5 rounded-xl bg-[#FFFBF7] border border-[#D8C1B5] text-[#3B1722] text-sm font-mono focus:outline-none focus:border-[#670626]"
             >
               <option value="CIVIL_DEFENSE">Civil Defense Directive</option>
               <option value="WEATHER">Severe Weather / Typhoons</option>
@@ -236,14 +236,14 @@ export const AdminBroadcastModal: FC<AdminBroadcastModalProps> = ({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="broadcast-priority" className="text-xs font-mono font-bold tracking-wide text-slate-400 uppercase">
+            <label htmlFor="broadcast-priority" className="text-sm font-mono font-bold tracking-wide text-[#670626] uppercase">
               Priority Tier
             </label>
             <select
               id="broadcast-priority"
               value={priority}
               onChange={(e) => setPriority(e.target.value)}
-              className="w-full p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-sky-500"
+              className="w-full p-2.5 rounded-xl bg-[#FFFBF7] border border-[#D8C1B5] text-[#3B1722] text-sm font-mono focus:outline-none focus:border-[#670626]"
             >
               <option value="STANDARD">Standard Advisory</option>
               <option value="HIGH">High Priority Bulletin</option>
@@ -253,7 +253,7 @@ export const AdminBroadcastModal: FC<AdminBroadcastModalProps> = ({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="broadcast-message" className="text-xs font-mono font-bold tracking-wide text-slate-400 uppercase">
+          <label htmlFor="broadcast-message" className="text-sm font-mono font-bold tracking-wide text-[#670626] uppercase">
             Broadcast Advisory Content
           </label>
           <textarea
@@ -263,24 +263,24 @@ export const AdminBroadcastModal: FC<AdminBroadcastModalProps> = ({
             rows={4}
             required
             placeholder="Enter concise, actionable instructions for residents and field units..."
-            className="w-full p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-xs font-mono placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            className="w-full p-2.5 rounded-xl bg-[#FFFBF7] border border-[#D8C1B5] text-[#3B1722] text-sm font-mono placeholder:text-[#9B727D] focus:outline-none focus:border-[#670626]"
           />
         </div>
 
-        <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
+        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#E9D9D0]">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono font-bold transition-colors cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-[#E9D9D0] hover:bg-[#DFC9BE] border border-[#D4B8AA] text-[#670626] text-sm font-mono font-bold transition-colors cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isSubmitting || !title.trim() || !message.trim()}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-mono font-bold transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#670626] hover:bg-[#7D0A30] disabled:opacity-50 text-[#F7F1EA] text-sm font-mono font-bold transition-colors cursor-pointer shadow"
           >
-            <Send className="w-3.5 h-3.5" />
+            <Send className="w-4 h-4" />
             <span>{isSubmitting ? 'Transmitting...' : 'Dispatch Siren'}</span>
           </button>
         </div>
@@ -327,58 +327,58 @@ export const AdminAuditDetailModal: FC<AdminAuditDetailModalProps> = ({
       subtitle={`Log Signature ID: ${entry.id}`}
       maxWidth="lg"
     >
-      <div className="flex flex-col gap-4 text-xs font-mono text-slate-200">
-        <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800">
+      <div className="flex flex-col gap-4 text-sm font-mono text-[#3B1722]">
+        <div className="flex items-center justify-between p-3 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
           <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-emerald-400" />
-            <span className="font-bold text-slate-300">Hash Chain Integrity</span>
+            <Shield className="w-4 h-4 text-emerald-700" />
+            <span className="font-bold text-[#3B1722]">Hash Chain Integrity</span>
           </div>
-          <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/60">
-            <CheckCircle2 className="w-3 h-3" />
+          <span className="flex items-center gap-1 text-xs text-emerald-800 font-bold bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300">
+            <CheckCircle2 className="w-3.5 h-3.5" />
             Verified
           </span>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Action</span>
-            <p className="font-bold text-sky-400 mt-1">{entry.action}</p>
+          <div className="p-3 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
+            <span className="text-xs text-[#7A4E59] uppercase font-bold tracking-wider">Action</span>
+            <p className="font-bold text-[#670626] mt-1">{entry.action}</p>
           </div>
-          <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Timestamp</span>
-            <p className="text-slate-300 mt-1">{entry.timestamp}</p>
+          <div className="p-3 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
+            <span className="text-xs text-[#7A4E59] uppercase font-bold tracking-wider">Timestamp</span>
+            <p className="text-[#3B1722] mt-1">{entry.timestamp}</p>
           </div>
-          <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Operator / Actor</span>
-            <p className="text-slate-300 mt-1 truncate">{entry.actorName || entry.actorUserId || 'System Engine'}</p>
+          <div className="p-3 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
+            <span className="text-xs text-[#7A4E59] uppercase font-bold tracking-wider">Operator / Actor</span>
+            <p className="text-[#3B1722] mt-1 truncate">{entry.actorName || entry.actorUserId || 'System Engine'}</p>
           </div>
-          <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Target Entity</span>
-            <p className="text-slate-300 mt-1 truncate">{entry.targetEntity || 'Global State'}</p>
+          <div className="p-3 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
+            <span className="text-xs text-[#7A4E59] uppercase font-bold tracking-wider">Target Entity</span>
+            <p className="text-[#3B1722] mt-1 truncate">{entry.targetEntity || 'Global State'}</p>
           </div>
         </div>
 
         {entry.details && (
-          <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Operation Details</span>
-            <p className="text-slate-300 mt-1 whitespace-pre-wrap">{entry.details}</p>
+          <div className="p-3 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
+            <span className="text-xs text-[#7A4E59] uppercase font-bold tracking-wider">Operation Details</span>
+            <p className="text-[#3B1722] mt-1 whitespace-pre-wrap">{entry.details}</p>
           </div>
         )}
 
-        <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex flex-col gap-1.5">
-          <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Current SHA-256 Hash</span>
-          <code className="text-[11px] text-sky-300 break-all select-all bg-slate-900 p-2 rounded border border-slate-800">
+        <div className="p-3 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5] flex flex-col gap-1.5">
+          <span className="text-xs text-[#7A4E59] uppercase font-bold tracking-wider">Current SHA-256 Hash</span>
+          <code className="text-xs text-[#670626] break-all select-all bg-[#FFFBF7] p-2.5 rounded-lg border border-[#D8C1B5]">
             {entry.currentHash || '0x4f92c19a0d8e8745a90d631ecf042e873b1853a8'}
           </code>
         </div>
 
-        <div className="flex justify-end pt-2 border-t border-slate-800">
+        <div className="flex justify-end pt-3 border-t border-[#E9D9D0]">
           <button
             type="button"
             onClick={onClose}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-bold transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#E9D9D0] hover:bg-[#DFC9BE] border border-[#D4B8AA] text-[#670626] text-sm font-mono font-bold transition-colors cursor-pointer"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
             <span>Close</span>
           </button>
         </div>

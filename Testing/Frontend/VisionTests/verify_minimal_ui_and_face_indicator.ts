@@ -106,6 +106,20 @@ assert(adminDashSrc.includes('ENLARGE') && adminDashSrc.includes('VIEW ALL'), 'A
 const submittedSrc = fs.readFileSync(path.join(frontendSrcDir, 'UserRoles', 'Features', 'Pages', 'AdminsPanel', 'SubmittedReportsPage.tsx'), 'utf8');
 assert(!submittedSrc.includes('[LDRRMO EXECUTIVE COMMAND // MUNICIPAL DISPATCH C2]'), 'SubmittedReportsPage removes bracket banner noise');
 
+// 6. Biometric lockout removal, fresh-session frame cache cleanup & enhanced typography contracts
+const authServicePath = path.join(repoRoot, 'Project system ENGINE', 'Backend', 'Features', 'Services', 'Implementations', 'AuthService.cs');
+const authServiceSrc = fs.readFileSync(authServicePath, 'utf8');
+const bioMethodStart = authServiceSrc.indexOf('BiometricLoginAsync(');
+const bioMethodSlice = bioMethodStart >= 0 ? authServiceSrc.slice(bioMethodStart) : '';
+assert(
+  bioMethodStart >= 0 && !bioMethodSlice.includes('GetLockoutErrorMessageAsync'),
+  'AuthService.BiometricLoginAsync removes GetLockoutErrorMessageAsync 15-minute lockout check'
+);
+assert(regSrc.includes('biometricFrameCache.clear()'), 'RegisterPage clears biometricFrameCache after registration');
+
+const globalIndexCss = fs.readFileSync(path.join(frontendSrcDir, 'LayoutStyles', 'index.css'), 'utf8');
+assert(globalIndexCss.includes('font-size:') && globalIndexCss.includes('backdrop-filter:'), 'Global index.css defines enhanced typography scale and glassmorphism rules');
+
 if (failures > 0) {
   console.error(`\nContract audit failed with ${failures} violation(s).`);
   process.exit(1);

@@ -165,18 +165,18 @@ export const ImageLightboxModal: FC<ImageLightboxModalProps> = ({
       footer={
         activeItem ? (
           <div className="flex flex-wrap items-center justify-between w-full gap-2">
-            <div className="flex items-center gap-3 text-xs font-mono text-slate-300">
+            <div className="flex items-center gap-3 text-xs font-mono text-[#5C313E]">
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-400">ZOOM:</span>
-                <span className="text-white font-bold">{Math.round(zoomLevel * 100)}%</span>
+                <span className="text-[#7A4E59]">ZOOM:</span>
+                <span className="text-[#670626] font-bold">{Math.round(zoomLevel * 100)}%</span>
               </div>
-              <span className="text-slate-700">|</span>
-              <div className="flex items-center gap-1.5 text-emerald-400">
+              <span className="text-[#D4B8AA]">|</span>
+              <div className="flex items-center gap-1.5 text-emerald-700 font-bold">
                 <Clock className="w-3.5 h-3.5" />
                 <span>{activeItem.timestamp}</span>
               </div>
-              <span className="text-slate-700">|</span>
-              <div className="flex items-center gap-1 text-sky-400">
+              <span className="text-[#D4B8AA]">|</span>
+              <div className="flex items-center gap-1 text-[#A83B4D] font-bold">
                 <Layers className="w-3.5 h-3.5" />
                 <span>
                   {activeIndex + 1} / {normalizedMedia.length} (CAP: {MAX_EVIDENCE_MEDIA_SLOTS})
@@ -238,25 +238,25 @@ export const ImageLightboxModal: FC<ImageLightboxModalProps> = ({
         {activeItem ? (
           <>
             {/* Top Exact Date & Time with Seconds + AM/PM HUD Bar */}
-            <div className="w-full flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono">
-              <div className="flex items-center gap-2 text-slate-200">
+            <div className="w-full flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-[#E9D9D0]/65 border border-[#D8C1B5] text-sm font-mono">
+              <div className="flex items-center gap-2 text-[#3B1722]">
                 {activeItem.type === 'video' ? (
-                  <Film className="w-4 h-4 text-amber-400" />
+                  <Film className="w-4 h-4 text-amber-700" />
                 ) : (
-                  <Camera className="w-4 h-4 text-sky-400" />
+                  <Camera className="w-4 h-4 text-[#670626]" />
                 )}
                 <span className="font-bold">
                   {activeItem.caption || `Evidence Item #${activeIndex + 1}`}
                 </span>
               </div>
-              <div className="flex items-center gap-2 px-2.5 py-1 rounded bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 font-bold">
-                <Clock className="w-3.5 h-3.5 text-emerald-400" />
+              <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-bold">
+                <Clock className="w-3.5 h-3.5 text-emerald-700" />
                 <span>CAPTURED: {activeItem.timestamp}</span>
               </div>
             </div>
 
             {showGrid ? (
-              <div className="w-full max-h-[60vh] overflow-y-auto grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5 p-2 bg-slate-950/90 rounded-lg border border-slate-800">
+              <div className="w-full max-h-[60vh] overflow-y-auto grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5 p-2 bg-[#E9D9D0]/55 rounded-xl border border-[#D8C1B5]">
                 {normalizedMedia.map((item, idx) => (
                   <button
                     type="button"
@@ -265,33 +265,33 @@ export const ImageLightboxModal: FC<ImageLightboxModalProps> = ({
                       setActiveIndex(idx);
                       setShowGrid(false);
                     }}
-                    className={`group relative rounded-lg overflow-hidden border text-left transition-all cursor-pointer ${
+                    className={`group relative rounded-lg overflow-hidden border text-left transition-all cursor-pointer bg-[#FFFBF7] ${
                       idx === activeIndex
-                        ? 'border-sky-400 ring-2 ring-sky-500/50'
-                        : 'border-slate-800 hover:border-slate-600'
+                        ? 'border-[#670626] ring-2 ring-[#A83B4D]/50'
+                        : 'border-[#D8C1B5] hover:border-[#A83B4D]'
                     }`}
                   >
                     <img
                       src={item.url}
                       alt={item.caption || `Capture ${idx + 1}`}
-                      className="w-full h-24 object-cover bg-black"
+                      className="w-full h-24 object-cover bg-[#240812]"
                     />
-                    <div className="p-1.5 bg-slate-950/95 text-[10px] font-mono">
-                      <div className="text-sky-300 font-bold truncate">
+                    <div className="p-1.5 bg-[#F7F1EA] text-xs font-mono">
+                      <div className="text-[#670626] font-bold truncate">
                         #{idx + 1} • {item.type === 'video' ? 'VIDEO' : 'PHOTO'}
                       </div>
-                      <div className="text-emerald-400 truncate">{item.timestamp}</div>
+                      <div className="text-emerald-700 truncate">{item.timestamp}</div>
                     </div>
                   </button>
                 ))}
               </div>
             ) : (
-              <div className="relative w-full max-h-[62vh] flex items-center justify-center overflow-auto rounded-lg border border-slate-700 bg-black/75 p-2">
+              <div className="relative w-full max-h-[62vh] flex items-center justify-center overflow-auto rounded-xl border border-[#D8C1B5] bg-[#240812] p-2">
                 {normalizedMedia.length > 1 && (
                   <button
                     type="button"
                     onClick={handlePrev}
-                    className="absolute left-3 z-10 p-2 rounded-full bg-slate-900/90 border border-slate-700 text-slate-200 hover:text-white hover:bg-sky-600 transition-colors cursor-pointer"
+                    className="absolute left-3 z-10 p-2 rounded-full bg-[#F7F1EA]/90 border border-[#E9D9D0] text-[#670626] hover:bg-[#670626] hover:text-[#F7F1EA] transition-colors cursor-pointer shadow"
                     aria-label="Previous capture"
                   >
                     <ChevronLeft className="w-5 h-5" />
@@ -317,7 +317,7 @@ export const ImageLightboxModal: FC<ImageLightboxModalProps> = ({
                 )}
 
                 {/* Embedded Forensic Timestamp Overlay on Image */}
-                <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded bg-black/85 border border-emerald-500/60 text-[11px] font-mono text-emerald-300 shadow-lg pointer-events-none">
+                <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-lg bg-[#F7F1EA]/95 border border-[#E9D9D0] text-xs font-mono font-bold text-[#670626] shadow-lg pointer-events-none">
                   {activeItem.timestamp} • SLOT {activeIndex + 1}/{MAX_EVIDENCE_MEDIA_SLOTS}
                 </div>
 
@@ -325,7 +325,7 @@ export const ImageLightboxModal: FC<ImageLightboxModalProps> = ({
                   <button
                     type="button"
                     onClick={handleNext}
-                    className="absolute right-3 z-10 p-2 rounded-full bg-slate-900/90 border border-slate-700 text-slate-200 hover:text-white hover:bg-sky-600 transition-colors cursor-pointer"
+                    className="absolute right-3 z-10 p-2 rounded-full bg-[#F7F1EA]/90 border border-[#E9D9D0] text-[#670626] hover:bg-[#670626] hover:text-[#F7F1EA] transition-colors cursor-pointer shadow"
                     aria-label="Next capture"
                   >
                     <ChevronRight className="w-5 h-5" />
@@ -345,18 +345,18 @@ export const ImageLightboxModal: FC<ImageLightboxModalProps> = ({
                       setActiveIndex(idx);
                       setZoomLevel(DEFAULT_ZOOM);
                     }}
-                    className={`flex-shrink-0 w-20 rounded-md overflow-hidden border transition-all cursor-pointer ${
+                    className={`flex-shrink-0 w-24 rounded-md overflow-hidden border transition-all cursor-pointer bg-[#FFFBF7] ${
                       idx === activeIndex
-                        ? 'border-sky-400 ring-2 ring-sky-500/50 scale-105'
-                        : 'border-slate-800 opacity-65 hover:opacity-100'
+                        ? 'border-[#670626] ring-2 ring-[#A83B4D]/50 scale-105'
+                        : 'border-[#D8C1B5] opacity-75 hover:opacity-100'
                     }`}
                   >
                     <img
                       src={item.url}
                       alt={`Thumb ${idx + 1}`}
-                      className="w-full h-12 object-cover bg-black"
+                      className="w-full h-12 object-cover bg-[#240812]"
                     />
-                    <div className="bg-slate-950 px-1 py-0.5 text-[9px] font-mono text-emerald-300 truncate">
+                    <div className="bg-[#F7F1EA] px-1.5 py-0.5 text-xs font-mono font-bold text-[#670626] truncate">
                       #{idx + 1} {item.timestamp?.split(' ').slice(1).join(' ')}
                     </div>
                   </button>
@@ -365,8 +365,8 @@ export const ImageLightboxModal: FC<ImageLightboxModalProps> = ({
             )}
           </>
         ) : (
-          <div className="w-full h-64 flex flex-col items-center justify-center text-slate-500 bg-slate-950 rounded-lg border border-slate-800">
-            <ImageOff className="w-12 h-12 mb-2 text-slate-600" />
+          <div className="w-full h-64 flex flex-col items-center justify-center text-[#7A4E59] bg-[#E9D9D0]/55 rounded-xl border border-[#D8C1B5]">
+            <ImageOff className="w-12 h-12 mb-2 text-[#A83B4D]/60" />
             <p className="text-sm font-mono">No image capture available for this record.</p>
           </div>
         )}

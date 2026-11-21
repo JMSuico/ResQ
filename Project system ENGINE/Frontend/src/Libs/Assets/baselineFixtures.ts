@@ -11,6 +11,27 @@ import type { DutyUnit } from '@/Endpoints/responderOpsApi';
 import type { UserSummary } from '@/Endpoints/userEndpoints';
 import type { AnalyticsSummaryDto } from '@/Endpoints/analyticsApi';
 
+const buildTelemetryPlaceholderDataUri = (refCode: string, subtitle: string): string => {
+  const safeCode = refCode.replace(/[<>&"']/g, '');
+  const safeSub = subtitle.replace(/[<>&"']/g, '');
+  const svg = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">',
+    '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">',
+    '<stop offset="0%" stop-color="#4A041A"/><stop offset="100%" stop-color="#670626"/>',
+    '</linearGradient></defs>',
+    '<rect width="640" height="360" fill="url(#bg)"/>',
+    '<rect x="24" y="24" width="592" height="312" rx="22" fill="#F7F1EA" fill-opacity="0.96"/>',
+    '<rect x="44" y="44" width="160" height="34" rx="10" fill="#670626"/>',
+    `<text x="124" y="66" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#F7F1EA">${safeCode}</text>`,
+    '<circle cx="320" cy="175" r="46" fill="#E9D9D0" stroke="#A83B4D" stroke-width="2"/>',
+    '<path d="M320 148v54M293 175h54" stroke="#670626" stroke-width="6" stroke-linecap="round"/>',
+    `<text x="320" y="256" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18" font-weight="800" fill="#2B010E">${safeSub}</text>`,
+    '<text x="320" y="284" text-anchor="middle" font-family="monospace" font-size="12" fill="#A83B4D">RESQTRACK KATIPUNAN TELEMETRY CAPTURE</text>',
+    '</svg>'
+  ].join('');
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
 // ============================================================================
 // 1. BASELINE INCIDENT FIXTURES (Katipunan C2 Strategic Landmarks & Beacons)
 // ============================================================================
@@ -120,7 +141,7 @@ export const BASELINE_INCIDENT_REPORTS: ReportItem[] = [
     longitude: 123.2814,
     locationLabel: 'National Highway Junction, Barangay Dos, Katipunan, ZN',
     hasImage: true,
-    imageUrl: 'https://images.unsplash.com/photo-1543465077-db45d34b88a5?auto=format&fit=crop&w=900&q=80',
+    imageUrl: buildTelemetryPlaceholderDataUri('RESQ-20261028-001', 'Vehicular Collision Telemetry'),
     allocatedUnitId: 'unit-rhu-01',
     allocatedUnitCode: 'AMB-RHU-01',
     createdAt: new Date(Date.now() - 14 * 60 * 1000).toISOString(),
@@ -147,7 +168,7 @@ export const BASELINE_INCIDENT_REPORTS: ReportItem[] = [
     longitude: 123.2904,
     locationLabel: 'Public Market Perimeter, Barangay Uno, Katipunan, ZN',
     hasImage: true,
-    imageUrl: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?auto=format&fit=crop&w=900&q=80',
+    imageUrl: buildTelemetryPlaceholderDataUri('RESQ-20261028-002', 'Structural Fire & Arcing Alert'),
     allocatedUnitId: 'unit-fire-01',
     allocatedUnitCode: 'FIRE-ENG-01',
     createdAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
@@ -174,7 +195,7 @@ export const BASELINE_INCIDENT_REPORTS: ReportItem[] = [
     longitude: 123.2858,
     locationLabel: 'Purok 2, Barangay Poblacion, Katipunan, ZN',
     hasImage: true,
-    imageUrl: 'https://images.unsplash.com/photo-1587745416684-47953f16f02f?auto=format&fit=crop&w=900&q=80',
+    imageUrl: buildTelemetryPlaceholderDataUri('RESQ-20261028-003', 'Medical Triage Telemetry'),
     allocatedUnitId: 'unit-rhu-02',
     allocatedUnitCode: 'AMB-RHU-02',
     createdAt: new Date(Date.now() - 32 * 60 * 1000).toISOString(),
@@ -228,7 +249,7 @@ export const BASELINE_INCIDENT_REPORTS: ReportItem[] = [
     longitude: 123.2923,
     locationLabel: 'Barangay Tuburan Plaza, Katipunan, ZN',
     hasImage: true,
-    imageUrl: 'https://images.unsplash.com/photo-1584744982491-665216d95f8b?auto=format&fit=crop&w=800&q=80',
+    imageUrl: buildTelemetryPlaceholderDataUri('RESQ-20261028-005', 'Resolved Field Response'),
     allocatedUnitId: 'unit-rhu-01',
     allocatedUnitCode: 'AMB-RHU-01',
     createdAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
@@ -255,7 +276,7 @@ export const BASELINE_DUTY_ROSTER: DutyUnit[] = [
     status: 'OnDuty',
     baseLatitude: 8.5165,
     baseLongitude: 123.2861,
-    contactHotline: '+63 917 555 0112',
+    contactHotline: 'RHU Telemetry Mesh',
     activePersonnelCount: 4,
     shiftSchedule: '06:00 - 18:00 (Alpha Day Shift)',
     updatedAt: new Date().toISOString()
@@ -269,7 +290,7 @@ export const BASELINE_DUTY_ROSTER: DutyUnit[] = [
     status: 'Dispatched',
     baseLatitude: 8.5147,
     baseLongitude: 123.2842,
-    contactHotline: '+63 917 555 0113',
+    contactHotline: 'RHU Telemetry Mesh',
     activePersonnelCount: 3,
     shiftSchedule: '06:00 - 18:00 (Bravo Rapid Shift)',
     updatedAt: new Date().toISOString()
@@ -283,7 +304,7 @@ export const BASELINE_DUTY_ROSTER: DutyUnit[] = [
     status: 'OnDuty',
     baseLatitude: 8.5122,
     baseLongitude: 123.2825,
-    contactHotline: '+63 917 888 0911',
+    contactHotline: 'BFP Engine Mesh',
     activePersonnelCount: 6,
     shiftSchedule: '24-Hour Tactical Fire Watch',
     updatedAt: new Date().toISOString()
@@ -297,7 +318,7 @@ export const BASELINE_DUTY_ROSTER: DutyUnit[] = [
     status: 'OnDuty',
     baseLatitude: 8.5178,
     baseLongitude: 123.2874,
-    contactHotline: '+63 917 777 0117',
+    contactHotline: 'PNP Patrol Mesh',
     activePersonnelCount: 4,
     shiftSchedule: '08:00 - 20:00 (Alpha Patrol Shift)',
     updatedAt: new Date().toISOString()
@@ -311,7 +332,7 @@ export const BASELINE_DUTY_ROSTER: DutyUnit[] = [
     status: 'Standby',
     baseLatitude: 8.5105,
     baseLongitude: 123.2801,
-    contactHotline: '+63 917 555 0114',
+    contactHotline: 'RHU Telemetry Mesh',
     activePersonnelCount: 3,
     shiftSchedule: '14:00 - 02:00 (Swing Standby Shift)',
     updatedAt: new Date().toISOString()

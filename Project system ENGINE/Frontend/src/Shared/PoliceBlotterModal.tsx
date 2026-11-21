@@ -96,22 +96,22 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {errorMessage && (
-          <div className="flex items-center gap-2 p-3 bg-rose-950/80 border border-rose-800 rounded text-rose-200 text-xs">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+          <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-300 rounded-xl text-[#991B1B] text-sm font-semibold">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-[#991B1B]" />
             <span>{errorMessage}</span>
           </div>
         )}
 
         {/* Classification */}
         <div>
-          <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-            <Shield className="w-3.5 h-3.5 text-blue-400" />
+          <label className="block text-sm font-bold text-[#670626] mb-1 flex items-center gap-1.5">
+            <Shield className="w-4 h-4 text-[#A83B4D]" />
             <span>Classification</span>
           </label>
           <select
             value={classification}
             onChange={e => setClassification(e.target.value)}
-            className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
+            className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
           >
             {CLASSIFICATIONS.map(c => (
               <option key={c} value={c}>{c}</option>
@@ -120,9 +120,9 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
         </div>
 
         {/* Complainant & Suspect Details */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-950/70 border border-blue-950/80 rounded-lg">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-[#E9D9D0]/60 border border-[#D8C1B5] rounded-xl">
           <div className="space-y-2">
-            <span className="text-[11px] font-semibold text-blue-400 uppercase tracking-wider block">
+            <span className="text-xs font-bold text-[#670626] uppercase tracking-wider block">
               Complainant
             </span>
             <input
@@ -131,26 +131,26 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
               value={complainantName}
               onChange={e => setComplainantName(e.target.value)}
               placeholder="Full Name (Required)"
-              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626]"
             />
             <input
               type="text"
               value={complainantContact}
               onChange={e => setComplainantContact(e.target.value)}
-              placeholder="Phone / Contact Number"
-              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
+              placeholder="Digital Contact / Barangay Reference (Optional)"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626]"
             />
             <input
               type="text"
               value={complainantAddress}
               onChange={e => setComplainantAddress(e.target.value)}
               placeholder="Address"
-              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
 
           <div className="space-y-2">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+            <span className="text-xs font-bold text-[#670626] uppercase tracking-wider block">
               Suspect Info
             </span>
             <input
@@ -158,46 +158,46 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
               value={suspectName}
               onChange={e => setSuspectName(e.target.value)}
               placeholder="Suspect Name (or Unidentified)"
-              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626]"
             />
             <input
               type="text"
               value={suspectDescription}
               onChange={e => setSuspectDescription(e.target.value)}
               placeholder="Description / Vehicle"
-              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626]"
             />
             <input
               type="text"
               value={witnesses}
               onChange={e => setWitnesses(e.target.value)}
               placeholder="Witnesses (Optional)"
-              className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
         </div>
 
         {/* Location & Narrative */}
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Location</label>
+            <label className="block text-sm font-bold text-[#670626] mb-1">Location</label>
             <input
               type="text"
               required
               value={location}
               onChange={e => setLocation(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Incident Narrative</label>
+            <label className="block text-sm font-bold text-[#670626] mb-1">Incident Narrative</label>
             <textarea
               rows={4}
               required
               value={narrativeStatement}
               onChange={e => setNarrativeStatement(e.target.value)}
               placeholder="Describe the incident details..."
-              className="w-full px-3 py-2 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500 resize-none"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] placeholder-[#9B727D] text-sm focus:outline-none focus:border-[#670626] resize-none"
             />
           </div>
         </div>
@@ -205,45 +205,45 @@ export const PoliceBlotterModal: FC<PoliceBlotterModalProps> = ({
         {/* Investigating Officers */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Investigating Officer</label>
+            <label className="block text-sm font-bold text-[#670626] mb-1">Investigating Officer</label>
             <input
               type="text"
               required
               value={officerName}
               onChange={e => setOfficerName(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Badge Number</label>
+            <label className="block text-sm font-bold text-[#670626] mb-1">Badge Number</label>
             <input
               type="text"
               required
               value={badgeNumber}
               onChange={e => setBadgeNumber(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Station Jurisdiction</label>
+            <label className="block text-sm font-bold text-[#670626] mb-1">Station Jurisdiction</label>
             <input
               type="text"
               required
               value={station}
               onChange={e => setStation(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-900/90 border border-slate-700 rounded text-slate-100 text-xs focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#3B1722] text-sm focus:outline-none focus:border-[#670626]"
             />
           </div>
         </div>
 
         {/* Cryptographic Seal Notice */}
-        <div className="flex items-center gap-2 p-2.5 bg-slate-950/90 border border-slate-800 rounded text-[11px] text-slate-400">
-          <Lock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+        <div className="flex items-center gap-2 p-2.5 bg-[#E9D9D0]/60 border border-[#D8C1B5] rounded-xl text-xs font-semibold text-[#5C313E]">
+          <Lock className="w-4 h-4 text-[#670626] flex-shrink-0" />
           <span>Audit hash sealed on submit.</span>
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+        <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E9D9D0]">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Cancel
           </Button>

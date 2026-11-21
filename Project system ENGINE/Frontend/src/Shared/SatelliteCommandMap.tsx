@@ -33,6 +33,8 @@ import {
   RADAR_POINTER_CATEGORIES,
   RadarPointerCategoryMeta,
   resolvePointerCategory,
+  resolveIncidentBeaconVisual,
+  resolveResponderBadgeVisual,
   getMedicPointerSettings,
   saveMedicPointerSettings,
   getRemainingCloseSeconds,
@@ -149,108 +151,6 @@ export const MAX_KATIPUNAN_ZOOM = 19; // Ultra-high resolution satellite zoom
 const BOUNDS_PADDING: [number, number] = [16, 16];
 const MIN_ACCURACY_RADIUS_METERS = 15;
 const PAN_DURATION_SECONDS = 0.8;
-
-const DEFAULT_EVIDENCE_PHOTO =
-  'https://images.unsplash.com/photo-1587745416684-47953f16f02f?auto=format&fit=crop&w=900&q=80';
-
-// Deterministic icon vector provider for tactical emerald pin badges matching reference system
-const getTacticalBadgeIconMarkup = (categoryOrType: string, metaSvg?: string): string => {
-  const norm = (categoryOrType || '').toLowerCase();
-
-  // 1. Marine Rescue / Emergency Station / Star of Life / Lifebuoy / ShieldPlus / Rescue Cross
-  if (
-    norm.includes('marine') ||
-    norm.includes('rescue') ||
-    norm.includes('buoy') ||
-    norm.includes('cst') ||
-    norm.includes('star') ||
-    norm.includes('lifebuoy')
-  ) {
-    return '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>';
-  }
-
-  // 2. Stethoscope / Doctor / Physician / On-Duty Medical Officer
-  if (
-    norm.includes('stethoscope') ||
-    norm.includes('doctor') ||
-    norm.includes('physician') ||
-    norm.includes('under_medical_care') ||
-    norm.includes('doc') ||
-    norm.includes('care')
-  ) {
-    return '<path d="M4.5 3h2v7a6 6 0 0 0 12 0V3h2"/><circle cx="18.5" cy="4" r="1.5"/><circle cx="5.5" cy="4" r="1.5"/><path d="M10.5 16v3a4 4 0 0 0 4 4h0a4 4 0 0 0 4-4v-1.5"/><circle cx="18.5" cy="17.5" r="2.5"/>';
-  }
-
-  // 3. Ambulance / EMS Van
-  if (
-    norm.includes('ambulance') ||
-    norm.includes('amb') ||
-    norm.includes('ems') ||
-    norm.includes('van')
-  ) {
-    return '<path d="M10 10H6"/><path d="M8 8v4"/><path d="M19 17h2c.6 0 1-.4 1-1v-4a2 2 0 0 0-2-2h-3l-2.4-3.6A2 2 0 0 0 13 6H5a2 2 0 0 0-2 2v8c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>';
-  }
-
-  // 4. Medical Emergency / Primary Trauma / Clinic / Hospital / First-Aid (Heart with Cross)
-  if (
-    norm.includes('medical') ||
-    norm.includes('trauma') ||
-    norm.includes('hospital') ||
-    norm.includes('heart') ||
-    norm.includes('clinic') ||
-    norm.includes('rhu') ||
-    norm.includes('health') ||
-    norm.includes('injur') ||
-    norm.includes('aid')
-  ) {
-    return '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M12 8v5"/><path d="M9.5 10.5h5"/>';
-  }
-
-  // 5. MapPin / Location Beacon / GPS Fixture / Target Marker
-  if (
-    norm.includes('distress') ||
-    norm.includes('beacon') ||
-    norm.includes('bcn') ||
-    norm.includes('pin') ||
-    norm.includes('point') ||
-    norm.includes('fixture') ||
-    norm.includes('gps')
-  ) {
-    return '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>';
-  }
-
-  // 6. Vehicle / Automobile / Patrol / Traffic
-  if (
-    norm.includes('vehicle') ||
-    norm.includes('car') ||
-    norm.includes('traffic') ||
-    norm.includes('mob') ||
-    norm.includes('patrol') ||
-    norm.includes('4w')
-  ) {
-    return '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>';
-  }
-
-  // 7. Fire / BFP
-  if (norm.includes('fire') || norm.includes('bfp')) {
-    return '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>';
-  }
-
-  return (
-    metaSvg ||
-    '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>'
-  );
-};
-
-const generateDeterministicIp = (seedId: string): string => {
-  let hash = 0;
-  for (let i = 0; i < seedId.length; i += 1) {
-    hash = (hash * 37 + seedId.charCodeAt(i)) & 0xffff;
-  }
-  const octet3 = (hash % 240) + 10;
-  const octet4 = ((hash >> 4) % 230) + 12;
-  return `192.168.${octet3}.${octet4}`;
-};
 
 export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   incidents = [],
@@ -543,8 +443,8 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
         return {
           ...inc,
-          ipAddress: inc.ipAddress || generateDeterministicIp(inc.id || String(index)),
-          evidenceUrl: inc.evidenceUrl || DEFAULT_EVIDENCE_PHOTO,
+          ipAddress: inc.ipAddress,
+          evidenceUrl: inc.evidenceUrl,
           reportedAt: inc.reportedAt || formatDateTimeWithSecondsAmPm(new Date(Date.now() - index * 95000)),
           categoryMeta: explicitMatch
         };
@@ -799,34 +699,44 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         !meta.isMedicAllowed &&
         !isResponded;
 
-      const pointerBgColor = isResponded ? RESPONDED_GREEN_COLOR : meta.color;
+      const beacon = resolveIncidentBeaconVisual(
+        {
+          category: inc.category,
+          pointerCategory: inc.pointerCategory,
+          type: inc.type,
+          title: inc.title,
+          description: inc.description || inc.place,
+          severity: inc.severity
+        },
+        meta,
+        isResponded
+      );
+
+      const pointerBgColor = beacon.bgColor;
       const paleStyle = isPaleNonMedic
         ? 'opacity: 0.38; filter: grayscale(82%);'
         : 'opacity: 1;';
 
-      const isCritical = (inc.severity || '').toLowerCase() === 'critical';
-      const isPulsing = false;
-      const pulsingRingHtml = '';
-
-      const iconMarkup = getTacticalBadgeIconMarkup(
-        `${inc.category || ''} ${inc.pointerCategory || ''} ${inc.type || ''} ${meta.code || ''}`,
-        meta.svgPathMarkup
-      );
+      const isTargetDispatch = selectedIncidentId === inc.id || activePointer?.id === inc.id;
+      const dispatchHaloHtml = isTargetDispatch
+        ? `<div style="position:absolute;inset:-4px;border-radius:9999px;border:2.5px dashed #F7F1EA;box-shadow:0 0 18px ${pointerBgColor};animation:resqtrackPulseRing 1.8s ease-out infinite;pointer-events:none;"></div>`
+        : '';
 
       const pinIcon = L.divIcon({
         className: 'resqtrack-tactical-pointer',
         html: `
-          <div style="position:relative;width:42px;height:42px;display:flex;align-items:center;justify-content:center;${paleStyle};transition:all 200ms ease;cursor:pointer;">
-            ${pulsingRingHtml}
-            <div style="position:relative;width:38px;height:38px;border-radius:9999px;background:radial-gradient(circle at 35% 35%, #2dd4bf 0%, #0d9488 40%, #059669 75%, #064e3b 100%);border:2px solid rgba(255,255,255,0.95);box-shadow:0 4px 14px rgba(0,0,0,0.7), 0 0 10px rgba(13,148,136,0.6);display:flex;align-items:center;justify-content:center;color:#ffffff;z-index:1;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));">
-                ${iconMarkup}
+          <div style="position:relative;width:44px;height:48px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;${paleStyle};transition:all 200ms ease;cursor:pointer;">
+            ${dispatchHaloHtml}
+            <div style="position:relative;width:38px;height:38px;border-radius:9999px;background:${pointerBgColor};border:2.5px solid #F7F1EA;box-shadow:0 6px 16px rgba(20,4,10,0.55), 0 0 0 2px ${pointerBgColor}55;display:flex;align-items:center;justify-content:center;color:#FFFFFF;z-index:2;">
+              <svg role="img" aria-label="${beacon.ariaLabel}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));">
+                ${beacon.svgMarkup}
               </svg>
             </div>
+            <div style="width:10px;height:10px;background:${pointerBgColor};border-right:2px solid #F7F1EA;border-bottom:2px solid #F7F1EA;transform:rotate(45deg);margin-top:-6px;z-index:1;box-shadow:2px 2px 6px rgba(0,0,0,0.35);"></div>
           </div>
         `,
-        iconSize: [42, 42],
-        iconAnchor: [21, 21]
+        iconSize: [44, 48],
+        iconAnchor: [22, 46]
       });
 
       // Smooth distress signal live repositioning:
@@ -893,9 +803,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         markerInstancesRef.current.delete(id);
       }
     });
-  }, [visibleIncidents, pointerSettings.paleNonMedicEnabled, respondedIds, onSelectIncident, activePointer, roleFilter]);
+  }, [visibleIncidents, pointerSettings.paleNonMedicEnabled, respondedIds, onSelectIncident, activePointer, selectedIncidentId, roleFilter]);
 
-  // Render on-duty responder units on map with tactical agency badges
+  // Render on-duty responder units on map with agency vehicle badges & emerald availability rings
   useEffect(() => {
     const respondersLayer = respondersLayerRef.current;
     if (!respondersLayer) return;
@@ -907,36 +817,40 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       const lng = Number(unit.lng);
       if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
 
-      const responderSvg = getTacticalBadgeIconMarkup(
-        `${unit.agency || ''} ${unit.name || ''}`,
-        undefined
-      );
+      const badge = resolveResponderBadgeVisual(unit.agency, unit.name, unit.status);
+      const availabilityRing = badge.isAvailable
+        ? 'border:2.5px solid #10B981;box-shadow:0 0 0 3px rgba(16,185,129,0.35), 0 5px 14px rgba(0,0,0,0.5);'
+        : 'border:2.5px solid #F7F1EA;box-shadow:0 5px 14px rgba(0,0,0,0.5);';
+      const statusDotHtml = badge.isAvailable
+        ? '<span style="position:absolute;top:1px;right:1px;width:10px;height:10px;border-radius:9999px;background:#10B981;border:2px solid #F7F1EA;z-index:3;"></span>'
+        : '';
 
       const unitIcon = L.divIcon({
         className: 'resqtrack-responder-unit-icon resqtrack-tactical-pointer',
         html: `
-          <div style="position:relative;width:42px;height:42px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
-            <div style="position:relative;width:38px;height:38px;border-radius:9999px;background:radial-gradient(circle at 35% 35%, #2dd4bf 0%, #0d9488 40%, #059669 75%, #064e3b 100%);border:2px solid rgba(255,255,255,0.95);box-shadow:0 4px 14px rgba(0,0,0,0.7), 0 0 10px rgba(13,148,136,0.5);display:flex;align-items:center;justify-content:center;color:#ffffff;transition:transform 200ms ease;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));">
-                ${responderSvg}
+          <div style="position:relative;width:44px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+            ${statusDotHtml}
+            <div style="position:relative;width:38px;height:38px;border-radius:12px;background:${badge.bgColor};${availabilityRing}display:flex;align-items:center;justify-content:center;color:#FFFFFF;transition:transform 200ms ease;">
+              <svg role="img" aria-label="${badge.ariaLabel}" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));">
+                ${badge.svgMarkup}
               </svg>
             </div>
           </div>
         `,
-        iconSize: [42, 42],
-        iconAnchor: [21, 21]
+        iconSize: [44, 44],
+        iconAnchor: [22, 22]
       });
 
       const marker = L.marker([unit.lat, unit.lng], {
         icon: unitIcon,
-        title: `${unit.name} (${unit.agency || 'Responder'}) - ${unit.status || 'Active'}`
+        title: `${unit.name} (${badge.agencyLabel}) - ${unit.status || 'Active'}`
       });
 
       marker.bindTooltip(
         `<div style="text-align:left;">` +
-          `<strong style="color:#2dd4bf;">${unit.name}</strong><br/>` +
-          `Agency: ${unit.agency || 'Emergency Services'}<br/>` +
-          `Status: <strong>${unit.status || 'OnDuty'}</strong>` +
+          `<strong style="color:#670626;">${unit.name}</strong><br/>` +
+          `Agency: ${unit.agency || badge.agencyLabel}<br/>` +
+          `Status: <strong style="color:${badge.isAvailable ? '#047857' : '#A83B4D'};">${unit.status || 'OnDuty'}</strong>` +
         `</div>`,
         { direction: 'top', className: 'tactical-map-tooltip' }
       );
@@ -1078,9 +992,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
       polyline.bindTooltip(
         `<div style="text-align:left;">` +
-          `<strong style="color:#38bdf8;">${rUnit.unit.name}</strong> (${rUnit.unit.agency || 'Unit'})<br/>` +
+          `<strong style="color:#670626;">${rUnit.unit.name}</strong> (${rUnit.unit.agency || 'Unit'})<br/>` +
           `Distance: <strong>${rUnit.distanceKm} km</strong><br/>` +
-          `Est. ETA: <strong style="color:#fbbf24;">~${rUnit.etaMinutes} min</strong>` +
+          `Est. ETA: <strong style="color:#A83B4D;">~${rUnit.etaMinutes} min</strong>` +
         `</div>`,
         {
           permanent: false,
@@ -1189,9 +1103,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
   return (
     <div
-      className={`relative w-full h-full min-h-0 flex-1 flex flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 transition-all duration-300 ${
+      className={`relative w-full h-full min-h-0 flex-1 flex flex-col overflow-hidden rounded-2xl border border-[#E9D9D0] bg-[#F7F1EA] transition-all duration-300 ${
         effectiveExpanded
-          ? 'fixed inset-2 md:inset-4 z-[9999] h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] border-2 border-emerald-500/80 shadow-[0_0_60px_rgba(0,0,0,0.95)]'
+          ? 'fixed inset-2 md:inset-4 z-[9999] h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] border-2 border-[#670626] shadow-[0_24px_60px_rgba(103,6,38,0.35)]'
           : ''
       }`}
       style={
@@ -1200,20 +1114,12 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           : undefined
       }
     >
-      {/* Global CSS for pulsing beacon animations & tactical tooltips */}
+      {/* Global CSS for pulsing beacon animations & Stitch Claymorphism tooltips */}
       <style>{`
         @keyframes resqtrackPulseRing {
-          0% { transform: scale(0.9); opacity: 0.9; }
-          50% { transform: scale(1.6); opacity: 0.35; }
-          100% { transform: scale(2.2); opacity: 0; }
-        }
-        @keyframes resqtrackBeaconGlow {
-          0%, 100% { box-shadow: 0 0 10px rgba(20, 184, 166, 0.8), 0 0 20px rgba(13, 148, 136, 0.6); }
-          50% { box-shadow: 0 0 22px rgba(45, 212, 191, 0.95), 0 0 35px rgba(20, 184, 166, 0.75); }
-        }
-        @keyframes resqtrackAmberGlow {
-          0%, 100% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.7), 0 0 20px rgba(245, 158, 11, 0.5); }
-          50% { box-shadow: 0 0 22px rgba(245, 158, 11, 0.95), 0 0 35px rgba(245, 158, 11, 0.75); }
+          0% { transform: scale(0.95); opacity: 0.95; }
+          50% { transform: scale(1.35); opacity: 0.4; }
+          100% { transform: scale(1.75); opacity: 0; }
         }
         @keyframes resqtrackRadarBreathe {
           0%, 100% {
@@ -1236,31 +1142,31 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           animation-delay: 1.8s;
         }
         .leaflet-control-attribution {
-          background: rgba(11, 19, 41, 0.78) !important;
-          color: #94a3b8 !important;
+          background: rgba(247, 241, 234, 0.92) !important;
+          color: #670626 !important;
           font-size: 10px !important;
           padding: 3px 8px !important;
-          border-radius: 4px !important;
+          border-radius: 6px !important;
           margin: 0 0 5px 6px !important;
           backdrop-filter: blur(4px) !important;
-          border: 1px solid rgba(255, 255, 255, 0.08) !important;
+          border: 1px solid #E9D9D0 !important;
         }
         .leaflet-control-attribution a {
-          color: #cbd5e1 !important;
+          color: #A83B4D !important;
           text-decoration: none !important;
         }
         .tactical-map-tooltip {
-          background: rgba(15, 23, 42, 0.95) !important;
-          border: 1px solid rgba(56, 189, 248, 0.6) !important;
-          color: #f8fafc !important;
+          background: #F7F1EA !important;
+          border: 1.5px solid #E9D9D0 !important;
+          color: #3B1722 !important;
           font-family: monospace !important;
           font-size: 11px !important;
-          border-radius: 8px !important;
+          border-radius: 10px !important;
           padding: 6px 10px !important;
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8) !important;
+          box-shadow: 0 10px 24px rgba(103, 6, 38, 0.22) !important;
         }
         .tactical-map-tooltip::before {
-          border-top-color: rgba(56, 189, 248, 0.6) !important;
+          border-top-color: #E9D9D0 !important;
         }
         .resqtrack-tactical-pointer,
         .leaflet-marker-icon {
@@ -1281,17 +1187,17 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         }
       `}</style>
 
-      {/* Top RHU Medic Radar HUD Overlay (Streamlined & Clean) */}
+      {/* Top RHU Medic Radar HUD Overlay */}
       {showMedicHud && (
         <div className="absolute top-3 left-3 z-[400] flex items-center gap-1.5 pointer-events-none">
-          <div className="flex items-center gap-1.5 bg-slate-950/85 border border-slate-800/90 backdrop-blur-md px-2 py-1 rounded-xl shadow-xl pointer-events-auto">
+          <div className="clay-surface flex items-center gap-1.5 bg-[#F7F1EA]/95 border border-[#E9D9D0] backdrop-blur-md px-2 py-1.5 rounded-xl shadow-[0_10px_24px_-6px_rgba(103,6,38,0.22),inset_0_2px_4px_rgba(255,255,255,0.85)] pointer-events-auto">
             <button
               type="button"
               onClick={() => setSortMode((prev) => (prev === 'ALL' ? 'FOR_MEDICS' : 'ALL'))}
-              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center gap-1 cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1 cursor-pointer ${
                 sortMode === 'FOR_MEDICS'
-                  ? 'bg-emerald-600 text-white shadow'
-                  : 'bg-slate-900 text-slate-400 hover:text-white'
+                  ? 'bg-[#670626] text-[#F7F1EA] shadow-sm'
+                  : 'bg-[#E9D9D0]/80 text-[#670626] hover:bg-[#DFC9BE]'
               }`}
             >
               <Filter className="w-3 h-3" />
@@ -1301,15 +1207,15 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             <button
               type="button"
               onClick={handleTogglePaleNonMedic}
-              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center gap-1 border cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1 border cursor-pointer ${
                 pointerSettings.paleNonMedicEnabled
-                  ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
-                  : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                  ? 'bg-amber-100 border-amber-400 text-amber-900'
+                  : 'bg-[#E9D9D0]/80 border-[#D4B8AA] text-[#670626] hover:bg-[#DFC9BE]'
               }`}
               title="Toggle pale non-medic pointers"
             >
               {pointerSettings.paleNonMedicEnabled ? (
-                <EyeOff className="w-3 h-3 text-amber-400" />
+                <EyeOff className="w-3 h-3 text-amber-700" />
               ) : (
                 <Eye className="w-3 h-3" />
               )}
@@ -1319,9 +1225,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             <button
               type="button"
               onClick={() => setShowLegendDrawer((prev) => !prev)}
-              className="px-2 py-1 rounded-lg text-[10px] font-mono font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1 cursor-pointer"
+              className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-[#E9D9D0]/80 hover:bg-[#DFC9BE] text-[#670626] border border-[#D4B8AA] flex items-center gap-1 cursor-pointer"
             >
-              <Layers className="w-3 h-3 text-sky-400" />
+              <Layers className="w-3 h-3 text-[#A83B4D]" />
               <span>LEGEND</span>
             </button>
           </div>
@@ -1330,22 +1236,22 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
       {/* 16 Pointer Categories Legend Drawer */}
       {showLegendDrawer && (
-        <div className="absolute top-16 right-3 z-[405] w-80 max-h-[75%] overflow-y-auto bg-slate-950/95 border border-slate-700 rounded-xl p-3 shadow-2xl backdrop-blur-md space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-            <span className="text-xs font-extrabold uppercase tracking-wider text-slate-200">
+        <div className="clay-surface absolute top-16 right-3 z-[405] w-80 max-h-[75%] overflow-y-auto bg-[#F7F1EA]/95 border border-[#E9D9D0] rounded-2xl p-3.5 shadow-[0_18px_40px_-10px_rgba(103,6,38,0.28)] backdrop-blur-md space-y-3 text-[#3B1722]">
+          <div className="flex items-center justify-between border-b border-[#E9D9D0] pb-2">
+            <span className="text-sm font-extrabold uppercase tracking-wider text-[#670626]">
               16 Radar Pointer Categories
             </span>
             <button
               type="button"
               onClick={() => setShowLegendDrawer(false)}
-              className="text-slate-400 hover:text-white cursor-pointer"
+              className="p-1 rounded-lg text-[#7A4E59] hover:text-[#670626] hover:bg-[#E9D9D0]/60 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
           <div className="space-y-1.5">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-bold">
+            <div className="text-xs font-mono uppercase tracking-wider text-emerald-700 font-bold">
               7 Medic-Allowed Categories (Deployable)
             </div>
             {RADAR_POINTER_CATEGORIES.filter((c) => c.isMedicAllowed).map((c) => {
@@ -1353,7 +1259,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
               return (
                 <div
                   key={c.code}
-                  className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-slate-900/90 border border-slate-800 text-[11px]"
+                  className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-[#E9D9D0]/60 border border-[#D8C1B5] text-xs"
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span
@@ -1362,9 +1268,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                     >
                       <IconComp className="w-3 h-3" />
                     </span>
-                    <span className="text-slate-200 truncate">{c.label}</span>
+                    <span className="text-[#3B1722] font-medium truncate">{c.label}</span>
                   </div>
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/60">
+                  <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold">
                     MEDIC
                   </span>
                 </div>
@@ -1372,8 +1278,8 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             })}
           </div>
 
-          <div className="space-y-1.5 pt-2 border-t border-slate-800">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold">
+          <div className="space-y-1.5 pt-2 border-t border-[#E9D9D0]">
+            <div className="text-xs font-mono uppercase tracking-wider text-amber-800 font-bold">
               9 View-Only Non-Medic Categories (Pale)
             </div>
             {RADAR_POINTER_CATEGORIES.filter((c) => !c.isMedicAllowed).map((c) => {
@@ -1381,7 +1287,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
               return (
                 <div
                   key={c.code}
-                  className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-slate-900/60 border border-slate-800/80 text-[11px] opacity-75"
+                  className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-[#E9D9D0]/45 border border-[#E9D9D0] text-xs opacity-90"
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span
@@ -1390,9 +1296,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                     >
                       <IconComp className="w-3 h-3" />
                     </span>
-                    <span className="text-slate-300 truncate">{c.label}</span>
+                    <span className="text-[#5C313E] truncate">{c.label}</span>
                   </div>
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                  <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-[#E9D9D0] text-[#670626] font-bold">
                     VIEW ONLY
                   </span>
                 </div>
@@ -1400,7 +1306,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             })}
           </div>
 
-          <div className="pt-2 border-t border-slate-800 flex items-center gap-2 text-[11px] text-emerald-300 font-mono">
+          <div className="pt-2 border-t border-[#E9D9D0] flex items-center gap-2 text-xs text-emerald-800 font-mono font-bold">
             <span
               className="w-3.5 h-3.5 rounded-full inline-block"
               style={{ backgroundColor: RESPONDED_GREEN_COLOR }}
@@ -1465,7 +1371,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             }}
           >
             <div
-              className="relative bg-slate-950/95 border-2 border-sky-400/80 rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.95)] backdrop-blur-md text-slate-100 flex flex-col overflow-hidden animate-fadeIn"
+              className="clay-surface relative bg-[#F7F1EA] border-2 border-[#670626]/70 rounded-2xl shadow-[0_18px_42px_-10px_rgba(103,6,38,0.32),inset_0_2px_4px_rgba(255,255,255,0.85)] text-[#3B1722] flex flex-col overflow-hidden animate-fadeIn"
               style={{
                 width: `${cardW}px`,
                 maxHeight: `${targetCardH}px`
@@ -1478,18 +1384,18 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                   e.stopPropagation();
                   dragHandleProps.onPointerDown(e);
                 }}
-                className="flex-shrink-0 px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none"
+                className="flex-shrink-0 px-3.5 py-2.5 border-b border-[#E9D9D0] flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none"
                 title="Drag to reposition card on map"
                 style={{
                   ...dragHandleProps.style,
                   background: `linear-gradient(90deg, ${
                     activeIsResponded ? RESPONDED_GREEN_COLOR : activeCategoryMeta.color
-                  }28 0%, rgba(15,23,42,0.98) 100%)`
+                  }1A 0%, #F7F1EA 100%)`
                 }}
               >
                 <div className="flex items-center gap-2 min-w-0 pointer-events-none">
                   <div
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-white border border-white/80 flex-shrink-0 shadow"
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-white border-2 border-[#F7F1EA] flex-shrink-0 shadow"
                     style={{
                       backgroundColor: activeIsResponded
                         ? RESPONDED_GREEN_COLOR
@@ -1500,14 +1406,14 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.2 rounded bg-slate-900 border border-slate-700 text-sky-300">
+                      <span className="text-xs font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#E9D9D0] border border-[#D4B8AA] text-[#670626] font-bold">
                         {activePointer.id}
                       </span>
                       <span
-                        className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.2 rounded border ${
+                        className={`text-xs font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${
                           activeCategoryMeta.isMedicAllowed
-                            ? 'bg-emerald-950/90 border-emerald-500/60 text-emerald-300'
-                            : 'bg-amber-950/90 border-amber-500/60 text-amber-300'
+                            ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                            : 'bg-amber-100 border-amber-300 text-amber-900'
                         }`}
                       >
                         {activeCategoryMeta.isMedicAllowed
@@ -1515,14 +1421,14 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                           : 'VIEW-ONLY (NON-MEDIC)'}
                       </span>
                     </div>
-                    <h4 className="text-xs font-extrabold text-white truncate mt-0.5">
+                    <h4 className="text-sm font-extrabold text-[#670626] truncate mt-0.5">
                       {activeCategoryMeta.label}
                     </h4>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <div className="p-1 text-slate-400 hover:text-slate-200" title="Drag card">
-                    <GripHorizontal className="w-4 h-4 opacity-70" />
+                  <div className="p-1 text-[#7A4E59] hover:text-[#670626]" title="Drag card">
+                    <GripHorizontal className="w-4 h-4 opacity-75" />
                   </div>
                   <button
                     type="button"
@@ -1534,7 +1440,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                     onPointerDown={(e) => {
                       e.stopPropagation();
                     }}
-                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer pointer-events-auto"
+                    className="p-1 rounded-lg text-[#7A4E59] hover:text-[#670626] hover:bg-[#E9D9D0]/70 cursor-pointer pointer-events-auto"
                     title="Close Callout"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -1542,7 +1448,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                 </div>
               </div>
 
-              {/* 2. SCROLLABLE BODY - ONLY BODY SCROLLS, WITH ZERO UGLY WHITE SCROLLBAR */}
+              {/* 2. SCROLLABLE BODY - ONLY BODY SCROLLS */}
               <div
                 className="overflow-y-auto flex-1 min-h-0 tactical-modal-scroll"
                 style={{
@@ -1551,32 +1457,32 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
               >
 
               {isCompactMinimap ? (
-                /* Compact Minimap Callout (Fits 100% cleanly without vertical scroll) */
+                /* Compact Minimap Callout */
                 <div className="p-2.5 space-y-2 text-xs">
-                  <div className="flex items-center justify-between gap-1 text-[10px] font-mono">
-                    <span className="text-slate-200 font-bold truncate">
+                  <div className="flex items-center justify-between gap-1 text-xs font-mono">
+                    <span className="text-[#3B1722] font-bold truncate">
                       {activePointer.type || activeCategoryMeta.label}
                     </span>
                     <span
-                      className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                      className={`px-1.5 py-0.5 rounded text-xs font-bold ${
                         activeIsResponded
                           ? 'bg-emerald-600 text-white'
-                          : 'bg-rose-600 text-white'
+                          : 'bg-[#670626] text-[#F7F1EA]'
                       }`}
                     >
                       {activeIsResponded ? 'RESPONDED' : activeCategoryMeta.severityLevel}
                     </span>
                   </div>
 
-                  <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1 text-[10px] font-mono">
-                    <div className="flex items-center justify-between text-slate-400">
+                  <div className="p-2 rounded-xl bg-[#E9D9D0]/65 border border-[#D4B8AA] space-y-1 text-xs font-mono">
+                    <div className="flex items-center justify-between text-[#5C313E]">
                       <span className="flex items-center gap-1 min-w-0">
-                        <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
-                        <span className="truncate max-w-[160px] text-slate-200">
+                        <MapPin className="w-3 h-3 text-[#670626] shrink-0" />
+                        <span className="truncate max-w-[160px] text-[#3B1722] font-semibold">
                           {activePointer.place || 'Katipunan C2 Area'}
                         </span>
                       </span>
-                      <span className="text-emerald-300 shrink-0">
+                      <span className="text-emerald-800 font-bold shrink-0">
                         {activePointer.lat.toFixed(4)}°, {activePointer.lng.toFixed(4)}°
                       </span>
                     </div>
@@ -1586,10 +1492,10 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                     <button
                       type="button"
                       onClick={() => handleMarkResponded(activePointer.id)}
-                      className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-mono font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                         activeIsResponded
-                          ? 'bg-emerald-950/90 border-emerald-500 text-emerald-300'
-                          : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
+                          ? 'bg-emerald-100 border-emerald-400 text-emerald-900'
+                          : 'bg-[#E9D9D0]/80 border-[#D4B8AA] text-[#670626] hover:bg-[#DFC9BE]'
                       }`}
                     >
                       <CheckCircle2 className="w-3 h-3" />
@@ -1600,7 +1506,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                       <button
                         type="button"
                         onClick={onExpandMap}
-                        className="py-1.5 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-mono font-bold flex items-center justify-center gap-1 cursor-pointer shadow"
+                        className="py-1.5 px-2.5 rounded-lg bg-[#670626] hover:bg-[#7D0A30] text-[#F7F1EA] text-xs font-mono font-bold flex items-center justify-center gap-1 cursor-pointer shadow"
                         title="Enlarge map to full view"
                       >
                         <Maximize2 className="w-3 h-3" />
@@ -1612,85 +1518,112 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
               ) : (
                 /* Full Map View Callout Body */
                 <div className="p-3 space-y-2.5 text-xs">
-                {/* Picture Evidence Preview */}
-                <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black group">
-                  <img
-                    src={activePointer.evidenceUrl || DEFAULT_EVIDENCE_PHOTO}
-                    alt={activeCategoryMeta.label}
-                    className="w-full h-28 object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-between p-2">
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span className="px-1.5 py-0.5 rounded bg-black/80 border border-slate-700 text-[9px] font-mono text-emerald-300">
-                        {activePointer.reportedAt || formatDateTimeWithSecondsAmPm(new Date())}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setLightboxOpen(true)}
-                        className="px-2 py-0.5 rounded bg-sky-600/90 hover:bg-sky-500 text-white text-[9px] font-mono font-bold flex items-center gap-1 cursor-pointer shadow"
-                      >
-                        <Camera className="w-3 h-3" />
-                        <span>INSPECT</span>
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-200">
-                      <span className="truncate font-semibold">{activePointer.type}</span>
-                      <span
-                        className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                          activeIsResponded
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-rose-600 text-white'
-                        }`}
-                      >
-                        {activeIsResponded ? 'RESPONDED' : activeCategoryMeta.severityLevel}
-                      </span>
+                {/* Picture Evidence Preview (Real Capture or Clean Fallback — Zero Unsplash) */}
+                {activePointer.evidenceUrl ? (
+                  <div className="relative rounded-xl overflow-hidden border border-[#D4B8AA] bg-[#3B1722] group">
+                    <img
+                      src={activePointer.evidenceUrl}
+                      alt={activeCategoryMeta.label}
+                      className="w-full h-28 object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#240812]/90 via-black/15 to-transparent flex flex-col justify-between p-2">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded bg-[#F7F1EA]/95 border border-[#E9D9D0] text-xs font-mono font-bold text-[#670626]">
+                          {activePointer.reportedAt || formatDateTimeWithSecondsAmPm(new Date())}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setLightboxOpen(true)}
+                          className="px-2 py-0.5 rounded bg-[#670626] hover:bg-[#7D0A30] text-[#F7F1EA] text-xs font-mono font-bold flex items-center gap-1 cursor-pointer shadow"
+                        >
+                          <Camera className="w-3 h-3" />
+                          <span>INSPECT</span>
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between text-xs font-mono text-[#F7F1EA]">
+                        <span className="truncate font-semibold">{activePointer.type}</span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                            activeIsResponded
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-[#991B1B] text-white'
+                          }`}
+                        >
+                          {activeIsResponded ? 'RESPONDED' : activeCategoryMeta.severityLevel}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="rounded-xl border border-[#D4B8AA] bg-[#E9D9D0]/65 p-2.5 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-[#F7F1EA] border border-[#D4B8AA] flex items-center justify-center text-[#A83B4D] shrink-0">
+                        <Camera className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-[#3B1722] truncate">
+                          {activePointer.type || activeCategoryMeta.shortLabel}
+                        </div>
+                        <div className="text-xs font-mono text-[#7A4E59] truncate">
+                          {activePointer.reportedAt || formatDateTimeWithSecondsAmPm(new Date())}
+                        </div>
+                      </div>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs font-mono font-bold shrink-0 ${
+                        activeIsResponded
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-[#670626] text-[#F7F1EA]'
+                      }`}
+                    >
+                      {activeIsResponded ? 'RESPONDED' : activeCategoryMeta.severityLevel}
+                    </span>
+                  </div>
+                )}
 
                 {/* Telemetry Grid */}
-                <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                  <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800">
-                    <div className="flex items-center gap-1 text-[9px] font-mono uppercase text-slate-400">
-                      <Cpu className="w-3 h-3 text-sky-400" />
+                <div className="grid grid-cols-2 gap-1.5 text-xs">
+                  <div className="p-2 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
+                    <div className="flex items-center gap-1 text-xs font-mono uppercase text-[#7A4E59]">
+                      <Cpu className="w-3 h-3 text-[#A83B4D]" />
                       <span>IP ADDRESS</span>
                     </div>
-                    <div className="font-mono font-bold text-sky-300 mt-0.5 truncate text-[11px]">
-                      {activePointer.ipAddress || '192.168.42.118'}
+                    <div className="font-mono font-bold text-[#670626] mt-0.5 truncate text-xs">
+                      {activePointer.ipAddress || 'Pending / Direct GPS'}
                     </div>
                   </div>
 
-                  <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800">
-                    <div className="flex items-center gap-1 text-[9px] font-mono uppercase text-slate-400">
-                      <Navigation className="w-3 h-3 text-emerald-400" />
+                  <div className="p-2 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
+                    <div className="flex items-center gap-1 text-xs font-mono uppercase text-[#7A4E59]">
+                      <Navigation className="w-3 h-3 text-emerald-700" />
                       <span>GPS TELEMETRY</span>
                     </div>
-                    <div className="font-mono font-bold text-emerald-300 mt-0.5 truncate text-[11px]">
+                    <div className="font-mono font-bold text-emerald-800 mt-0.5 truncate text-xs">
                       {activePointer.lat.toFixed(4)}°, {activePointer.lng.toFixed(4)}°
                     </div>
                   </div>
 
-                  <div className="col-span-2 p-2 rounded-lg bg-slate-900/90 border border-slate-800 flex items-start justify-between gap-1.5">
+                  <div className="col-span-2 p-2 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5] flex items-start justify-between gap-1.5">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1 text-[9px] font-mono uppercase text-slate-400">
-                        <MapPin className="w-3 h-3 text-rose-400" />
+                      <div className="flex items-center gap-1 text-xs font-mono uppercase text-[#7A4E59]">
+                        <MapPin className="w-3 h-3 text-[#670626]" />
                         <span>STREET ADDRESS</span>
                       </div>
-                      <div className="font-semibold text-slate-100 mt-0.5 truncate text-[11px]">
+                      <div className="font-semibold text-[#3B1722] mt-0.5 truncate text-xs">
                         {activePointer.place || 'Katipunan National Highway, ZN'}
                       </div>
                     </div>
-                    <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-[9px] font-mono text-slate-300 flex-shrink-0">
+                    <span className="px-1.5 py-0.5 rounded bg-[#F7F1EA] border border-[#D4B8AA] text-xs font-mono font-bold text-[#670626] flex-shrink-0">
                       {activeCategoryMeta.agency}
                     </span>
                   </div>
                 </div>
 
                 {/* 5-Minute Verification Loading Timer (05:00 -> 00:00 Case Closed) */}
-                <div className="p-2.5 rounded-xl bg-slate-900/95 border border-slate-800 space-y-1.5">
+                <div className="p-2.5 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5] space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-300">
-                      <Clock className="w-3 h-3 text-amber-400" />
+                    <div className="flex items-center gap-1 text-xs font-mono font-bold text-amber-800">
+                      <Clock className="w-3.5 h-3.5 text-amber-700" />
                       <span>
                         {activeVerifiedTimestamp
                           ? activeRemainingSeconds > 0
@@ -1702,15 +1635,15 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                     <button
                       type="button"
                       onClick={() => handleTriggerVerificationTimer(activePointer.id)}
-                      className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-950/90 hover:bg-amber-900 text-amber-300 border border-amber-600/60 cursor-pointer"
+                      className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 cursor-pointer"
                     >
                       {activeVerifiedTimestamp ? 'Reset' : 'Simulate Verify'}
                     </button>
                   </div>
 
-                  <div className="w-full h-1.5 rounded-full bg-slate-950 overflow-hidden border border-slate-800">
+                  <div className="w-full h-1.5 rounded-full bg-[#F7F1EA] overflow-hidden border border-[#D8C1B5]">
                     <div
-                      className="h-full bg-gradient-to-r from-amber-500 via-sky-500 to-emerald-500 transition-all duration-500"
+                      className="h-full bg-gradient-to-r from-[#A83B4D] via-[#670626] to-emerald-600 transition-all duration-500"
                       style={{
                         width: `${activeVerifiedTimestamp ? activeProgressPercent : 12}%`
                       }}
@@ -1723,13 +1656,13 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                   <button
                     type="button"
                     onClick={() => handleMarkResponded(activePointer.id)}
-                    className={`w-full py-1.5 px-2.5 rounded-lg text-[11px] font-mono font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-mono font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                       activeIsResponded
-                        ? 'bg-emerald-950/90 border-emerald-500 text-emerald-300'
-                        : 'bg-slate-900 border-slate-700 text-slate-300 hover:text-white'
+                        ? 'bg-emerald-100 border-emerald-400 text-emerald-900'
+                        : 'bg-[#E9D9D0]/80 border-[#D4B8AA] text-[#670626] hover:bg-[#DFC9BE]'
                     }`}
                   >
-                    <CheckCircle2 className="w-3 h-3" />
+                    <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>
                       {activeIsResponded ? 'RESPONDED (GREEN PIN)' : 'MARK RESPONDED (GREEN)'}
                     </span>
@@ -1739,14 +1672,14 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                     <button
                       type="button"
                       onClick={() => handleRequestDeployClick(activePointer)}
-                      className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[11px] uppercase tracking-wider shadow-lg shadow-emerald-950/70 border border-emerald-400/50 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                      className="w-full py-2 px-3 rounded-xl bg-[#670626] hover:bg-[#7D0A30] text-[#F7F1EA] font-extrabold text-xs uppercase tracking-wider shadow-[0_8px_18px_-4px_rgba(103,6,38,0.45)] border border-[#A83B4D]/50 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
                     >
                       <Send className="w-3.5 h-3.5" />
                       <span>REQUEST TO DISPATCH OR DEPLOY</span>
                     </button>
                   ) : (
-                    <div className="w-full py-1.5 px-2 rounded-xl bg-slate-900/90 border border-amber-700/50 text-amber-300 text-[10px] font-mono flex items-center justify-center gap-1.5 text-center">
-                      <Lock className="w-3 h-3 flex-shrink-0 text-amber-400" />
+                    <div className="w-full py-1.5 px-2 rounded-xl bg-amber-100 border border-amber-300 text-amber-900 text-xs font-mono font-bold flex items-center justify-center gap-1.5 text-center">
+                      <Lock className="w-3.5 h-3.5 flex-shrink-0 text-amber-800" />
                       <span>NON-MEDIC // ASSIGNED TO {activeCategoryMeta.agency}</span>
                     </div>
                   )}
@@ -1758,10 +1691,10 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
               {/* Cloud Message Box Caret / Tail pointing directly to the UI Pointer Icon */}
               {!isCompactMinimap && (
                 <div
-                  className={`absolute w-3.5 h-3.5 bg-slate-950 ${
+                  className={`absolute w-3.5 h-3.5 bg-[#F7F1EA] ${
                     isPlacedAbove
-                      ? '-bottom-1.5 border-r-2 border-b-2 border-sky-400/80'
-                      : '-top-1.5 border-l-2 border-t-2 border-sky-400/80'
+                      ? '-bottom-1.5 border-r-2 border-b-2 border-[#670626]/70'
+                      : '-top-1.5 border-l-2 border-t-2 border-[#670626]/70'
                   }`}
                   style={{
                     left: `calc(50% + ${arrowOffset}px)`,
@@ -1792,13 +1725,13 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         }}
       />
 
-      {/* Floating Tactical Zoom & Recenter Controls Bar (Matching Reference Picture) */}
+      {/* Floating Tactical Zoom & Recenter Controls Bar */}
       {!hideZoomControls && (
-        <div className="absolute bottom-4 right-4 z-[400] flex flex-col items-center bg-[#0b1329]/95 border border-slate-700/80 backdrop-blur-md rounded-xl shadow-2xl p-0.5 pointer-events-auto select-none divide-y divide-slate-800/80">
+        <div className="clay-surface absolute bottom-4 right-4 z-[400] flex flex-col items-center bg-[#F7F1EA]/95 border border-[#E9D9D0] backdrop-blur-md rounded-xl shadow-[0_12px_28px_-6px_rgba(103,6,38,0.28),inset_0_2px_4px_rgba(255,255,255,0.85)] p-0.5 pointer-events-auto select-none divide-y divide-[#E9D9D0]">
           <button
             type="button"
             onClick={handleZoomIn}
-            className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-lg transition-all cursor-pointer"
+            className="w-8 h-8 flex items-center justify-center text-[#670626] hover:text-[#3B1722] hover:bg-[#E9D9D0]/70 rounded-lg transition-all cursor-pointer"
             title="Zoom In (+)"
             aria-label="Zoom in"
           >
@@ -1807,7 +1740,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           <button
             type="button"
             onClick={handleZoomOut}
-            className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-lg transition-all cursor-pointer"
+            className="w-8 h-8 flex items-center justify-center text-[#670626] hover:text-[#3B1722] hover:bg-[#E9D9D0]/70 rounded-lg transition-all cursor-pointer"
             title="Zoom Out (-)"
             aria-label="Zoom out"
           >
@@ -1816,16 +1749,16 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           <button
             type="button"
             onClick={handleRecenterSector}
-            className="w-8 h-8 flex items-center justify-center text-[#38bdf8] hover:text-cyan-300 hover:bg-slate-800/60 rounded-lg transition-all cursor-pointer"
+            className="w-8 h-8 flex items-center justify-center text-[#A83B4D] hover:text-[#670626] hover:bg-[#E9D9D0]/70 rounded-lg transition-all cursor-pointer"
             title="Recenter Katipunan Sector View (7109)"
             aria-label="Recenter on Katipunan Sector"
           >
-            <Crosshair className="w-4 h-4 stroke-[2.2] text-[#38bdf8]" />
+            <Crosshair className="w-4 h-4 stroke-[2.2] text-[#A83B4D]" />
           </button>
           <button
             type="button"
             onClick={handleExpandMap}
-            className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-lg transition-all cursor-pointer"
+            className="w-8 h-8 flex items-center justify-center text-[#670626] hover:text-[#3B1722] hover:bg-[#E9D9D0]/70 rounded-lg transition-all cursor-pointer"
             title={effectiveExpanded ? 'Minimize Map' : 'Maximize Map'}
             aria-label="Toggle map size"
           >
@@ -1842,7 +1775,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       <ImageLightboxModal
         isOpen={lightboxOpen}
         onClose={() => setLightboxOpen(false)}
-        imageUrl={activePointer?.evidenceUrl || DEFAULT_EVIDENCE_PHOTO}
+        imageUrl={activePointer?.evidenceUrl || null}
         images={activePointer?.evidenceImages}
         timestamp={activePointer?.reportedAt}
         title={

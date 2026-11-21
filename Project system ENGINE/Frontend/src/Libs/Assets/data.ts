@@ -1,34 +1,30 @@
 // [Layer: Libs/Assets]
-// Responsibility: Static agency registries, hotlines, categories, and severity color mappings.
+// Responsibility: Static agency registries, categories, and severity color mappings.
 // DO NOT hardcode disparate agency metadata across individual page components.
 
 export const AGENCY_METADATA = {
   LDRRMO: {
     name: 'Local Disaster Risk Reduction & Management Office',
     short: 'LDRRMO',
-    color: '#dc2626',
-    hotline: '911 / (02) 8888-0001',
+    color: '#670626',
     description: 'Central Command & Multi-Agency Emergency Operations'
   },
   RHU: {
     name: 'Rural Health Unit - Emergency Medical Services',
     short: 'RHU',
     color: '#0284c7',
-    hotline: '(02) 8888-0112',
     description: 'Ambulance dispatch, paramedical response, triage'
   },
   FIRE: {
     name: 'Bureau of Fire Protection (BFP)',
     short: 'FIRE',
     color: '#ea580c',
-    hotline: '160 / (02) 8888-0160',
     description: 'Fire suppression, search & rescue, hazardous materials'
   },
   PNP: {
     name: 'Philippine National Police (PNP)',
     short: 'PNP',
     color: '#3b82f6',
-    hotline: '117 / (02) 8888-0117',
     description: 'Law enforcement, perimeter security, traffic control'
   }
 };

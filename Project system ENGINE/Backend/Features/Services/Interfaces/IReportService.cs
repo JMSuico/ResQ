@@ -9,7 +9,8 @@ namespace Backend.Features.Services.Interfaces;
 
 public interface IReportService
 {
-    Task<ReportResponse> CreateReportAsync(Guid reporterId, CreateReportRequest request, string reportsRootPath, CancellationToken ct = default);
+    Task<IncidentImageAiAnalysisResponseDto> AnalyzeIncidentImageAsync(AnalyzeIncidentImageRequest request, CancellationToken ct = default);
+    Task<ReportResponse> CreateReportAsync(Guid reporterId, CreateReportRequest request, string reportsRootPath, CancellationToken ct = default, string? submittedIpAddress = null);
     Task<List<ReportResponse>> GetAllReportsAsync(CancellationToken ct = default);
     Task<List<ReportResponse>> GetMyReportsAsync(Guid userId, CancellationToken ct = default);
     Task<List<ReportResponse>> GetAgencyReportsAsync(ResponderUnitType agency, CancellationToken ct = default);

@@ -1,11 +1,10 @@
 // [Layer: UserRoles/Features/Pages/AdminsPanel/Components]
-// AddUserModal.tsx -- Elite Emergency Command Personnel & Resident Registration Modal for ResQTrack.
-// Conforms to Squad 5:
-// - Universal Lucide Migration: No raw inline SVGs.
-// - Supports full Philippine emergency credentials, Universal Lambdas (=>), and Katipuneros architecture.
-// - Zero 'any' typing and Zero hardcoded static numbers.
+// AddUserModal.tsx -- Emergency Command Personnel & Resident Registration Modal for ResQTrack.
+// Stitch Warm Ivory (#F7F1EA) + Soft Beige (#E9D9D0) + Cherry (#670626) + Muted Cherry (#A83B4D) claymorphic styling.
+// Uses KATIPUNAN_BARANGAYS_LIST (Katipunan, Zamboanga del Norte 7109).
+// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis.
 
-import React, { useState, FC, ChangeEvent, FormEvent } from 'react';
+import React, { useState, FormEvent } from 'react';
 import {
   User,
   MapPin,
@@ -22,12 +21,18 @@ import {
   Radio,
   Building2,
   ChevronLeft,
-  ChevronRight,
+  ChevronRight
 } from 'lucide-react';
-import { DefaultFloatingModalCard, Button } from '@/Shared';
 import { createUser, ResponderUnit, CreateUserPayload } from '@/Endpoints/adminGovernanceApi';
+import { AdminButton } from '../Shared/AdminButton';
+import { AdminModalCard } from '../Shared/AdminModalCard';
+import {
+  KATIPUNAN_BARANGAYS_LIST,
+  CLAY_WELL,
+  CLAY_INPUT,
+  CLAY_SELECT
+} from '../Shared/adminCommandHelpers';
 
-// Architectural Telemetry Constants (Zero hardcoded static numbers)
 const MIN_PASSWORD_LENGTH = 12;
 const STEP_ZERO = 0;
 const STEP_OFFSET = 1;
@@ -39,44 +44,19 @@ export interface AddUserModalProps {
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-const DIPOLOG_BARANGAYS = [
-  'Barra',
-  'Biasong',
-  'Central',
-  'Cogon',
-  'Dicayas',
-  'Galas',
-  'Gulayon',
-  'Lugdungan',
-  'Minaog',
-  'Miputak',
-  'Olingan',
-  'Polanco (Border)',
-  'San Jose',
-  'San Pedro',
-  'Santa Filomena',
-  'Santa Isabel',
-  'Sicayab',
-  'Sinaman',
-  'Turno',
-];
-
 export const AddUserModal: React.FC<AddUserModalProps> = ({
   isOpen,
   onClose,
   onUserCreated,
-  showToast,
+  showToast
 }) => {
   const [activeTab, setActiveTab] = useState<'personal' | 'address' | 'role' | 'credentials' | 'account'>('personal');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
-  // Form state
   const [formData, setFormData] = useState({
-    // Account Setup
     email: '',
     password: '',
-    // Personal & Contact
     firstName: '',
     middleName: '',
     surname: '',
@@ -88,44 +68,37 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
     emergencyContactName: '',
     emergencyContactPhone: '',
     emergencyContactRelationship: 'Spouse',
-    // Address
     province: 'Zamboanga del Norte',
-    cityOrMunicipality: 'Dipolog City',
-    barangay: 'Barra',
+    cityOrMunicipality: 'Katipunan',
+    barangay: 'Barangay Uno (Poblacion)',
     streetOrPurok: '',
-    // Role & Station
     role: 'Civilian' as 'Civilian' | 'Responder' | 'LDRRMO_Admin',
     unit: 'None' as ResponderUnit,
     departmentOrBarangay: '',
     rankOrTitle: '',
     employeeOrResidentId: '',
-    // Civilian Credentials
     governmentIdType: 'PhilSys National ID',
     governmentIdNumber: '',
     residencyCategory: 'Permanent',
     vulnerabilityFlags: 'None',
-    // RHU Credentials
     medicalLicenseNumber: '',
     medicalCadre: 'Paramedic',
-    stationHealthCenter: 'Dipolog City Health Office',
+    stationHealthCenter: 'Katipunan Rural Health Unit (RHU)',
     medicalCertifications: 'BLS, ACLS, EMT-B',
     ambulanceCallSign: 'RHU-MED1',
-    // FIRE Credentials
     firefighterRank: 'Fire Officer 1 (FO1)',
     bfpBadgeNumber: '',
-    fireStation: 'Dipolog Central Fire Station',
+    fireStation: 'BFP Katipunan Fire Station',
     fireSpecialization: 'Structural Firefighting',
     apparatusCallSign: 'ENGINE-1',
-    // PNP Credentials
     policeRank: 'Patrolman',
     pnpBadgeNumber: '',
-    precinctOrStation: 'Dipolog City Police Station (CPS)',
+    precinctOrStation: 'PNP Katipunan Municipal Police Station',
     policeAssignment: 'Patrol & First Response',
     sidearmSerial: '',
-    // LDRRMO Admin Credentials
     plantillaNumber: '',
     executiveDesignation: 'Operations Officer',
-    clearanceLevel: 'Level 2 - Tactical Operations',
+    clearanceLevel: 'Level 2 - Tactical Operations'
   });
 
   const handleChange = (field: string, value: string) => {
@@ -160,8 +133,8 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
       emergencyContactPhone: '',
       emergencyContactRelationship: 'Spouse',
       province: 'Zamboanga del Norte',
-      cityOrMunicipality: 'Dipolog City',
-      barangay: 'Barra',
+      cityOrMunicipality: 'Katipunan',
+      barangay: 'Barangay Uno (Poblacion)',
       streetOrPurok: '',
       role: 'Civilian',
       unit: 'None',
@@ -174,22 +147,22 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
       vulnerabilityFlags: 'None',
       medicalLicenseNumber: '',
       medicalCadre: 'Paramedic',
-      stationHealthCenter: 'Dipolog City Health Office',
+      stationHealthCenter: 'Katipunan Rural Health Unit (RHU)',
       medicalCertifications: 'BLS, ACLS, EMT-B',
       ambulanceCallSign: 'RHU-MED1',
       firefighterRank: 'Fire Officer 1 (FO1)',
       bfpBadgeNumber: '',
-      fireStation: 'Dipolog Central Fire Station',
+      fireStation: 'BFP Katipunan Fire Station',
       fireSpecialization: 'Structural Firefighting',
       apparatusCallSign: 'ENGINE-1',
       policeRank: 'Patrolman',
       pnpBadgeNumber: '',
-      precinctOrStation: 'Dipolog City Police Station (CPS)',
+      precinctOrStation: 'PNP Katipunan Municipal Police Station',
       policeAssignment: 'Patrol & First Response',
       sidearmSerial: '',
       plantillaNumber: '',
       executiveDesignation: 'Operations Officer',
-      clearanceLevel: 'Level 2 - Tactical Operations',
+      clearanceLevel: 'Level 2 - Tactical Operations'
     });
   };
 
@@ -197,7 +170,6 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
     e.preventDefault();
     setErrorText(null);
 
-    // Form validations
     if (!formData.firstName.trim() || !formData.surname.trim()) {
       setActiveTab('personal');
       setErrorText('First Name and Surname are mandatory.');
@@ -212,7 +184,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
 
     if (!formData.password || formData.password.length < MIN_PASSWORD_LENGTH) {
       setActiveTab('account');
-      setErrorText(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long according to emergency security policies.`);
+      setErrorText(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`);
       return;
     }
 
@@ -240,10 +212,9 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
         unit: formData.role === 'Responder' ? formData.unit : 'None',
         departmentOrBarangay: formData.departmentOrBarangay.trim() || formData.barangay,
         rankOrTitle: formData.rankOrTitle.trim() || null,
-        employeeOrResidentId: formData.employeeOrResidentId.trim() || null,
+        employeeOrResidentId: formData.employeeOrResidentId.trim() || null
       };
 
-      // Role-specific credential payload bindings
       if (formData.role === 'Civilian') {
         payload.governmentIdType = formData.governmentIdType;
         payload.governmentIdNumber = formData.governmentIdNumber.trim() || null;
@@ -285,7 +256,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
       onUserCreated();
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to create user account. Please check values.';
+      const msg = err instanceof Error ? err.message : 'Failed to create user account.';
       setErrorText(msg);
     } finally {
       setIsSubmitting(false);
@@ -297,30 +268,31 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
     { key: 'address', label: 'Address', icon: MapPin },
     { key: 'role', label: 'Role', icon: Shield },
     { key: 'credentials', label: 'Credentials', icon: FileText },
-    { key: 'account', label: 'Account', icon: Lock },
+    { key: 'account', label: 'Account', icon: Lock }
   ] as const;
 
+  const labelClass = 'block text-xs font-mono uppercase tracking-wider text-[#670626] mb-1.5 font-bold';
+
   return (
-    <DefaultFloatingModalCard
+    <AdminModalCard
       isOpen={isOpen}
       onClose={() => {
         handleReset();
         onClose();
       }}
       title="Add User"
-      subtitle="Create account and assign role"
+      subtitle="Create account and assign Katipunan role"
       maxWidth="2xl"
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-xs text-slate-200">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4 text-sm text-[#670626]">
         {errorText && (
-          <div className="p-3.5 rounded-xl bg-rose-950/80 border border-rose-600 text-rose-200 flex items-start gap-2.5 shadow-[0_0_12px_rgba(244,63,94,0.25)]">
-            <AlertTriangle className="w-4 h-4 text-rose-400 mt-0.5 flex-shrink-0" />
-            <div className="flex-1 font-mono font-medium">{errorText}</div>
+          <div className="p-3.5 rounded-xl bg-[#670626] text-[#F7F1EA] flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 font-mono text-sm font-medium">{errorText}</div>
           </div>
         )}
 
-        {/* Tab Header Strip */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-[#1d3c5c] scrollbar-none bg-[#071522]/60 p-1 rounded-xl">
+        <div className={`${CLAY_WELL} flex items-center gap-1.5 overflow-x-auto p-1.5`}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
             const TabIcon = tab.icon;
@@ -329,97 +301,85 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold whitespace-nowrap transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-mono font-bold whitespace-nowrap transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-[#16304a] text-sky-300 border border-sky-500/80 shadow-[0_0_12px_rgba(14,165,233,0.3)]'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#0e243a]/80'
+                    ? 'bg-[#670626] text-[#F7F1EA] shadow-sm'
+                    : 'text-[#670626] hover:bg-[#F7F1EA]/70'
                 }`}
               >
-                <TabIcon className="w-3.5 h-3.5" />
+                <TabIcon className="w-4 h-4" />
                 <span>{tab.label}</span>
               </button>
             );
           })}
         </div>
 
-        {/* Tab 1: Personal & Vitals */}
+        {/* Tab 1: Personal */}
         {activeTab === 'personal' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
-                First Name <span className="text-rose-400">*</span>
-              </label>
+              <label className={labelClass}>First Name *</label>
               <input
                 type="text"
                 required
                 value={formData.firstName}
                 onChange={(e) => handleChange('firstName', e.target.value)}
                 placeholder="e.g. Juan"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 placeholder-slate-500 focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50 focus:outline-none"
+                className={CLAY_INPUT}
               />
             </div>
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Middle Name</label>
+              <label className={labelClass}>Middle Name</label>
               <input
                 type="text"
                 value={formData.middleName}
                 onChange={(e) => handleChange('middleName', e.target.value)}
                 placeholder="e.g. Santos"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 placeholder-slate-500 focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50 focus:outline-none"
+                className={CLAY_INPUT}
               />
             </div>
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
-                Surname <span className="text-rose-400">*</span>
-              </label>
+              <label className={labelClass}>Surname *</label>
               <input
                 type="text"
                 required
                 value={formData.surname}
                 onChange={(e) => handleChange('surname', e.target.value)}
                 placeholder="e.g. Dela Cruz"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 placeholder-slate-500 focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50 focus:outline-none"
+                className={CLAY_INPUT}
               />
             </div>
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Suffix</label>
+              <label className={labelClass}>Suffix</label>
               <input
                 type="text"
                 value={formData.suffix}
                 onChange={(e) => handleChange('suffix', e.target.value)}
                 placeholder="e.g. Jr., Sr., III"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 placeholder-slate-500 focus:border-sky-400 focus:ring-1 focus:ring-sky-400/50 focus:outline-none"
+                className={CLAY_INPUT}
               />
             </div>
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Date of Birth</label>
+              <label className={labelClass}>Date of Birth</label>
               <input
                 type="date"
                 value={formData.dateOfBirth}
                 onChange={(e) => handleChange('dateOfBirth', e.target.value)}
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 focus:border-sky-400 focus:outline-none font-mono"
+                className={CLAY_INPUT}
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2.5">
               <div>
-                <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Sex</label>
-                <select
-                  value={formData.sex}
-                  onChange={(e) => handleChange('sex', e.target.value)}
-                  className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 focus:border-sky-400 focus:outline-none font-mono"
-                >
+                <label className={labelClass}>Sex</label>
+                <select value={formData.sex} onChange={(e) => handleChange('sex', e.target.value)} className={CLAY_SELECT}>
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
                   <option value="Other">Other</option>
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Blood Type</label>
-                <select
-                  value={formData.bloodType}
-                  onChange={(e) => handleChange('bloodType', e.target.value)}
-                  className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-rose-300 font-bold focus:border-sky-400 focus:outline-none font-mono"
-                >
+                <label className={labelClass}>Blood Type</label>
+                <select value={formData.bloodType} onChange={(e) => handleChange('bloodType', e.target.value)} className={CLAY_SELECT}>
                   {['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'].map((b) => (
                     <option key={b} value={b}>{b}</option>
                   ))}
@@ -427,59 +387,58 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
               </div>
             </div>
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Mobile Telemetry Phone</label>
+              <label className={labelClass}>Contact Phone Number</label>
               <input
-                type="tel"
+                type="text"
                 value={formData.phoneNumber}
                 onChange={(e) => handleChange('phoneNumber', e.target.value)}
                 placeholder="e.g. +63 917 123 4567"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 placeholder-slate-500 focus:border-sky-400 focus:outline-none font-mono"
+                className={CLAY_INPUT}
               />
             </div>
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Resident / Employee ID</label>
+              <label className={labelClass}>Resident / Employee ID</label>
               <input
                 type="text"
                 value={formData.employeeOrResidentId}
                 onChange={(e) => handleChange('employeeOrResidentId', e.target.value)}
-                placeholder="e.g. LDRRMO-2026-0042 (Auto if empty)"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-sky-400 placeholder-slate-500 focus:border-sky-400 focus:outline-none font-mono font-semibold"
+                placeholder="e.g. LDRRMO-2026-0042"
+                className={CLAY_INPUT}
               />
             </div>
 
-            {/* Emergency Contact Section */}
-            <div className="md:col-span-2 p-3.5 rounded-xl bg-[#0a1a2b]/80 border border-amber-900/60 shadow-md">
-              <h4 className="text-xs font-mono font-bold text-amber-300 mb-2.5 uppercase tracking-wider flex items-center gap-2">
-                <Phone className="w-3.5 h-3.5 text-amber-400" />
-                Philippine Emergency Contact Information (Next of Kin)
+            <div className={`${CLAY_WELL} md:col-span-2 p-4`}>
+              <h4 className="text-xs font-mono font-bold text-[#670626] mb-3 uppercase tracking-wider flex items-center gap-2">
+                <Phone className="w-4 h-4 text-[#A83B4D]" />
+                Emergency Contact (Next of Kin)
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Contact Person</label>
+                  <label className={labelClass}>Contact Person</label>
                   <input
                     type="text"
                     value={formData.emergencyContactName}
                     onChange={(e) => handleChange('emergencyContactName', e.target.value)}
-                    placeholder="Full name of next of kin"
-                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 placeholder-slate-500 focus:border-sky-400 focus:outline-none"
+                    placeholder="Full name"
+                    className={CLAY_INPUT}
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Emergency Phone</label>
+                  <label className={labelClass}>Contact Phone</label>
                   <input
-                    type="tel"
+                    type="text"
                     value={formData.emergencyContactPhone}
                     onChange={(e) => handleChange('emergencyContactPhone', e.target.value)}
                     placeholder="e.g. +63 920 987 6543"
-                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-amber-300 placeholder-slate-500 focus:border-sky-400 focus:outline-none font-mono"
+                    className={CLAY_INPUT}
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Relationship</label>
+                  <label className={labelClass}>Relationship</label>
                   <select
                     value={formData.emergencyContactRelationship}
                     onChange={(e) => handleChange('emergencyContactRelationship', e.target.value)}
-                    className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 focus:border-sky-400 focus:outline-none font-mono"
+                    className={CLAY_SELECT}
                   >
                     {['Spouse', 'Parent', 'Sibling', 'Child', 'Relative', 'Colleague', 'Friend', 'Guardian'].map((r) => (
                       <option key={r} value={r}>{r}</option>
@@ -491,82 +450,69 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
           </div>
         )}
 
-        {/* Tab 2: Philippine Address */}
+        {/* Tab 2: Address */}
         {activeTab === 'address' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
-                Province <span className="text-rose-400">*</span>
-              </label>
+              <label className={labelClass}>Province *</label>
               <input
                 type="text"
                 required
                 value={formData.province}
                 onChange={(e) => handleChange('province', e.target.value)}
-                placeholder="e.g. Zamboanga del Norte"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none font-semibold"
+                className={CLAY_INPUT}
               />
             </div>
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
-                City / Municipality <span className="text-rose-400">*</span>
-              </label>
+              <label className={labelClass}>Municipality *</label>
               <input
                 type="text"
                 required
                 value={formData.cityOrMunicipality}
                 onChange={(e) => handleChange('cityOrMunicipality', e.target.value)}
-                placeholder="e.g. Dipolog City"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none font-semibold"
+                placeholder="e.g. Katipunan"
+                className={CLAY_INPUT}
               />
             </div>
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
-                Barangay Sector <span className="text-rose-400">*</span>
-              </label>
+              <label className={labelClass}>Barangay Sector (Katipunan 7109) *</label>
               <select
                 value={formData.barangay}
                 onChange={(e) => handleChange('barangay', e.target.value)}
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-sky-300 font-bold focus:border-sky-400 focus:outline-none font-mono"
+                className={CLAY_SELECT}
               >
-                {DIPOLOG_BARANGAYS.map((brgy) => (
+                {KATIPUNAN_BARANGAYS_LIST.map((brgy) => (
                   <option key={brgy} value={brgy}>{brgy}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Street / Purok / Sitio</label>
+              <label className={labelClass}>Street / Purok / Sitio</label>
               <input
                 type="text"
                 value={formData.streetOrPurok}
                 onChange={(e) => handleChange('streetOrPurok', e.target.value)}
-                placeholder="e.g. Purok Bougainvillea, Gen. Luna St."
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none"
+                placeholder="e.g. Purok 2, National Highway"
+                className={CLAY_INPUT}
               />
             </div>
-            <div className="md:col-span-2 p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-[#1d3c5c] text-[11px] text-slate-300 flex items-start gap-2.5">
-              <Radio className="w-4 h-4 text-sky-400 mt-0.5 flex-shrink-0" />
+            <div className={`${CLAY_WELL} md:col-span-2 p-3.5 text-xs flex items-start gap-2.5`}>
+              <Radio className="w-4 h-4 text-[#670626] mt-0.5 flex-shrink-0" />
               <div>
-                <strong className="text-sky-300 font-mono">Geographic Triage Allocation: </strong>
-                Barangay coordinates anchor live GPS responder routing and evacuation alert dispatch to the LDRRMO Command Console.
+                <strong className="font-mono">Katipunan Geographic Allocation: </strong>
+                Barangay coordinates anchor live GPS responder routing and evacuation notifications to the LDRRMO Command Console.
               </div>
             </div>
           </div>
         )}
 
-        {/* Tab 3: Role & Station */}
+        {/* Tab 3: Role */}
         {activeTab === 'role' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
-                System Access Role <span className="text-rose-400">*</span>
-              </label>
-              <select
-                value={formData.role}
-                onChange={(e) => handleChange('role', e.target.value)}
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none font-bold"
-              >
-                <option value="Civilian">Civilian (UG Resident / Community)</option>
+              <label className={labelClass}>System Access Role *</label>
+              <select value={formData.role} onChange={(e) => handleChange('role', e.target.value)} className={CLAY_SELECT}>
+                <option value="Civilian">Civilian (Resident / Community)</option>
                 <option value="Responder">Responder (First Responder / Tactical Unit)</option>
                 <option value="LDRRMO_Admin">LDRRMO Admin (Executive & Operations)</option>
               </select>
@@ -574,98 +520,79 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
 
             {formData.role === 'Responder' ? (
               <div>
-                <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
-                  Tactical Unit Agency <span className="text-rose-400">*</span>
-                </label>
-                <select
-                  value={formData.unit}
-                  onChange={(e) => handleChange('unit', e.target.value)}
-                  className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-sky-400 focus:border-sky-400 focus:outline-none font-bold font-mono"
-                >
-                  <option value="RHU">RHU (City Health Office & Medical Response)</option>
+                <label className={labelClass}>Tactical Unit Agency *</label>
+                <select value={formData.unit} onChange={(e) => handleChange('unit', e.target.value)} className={CLAY_SELECT}>
+                  <option value="RHU">RHU (Rural Health Unit & Medical Response)</option>
                   <option value="FIRE">FIRE (Bureau of Fire Protection - BFP)</option>
-                  <option value="PNP">PNP (Philippine National Police - Tactical)</option>
+                  <option value="PNP">PNP (Philippine National Police)</option>
                 </select>
               </div>
             ) : (
               <div>
-                <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Unit Allocation</label>
-                <input
-                  type="text"
-                  disabled
-                  value="None (Standard Community / Central Command)"
-                  className="w-full bg-[#071522]/50 border border-slate-800 rounded-lg p-2.5 text-slate-500 cursor-not-allowed font-mono"
-                />
+                <label className={labelClass}>Unit Allocation</label>
+                <input type="text" disabled value="None (Standard Community / Command)" className={CLAY_INPUT} />
               </div>
             )}
 
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Station / Department / Sector</label>
+              <label className={labelClass}>Station / Department / Barangay</label>
               <input
                 type="text"
                 value={formData.departmentOrBarangay}
                 onChange={(e) => handleChange('departmentOrBarangay', e.target.value)}
-                placeholder="e.g. Dipolog Central Fire Station, CPS Station 1"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none"
+                placeholder="e.g. BFP Katipunan Fire Station, RHU Poblacion"
+                className={CLAY_INPUT}
               />
             </div>
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Official Rank or Operational Title</label>
+              <label className={labelClass}>Official Rank or Operational Title</label>
               <input
                 type="text"
                 value={formData.rankOrTitle}
                 onChange={(e) => handleChange('rankOrTitle', e.target.value)}
                 placeholder="e.g. Lead Paramedic, FO2, Patrolman, Ops Chief"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 focus:border-sky-400 focus:outline-none"
+                className={CLAY_INPUT}
               />
             </div>
           </div>
         )}
 
-        {/* Tab 4: Role-Specific Emergency Badges */}
+        {/* Tab 4: Credentials */}
         {activeTab === 'credentials' && (
-          <div className="space-y-3.5">
+          <div className="space-y-4">
             {formData.role === 'Civilian' && (
-              <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-800/60 space-y-3 shadow-lg">
-                <div className="flex items-center gap-2 text-purple-300 font-mono font-bold text-xs uppercase tracking-wider">
-                  <User className="w-4 h-4 text-purple-400" />
+              <div className={`${CLAY_WELL} p-4 space-y-3`}>
+                <div className="flex items-center gap-2 font-mono font-bold text-xs uppercase tracking-wider">
+                  <User className="w-4 h-4 text-[#A83B4D]" />
                   Philippine Civilian Resident Credentials
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">PhilSys / Government ID Type</label>
-                    <select
-                      value={formData.governmentIdType}
-                      onChange={(e) => handleChange('governmentIdType', e.target.value)}
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-mono text-xs"
-                    >
+                    <label className={labelClass}>Government ID Type</label>
+                    <select value={formData.governmentIdType} onChange={(e) => handleChange('governmentIdType', e.target.value)} className={CLAY_SELECT}>
                       <option value="PhilSys National ID">PhilSys National ID</option>
-                      <option value="UMID">UMID (Unified Multi-Purpose ID)</option>
+                      <option value="UMID">UMID</option>
                       <option value="Driver's License">Driver's License (LTO)</option>
-                      <option value="Voter's ID">Voter's ID / Comelec Certificate</option>
+                      <option value="Voter's ID">Voter's ID</option>
                       <option value="Barangay ID">Barangay Resident ID</option>
                       <option value="Passport">Philippine Passport</option>
-                      <option value="Senior Citizen ID">Senior Citizen ID (OSCA)</option>
-                      <option value="PWD ID">Persons with Disability (PWD) ID</option>
+                      <option value="Senior Citizen ID">Senior Citizen ID</option>
+                      <option value="PWD ID">PWD ID</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Government ID Card Number</label>
+                    <label className={labelClass}>Government ID Number</label>
                     <input
                       type="text"
                       value={formData.governmentIdNumber}
                       onChange={(e) => handleChange('governmentIdNumber', e.target.value)}
                       placeholder="e.g. 1234-5678-9012-3456"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-mono"
+                      className={CLAY_INPUT}
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Residency Category</label>
-                    <select
-                      value={formData.residencyCategory}
-                      onChange={(e) => handleChange('residencyCategory', e.target.value)}
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-mono"
-                    >
+                    <label className={labelClass}>Residency Category</label>
+                    <select value={formData.residencyCategory} onChange={(e) => handleChange('residencyCategory', e.target.value)} className={CLAY_SELECT}>
                       <option value="Permanent">Permanent Resident</option>
                       <option value="Transient">Transient / Temporary</option>
                       <option value="Student">Student / Boarder</option>
@@ -673,18 +600,14 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Vulnerability / Priority Flags</label>
-                    <select
-                      value={formData.vulnerabilityFlags}
-                      onChange={(e) => handleChange('vulnerabilityFlags', e.target.value)}
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-amber-300 font-bold font-mono"
-                    >
-                      <option value="None">None (General Resident)</option>
+                    <label className={labelClass}>Vulnerability Flags</label>
+                    <select value={formData.vulnerabilityFlags} onChange={(e) => handleChange('vulnerabilityFlags', e.target.value)} className={CLAY_SELECT}>
+                      <option value="None">None</option>
                       <option value="Senior Citizen">Senior Citizen (60+)</option>
                       <option value="PWD">Persons with Disability (PWD)</option>
                       <option value="Pregnant">Pregnant Resident</option>
-                      <option value="Solo Parent">Solo Parent with Minor Children</option>
-                      <option value="Medical Risk">Critical Medical Risk / Dialysis</option>
+                      <option value="Solo Parent">Solo Parent</option>
+                      <option value="Medical Risk">Critical Medical Risk</option>
                     </select>
                   </div>
                 </div>
@@ -692,251 +615,135 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
             )}
 
             {formData.role === 'Responder' && formData.unit === 'RHU' && (
-              <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-600/70 space-y-3 shadow-lg">
-                <div className="flex items-center gap-2 text-emerald-300 font-mono font-bold text-xs uppercase tracking-wider">
-                  <HeartPulse className="w-4 h-4 text-emerald-400" />
-                  Rural Health Unit (RHU) Medical Credentials
+              <div className={`${CLAY_WELL} p-4 space-y-3`}>
+                <div className="flex items-center gap-2 font-mono font-bold text-xs uppercase tracking-wider">
+                  <HeartPulse className="w-4 h-4 text-emerald-700" />
+                  Katipunan Rural Health Unit (RHU) Credentials
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">PRC Medical License Number</label>
-                    <input
-                      type="text"
-                      value={formData.medicalLicenseNumber}
-                      onChange={(e) => handleChange('medicalLicenseNumber', e.target.value)}
-                      placeholder="e.g. PRC-0189421"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-emerald-300 font-mono font-bold"
-                    />
+                    <label className={labelClass}>PRC Medical License Number</label>
+                    <input type="text" value={formData.medicalLicenseNumber} onChange={(e) => handleChange('medicalLicenseNumber', e.target.value)} className={CLAY_INPUT} />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Medical Cadre / Specialization</label>
-                    <select
-                      value={formData.medicalCadre}
-                      onChange={(e) => handleChange('medicalCadre', e.target.value)}
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-mono"
-                    >
-                      <option value="Physician">Medical Doctor / Physician</option>
-                      <option value="Registered Nurse">Emergency Nurse (RN)</option>
-                      <option value="Paramedic">Emergency Medical Technician (EMT / Paramedic)</option>
-                      <option value="Medical Technologist">Medical Technologist</option>
-                      <option value="First Responder">First Aid Responder / BHW</option>
+                    <label className={labelClass}>Medical Cadre</label>
+                    <select value={formData.medicalCadre} onChange={(e) => handleChange('medicalCadre', e.target.value)} className={CLAY_SELECT}>
+                      <option value="Physician">Physician</option>
+                      <option value="Registered Nurse">Registered Nurse</option>
+                      <option value="Paramedic">Paramedic</option>
+                      <option value="First Responder">First Responder</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Health Center Station</label>
+                    <label className={labelClass}>Health Station</label>
                     <input
                       type="text"
                       value={formData.stationHealthCenter}
                       onChange={(e) => handleChange('stationHealthCenter', e.target.value)}
-                      placeholder="e.g. Dipolog CHO Main, RHU Barra"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100"
+                      placeholder="e.g. Katipunan Rural Health Unit (RHU)"
+                      className={CLAY_INPUT}
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Ambulance Call Sign</label>
-                    <input
-                      type="text"
-                      value={formData.ambulanceCallSign}
-                      onChange={(e) => handleChange('ambulanceCallSign', e.target.value)}
-                      placeholder="e.g. RHU-MED1, AMB-04"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-emerald-300 font-mono font-bold"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Medical Certifications</label>
-                    <input
-                      type="text"
-                      value={formData.medicalCertifications}
-                      onChange={(e) => handleChange('medicalCertifications', e.target.value)}
-                      placeholder="e.g. BLS, ACLS, PHTLS, Mass Casualty Triage"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-mono"
-                    />
+                    <label className={labelClass}>Ambulance Call Sign</label>
+                    <input type="text" value={formData.ambulanceCallSign} onChange={(e) => handleChange('ambulanceCallSign', e.target.value)} className={CLAY_INPUT} />
                   </div>
                 </div>
               </div>
             )}
 
             {formData.role === 'Responder' && formData.unit === 'FIRE' && (
-              <div className="p-4 rounded-xl bg-orange-950/20 border border-orange-600/70 space-y-3 shadow-lg">
-                <div className="flex items-center gap-2 text-orange-300 font-mono font-bold text-xs uppercase tracking-wider">
-                  <Flame className="w-4 h-4 text-orange-400" />
-                  Bureau of Fire Protection (BFP) Credentials
+              <div className={`${CLAY_WELL} p-4 space-y-3`}>
+                <div className="flex items-center gap-2 font-mono font-bold text-xs uppercase tracking-wider">
+                  <Flame className="w-4 h-4 text-orange-700" />
+                  BFP Katipunan Credentials
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">BFP Firefighter Rank</label>
-                    <select
-                      value={formData.firefighterRank}
-                      onChange={(e) => handleChange('firefighterRank', e.target.value)}
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-orange-300 font-bold font-mono"
-                    >
-                      <option value="Fire Officer 1 (FO1)">Fire Officer 1 (FO1)</option>
-                      <option value="Fire Officer 2 (FO2)">Fire Officer 2 (FO2)</option>
-                      <option value="Fire Officer 3 (FO3)">Fire Officer 3 (FO3)</option>
-                      <option value="Senior Fire Officer 1 (SFO1)">Senior Fire Officer 1 (SFO1)</option>
-                      <option value="Senior Fire Officer 2 (SFO2)">Senior Fire Officer 2 (SFO2)</option>
-                      <option value="Senior Fire Officer 3 (SFO3)">Senior Fire Officer 3 (SFO3)</option>
-                      <option value="Senior Fire Officer 4 (SFO4)">Senior Fire Officer 4 (SFO4)</option>
-                      <option value="Fire Inspector (FINSP)">Fire Inspector (FINSP)</option>
-                      <option value="Senior Fire Inspector (SINSP)">Senior Fire Inspector (SINSP)</option>
+                    <label className={labelClass}>BFP Rank</label>
+                    <select value={formData.firefighterRank} onChange={(e) => handleChange('firefighterRank', e.target.value)} className={CLAY_SELECT}>
+                      <option value="Fire Officer 1 (FO1)">FO1</option>
+                      <option value="Fire Officer 2 (FO2)">FO2</option>
+                      <option value="Fire Officer 3 (FO3)">FO3</option>
+                      <option value="Senior Fire Officer 1 (SFO1)">SFO1</option>
+                      <option value="Senior Fire Inspector (SINSP)">SINSP</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">BFP Badge / Account Number</label>
-                    <input
-                      type="text"
-                      value={formData.bfpBadgeNumber}
-                      onChange={(e) => handleChange('bfpBadgeNumber', e.target.value)}
-                      placeholder="e.g. BFP-982103"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-orange-300 font-mono font-bold"
-                    />
+                    <label className={labelClass}>BFP Badge Number</label>
+                    <input type="text" value={formData.bfpBadgeNumber} onChange={(e) => handleChange('bfpBadgeNumber', e.target.value)} className={CLAY_INPUT} />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Assigned Fire Station</label>
+                    <label className={labelClass}>Assigned Fire Station</label>
                     <input
                       type="text"
                       value={formData.fireStation}
                       onChange={(e) => handleChange('fireStation', e.target.value)}
-                      placeholder="e.g. Dipolog Central Fire Station"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100"
+                      placeholder="e.g. BFP Katipunan Fire Station"
+                      className={CLAY_INPUT}
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Apparatus / Vehicle Call Sign</label>
-                    <input
-                      type="text"
-                      value={formData.apparatusCallSign}
-                      onChange={(e) => handleChange('apparatusCallSign', e.target.value)}
-                      placeholder="e.g. ENGINE-1, LADDER-1, TANKER-2"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-orange-300 font-mono font-bold"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Specialization</label>
-                    <select
-                      value={formData.fireSpecialization}
-                      onChange={(e) => handleChange('fireSpecialization', e.target.value)}
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-mono"
-                    >
-                      <option value="Structural Firefighting">Structural Firefighting</option>
-                      <option value="Hazardous Materials (HazMat)">Hazardous Materials (HazMat)</option>
-                      <option value="Urban Search and Rescue (USAR)">Urban Search and Rescue (USAR)</option>
-                      <option value="Water Rescue & Floods">Water Rescue & Floods</option>
-                      <option value="High-Angle Rope Rescue">High-Angle Rope Rescue</option>
-                    </select>
+                    <label className={labelClass}>Apparatus Call Sign</label>
+                    <input type="text" value={formData.apparatusCallSign} onChange={(e) => handleChange('apparatusCallSign', e.target.value)} className={CLAY_INPUT} />
                   </div>
                 </div>
               </div>
             )}
 
             {formData.role === 'Responder' && formData.unit === 'PNP' && (
-              <div className="p-4 rounded-xl bg-sky-950/20 border border-sky-600/70 space-y-3 shadow-lg">
-                <div className="flex items-center gap-2 text-sky-300 font-mono font-bold text-xs uppercase tracking-wider">
-                  <ShieldAlert className="w-4 h-4 text-sky-400" />
-                  Philippine National Police (PNP) Credentials
+              <div className={`${CLAY_WELL} p-4 space-y-3`}>
+                <div className="flex items-center gap-2 font-mono font-bold text-xs uppercase tracking-wider">
+                  <ShieldAlert className="w-4 h-4 text-sky-700" />
+                  PNP Katipunan Credentials
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">PNP Police Rank</label>
-                    <select
-                      value={formData.policeRank}
-                      onChange={(e) => handleChange('policeRank', e.target.value)}
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-sky-300 font-bold font-mono"
-                    >
-                      <option value="Patrolman">Patrolman / Patrolwoman (Pat)</option>
-                      <option value="Police Corporal (PCpl)">Police Corporal (PCpl)</option>
-                      <option value="Police Staff Sergeant (PSSg)">Police Staff Sergeant (PSSg)</option>
-                      <option value="Police Master Sergeant (PMSg)">Police Master Sergeant (PMSg)</option>
-                      <option value="Police Senior Master Sergeant (PSMS)">Police Senior Master Sergeant (PSMS)</option>
-                      <option value="Police Chief Master Sergeant (PCMS)">Police Chief Master Sergeant (PCMS)</option>
-                      <option value="Police Executive Master Sergeant (PEMS)">Police Executive Master Sergeant (PEMS)</option>
-                      <option value="Police Lieutenant (PLT)">Police Lieutenant (PLT)</option>
-                      <option value="Police Captain (PCPT)">Police Captain (PCPT)</option>
-                      <option value="Police Major (PMAJ)">Police Major (PMAJ)</option>
+                    <label className={labelClass}>PNP Police Rank</label>
+                    <select value={formData.policeRank} onChange={(e) => handleChange('policeRank', e.target.value)} className={CLAY_SELECT}>
+                      <option value="Patrolman">Patrolman / Patrolwoman</option>
+                      <option value="Police Corporal (PCpl)">PCpl</option>
+                      <option value="Police Staff Sergeant (PSSg)">PSSg</option>
+                      <option value="Police Lieutenant (PLT)">PLT</option>
+                      <option value="Police Major (PMAJ)">PMAJ</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">PNP Badge / Plantilla ID</label>
-                    <input
-                      type="text"
-                      value={formData.pnpBadgeNumber}
-                      onChange={(e) => handleChange('pnpBadgeNumber', e.target.value)}
-                      placeholder="e.g. PNP-448102"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-sky-300 font-mono font-bold"
-                    />
+                    <label className={labelClass}>PNP Badge Number</label>
+                    <input type="text" value={formData.pnpBadgeNumber} onChange={(e) => handleChange('pnpBadgeNumber', e.target.value)} className={CLAY_INPUT} />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Precinct / Police Station</label>
+                    <label className={labelClass}>Police Station</label>
                     <input
                       type="text"
                       value={formData.precinctOrStation}
                       onChange={(e) => handleChange('precinctOrStation', e.target.value)}
-                      placeholder="e.g. Dipolog CPS Central, Station 1"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100"
+                      placeholder="e.g. PNP Katipunan Municipal Police Station"
+                      className={CLAY_INPUT}
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Assignment / Sector</label>
-                    <input
-                      type="text"
-                      value={formData.policeAssignment}
-                      onChange={(e) => handleChange('policeAssignment', e.target.value)}
-                      placeholder="e.g. Beat Patrol, Traffic, Tactical Response"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Sidearm Serial Number</label>
-                    <input
-                      type="text"
-                      value={formData.sidearmSerial}
-                      onChange={(e) => handleChange('sidearmSerial', e.target.value)}
-                      placeholder="e.g. GLOCK17-SN-9281734"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-rose-300 font-mono"
-                    />
+                    <label className={labelClass}>Assignment / Sector</label>
+                    <input type="text" value={formData.policeAssignment} onChange={(e) => handleChange('policeAssignment', e.target.value)} className={CLAY_INPUT} />
                   </div>
                 </div>
               </div>
             )}
 
             {formData.role === 'LDRRMO_Admin' && (
-              <div className="p-4 rounded-xl bg-rose-950/20 border border-amber-600/70 space-y-3 shadow-lg">
-                <div className="flex items-center gap-2 text-amber-300 font-mono font-bold text-xs uppercase tracking-wider">
-                  <Building2 className="w-4 h-4 text-amber-400" />
-                  LDRRMO Administrative Governance Credentials
+              <div className={`${CLAY_WELL} p-4 space-y-3`}>
+                <div className="flex items-center gap-2 font-mono font-bold text-xs uppercase tracking-wider">
+                  <Building2 className="w-4 h-4 text-[#670626]" />
+                  LDRRMO Administrative Credentials
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">LGU Plantilla Number</label>
-                    <input
-                      type="text"
-                      value={formData.plantillaNumber}
-                      onChange={(e) => handleChange('plantillaNumber', e.target.value)}
-                      placeholder="e.g. LGU-PLANTILLA-2026-084"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-amber-300 font-mono font-bold"
-                    />
+                    <label className={labelClass}>LGU Plantilla Number</label>
+                    <input type="text" value={formData.plantillaNumber} onChange={(e) => handleChange('plantillaNumber', e.target.value)} className={CLAY_INPUT} />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Executive Designation</label>
-                    <input
-                      type="text"
-                      value={formData.executiveDesignation}
-                      onChange={(e) => handleChange('executiveDesignation', e.target.value)}
-                      placeholder="e.g. Operations Officer, CDRRMO Chief"
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-slate-100 font-semibold"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">Security Clearance Level</label>
-                    <select
-                      value={formData.clearanceLevel}
-                      onChange={(e) => handleChange('clearanceLevel', e.target.value)}
-                      className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2 text-sky-300 font-mono font-bold"
-                    >
-                      <option value="Level 1 - Field Tactical">Level 1 - Field Tactical Operations</option>
-                      <option value="Level 2 - Tactical Operations">Level 2 - Operations Center Tactical</option>
-                      <option value="Level 3 - Executive Command Authority">Level 3 - Executive Command Authority</option>
-                    </select>
+                    <label className={labelClass}>Executive Designation</label>
+                    <input type="text" value={formData.executiveDesignation} onChange={(e) => handleChange('executiveDesignation', e.target.value)} className={CLAY_INPUT} />
                   </div>
                 </div>
               </div>
@@ -944,72 +751,64 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
           </div>
         )}
 
-        {/* Tab 5: Security & Auth */}
+        {/* Tab 5: Account */}
         {activeTab === 'account' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
-                Official Agency Email Address <span className="text-rose-400">*</span>
-              </label>
+              <label className={labelClass}>Official Email Address *</label>
               <input
                 type="email"
                 required
                 value={formData.email}
                 onChange={(e) => handleChange('email', e.target.value)}
                 placeholder="e.g. official@resqtrack.gov.ph"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 placeholder-slate-500 focus:border-sky-400 focus:outline-none font-mono"
+                className={CLAY_INPUT}
               />
             </div>
             <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1 font-bold">
-                Initial Provisioning Password <span className="text-rose-400">*</span>
-              </label>
+              <label className={labelClass}>Initial Password *</label>
               <input
                 type="password"
                 required
                 minLength={MIN_PASSWORD_LENGTH}
                 value={formData.password}
                 onChange={(e) => handleChange('password', e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full bg-[#071522] border border-[#1d3c5c] rounded-lg p-2.5 text-slate-100 placeholder-slate-500 focus:border-sky-400 focus:outline-none font-mono"
+                placeholder="Minimum 12 characters"
+                className={CLAY_INPUT}
               />
             </div>
-            <div className="md:col-span-2 p-3.5 rounded-xl bg-[#0a1a2b]/90 border border-[#1d3c5c] text-[11px] text-slate-300 space-y-1.5">
-              <div className="font-bold text-sky-400 font-mono uppercase tracking-wider flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-sky-400" />
-                Incident AI Security Governance Protocol:
+            <div className={`${CLAY_WELL} md:col-span-2 p-4 text-xs space-y-1.5`}>
+              <div className="font-bold font-mono uppercase tracking-wider flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-[#A83B4D]" />
+                Security Governance Protocol:
               </div>
-              <div className="text-slate-400">
-                • Minimum {MIN_PASSWORD_LENGTH} alphanumeric characters with uppercase, lowercase, numbers, and symbols required.
-              </div>
-              <div className="text-slate-400">
-                • Real-time Laplacian anti-spoofing face verification will be requested on initial field logon.
+              <div className="text-[#A83B4D]">
+                Minimum {MIN_PASSWORD_LENGTH} characters with mixed case, digits, and symbols.
               </div>
             </div>
           </div>
         )}
 
-        {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-3.5 border-t border-[#1d3c5c] mt-2">
+        <div className="flex items-center justify-between pt-3.5 border-t border-[#670626]/15 mt-2">
           <div>
             {activeTab !== 'personal' && (
-              <Button
+              <AdminButton
                 type="button"
-                variant="secondary"
+                variant="outline"
                 size="sm"
                 onClick={() => {
                   const idx = tabs.findIndex((t) => t.key === activeTab);
                   if (idx > STEP_ZERO) setActiveTab(tabs[idx - STEP_OFFSET].key);
                 }}
-                icon={<ChevronLeft className="w-3.5 h-3.5" />}
+                icon={<ChevronLeft className="w-4 h-4" />}
               >
                 Back
-              </Button>
+              </AdminButton>
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
+            <AdminButton
               type="button"
               variant="ghost"
               size="sm"
@@ -1019,10 +818,10 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
               }}
             >
               Cancel
-            </Button>
+            </AdminButton>
 
             {activeTab !== 'account' ? (
-              <Button
+              <AdminButton
                 type="button"
                 variant="primary"
                 size="sm"
@@ -1031,30 +830,22 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                   if (idx < tabs.length - STEP_OFFSET) setActiveTab(tabs[idx + STEP_OFFSET].key);
                 }}
               >
-                Next <ChevronRight className="w-3.5 h-3.5 inline ml-1" />
-              </Button>
+                Next <ChevronRight className="w-4 h-4 inline ml-1" />
+              </AdminButton>
             ) : (
-              <button
+              <AdminButton
                 type="submit"
+                variant="primary"
+                size="sm"
                 disabled={isSubmitting}
-                className="px-4 py-2 rounded-lg text-xs font-mono font-bold tracking-wider uppercase bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                icon={isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
               >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Creating…
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    Create User
-                  </>
-                )}
-              </button>
+                {isSubmitting ? 'Creating…' : 'Create User'}
+              </AdminButton>
             )}
           </div>
         </div>
       </form>
-    </DefaultFloatingModalCard>
+    </AdminModalCard>
   );
 };

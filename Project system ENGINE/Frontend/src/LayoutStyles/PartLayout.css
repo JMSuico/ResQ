@@ -3,30 +3,40 @@
  * DO NOT introduce non-standard CSS properties breaking Vite/PostCSS builds.
  */
 
+/* [Layer: LayoutStyles]
+ * Responsibility: Component part tokens, glassmorphism cards, and tactical scrollbar styling.
+ * DO NOT introduce non-standard CSS properties breaking Vite/PostCSS builds.
+ */
+
 .tactical-card {
-  background: linear-gradient(145deg, rgba(15, 23, 42, 0.72), rgba(7, 21, 34, 0.56));
-  backdrop-filter: blur(18px) saturate(145%);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.875rem;
+  background: var(--resq-ivory, #F7F1EA);
+  color: var(--resq-ink-on-ivory, #2B010E);
+  border: 1px solid #D8C2B8;
+  border-radius: 1.25rem;
+  font-size: 15px;
+  line-height: 1.5;
   box-shadow:
-    0 12px 30px -10px rgba(2, 6, 23, 0.65),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 14px 28px rgba(43, 1, 14, 0.3),
+    0 6px 12px rgba(0, 0, 0, 0.16),
+    inset 2px 2px 4px rgba(255, 255, 255, 0.85),
+    inset -2px -2px 4px rgba(200, 185, 175, 0.3);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .tactical-card:hover {
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: var(--resq-muted-cherry, #A83B4D);
 }
 
 .tactical-glass {
-  background: linear-gradient(145deg, rgba(15, 23, 42, 0.76), rgba(38, 5, 16, 0.34));
-  backdrop-filter: blur(20px) saturate(155%);
-  -webkit-backdrop-filter: blur(20px) saturate(155%);
-  border: 1px solid rgba(255, 92, 116, 0.18);
+  background: linear-gradient(145deg, rgba(74, 4, 26, 0.84), rgba(64, 0, 20, 0.9));
+  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  border: 1px solid rgba(255, 217, 221, 0.2);
+  font-size: 15px;
+  line-height: 1.5;
   box-shadow:
-    0 14px 36px -10px rgba(2, 6, 23, 0.65),
-    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+    0 14px 36px -10px rgba(43, 1, 14, 0.58),
+    inset 0 1px 0 rgba(255, 217, 221, 0.14);
 }
 
 .tactical-glow-danger {
@@ -37,21 +47,21 @@
   box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
 }
 
-/* Custom Tactical Scrollbars */
+/* Custom Cherry & Ivory Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-command-dark);
+  background: rgba(64, 0, 20, 0.65);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-surface-border);
-  border-radius: 3px;
+  background: rgba(168, 59, 77, 0.78);
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-dim);
+  background: rgba(247, 241, 234, 0.85);
 }

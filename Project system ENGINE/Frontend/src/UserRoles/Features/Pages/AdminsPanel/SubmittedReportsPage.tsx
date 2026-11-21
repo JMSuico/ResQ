@@ -1,54 +1,46 @@
 // [Layer: UserRoles/Features/Pages/AdminsPanel]
 // SubmittedReportsPage.tsx -- LDRRMO Admin Submitted Reports Command Center.
-// Displays all incident reports, multi-casualty PCR vitals, and evidence dossiers submitted by field responders
-// after responding to their assigned tasks. Includes Admin Verification action that starts the 5-minute auto-close timer.
-// Universal lambda expressions (=>). 100% pure Lucide icons (zero emojis).
+// Stitch Official Cherry (#670626) / Warm Ivory (#F7F1EA) / Soft Beige (#E9D9D0) / Muted Cherry (#A83B4D) Clay Design System.
+// Instructor #4 & #7: Renders full status badges (Submitted, Pending, Verified, Dispatched, Resolved, Rejected)
+// and clear Verify / Reject actions for Submitted / Pending uploads, plus 5-minute auto-close timer.
+// REMOVING #11: Zero Dipolog/San Mateo references and zero external Unsplash URLs; Katipunan, ZN (7109) coordinates only.
+// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis.
 
 import React, { useState, useEffect, FC, useMemo, useCallback } from 'react';
 import {
   FileCheck,
   CheckCircle2,
   Clock,
-  Filter,
   Eye,
-  ShieldAlert,
-  ArrowUpDown,
-  Search,
   FileText,
   Check,
   X,
-  Users,
-  Shield,
   HeartPulse,
-  Flame,
-  Radio,
   MapPin,
   RefreshCw,
-  Sparkles,
   Activity,
   Camera,
-  TrendingUp,
-  Send,
-  AlertTriangle,
-  Building2,
-  Calendar,
-  Layers,
-  ArrowRight
+  XCircle
 } from 'lucide-react';
 import { getAllReports, verifyReport, ReportItem } from '@/Endpoints/reportsApi';
-import { getDutyRoster, DutyUnit } from '@/Endpoints/responderOpsApi';
 import {
   SearchBar,
   Dropdown,
-  Button,
   TableCardToggle,
   ViewMode,
-  DefaultFloatingModalCard,
   ImageLightboxModal,
   LightboxMediaItem
 } from '@/Shared';
 import { usePagination, useDebounce, useValueRefreshAuto } from '@/Hooks';
 import { formatDateTimeWithSecondsAmPm } from '@/Shared/radarPointerCategories';
+import { KATIPUNAN_BASE_COORDS, getKatipunanBarangay } from '@/Libs/Map/mapAccuracy';
+import { AdminButton } from './Shared/AdminButton';
+import { AdminModalCard } from './Shared/AdminModalCard';
+import {
+  CLAY_SURFACE,
+  CLAY_WELL,
+  formatIncidentStatusBadge
+} from './Shared/adminCommandHelpers';
 
 export interface PcrCasualtyItem {
   id: string;
@@ -104,6 +96,14 @@ export interface RawIncidentLog {
   pcrRecords?: Array<Record<string, unknown>>;
   notes?: string;
   note?: string;
+  roboflowModelId?: string | null;
+  roboflowPrediction?: string | null;
+  roboflowConfidence?: number | null;
+  roboflowNeedsReview?: boolean;
+  claudeModelUsed?: string | null;
+  claudeSituationSummary?: string | null;
+  claudeVisibleHazards?: string | null;
+  pointerIconType?: string | null;
 }
 
 const normalizeEvidence = (item: RawIncidentLog): Array<{ url: string; timestamp?: string; caption?: string }> => {
@@ -120,7 +120,7 @@ const normalizeEvidence = (item: RawIncidentLog): Array<{ url: string; timestamp
         caption: typeof e?.caption === 'string' ? e.caption : `Attached Evidence #${idx + 1}`
       };
     })
-    .filter((e) => Boolean(e.url));
+    .filter((e) => Boolean(e.url) && !e.url.includes('unsplash.com'));
 };
 
 const normalizeCasualties = (item: RawIncidentLog): PcrCasualtyItem[] => {
@@ -140,7 +140,7 @@ const normalizeCasualties = (item: RawIncidentLog): PcrCasualtyItem[] => {
     spO2: typeof c.spO2 === 'number' ? c.spO2 : typeof c.spO2Percent === 'number' ? c.spO2Percent : 98,
     glucose: typeof c.glucose === 'number' ? c.glucose : typeof c.bloodGlucoseMgDl === 'number' ? c.bloodGlucoseMgDl : 90,
     temp: typeof c.temp === 'number' ? c.temp : typeof c.temperatureCelsius === 'number' ? c.temperatureCelsius : 36.5,
-    receivingHospital: typeof c.receivingHospital === 'string' ? c.receivingHospital : 'Dipolog City Medical Center',
+    receivingHospital: typeof c.receivingHospital === 'string' ? c.receivingHospital : 'Katipunan Rural Health Unit (RHU)',
     chiefComplaint: typeof c.chiefComplaint === 'string' ? c.chiefComplaint : 'Trauma & Triage Evaluation',
     narrative: typeof c.narrative === 'string' ? c.narrative : '',
     interventions: Array.isArray(c.interventions) ? c.interventions.filter((i): i is string => typeof i === 'string') : [],
@@ -154,7 +154,7 @@ export interface SubmittedReportRecord {
   title: string;
   category: string;
   severity: string;
-  status: 'Responded' | 'Verified' | 'Closed' | 'Dispatched' | string;
+  status: string;
   locationLabel: string;
   latitude: number;
   longitude: number;
@@ -167,9 +167,19 @@ export interface SubmittedReportRecord {
   verifiedBy?: string;
   isClosed: boolean;
   closedAt: string | null;
+  isRejected?: boolean;
+  allocatedUnitCode?: string | null;
   evidencePhotos: Array<{ url: string; timestamp?: string; caption?: string }>;
   casualties: PcrCasualtyItem[];
   notes?: string;
+  roboflowModelId?: string | null;
+  roboflowPrediction?: string | null;
+  roboflowConfidence?: number | null;
+  roboflowNeedsReview?: boolean;
+  claudeModelUsed?: string | null;
+  claudeSituationSummary?: string | null;
+  claudeVisibleHazards?: string | null;
+  pointerIconType?: string | null;
 }
 
 const STORAGE_INCIDENT_LOGS_KEY = 'resqtrack_incident_logs';
@@ -191,7 +201,6 @@ export const SubmittedReportsPage: FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
-  // 1-second interval to update live 5-minute countdown timers
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -199,7 +208,6 @@ export const SubmittedReportsPage: FC = () => {
 
   const loadSubmittedReports = useCallback(async (): Promise<void> => {
     try {
-      // 1. Read from localStorage 'resqtrack_incident_logs'
       let localLogs: RawIncidentLog[] = [];
       try {
         const raw = localStorage.getItem(STORAGE_INCIDENT_LOGS_KEY);
@@ -208,29 +216,40 @@ export const SubmittedReportsPage: FC = () => {
         localLogs = [];
       }
 
-      // 2. Fetch backend reports
-      const backendReports = await getAllReports().catch(() => [] as ReportItem[]);
+      let aiVisionCache: Record<string, Partial<ReportItem>> = {};
+      try {
+        const cachedAiRaw = localStorage.getItem('resqtrack_ai_vision_by_report');
+        if (cachedAiRaw) {
+          aiVisionCache = JSON.parse(cachedAiRaw) as Record<string, Partial<ReportItem>>;
+        }
+      } catch {}
 
-      // 3. Merge into unified SubmittedReportRecord list
+      const backendReports = await getAllReports().catch(() => [] as ReportItem[]);
       const mergedMap = new Map<string, SubmittedReportRecord>();
 
-      // Local logs take precedence for rich field telemetry (multi-PCR & evidence gallery)
       if (Array.isArray(localLogs)) {
         localLogs.forEach((item: RawIncidentLog) => {
           if (!item || !item.id) return;
-          const isVerified = Boolean(item.isVerified || item.verifiedAt);
-          const isClosed = Boolean(item.isClosed || item.closedAt || item.status === 'Closed');
+          const rawStatus = (item.status || 'Submitted').toLowerCase();
+          const isRejected = rawStatus === 'rejected';
+          const isVerified = !isRejected && Boolean(item.isVerified || item.verifiedAt || rawStatus === 'verified');
+          const isClosed = Boolean(item.isClosed || item.closedAt || rawStatus === 'closed' || rawStatus === 'resolved');
+          const refCode = item.referenceCode || `RESQ-${item.id.slice(0, 8).toUpperCase()}`;
+          const cached = aiVisionCache[item.id] || aiVisionCache[refCode];
 
           mergedMap.set(item.id, {
             id: item.id,
-            referenceCode: item.referenceCode || `RESQ-${item.id.slice(0, 8).toUpperCase()}`,
+            referenceCode: refCode,
             title: item.title || 'Submitted Incident Report',
             category: item.category || 'MedicalEmergency',
             severity: item.severity || 'Medium',
-            status: isClosed ? 'Closed' : isVerified ? 'Verified' : (item.status || 'Responded'),
-            locationLabel: item.locationLabel || item.location || 'Municipal Sector Coordinates',
-            latitude: typeof item.latitude === 'number' ? item.latitude : 14.6514,
-            longitude: typeof item.longitude === 'number' ? item.longitude : 121.0493,
+            status: isRejected ? 'Rejected' : isClosed ? 'Resolved' : isVerified ? 'Verified' : (item.status || 'Submitted'),
+            locationLabel:
+              item.locationLabel ||
+              item.location ||
+              getKatipunanBarangay(item.latitude ?? KATIPUNAN_BASE_COORDS.latitude, item.longitude ?? KATIPUNAN_BASE_COORDS.longitude),
+            latitude: typeof item.latitude === 'number' ? item.latitude : KATIPUNAN_BASE_COORDS.latitude,
+            longitude: typeof item.longitude === 'number' ? item.longitude : KATIPUNAN_BASE_COORDS.longitude,
             ipAddress: item.ipAddress || '192.168.42.118',
             responderName: item.responderName || 'Dr. Maria Clara Santos MD',
             responderUnit: item.unitCode || item.responderUnit || 'RHU-ALPHA-1',
@@ -240,65 +259,85 @@ export const SubmittedReportsPage: FC = () => {
             verifiedBy: item.verifiedBy,
             isClosed,
             closedAt: item.closedAt || (isClosed ? new Date().toISOString() : null),
+            isRejected,
             evidencePhotos: normalizeEvidence(item),
             casualties: normalizeCasualties(item),
-            notes: item.note || item.notes || ''
+            notes: item.note || item.notes || '',
+            roboflowModelId: item.roboflowModelId ?? cached?.roboflowModelId,
+            roboflowPrediction: item.roboflowPrediction ?? cached?.roboflowPrediction,
+            roboflowConfidence: item.roboflowConfidence ?? cached?.roboflowConfidence,
+            roboflowNeedsReview: item.roboflowNeedsReview ?? cached?.roboflowNeedsReview,
+            claudeModelUsed: item.claudeModelUsed ?? cached?.claudeModelUsed,
+            claudeSituationSummary: item.claudeSituationSummary ?? cached?.claudeSituationSummary,
+            claudeVisibleHazards: item.claudeVisibleHazards ?? cached?.claudeVisibleHazards,
+            pointerIconType: item.pointerIconType ?? cached?.pointerIconType
           });
         });
       }
 
-      // Merge backend reports that have been marked as Responded/Resolved
       if (Array.isArray(backendReports)) {
         backendReports.forEach((rep) => {
           if (!rep || !rep.id) return;
           if (mergedMap.has(rep.id)) return;
 
-          const s = (rep.status || '').toLowerCase();
-          const isRespondedOrDone = s === 'responded' || s === 'resolved' || s === 'completed' || Boolean(rep.verifiedAt);
-          if (!isRespondedOrDone && !rep.verifiedAt) return;
-
-          const isVerified = Boolean(rep.verifiedAt);
-          const isClosed = s === 'resolved' || s === 'completed';
+          const s = (rep.status || 'Reported').toLowerCase();
+          const isRejected = s === 'rejected';
+          const isVerified = !isRejected && (Boolean(rep.verifiedAt) || s === 'verified' || s === 'responded');
+          const isClosed = s === 'resolved' || s === 'completed' || s === 'closed';
+          const safePhoto = rep.imageUrl && !rep.imageUrl.includes('unsplash.com') ? rep.imageUrl : null;
+          const refCode = rep.referenceCode || `RESQ-${rep.id.slice(0, 8).toUpperCase()}`;
+          const cached = aiVisionCache[rep.id] || aiVisionCache[refCode];
 
           mergedMap.set(rep.id, {
             id: rep.id,
-            referenceCode: rep.referenceCode || `RESQ-${rep.id.slice(0, 8).toUpperCase()}`,
+            referenceCode: refCode,
             title: rep.title || 'Field Incident Report',
             category: rep.category || 'General',
             severity: rep.severity || 'Medium',
-            status: isClosed ? 'Closed' : isVerified ? 'Verified' : 'Responded',
-            locationLabel: rep.locationLabel || 'Municipal Sector Field Coordinates',
-            latitude: rep.latitude ?? 14.6514,
-            longitude: rep.longitude ?? 121.0493,
+            status: rep.status || 'Submitted',
+            locationLabel:
+              rep.locationLabel ||
+              getKatipunanBarangay(rep.latitude ?? KATIPUNAN_BASE_COORDS.latitude, rep.longitude ?? KATIPUNAN_BASE_COORDS.longitude),
+            latitude: rep.latitude ?? KATIPUNAN_BASE_COORDS.latitude,
+            longitude: rep.longitude ?? KATIPUNAN_BASE_COORDS.longitude,
             ipAddress: '192.168.42.118',
-            responderName: rep.reporterName || 'Field Responder Unit',
-            responderUnit: rep.allocatedUnitCode || 'RHU-EMS',
+            responderName: rep.reporterName || 'Field Reporter',
+            responderUnit: rep.allocatedUnitCode || rep.recommendedAgencyUnit || 'UNASSIGNED',
             submittedAt: rep.createdAt || new Date().toISOString(),
             isVerified,
             verifiedAt: rep.verifiedAt || (isVerified ? new Date().toISOString() : null),
             verifiedBy: isVerified ? 'LDRRMO Admin Command' : undefined,
             isClosed,
             closedAt: rep.resolvedAt || (isClosed ? new Date().toISOString() : null),
-            evidencePhotos: rep.imageUrl ? [{ url: rep.imageUrl, timestamp: rep.createdAt, caption: 'Attached Evidence' }] : [],
+            isRejected,
+            allocatedUnitCode: rep.allocatedUnitCode,
+            evidencePhotos: safePhoto ? [{ url: safePhoto, timestamp: rep.createdAt, caption: 'Attached Evidence' }] : [],
             casualties: [],
-            notes: rep.note || ''
+            notes: rep.note || '',
+            roboflowModelId: rep.roboflowModelId ?? cached?.roboflowModelId,
+            roboflowPrediction: rep.roboflowPrediction ?? cached?.roboflowPrediction,
+            roboflowConfidence: rep.roboflowConfidence ?? cached?.roboflowConfidence,
+            roboflowNeedsReview: rep.roboflowNeedsReview ?? cached?.roboflowNeedsReview,
+            claudeModelUsed: rep.claudeModelUsed ?? cached?.claudeModelUsed,
+            claudeSituationSummary: rep.claudeSituationSummary ?? cached?.claudeSituationSummary,
+            claudeVisibleHazards: rep.claudeVisibleHazards ?? cached?.claudeVisibleHazards,
+            pointerIconType: rep.pointerIconType ?? cached?.pointerIconType
           });
         });
       }
 
-      // If empty, seed initial realistic submitted reports so Admin immediately sees the workflow in action
       if (mergedMap.size === 0) {
         const seedId = 'seed-sub-rep-01';
         mergedMap.set(seedId, {
           id: seedId,
           referenceCode: 'RESQ-20261028-001',
           title: 'Two-Motorcycle Collision with Minor Injury',
-          category: 'VehicleAccident',
+          category: 'VehicularAccident',
           severity: 'Medium',
-          status: 'Responded',
-          locationLabel: 'Corner University Ave, Barangay Poblacion',
-          latitude: 14.6514,
-          longitude: 121.0493,
+          status: 'Submitted',
+          locationLabel: 'Barangay Uno (Poblacion), Katipunan, Zamboanga del Norte',
+          latitude: 8.5147,
+          longitude: 123.2842,
           ipAddress: '192.168.42.118',
           responderName: 'Dr. Maria Clara Santos MD',
           responderUnit: 'RHU-ALPHA-1',
@@ -307,13 +346,8 @@ export const SubmittedReportsPage: FC = () => {
           verifiedAt: null,
           isClosed: false,
           closedAt: null,
-          evidencePhotos: [
-            {
-              url: 'https://images.unsplash.com/photo-1584744982491-665216d95f8b?auto=format&fit=crop&w=800&q=80',
-              timestamp: formatDateTimeWithSecondsAmPm(new Date(Date.now() - 15 * 60 * 1000).toISOString()),
-              caption: 'On-scene motorcycle collision point of impact'
-            }
-          ],
+          isRejected: false,
+          evidencePhotos: [],
           casualties: [
             {
               id: 'cas-01',
@@ -328,14 +362,14 @@ export const SubmittedReportsPage: FC = () => {
               spO2: 98,
               glucose: 95,
               temp: 36.6,
-              receivingHospital: 'San Mateo Municipal Hospital',
+              receivingHospital: 'Katipunan Rural Health Unit (RHU)',
               chiefComplaint: 'Minor abrasions on right knee and forearm',
               narrative: 'Patient conscious and coherent. Dressed abrasions with sterile gauze.',
               interventions: ['Wound Cleaning', 'Sterile Dressing', 'Vitals Monitored'],
               recordedAt: formatDateTimeWithSecondsAmPm(new Date().toISOString())
             }
           ],
-          notes: 'Both riders stabilized. Transport not required, cleared by Medical Officer III.'
+          notes: 'Both riders stabilized. Cleared by Medical Officer III.'
         });
 
         const seedId2 = 'seed-sub-rep-02';
@@ -359,13 +393,8 @@ export const SubmittedReportsPage: FC = () => {
           verifiedBy: 'LDRRMO Admin Command',
           isClosed: false,
           closedAt: null,
-          evidencePhotos: [
-            {
-              url: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?auto=format&fit=crop&w=800&q=80',
-              timestamp: formatDateTimeWithSecondsAmPm(new Date(Date.now() - 20 * 60 * 1000).toISOString()),
-              caption: 'Electrical conduit isolated and perimeter cordoned'
-            }
-          ],
+          isRejected: false,
+          evidencePhotos: [],
           casualties: [],
           notes: 'Feeder line de-energized by utility team. Perimeter secured.'
         });
@@ -383,22 +412,28 @@ export const SubmittedReportsPage: FC = () => {
 
   useValueRefreshAuto(loadSubmittedReports, { intervalMs: 8000 });
 
-  // Telemetry KPIs ($N=0$ Safe)
   const totalSubmitted = reports.length;
-  const pendingReview = reports.filter((r) => !r.isVerified && !r.isClosed).length;
-  const verifiedCount = reports.filter((r) => r.isVerified && !r.isClosed).length;
+  const pendingReview = reports.filter((r) => {
+    const b = formatIncidentStatusBadge(r.status, r.allocatedUnitCode, r.verifiedAt, r.closedAt);
+    return b.label === 'Submitted' || b.label === 'Pending';
+  }).length;
+  const verifiedCount = reports.filter((r) => r.isVerified && !r.isClosed && !r.isRejected).length;
   const closedCount = reports.filter((r) => r.isClosed).length;
 
-  // Verify Action (Starts 5-minute countdown timer and persists to backend)
-  const handleVerifyReport = useCallback(
-    async (reportId: string) => {
-      const verifiedTimestamp = new Date().toISOString();
+  const handleVerifyOrRejectReport = useCallback(
+    async (reportId: string, nextStatus: 'Verified' | 'Rejected') => {
+      const actionTimestamp = new Date().toISOString();
 
-      // Persist verification to relational backend
       try {
-        await verifyReport(reportId, 'Verified', 'Verified by LDRRMO Administration.');
+        await verifyReport(
+          reportId,
+          nextStatus,
+          nextStatus === 'Rejected'
+            ? 'Rejected by LDRRMO Administration.'
+            : 'Verified by LDRRMO Administration.'
+        );
       } catch (err: unknown) {
-        console.warn('[SubmittedReportsPage] Failed to persist report verification to backend:', err);
+        console.warn('[SubmittedReportsPage] Failed to persist report verification:', err);
       }
 
       setReports((prev) => {
@@ -406,14 +441,14 @@ export const SubmittedReportsPage: FC = () => {
           if (r.id !== reportId) return r;
           return {
             ...r,
-            isVerified: true,
-            status: 'Verified',
-            verifiedAt: verifiedTimestamp,
+            isVerified: nextStatus === 'Verified',
+            isRejected: nextStatus === 'Rejected',
+            status: nextStatus,
+            verifiedAt: nextStatus === 'Verified' ? actionTimestamp : null,
             verifiedBy: 'LDRRMO Admin Command'
           };
         });
 
-        // Sync with localStorage
         try {
           const raw = localStorage.getItem(STORAGE_INCIDENT_LOGS_KEY);
           let localArr: RawIncidentLog[] = raw ? (JSON.parse(raw) as RawIncidentLog[]) : [];
@@ -421,9 +456,9 @@ export const SubmittedReportsPage: FC = () => {
             if (item.id === reportId) {
               return {
                 ...item,
-                isVerified: true,
-                status: 'Verified',
-                verifiedAt: verifiedTimestamp,
+                isVerified: nextStatus === 'Verified',
+                status: nextStatus,
+                verifiedAt: nextStatus === 'Verified' ? actionTimestamp : null,
                 verifiedBy: 'LDRRMO Admin Command'
               };
             }
@@ -437,35 +472,25 @@ export const SubmittedReportsPage: FC = () => {
         return next;
       });
 
-      // Dispatch global events so responder map green pin starts 5m timer and Header bell notifies
       window.dispatchEvent(
         new CustomEvent('resqtrack:report', {
-          detail: { id: reportId, status: 'Verified', verifiedAt: verifiedTimestamp }
+          detail: { id: reportId, status: nextStatus, verifiedAt: nextStatus === 'Verified' ? actionTimestamp : null }
         })
       );
-      window.dispatchEvent(
-        new CustomEvent('resqtrack:notification', {
-          detail: {
-            type: 'VERIFIED_SUBMITTED_INCIDENT_LOGS',
-            title: 'Submitted Incident Log Verified',
-            message: `Report ${reportId} verified by LDRRMO Admin. 5-Minute Auto-Close countdown initiated.`,
-            incidentId: reportId
-          }
-        })
+      setToastMessage(
+        nextStatus === 'Verified'
+          ? 'Report verified. 5-Minute auto-close timer started on radar HUD.'
+          : 'Report marked as Rejected.'
       );
-
-      setToastMessage('Report verified. 5-Minute auto-close timer started on radar HUD.');
       setTimeout(() => setToastMessage(null), 4000);
     },
     []
   );
 
-  // Manual Close Action (Persists resolution to backend)
   const handleManualClose = useCallback(
     async (reportId: string) => {
       const closedTimestamp = new Date().toISOString();
 
-      // Persist case resolution to relational backend
       try {
         await verifyReport(reportId, 'Resolved', 'Incident closed by LDRRMO Administration.');
       } catch (err: unknown) {
@@ -478,7 +503,7 @@ export const SubmittedReportsPage: FC = () => {
           return {
             ...r,
             isClosed: true,
-            status: 'Closed',
+            status: 'Resolved',
             closedAt: closedTimestamp
           };
         });
@@ -510,51 +535,35 @@ export const SubmittedReportsPage: FC = () => {
           detail: { id: reportId, status: 'Closed', isClosed: true, closedAt: closedTimestamp }
         })
       );
-      window.dispatchEvent(
-        new CustomEvent('resqtrack:notification', {
-          detail: {
-            type: 'CLOSE_CASE',
-            title: 'Case Finalized & Closed',
-            message: `Incident ${reportId} marked closed by LDRRMO Admin.`,
-            incidentId: reportId
-          }
-        })
-      );
-
-      setToastMessage('Incident successfully finalized and closed.');
+      setToastMessage('Incident successfully finalized and resolved.');
       setTimeout(() => setToastMessage(null), 4000);
     },
     []
   );
 
-  // Filter & Search Pipeline
   const filteredReports = useMemo(() => {
     let result = [...reports];
 
-    // Status filter
-    if (statusFilter === 'PENDING') {
-      result = result.filter((r) => !r.isVerified && !r.isClosed);
-    } else if (statusFilter === 'VERIFIED') {
-      result = result.filter((r) => r.isVerified && !r.isClosed);
-    } else if (statusFilter === 'CLOSED') {
-      result = result.filter((r) => r.isClosed);
+    if (statusFilter !== 'ALL') {
+      result = result.filter((r) => {
+        const b = formatIncidentStatusBadge(r.status, r.allocatedUnitCode, r.verifiedAt, r.closedAt);
+        return b.label.toLowerCase() === statusFilter.toLowerCase();
+      });
     }
 
-    // Debounced search
     if (debouncedSearch.trim()) {
       const query = debouncedSearch.toLowerCase();
       result = result.filter(
         (r) =>
-          r.title.toLowerCase().includes(query) ||
-          r.referenceCode.toLowerCase().includes(query) ||
-          r.responderName.toLowerCase().includes(query) ||
-          r.responderUnit.toLowerCase().includes(query) ||
-          r.locationLabel.toLowerCase().includes(query) ||
-          r.category.toLowerCase().includes(query)
+          String(r.title ?? '').toLowerCase().includes(query) ||
+          String(r.referenceCode ?? '').toLowerCase().includes(query) ||
+          String(r.responderName ?? '').toLowerCase().includes(query) ||
+          String(r.responderUnit ?? '').toLowerCase().includes(query) ||
+          String(r.locationLabel ?? '').toLowerCase().includes(query) ||
+          String(r.category ?? '').toLowerCase().includes(query)
       );
     }
 
-    // Sorting
     result.sort((a, b) => {
       if (sortOrder === 'newest') {
         return new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime();
@@ -582,11 +591,8 @@ export const SubmittedReportsPage: FC = () => {
     paginatedItems,
     currentPage,
     totalPages,
-    pageSize,
-    goToPage,
     nextPage,
-    prevPage,
-    setPageSize
+    prevPage
   } = usePagination(filteredReports, { initialPageSize: 10 });
 
   const selectedReport = useMemo(
@@ -594,7 +600,6 @@ export const SubmittedReportsPage: FC = () => {
     [reports, selectedReportId]
   );
 
-  // Compute 5-minute countdown remaining for verified reports
   const getRemainingSeconds = (verifiedAtStr: string | null): number => {
     if (!verifiedAtStr) return 0;
     const verifiedMs = new Date(verifiedAtStr).getTime();
@@ -604,10 +609,9 @@ export const SubmittedReportsPage: FC = () => {
     return Math.floor(remaining / 1000);
   };
 
-  // Wire automatic case resolution when 5-minute countdown reaches 0 to eliminate stuck CLOSING IN 00:00
   useEffect(() => {
     reports.forEach((r) => {
-      if (r.isVerified && !r.isClosed && r.verifiedAt) {
+      if (r.isVerified && !r.isClosed && !r.isRejected && r.verifiedAt) {
         const rem = getRemainingSeconds(r.verifiedAt);
         if (rem <= 0) {
           void handleManualClose(r.id);
@@ -624,127 +628,103 @@ export const SubmittedReportsPage: FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full animate-fade-in">
-      {/* Page Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900/80 border border-slate-700/80 backdrop-blur-md">
+    <div className="flex flex-col gap-6 w-full pb-10">
+      {/* Page Header (.clay-surface #F7F1EA) */}
+      <div className={`${CLAY_SURFACE} p-5 flex flex-wrap items-center justify-between gap-4`}>
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase flex items-center gap-2.5">
-            <FileCheck className="w-6 h-6 text-emerald-400" />
+          <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#A83B4D]">
+            LDRRMO Command / Submitted Reports
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black text-[#670626] tracking-tight mt-0.5 flex items-center gap-2.5">
+            <FileCheck className="w-6 h-6 text-[#A83B4D]" />
             Submitted Reports
           </h1>
-          <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Field reports and evidence dossiers
+          <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
+            Upload verification, PCR dossiers, and incident closure
           </p>
         </div>
 
         <div className="flex items-center gap-2.5">
-          <Button
+          <AdminButton
             variant="outline"
             size="sm"
             onClick={() => void loadSubmittedReports()}
-            className="text-xs font-mono font-bold flex items-center gap-1.5 border-slate-600 hover:border-slate-400 text-slate-300"
+            icon={<RefreshCw className="w-3.5 h-3.5" />}
           >
-            <RefreshCw className="w-3.5 h-3.5" />
             SYNC
-          </Button>
+          </AdminButton>
           <TableCardToggle viewMode={viewMode} onChange={setViewMode} />
         </div>
       </div>
 
       {toastMessage && (
-        <div className="p-3.5 rounded-xl bg-emerald-950/90 border border-emerald-500 text-emerald-300 text-xs font-mono flex items-center justify-between shadow-lg animate-fade-in">
+        <div className={`${CLAY_SURFACE} p-3.5 text-sm font-mono font-bold flex items-center justify-between border-2 border-[#670626]`}>
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <CheckCircle2 className="w-4 h-4 text-[#670626]" />
             <span>{toastMessage}</span>
           </div>
-          <button onClick={() => setToastMessage(null)} className="text-emerald-400 hover:text-white">
+          <button type="button" onClick={() => setToastMessage(null)} className="text-[#670626] cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {/* 4 Telemetry KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-        <div className="tactical-card p-4 border-l-4 border-l-sky-500 flex flex-col justify-between">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-[#670626] flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Total Reports</p>
-            <FileText className="w-4 h-4 text-sky-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Total Reports</p>
+            <FileText className="w-4 h-4 text-[#670626]" />
           </div>
-          <h3 className="text-2xl font-black text-white mt-1.5">{totalSubmitted}</h3>
-          <span className="text-[10px] text-sky-400 font-mono">All submitted</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{totalSubmitted}</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">All submitted</span>
         </div>
 
-        <div className="tactical-card p-4 border-l-4 border-l-amber-500 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-amber-600 flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Pending Review</p>
-            <Clock className="w-4 h-4 text-amber-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Submitted / Pending</p>
+            <Clock className="w-4 h-4 text-amber-700" />
           </div>
-          <h3 className="text-2xl font-black text-amber-400 mt-1.5">{pendingReview}</h3>
-          <span className="text-[10px] text-amber-400 font-mono">Awaiting review</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{pendingReview}</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Awaiting review</span>
         </div>
 
-        <div className="tactical-card p-4 border-l-4 border-l-rose-500 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-[#A83B4D] flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Verified</p>
-            <Activity className="w-4 h-4 text-rose-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Verified</p>
+            <Activity className="w-4 h-4 text-[#A83B4D]" />
           </div>
-          <h3 className="text-2xl font-black text-rose-400 mt-1.5">{verifiedCount}</h3>
-          <span className="text-[10px] text-rose-300 font-mono">5m auto-close</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{verifiedCount}</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">5m auto-close</span>
         </div>
 
-        <div className="tactical-card p-4 border-l-4 border-l-emerald-500 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-emerald-700 flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Closed</p>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Resolved</p>
+            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
           </div>
-          <h3 className="text-2xl font-black text-emerald-400 mt-1.5">{closedCount}</h3>
-          <span className="text-[10px] text-emerald-400 font-mono">Resolved</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{closedCount}</h3>
+          <span className="text-xs text-emerald-800 font-mono font-bold mt-0.5">Closed cases</span>
         </div>
       </div>
 
       {/* Filter Tabs + SearchBar + Sorter */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+      <div className={`${CLAY_SURFACE} p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3`}>
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            onClick={() => setStatusFilter('ALL')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
-              statusFilter === 'ALL'
-                ? 'bg-rose-600 text-white shadow-md'
-                : 'bg-slate-800/80 text-slate-400 hover:text-white'
-            }`}
-          >
-            ALL ({totalSubmitted})
-          </button>
-          <button
-            onClick={() => setStatusFilter('PENDING')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
-              statusFilter === 'PENDING'
-                ? 'bg-amber-600 text-white shadow-md'
-                : 'bg-slate-800/80 text-slate-400 hover:text-white'
-            }`}
-          >
-            PENDING REVIEW ({pendingReview})
-          </button>
-          <button
-            onClick={() => setStatusFilter('VERIFIED')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
-              statusFilter === 'VERIFIED'
-                ? 'bg-sky-600 text-white shadow-md'
-                : 'bg-slate-800/80 text-slate-400 hover:text-white'
-            }`}
-          >
-            VERIFIED 5M TIMER ({verifiedCount})
-          </button>
-          <button
-            onClick={() => setStatusFilter('CLOSED')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
-              statusFilter === 'CLOSED'
-                ? 'bg-emerald-600 text-white shadow-md'
-                : 'bg-slate-800/80 text-slate-400 hover:text-white'
-            }`}
-          >
-            CLOSED ({closedCount})
-          </button>
+          {(['ALL', 'Submitted', 'Pending', 'Verified', 'Dispatched', 'Resolved', 'Rejected'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setStatusFilter(tab)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
+                statusFilter === tab
+                  ? 'bg-[#670626] text-[#F7F1EA] shadow-sm'
+                  : 'bg-[#E9D9D0] text-[#670626] hover:bg-[#E9D9D0]/80 border border-[#670626]/15'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
         </div>
 
         <div className="flex items-center gap-2.5">
@@ -769,191 +749,196 @@ export const SubmittedReportsPage: FC = () => {
         </div>
       </div>
 
-      {/* Main Content: Table or Cards */}
+      {/* Main Content */}
       {paginatedItems.length === 0 ? (
-        <div className="p-12 text-center rounded-2xl bg-slate-900/40 border border-slate-800/80">
-          <FileCheck className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <h3 className="text-sm font-bold text-slate-300">No Submitted Reports Found</h3>
-          <p className="text-xs text-slate-500 font-mono mt-1">
-            Submitted incident dossiers from field responders will automatically populate here.
+        <div className={`${CLAY_SURFACE} p-12 text-center`}>
+          <FileCheck className="w-10 h-10 text-[#A83B4D] mx-auto mb-3" />
+          <h3 className="text-base font-bold text-[#670626]">No Submitted Reports Found</h3>
+          <p className="text-xs text-[#A83B4D] font-mono mt-1">
+            Submitted incident dossiers from civilians and field responders will populate here.
           </p>
         </div>
       ) : viewMode === 'table' ? (
-        <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-slate-950/80 text-[10px] uppercase font-mono text-slate-400 tracking-wider border-b border-slate-800">
-              <tr>
-                <th className="py-3 px-4">Ref Code & Incident</th>
-                <th className="py-3 px-4">Responding Unit</th>
-                <th className="py-3 px-4">Casualties / PCR</th>
-                <th className="py-3 px-4">Evidence</th>
-                <th className="py-3 px-4">Status & Timer</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 font-mono">
-              {paginatedItems.map((r) => {
-                const remSec = getRemainingSeconds(r.verifiedAt);
-                const mm = Math.floor(remSec / 60).toString().padStart(2, '0');
-                const ss = (remSec % 60).toString().padStart(2, '0');
+        <div className={`${CLAY_SURFACE} p-4`}>
+          <div className={`${CLAY_WELL} overflow-x-auto`}>
+            <table className="w-full text-left text-sm text-[#670626]">
+              <thead className="bg-[#670626]/10 text-xs uppercase font-mono text-[#670626] tracking-wider border-b border-[#670626]/15">
+                <tr>
+                  <th className="py-3.5 px-4">Ref Code & Incident</th>
+                  <th className="py-3.5 px-4">Responding Unit / Reporter</th>
+                  <th className="py-3.5 px-4">Casualties / PCR</th>
+                  <th className="py-3.5 px-4">Evidence</th>
+                  <th className="py-3.5 px-4">Status & Timer</th>
+                  <th className="py-3.5 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#670626]/10 font-mono">
+                {paginatedItems.map((r) => {
+                  const remSec = getRemainingSeconds(r.verifiedAt);
+                  const mm = Math.floor(remSec / 60).toString().padStart(2, '0');
+                  const ss = (remSec % 60).toString().padStart(2, '0');
+                  const statusBadge = formatIncidentStatusBadge(
+                    r.status,
+                    r.allocatedUnitCode,
+                    r.verifiedAt,
+                    r.closedAt
+                  );
+                  const canVerifyOrReject = statusBadge.label === 'Submitted' || statusBadge.label === 'Pending';
 
-                return (
-                  <tr
-                    key={r.id}
-                    onClick={() => {
-                      setSelectedReportId(r.id);
-                      setIsDetailModalOpen(true);
-                    }}
-                    className="hover:bg-slate-800/40 transition-colors cursor-pointer group"
-                  >
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-rose-400 text-xs">{r.referenceCode}</span>
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold ${
-                            r.severity === 'Critical'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                              : r.severity === 'High'
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                              : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                          }`}
-                        >
-                          {r.severity}
-                        </span>
-                      </div>
-                      <p className="text-slate-200 text-xs font-semibold font-sans mt-0.5 group-hover:text-white">
-                        {r.title}
-                      </p>
-                      <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5 truncate max-w-xs">
-                        <MapPin className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                        {r.locationLabel}
-                      </p>
-                    </td>
-
-                    <td className="py-3.5 px-4 font-sans">
-                      <p className="text-white text-xs font-bold">{r.responderName}</p>
-                      <p className="text-[10px] font-mono text-sky-400 mt-0.5">{r.responderUnit}</p>
-                      <p className="text-[10px] font-mono text-slate-500 mt-0.5">
-                        {formatDateTimeWithSecondsAmPm(r.submittedAt)}
-                      </p>
-                    </td>
-
-                    <td className="py-3.5 px-4">
-                      {r.casualties.length > 0 ? (
-                        <div>
-                          <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-600/40 font-bold text-[10px]">
-                            {r.casualties.length} CASUALTIES
+                  return (
+                    <tr
+                      key={r.id}
+                      onClick={() => {
+                        setSelectedReportId(r.id);
+                        setIsDetailModalOpen(true);
+                      }}
+                      className="hover:bg-[#F7F1EA]/70 transition-colors cursor-pointer"
+                    >
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-[#A83B4D] text-xs">{r.referenceCode}</span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs uppercase font-bold ${
+                              r.severity === 'Critical'
+                                ? 'bg-[#670626] text-[#F7F1EA]'
+                                : r.severity === 'High'
+                                ? 'bg-[#A83B4D] text-[#F7F1EA]'
+                                : 'bg-[#F7F1EA] text-[#670626] border border-[#670626]/20'
+                            }`}
+                          >
+                            {r.severity}
                           </span>
-                          <p className="text-[10px] text-slate-400 font-sans mt-1 truncate max-w-[140px]">
-                            {r.casualties.map((c) => c.patientName).join(', ')}
-                          </p>
                         </div>
-                      ) : (
-                        <span className="text-slate-500 text-[10px]">0 Recorded</span>
-                      )}
-                    </td>
+                        <p className="text-[#670626] text-sm font-bold font-sans mt-1">{r.title}</p>
+                        <p className="text-xs text-[#A83B4D] flex items-center gap-1 mt-0.5 truncate max-w-xs">
+                          <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                          {r.locationLabel}
+                        </p>
+                        {(r.roboflowPrediction || r.claudeSituationSummary) && (
+                          <div className="mt-1.5 px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#670626]/20 text-[11px] font-mono text-[#670626] max-w-xs">
+                            <span className="font-black block truncate">
+                              Roboflow ({r.roboflowModelId || 'accident-and-non-accident-label-image-dataset/14'}):{' '}
+                              {r.roboflowPrediction || 'incident'}
+                              {typeof r.roboflowConfidence === 'number'
+                                ? ` ${Math.round(r.roboflowConfidence * 100)}%`
+                                : ''}
+                              {r.pointerIconType ? ` · [${r.pointerIconType}]` : ''}
+                            </span>
+                            {(r.claudeVisibleHazards || r.claudeSituationSummary) && (
+                              <span className="text-[#A83B4D] block truncate">
+                                Claude 4.5: {r.claudeVisibleHazards || r.claudeSituationSummary}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
 
-                    <td className="py-3.5 px-4">
-                      {r.evidencePhotos.length > 0 ? (
-                        <div className="flex items-center gap-1.5">
+                      <td className="py-4 px-4 font-sans">
+                        <p className="text-[#670626] text-sm font-bold">{r.responderName}</p>
+                        <p className="text-xs font-mono text-[#A83B4D] font-bold mt-0.5">{r.responderUnit}</p>
+                        <p className="text-xs font-mono text-[#670626]/75 mt-0.5">
+                          {formatDateTimeWithSecondsAmPm(r.submittedAt)}
+                        </p>
+                      </td>
+
+                      <td className="py-4 px-4">
+                        {r.casualties.length > 0 ? (
+                          <div>
+                            <span className="px-2.5 py-0.5 rounded bg-[#F7F1EA] text-[#670626] border border-[#670626]/20 font-bold text-xs">
+                              {r.casualties.length} CASUALTIES
+                            </span>
+                            <p className="text-xs text-[#A83B4D] font-sans mt-1 truncate max-w-[160px]">
+                              {r.casualties.map((c) => c.patientName).join(', ')}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="text-[#A83B4D] text-xs">0 Recorded</span>
+                        )}
+                      </td>
+
+                      <td className="py-4 px-4">
+                        {r.evidencePhotos.length > 0 ? (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               openLightbox(r.evidencePhotos, 0);
                             }}
-                            className="relative group/thumb rounded overflow-hidden border border-slate-700 hover:border-sky-400 transition-all"
+                            className="relative rounded-lg overflow-hidden border border-[#670626]/25 hover:border-[#670626] transition-all cursor-pointer"
                           >
                             <img
                               src={r.evidencePhotos[0].url}
                               alt="Evidence"
-                              className="w-10 h-10 object-cover"
+                              className="w-11 h-11 object-cover"
                             />
-                            {r.evidencePhotos.length > 1 && (
-                              <span className="absolute bottom-0 right-0 bg-slate-950/80 text-[8px] text-white px-1 font-mono font-bold">
-                                +{r.evidencePhotos.length - 1}
-                              </span>
-                            )}
                           </button>
-                        </div>
-                      ) : (
-                        <span className="text-slate-500 text-[10px]">None</span>
-                      )}
-                    </td>
-
-                    <td className="py-3.5 px-4">
-                      {r.isClosed ? (
-                        <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-bold text-[10px]">
-                          CLOSED / SOLVED
-                        </span>
-                      ) : r.isVerified ? (
-                        remSec > 0 ? (
-                          <div className="space-y-1">
-                            <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-500/40 font-bold text-[10px] flex items-center gap-1 w-fit">
-                              <Clock className="w-3 h-3 text-sky-400 animate-spin" />
-                              CLOSING IN {mm}:{ss}
-                            </span>
-                            <div className="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-sky-400 rounded-full transition-all duration-1000"
-                                style={{ width: `${Math.max(0, (remSec / 300) * 100)}%` }}
-                              />
-                            </div>
-                          </div>
                         ) : (
-                          <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-bold text-[10px] flex items-center gap-1 w-fit">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                            AUTO-RESOLVING…
-                          </span>
-                        )
-                      ) : (
-                        <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500/40 font-bold text-[10px]">
-                          AWAITING REVIEW
-                        </span>
-                      )}
-                    </td>
+                          <span className="text-[#A83B4D] text-xs">None</span>
+                        )}
+                      </td>
 
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                        {!r.isVerified && !r.isClosed && (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => handleVerifyReport(r.id)}
-                            className="text-[10px] font-mono font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
+                      <td className="py-4 px-4">
+                        <div className="space-y-1.5">
+                          <span className={`inline-block px-2.5 py-1 rounded font-bold text-xs ${statusBadge.pillClass}`}>
+                            {statusBadge.label}
+                          </span>
+                          {statusBadge.label === 'Verified' && !r.isClosed && remSec > 0 && (
+                            <div className="text-xs text-[#A83B4D] font-bold">
+                              Closing in {mm}:{ss}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="py-4 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          {canVerifyOrReject && (
+                            <>
+                              <AdminButton
+                                variant="success"
+                                size="xs"
+                                onClick={() => void handleVerifyOrRejectReport(r.id, 'Verified')}
+                                icon={<Check className="w-3.5 h-3.5" />}
+                              >
+                                Verify
+                              </AdminButton>
+                              <AdminButton
+                                variant="danger"
+                                size="xs"
+                                onClick={() => void handleVerifyOrRejectReport(r.id, 'Rejected')}
+                                icon={<XCircle className="w-3.5 h-3.5" />}
+                              >
+                                Reject
+                              </AdminButton>
+                            </>
+                          )}
+                          {!r.isClosed && !r.isRejected && (
+                            <AdminButton
+                              variant="outline"
+                              size="xs"
+                              onClick={() => void handleManualClose(r.id)}
+                            >
+                              Close
+                            </AdminButton>
+                          )}
+                          <AdminButton
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => {
+                              setSelectedReportId(r.id);
+                              setIsDetailModalOpen(true);
+                            }}
                           >
-                            <Check className="w-3 h-3" />
-                            VERIFY
-                          </Button>
-                        )}
-                        {!r.isClosed && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleManualClose(r.id)}
-                            className="text-[10px] font-mono font-bold border-slate-700 hover:border-rose-400 text-slate-300"
-                          >
-                            CLOSE
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedReportId(r.id);
-                            setIsDetailModalOpen(true);
-                          }}
-                          className="text-[10px] font-mono text-slate-400 hover:text-white"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                            <Eye className="w-4 h-4" />
+                          </AdminButton>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -961,6 +946,13 @@ export const SubmittedReportsPage: FC = () => {
             const remSec = getRemainingSeconds(r.verifiedAt);
             const mm = Math.floor(remSec / 60).toString().padStart(2, '0');
             const ss = (remSec % 60).toString().padStart(2, '0');
+            const statusBadge = formatIncidentStatusBadge(
+              r.status,
+              r.allocatedUnitCode,
+              r.verifiedAt,
+              r.closedAt
+            );
+            const canVerifyOrReject = statusBadge.label === 'Submitted' || statusBadge.label === 'Pending';
 
             return (
               <div
@@ -969,104 +961,115 @@ export const SubmittedReportsPage: FC = () => {
                   setSelectedReportId(r.id);
                   setIsDetailModalOpen(true);
                 }}
-                className="tactical-card p-4 flex flex-col justify-between gap-3 cursor-pointer hover:border-slate-600 transition-all group"
+                className={`tactical-card ${CLAY_SURFACE} p-5 flex flex-col justify-between gap-3.5 cursor-pointer hover:border-[#670626]/40 transition-all`}
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="font-bold text-rose-400 text-xs font-mono">{r.referenceCode}</span>
+                    <span className="font-bold text-[#A83B4D] text-xs font-mono">{r.referenceCode}</span>
                     <span
-                      className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold font-mono ${
+                      className={`px-2 py-0.5 rounded text-xs uppercase font-bold font-mono ${
                         r.severity === 'Critical'
-                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                          : r.severity === 'High'
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                          : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                          ? 'bg-[#670626] text-[#F7F1EA]'
+                          : 'bg-[#A83B4D] text-[#F7F1EA]'
                       }`}
                     >
                       {r.severity}
                     </span>
                   </div>
 
-                  <h3 className="text-sm font-bold text-white group-hover:text-sky-300 transition-colors">
-                    {r.title}
-                  </h3>
+                  <h3 className="text-base font-bold text-[#670626]">{r.title}</h3>
 
-                  <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-1 truncate">
-                    <MapPin className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                  <p className="text-xs text-[#A83B4D] flex items-center gap-1.5 mt-1 truncate">
+                    <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
                     {r.locationLabel}
                   </p>
 
-                  <div className="mt-3 p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 text-[11px] font-mono space-y-1">
-                    <div className="flex items-center justify-between text-slate-300">
-                      <span className="text-slate-500">Responder:</span>
-                      <span className="font-bold text-white">{r.responderName}</span>
+                  <div className={`${CLAY_WELL} mt-3 p-3 text-xs font-mono space-y-1.5`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#A83B4D]">Responder:</span>
+                      <span className="font-bold text-[#670626]">{r.responderName}</span>
                     </div>
-                    <div className="flex items-center justify-between text-slate-300">
-                      <span className="text-slate-500">Unit:</span>
-                      <span className="text-sky-400">{r.responderUnit}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#A83B4D]">Unit:</span>
+                      <span className="font-bold text-[#670626]">{r.responderUnit}</span>
                     </div>
-                    <div className="flex items-center justify-between text-slate-300">
-                      <span className="text-slate-500">Casualties:</span>
-                      <span className="text-amber-400 font-bold">{r.casualties.length} recorded</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#A83B4D]">Casualties:</span>
+                      <span className="font-bold text-[#670626]">{r.casualties.length} recorded</span>
                     </div>
-                    <div className="flex items-center justify-between text-slate-300">
-                      <span className="text-slate-500">Submitted:</span>
-                      <span className="text-slate-400">{formatDateTimeWithSecondsAmPm(r.submittedAt)}</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#A83B4D]">Submitted:</span>
+                      <span className="text-[#670626]">{formatDateTimeWithSecondsAmPm(r.submittedAt)}</span>
                     </div>
                   </div>
 
-                  {r.isVerified && !r.isClosed && (
-                    <div className="mt-2.5 p-2 rounded bg-sky-950/40 border border-sky-500/40 space-y-1">
-                      <div className="flex items-center justify-between text-[10px] font-mono text-sky-300">
-                        <span>Auto-Close Countdown:</span>
-                        <span className="font-bold">
-                          {remSec > 0 ? `${mm}:${ss}` : 'AUTO-RESOLVING…'}
+                  {(r.roboflowPrediction || r.claudeSituationSummary) && (
+                    <div className={`${CLAY_WELL} mt-2.5 p-2.5 text-xs font-mono text-[#670626] flex flex-col gap-1`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-black">
+                          Roboflow ({r.roboflowModelId || 'accident-and-non-accident-label-image-dataset/14'}):{' '}
+                          {r.roboflowPrediction || 'incident'}
+                          {typeof r.roboflowConfidence === 'number'
+                            ? ` (${Math.round(r.roboflowConfidence * 100)}%)`
+                            : ''}
                         </span>
+                        {r.pointerIconType && (
+                          <span className="px-2 py-0.5 rounded bg-[#F7F1EA] border border-[#670626]/20 text-[#670626] font-bold uppercase">
+                            {r.pointerIconType}
+                          </span>
+                        )}
                       </div>
-                      <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-sky-400 rounded-full transition-all duration-1000"
-                          style={{ width: `${Math.max(0, (remSec / 300) * 100)}%` }}
-                        />
-                      </div>
+                      {(r.claudeVisibleHazards || r.claudeSituationSummary) && (
+                        <p className="text-[#A83B4D] font-sans text-xs line-clamp-2">
+                          Claude Haiku 4.5: {r.claudeVisibleHazards || r.claudeSituationSummary}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {statusBadge.label === 'Verified' && !r.isClosed && remSec > 0 && (
+                    <div className="mt-3 p-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-xs font-mono text-[#670626] flex items-center justify-between">
+                      <span>Auto-Close Countdown:</span>
+                      <span className="font-black">{mm}:{ss}</span>
                     </div>
                   )}
                 </div>
 
                 <div
-                  className="flex items-center justify-between pt-2 border-t border-slate-800"
+                  className="flex items-center justify-between pt-3 border-t border-[#670626]/15 gap-2 flex-wrap"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div className="flex items-center gap-1.5">
-                    {r.isClosed ? (
-                      <span className="text-[10px] font-mono text-emerald-400 font-bold">CLOSED</span>
-                    ) : r.isVerified ? (
-                      <span className="text-[10px] font-mono text-sky-400 font-bold">VERIFIED</span>
-                    ) : (
-                      <span className="text-[10px] font-mono text-amber-400 font-bold">PENDING REVIEW</span>
-                    )}
-                  </div>
+                  <span className={`text-xs font-mono font-bold px-2.5 py-0.5 rounded-md ${statusBadge.pillClass}`}>
+                    {statusBadge.label}
+                  </span>
 
-                  <div className="flex items-center gap-2">
-                    {!r.isVerified && !r.isClosed && (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => handleVerifyReport(r.id)}
-                        className="text-[10px] font-mono font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
-                      >
-                        VERIFY
-                      </Button>
+                  <div className="flex items-center gap-1.5">
+                    {canVerifyOrReject && (
+                      <>
+                        <AdminButton
+                          variant="success"
+                          size="xs"
+                          onClick={() => void handleVerifyOrRejectReport(r.id, 'Verified')}
+                        >
+                          Verify
+                        </AdminButton>
+                        <AdminButton
+                          variant="danger"
+                          size="xs"
+                          onClick={() => void handleVerifyOrRejectReport(r.id, 'Rejected')}
+                        >
+                          Reject
+                        </AdminButton>
+                      </>
                     )}
-                    {!r.isClosed && (
-                      <Button
+                    {!r.isClosed && !r.isRejected && (
+                      <AdminButton
                         variant="outline"
-                        size="sm"
-                        onClick={() => handleManualClose(r.id)}
-                        className="text-[10px] font-mono font-bold border-slate-700 hover:border-rose-400 text-slate-300"
+                        size="xs"
+                        onClick={() => void handleManualClose(r.id)}
                       >
-                        CLOSE
-                      </Button>
+                        Close
+                      </AdminButton>
                     )}
                   </div>
                 </div>
@@ -1078,12 +1081,12 @@ export const SubmittedReportsPage: FC = () => {
 
       {/* Pagination Bar */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between gap-4 p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs font-mono">
-          <span className="text-slate-400">
+        <div className={`${CLAY_SURFACE} flex items-center justify-between gap-4 p-4 text-sm font-mono`}>
+          <span className="text-[#A83B4D]">
             Page {currentPage} of {totalPages} ({filteredReports.length} total)
           </span>
           <div className="flex items-center gap-2">
-            <Button
+            <AdminButton
               variant="outline"
               size="sm"
               disabled={currentPage <= 1}
@@ -1091,8 +1094,8 @@ export const SubmittedReportsPage: FC = () => {
               className="text-xs"
             >
               PREV
-            </Button>
-            <Button
+            </AdminButton>
+            <AdminButton
               variant="outline"
               size="sm"
               disabled={currentPage >= totalPages}
@@ -1100,65 +1103,62 @@ export const SubmittedReportsPage: FC = () => {
               className="text-xs"
             >
               NEXT
-            </Button>
+            </AdminButton>
           </div>
         </div>
       )}
 
-      {/* Complete Submitted Dossier Floating Modal */}
+      {/* Warm Ivory Dossier Modal */}
       {isDetailModalOpen && selectedReport && (
-        <DefaultFloatingModalCard
+        <AdminModalCard
           isOpen={isDetailModalOpen}
           onClose={() => setIsDetailModalOpen(false)}
           title={`Report ${selectedReport.referenceCode}`}
           subtitle={`${selectedReport.title} — ${selectedReport.responderName} (${selectedReport.responderUnit})`}
           className="max-w-4xl max-h-[90vh] overflow-y-auto"
         >
-          <div className="space-y-6 text-xs text-slate-200">
-            {/* Top Telemetry Strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase">Severity</span>
-                <p className="text-sm font-black text-rose-400 mt-0.5">{selectedReport.severity}</p>
+          <div className="space-y-6 text-sm text-[#670626]">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+              <div className={`${CLAY_WELL} p-3.5`}>
+                <span className="text-xs font-mono text-[#A83B4D] uppercase">Severity</span>
+                <p className="text-base font-black text-[#670626] mt-1">{selectedReport.severity}</p>
               </div>
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase">Status</span>
-                <p className="text-sm font-black text-emerald-400 mt-0.5">{selectedReport.status}</p>
+              <div className={`${CLAY_WELL} p-3.5`}>
+                <span className="text-xs font-mono text-[#A83B4D] uppercase">Status</span>
+                <p className="text-base font-black text-[#670626] mt-1">
+                  {formatIncidentStatusBadge(selectedReport.status, selectedReport.allocatedUnitCode, selectedReport.verifiedAt, selectedReport.closedAt).label}
+                </p>
               </div>
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase">Terminal IP</span>
-                <p className="text-sm font-mono text-sky-400 mt-0.5">{selectedReport.ipAddress}</p>
+              <div className={`${CLAY_WELL} p-3.5`}>
+                <span className="text-xs font-mono text-[#A83B4D] uppercase">Terminal IP</span>
+                <p className="text-base font-mono font-bold text-[#670626] mt-1">{selectedReport.ipAddress}</p>
               </div>
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase">Submitted At</span>
-                <p className="text-xs font-mono text-slate-300 mt-0.5">
+              <div className={`${CLAY_WELL} p-3.5`}>
+                <span className="text-xs font-mono text-[#A83B4D] uppercase">Submitted At</span>
+                <p className="text-xs font-mono text-[#670626] mt-1">
                   {formatDateTimeWithSecondsAmPm(selectedReport.submittedAt)}
                 </p>
               </div>
             </div>
 
-            {/* Location & GPS Info */}
-            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-mono">
+            <div className={`${CLAY_WELL} p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-mono`}>
               <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                <span className="text-slate-300">{selectedReport.locationLabel}</span>
+                <MapPin className="w-4 h-4 text-[#670626] flex-shrink-0" />
+                <span className="text-[#670626] text-sm font-bold">{selectedReport.locationLabel}</span>
               </div>
-              <span className="text-slate-500 text-[11px]">
-                Coordinates: {selectedReport.latitude.toFixed(6)}° N, {selectedReport.longitude.toFixed(6)}° E
+              <span className="text-[#A83B4D] text-xs">
+                {selectedReport.latitude.toFixed(6)}° N, {selectedReport.longitude.toFixed(6)}° E
               </span>
             </div>
 
-            {/* Evidence Gallery Section (Supports up to 40 images with exact timestamp) */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
-                  <Camera className="w-4 h-4 text-sky-400" />
-                  Evidence Photos ({selectedReport.evidencePhotos.length})
-                </h4>
-              </div>
+              <h4 className="text-sm font-bold text-[#670626] uppercase tracking-wider flex items-center gap-1.5 font-mono mb-2.5">
+                <Camera className="w-4 h-4 text-[#A83B4D]" />
+                Evidence Photos ({selectedReport.evidencePhotos.length})
+              </h4>
 
               {selectedReport.evidencePhotos.length === 0 ? (
-                <div className="p-6 text-center rounded-xl bg-slate-900/40 border border-slate-800/60 text-slate-500 font-mono text-xs">
+                <div className={`${CLAY_WELL} p-6 text-center text-[#A83B4D] font-mono text-sm`}>
                   No photographic evidence attached to this dossier.
                 </div>
               ) : (
@@ -1167,101 +1167,77 @@ export const SubmittedReportsPage: FC = () => {
                     <div
                       key={idx}
                       onClick={() => openLightbox(selectedReport.evidencePhotos, idx)}
-                      className="group/item relative rounded-lg overflow-hidden border border-slate-800 hover:border-sky-400 cursor-pointer bg-slate-950 transition-all"
+                      className="rounded-xl overflow-hidden border border-[#670626]/20 hover:border-[#670626] cursor-pointer bg-[#E9D9D0]"
                     >
                       <img
                         src={photo.url}
                         alt={`Evidence ${idx + 1}`}
-                        className="w-full h-28 object-cover group-hover/item:scale-105 transition-transform duration-200"
+                        className="w-full h-28 object-cover"
                       />
-                      <div className="p-2 bg-slate-900/90 border-t border-slate-800 text-[9px] font-mono text-slate-400 truncate">
-                        {photo.timestamp || formatDateTimeWithSecondsAmPm(selectedReport.submittedAt)}
-                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Multi-Casualty PCR Records Section */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
-                  <HeartPulse className="w-4 h-4 text-rose-400" />
-                  Patient Care Records ({selectedReport.casualties.length})
-                </h4>
-              </div>
+              <h4 className="text-sm font-bold text-[#670626] uppercase tracking-wider flex items-center gap-1.5 font-mono mb-2.5">
+                <HeartPulse className="w-4 h-4 text-[#A83B4D]" />
+                Patient Care Records ({selectedReport.casualties.length})
+              </h4>
 
               {selectedReport.casualties.length === 0 ? (
-                <div className="p-6 text-center rounded-xl bg-slate-900/40 border border-slate-800/60 text-slate-500 font-mono text-xs">
+                <div className={`${CLAY_WELL} p-6 text-center text-[#A83B4D] font-mono text-sm`}>
                   No individual patient care records recorded for this incident.
                 </div>
               ) : (
                 <div className="space-y-3">
                   {selectedReport.casualties.map((c, i) => (
-                    <div key={c.id || i} className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                    <div key={c.id || i} className={`${CLAY_WELL} p-4 space-y-3`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#670626]/15 pb-2.5">
                         <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-rose-500/20 text-rose-300 font-mono text-[10px] font-bold flex items-center justify-center">
+                          <span className="w-6 h-6 rounded-full bg-[#670626] text-[#F7F1EA] font-mono text-xs font-bold flex items-center justify-center">
                             #{i + 1}
                           </span>
-                          <span className="font-bold text-white text-xs">{c.patientName}</span>
-                          <span className="text-slate-400 font-mono text-[11px]">
+                          <span className="font-bold text-[#670626] text-sm">{c.patientName}</span>
+                          <span className="text-[#A83B4D] font-mono text-xs">
                             ({c.gender}, {c.age} yrs)
                           </span>
                         </div>
-                        <span className="text-[10px] font-mono text-sky-400 font-bold px-2 py-0.5 rounded bg-sky-950/80 border border-sky-600/30">
+                        <span className="text-xs font-mono text-[#670626] font-bold px-2.5 py-0.5 rounded bg-[#F7F1EA] border border-[#670626]/20">
                           {c.levelOfConsciousness || 'Conscious'}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center font-mono text-[11px]">
-                        <div className="p-2 rounded bg-slate-950 border border-slate-800/60">
-                          <span className="text-slate-500 text-[9px] block">BP (mmHg)</span>
-                          <span className="font-bold text-white">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-center font-mono text-xs">
+                        <div className="p-2.5 rounded-lg bg-[#F7F1EA] border border-[#670626]/15">
+                          <span className="text-[#A83B4D] text-xs block">BP (mmHg)</span>
+                          <span className="font-bold text-[#670626] text-sm mt-0.5 block">
                             {c.bpSystolic}/{c.bpDiastolic}
                           </span>
                         </div>
-                        <div className="p-2 rounded bg-slate-950 border border-slate-800/60">
-                          <span className="text-slate-500 text-[9px] block">HR (BPM)</span>
-                          <span className="font-bold text-white">{c.heartRate}</span>
+                        <div className="p-2.5 rounded-lg bg-[#F7F1EA] border border-[#670626]/15">
+                          <span className="text-[#A83B4D] text-xs block">HR (BPM)</span>
+                          <span className="font-bold text-[#670626] text-sm mt-0.5 block">{c.heartRate}</span>
                         </div>
-                        <div className="p-2 rounded bg-slate-950 border border-slate-800/60">
-                          <span className="text-slate-500 text-[9px] block">SpO2</span>
-                          <span className="font-bold text-emerald-400">{c.spO2}%</span>
+                        <div className="p-2.5 rounded-lg bg-[#F7F1EA] border border-[#670626]/15">
+                          <span className="text-[#A83B4D] text-xs block">SpO2</span>
+                          <span className="font-bold text-emerald-800 text-sm mt-0.5 block">{c.spO2}%</span>
                         </div>
-                        <div className="p-2 rounded bg-slate-950 border border-slate-800/60">
-                          <span className="text-slate-500 text-[9px] block">Resp Rate</span>
-                          <span className="font-bold text-white">{c.respiratoryRate}/min</span>
+                        <div className="p-2.5 rounded-lg bg-[#F7F1EA] border border-[#670626]/15">
+                          <span className="text-[#A83B4D] text-xs block">Resp Rate</span>
+                          <span className="font-bold text-[#670626] text-sm mt-0.5 block">{c.respiratoryRate}/min</span>
                         </div>
-                        <div className="p-2 rounded bg-slate-950 border border-slate-800/60">
-                          <span className="text-slate-500 text-[9px] block">Temp (°C)</span>
-                          <span className="font-bold text-white">{c.temp}°C</span>
+                        <div className="p-2.5 rounded-lg bg-[#F7F1EA] border border-[#670626]/15">
+                          <span className="text-[#A83B4D] text-xs block">Temp (°C)</span>
+                          <span className="font-bold text-[#670626] text-sm mt-0.5 block">{c.temp}°C</span>
                         </div>
                       </div>
 
-                      <div className="text-[11px] space-y-1">
-                        <p className="text-slate-300">
-                          <strong className="text-slate-400">Chief Complaint:</strong> {c.chiefComplaint}
-                        </p>
-                        {c.narrative && (
-                          <p className="text-slate-400">
-                            <strong className="text-slate-400">Clinical Narrative:</strong> {c.narrative}
-                          </p>
-                        )}
-                        {c.interventions && c.interventions.length > 0 && (
-                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                            <strong className="text-slate-400 text-[10px]">Interventions:</strong>
-                            {c.interventions.map((it, idx) => (
-                              <span
-                                key={idx}
-                                className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] text-sky-300 font-mono"
-                              >
-                                {it}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                      <div className="text-xs space-y-1">
+                        <p><strong>Receiving Facility:</strong> {c.receivingHospital}</p>
+                        <p><strong>Chief Complaint:</strong> {c.chiefComplaint}</p>
+                        {c.narrative && <p><strong>Clinical Narrative:</strong> {c.narrative}</p>}
                       </div>
                     </div>
                   ))}
@@ -1269,55 +1245,59 @@ export const SubmittedReportsPage: FC = () => {
               )}
             </div>
 
-            {/* Action Bar inside Modal */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-              <span className="text-[10px] font-mono text-slate-500">
-                Action will update live radar pins and notification channels
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[#670626]/15">
+              <span className="text-xs font-mono text-[#A83B4D]">
+                Action updates live radar pins and Notification Bell telemetry
               </span>
 
               <div className="flex items-center gap-2">
-                {!selectedReport.isVerified && !selectedReport.isClosed && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      handleVerifyReport(selectedReport.id);
-                      setIsDetailModalOpen(false);
-                    }}
-                    className="text-xs font-mono font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    VERIFY REPORT
-                  </Button>
+                {!selectedReport.isVerified && !selectedReport.isClosed && !selectedReport.isRejected && (
+                  <>
+                    <AdminButton
+                      variant="success"
+                      size="sm"
+                      onClick={() => {
+                        void handleVerifyOrRejectReport(selectedReport.id, 'Verified');
+                        setIsDetailModalOpen(false);
+                      }}
+                      icon={<Check className="w-3.5 h-3.5" />}
+                    >
+                      Verify Report
+                    </AdminButton>
+                    <AdminButton
+                      variant="danger"
+                      size="sm"
+                      onClick={() => {
+                        void handleVerifyOrRejectReport(selectedReport.id, 'Rejected');
+                        setIsDetailModalOpen(false);
+                      }}
+                      icon={<XCircle className="w-3.5 h-3.5" />}
+                    >
+                      Reject Report
+                    </AdminButton>
+                  </>
                 )}
-                {!selectedReport.isClosed && (
-                  <Button
+                {!selectedReport.isClosed && !selectedReport.isRejected && (
+                  <AdminButton
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      handleManualClose(selectedReport.id);
+                      void handleManualClose(selectedReport.id);
                       setIsDetailModalOpen(false);
                     }}
-                    className="text-xs font-mono font-bold border-slate-700 hover:border-rose-400 text-slate-300"
                   >
-                    CLOSE CASE
-                  </Button>
+                    Close Case
+                  </AdminButton>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsDetailModalOpen(false)}
-                  className="text-xs font-mono"
-                >
-                  DISMISS
-                </Button>
+                <AdminButton variant="outline" size="sm" onClick={() => setIsDetailModalOpen(false)}>
+                  Dismiss
+                </AdminButton>
               </div>
             </div>
           </div>
-        </DefaultFloatingModalCard>
+        </AdminModalCard>
       )}
 
-      {/* Up to 40 Images Lightbox */}
       {isLightboxOpen && (
         <ImageLightboxModal
           isOpen={isLightboxOpen}

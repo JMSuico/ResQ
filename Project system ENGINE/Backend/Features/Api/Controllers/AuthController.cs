@@ -49,7 +49,10 @@ public class AuthController(
         hasFaceCapture = response.HasFaceCapture,
         createdAt = response.CreatedAt,
         autoApprovedByAi = response.AutoApprovedByAi,
-        autoApprovalReason = response.AutoApprovalReason
+        autoApprovalReason = response.AutoApprovalReason,
+        biometricTrainingStatus = response.BiometricTrainingStatus,
+        biometricTrainingReadyTargetUtc = response.BiometricTrainingReadyTargetUtc,
+        trainedFrameCount = response.TrainedFrameCount
     };
 
     [HttpGet("auth/verification-providers")]
@@ -73,7 +76,7 @@ public class AuthController(
     [HttpPost("auth/login")]
     public async Task<IActionResult> LoginAsync([FromBody] LoginRequest request, CancellationToken ct)
     {
-        string ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+        string ip = ClientNetworkHelper.ResolveClientIpAddress(HttpContext) ?? "127.0.0.1";
         string ua = Request.Headers.UserAgent.ToString();
 
         var (success, error, rawToken, session) = await authService.LoginAsync(request, ip, ua, ct);
@@ -95,7 +98,7 @@ public class AuthController(
     [HttpPost("auth/login/biometric")]
     public async Task<IActionResult> BiometricLoginAsync([FromBody] BiometricLoginRequest request, CancellationToken ct)
     {
-        string ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+        string ip = ClientNetworkHelper.ResolveClientIpAddress(HttpContext) ?? "127.0.0.1";
         string ua = Request.Headers.UserAgent.ToString();
 
         var (success, error, rawToken, session) = await authService.BiometricLoginAsync(request, ip, ua, ct);

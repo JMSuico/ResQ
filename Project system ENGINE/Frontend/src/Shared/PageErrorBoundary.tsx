@@ -39,22 +39,22 @@ export class PageErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center animate-fade-in">
-          <div className="tactical-card p-8 max-w-lg w-full flex flex-col items-center gap-4 border-rose-500/60 bg-slate-900/90 shadow-2xl">
-            <div className="w-14 h-14 rounded-full bg-rose-500/20 border border-rose-500/50 flex items-center justify-center">
-              <AlertOctagon className="w-8 h-8 text-rose-400 animate-pulse" />
+          <div className="clay-surface p-8 max-w-lg w-full flex flex-col items-center gap-4 border border-[#E9D9D0] bg-[#F7F1EA] rounded-2xl shadow-[0_18px_40px_-10px_rgba(103,6,38,0.22),inset_0_2px_4px_rgba(255,255,255,0.9)]">
+            <div className="w-14 h-14 rounded-full bg-rose-100 border border-rose-300 flex items-center justify-center">
+              <AlertOctagon className="w-8 h-8 text-[#991B1B] animate-pulse" />
             </div>
 
             <div className="space-y-1">
-              <h2 className="text-lg font-black text-white uppercase tracking-wider font-mono">
+              <h2 className="text-lg font-black text-[#670626] uppercase tracking-wider font-mono">
                 Tactical Module Render Fault
               </h2>
-              <p className="text-xs text-slate-400 font-mono">
+              <p className="text-sm text-[#5C313E] font-mono">
                 An unexpected exception interrupted component rendering in this tactical view.
               </p>
             </div>
 
             {this.state.error && (
-              <div className="w-full p-3 rounded-lg bg-slate-950 border border-slate-800 text-left font-mono text-[11px] text-rose-300 overflow-x-auto max-h-32">
+              <div className="w-full p-3 rounded-xl bg-[#E9D9D0]/70 border border-[#D8C1B5] text-left font-mono text-xs text-[#991B1B] overflow-x-auto max-h-32">
                 {this.state.error.message || 'Unknown runtime error'}
               </div>
             )}
@@ -64,7 +64,7 @@ export class PageErrorBoundary extends Component<Props, State> {
                 variant="primary"
                 size="sm"
                 onClick={this.handleReset}
-                className="text-xs font-mono font-bold flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white"
+                className="text-sm font-mono font-bold flex items-center gap-2"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 RELOAD MODULE
@@ -74,7 +74,7 @@ export class PageErrorBoundary extends Component<Props, State> {
                 variant="outline"
                 size="sm"
                 onClick={() => { window.location.href = '/dashboard'; }}
-                className="text-xs font-mono font-bold flex items-center gap-2 border-slate-700 hover:border-slate-500 text-slate-300"
+                className="text-sm font-mono font-bold flex items-center gap-2"
               >
                 <Home className="w-3.5 h-3.5" />
                 RETURN C2 DASHBOARD

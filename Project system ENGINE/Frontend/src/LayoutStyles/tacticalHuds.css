@@ -10,20 +10,20 @@
    1. ROOT TOKENS & AGENCY THEME MATRICES
    -------------------------------------------------------------------------- */
 :root {
-  /* Default Tactical Baseline (Command Navy) */
-  --hud-base: #071522;
-  --hud-base-rgb: 7, 21, 34;
-  --hud-primary: #0284c7;
-  --hud-primary-rgb: 2, 132, 199;
-  --hud-border: #38bdf8;
-  --hud-border-rgb: 56, 189, 248;
-  --hud-glow: rgba(2, 132, 199, 0.4);
-  --hud-surface: #0a1a2b;
-  --hud-surface-elevated: #0e243a;
-  --hud-text: #f8fafc;
-  --hud-text-secondary: #94a3b8;
-  --hud-badge-bg: rgba(2, 132, 199, 0.16);
-  --hud-highlight: #38bdf8;
+  /* Default Official Cherry & Warm Ivory Stitch Baseline */
+  --hud-base: #4A041A;
+  --hud-base-rgb: 74, 4, 26;
+  --hud-primary: #670626;
+  --hud-primary-rgb: 103, 6, 38;
+  --hud-border: #FFD9DD;
+  --hud-border-rgb: 255, 217, 221;
+  --hud-glow: rgba(103, 6, 38, 0.42);
+  --hud-surface: #400014;
+  --hud-surface-elevated: #670626;
+  --hud-text: #F7F1EA;
+  --hud-text-secondary: #FFD9DD;
+  --hud-badge-bg: rgba(103, 6, 38, 0.35);
+  --hud-highlight: #FFD9DD;
   --hud-touch-min: 44px;
 }
 
@@ -134,16 +134,23 @@
    -------------------------------------------------------------------------- */
 .hud-panel {
   position: relative;
-  background-color: var(--hud-surface);
+  background-color: rgba(var(--hud-base-rgb), 0.7);
+  backdrop-filter: blur(16px) saturate(145%);
+  -webkit-backdrop-filter: blur(16px) saturate(145%);
   color: var(--hud-text);
-  border: 1px solid var(--hud-border);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5), 0 0 12px -2px var(--hud-glow);
+  border: 1px solid rgba(var(--hud-border-rgb), 0.42);
+  box-shadow:
+    0 4px 20px -2px rgba(0, 0, 0, 0.5),
+    0 0 12px -2px var(--hud-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
   transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .hud-panel-elevated {
-  background-color: var(--hud-surface-elevated);
+  background-color: rgba(var(--hud-base-rgb), 0.78);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
   border-color: rgba(var(--hud-border-rgb), 0.6);
 }
 
@@ -587,13 +594,15 @@
   min-width: var(--hud-touch-min);
   padding: 10px 20px;
   font-family: var(--font-ui, 'Inter', sans-serif);
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--hud-text);
-  background-color: var(--hud-surface);
-  border: 1px solid var(--hud-border);
+  background-color: rgba(var(--hud-base-rgb), 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 4px;
   cursor: pointer;
   user-select: none;
@@ -718,12 +727,14 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  border: 1px solid var(--hud-border);
+  padding: 5px 12px;
+  border: 1px solid rgba(var(--hud-border-rgb), 0.55);
   background-color: var(--hud-badge-bg);
-  border-radius: 3px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 4px;
   font-family: var(--font-mono, 'JetBrains Mono', monospace);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--hud-text);
   letter-spacing: 0.03em;
@@ -732,31 +743,33 @@
 
 .hud-data-label {
   font-family: var(--font-ui, 'Inter', sans-serif);
-  font-size: 0.6875rem;
+  font-size: 0.78125rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--hud-text-secondary);
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .hud-data-value {
   font-family: var(--font-mono, 'JetBrains Mono', monospace);
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 700;
   color: var(--hud-text);
   font-variant-numeric: tabular-nums;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .hud-metric-readout {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 12px;
-  background-color: var(--hud-surface);
-  border: 1px solid rgba(var(--hud-border-rgb), 0.35);
-  border-radius: 4px;
+  gap: 3px;
+  padding: 10px 14px;
+  background-color: rgba(var(--hud-base-rgb), 0.68);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
 }
 
 .hud-status-dot {

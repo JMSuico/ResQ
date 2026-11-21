@@ -20,7 +20,7 @@ export const SkeletonLoader: FC<SkeletonLoaderProps> = ({
   if (variant === 'circle') {
     return (
       <div
-        className={`rounded-full bg-slate-800/80 border border-slate-700/30 animate-pulse ${className}`}
+        className={`rounded-full bg-[#E9D9D0] border border-[#D8C1B5] animate-pulse ${className}`}
       />
     );
   }
@@ -28,11 +28,11 @@ export const SkeletonLoader: FC<SkeletonLoaderProps> = ({
   if (variant === 'card') {
     return (
       <div
-        className={`rounded-xl bg-slate-900/90 p-4 border border-slate-700/80 shadow-lg flex flex-col gap-3 animate-pulse ${className}`}
+        className={`clay-surface rounded-2xl bg-[#F7F1EA] p-4 border border-[#E9D9D0] shadow-md flex flex-col gap-3 animate-pulse ${className}`}
       >
-        <div className="h-36 bg-slate-800/80 rounded-lg w-full border border-slate-700/30" />
-        <div className="h-4 bg-slate-800/80 rounded-md w-3/4" />
-        <div className="h-3 bg-slate-800/60 rounded-md w-1/2" />
+        <div className="h-36 bg-[#E9D9D0] rounded-xl w-full border border-[#D8C1B5]" />
+        <div className="h-4 bg-[#E9D9D0] rounded-md w-3/4" />
+        <div className="h-3 bg-[#E9D9D0]/80 rounded-md w-1/2" />
       </div>
     );
   }
@@ -40,7 +40,7 @@ export const SkeletonLoader: FC<SkeletonLoaderProps> = ({
   if (variant === 'rect') {
     return (
       <div
-        className={`rounded-lg bg-slate-800/80 border border-slate-700/30 animate-pulse ${className}`}
+        className={`rounded-xl bg-[#E9D9D0] border border-[#D8C1B5] animate-pulse ${className}`}
       />
     );
   }
@@ -51,7 +51,7 @@ export const SkeletonLoader: FC<SkeletonLoaderProps> = ({
         {Array.from({ length: rows }).map((_, i) => (
           <div
             key={i}
-            className="h-9 bg-slate-800/70 rounded-lg border border-slate-700/30 w-full"
+            className="h-9 bg-[#E9D9D0] rounded-xl border border-[#D8C1B5] w-full"
           />
         ))}
       </div>
@@ -60,7 +60,7 @@ export const SkeletonLoader: FC<SkeletonLoaderProps> = ({
 
   return (
     <div
-      className={`h-4 rounded-md bg-slate-800/80 border border-slate-700/30 animate-pulse ${className}`}
+      className={`h-4 rounded-md bg-[#E9D9D0] border border-[#D8C1B5] animate-pulse ${className}`}
     />
   );
 };

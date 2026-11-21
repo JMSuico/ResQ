@@ -195,15 +195,61 @@ export class BiometricFrameCacheStore {
     };
 
     poses.forEach((pose) => {
-      const poseFrames = this.frames.filter((f) => f.pose === pose);
-      if (poseFrames.length > 0) {
-        const trackedPoseFrames = poseFrames.filter((f) => isEntryTrackedFace(f));
-        const candidates = trackedPoseFrames.length > 0 ? trackedPoseFrames : poseFrames;
-        const best = candidates.reduce((prev, curr) =>
-          curr.laplacianVariance > prev.laplacianVariance ? curr : prev
-        );
-        result[pose] = best.frameDataUrl;
+      const sharpest = this.getSharpestFramesForPose(pose, 1);
+      if (sharpest.length > 0) {
+        result[pose] = sharpest[0].frameDataUrl;
       }
+    });
+
+    return result;
+  };
+
+  public getSharpestFramesForPose = (
+    pose: BiometricPose,
+    limit: number = 3
+  ): CachedFrameEntry[] => {
+    const safeLimit = Math.max(1, Math.min(10, Math.trunc(limit)));
+    const poseFrames = this.frames.filter((f) => f.pose === pose && f.frameDataUrl.length > 50);
+    if (poseFrames.length === 0) {
+      return [];
+    }
+
+    const trackedFrames = poseFrames
+      .filter((f) => isEntryTrackedFace(f))
+      .sort((a, b) => b.laplacianVariance - a.laplacianVariance);
+    const untrackedFrames = poseFrames
+      .filter((f) => !isEntryTrackedFace(f))
+      .sort((a, b) => b.laplacianVariance - a.laplacianVariance);
+
+    const ordered = trackedFrames.length > 0 ? [...trackedFrames, ...untrackedFrames] : untrackedFrames;
+    const distinct: CachedFrameEntry[] = [];
+    const seenUrls = new Set<string>();
+
+    for (const entry of ordered) {
+      if (!seenUrls.has(entry.frameDataUrl)) {
+        seenUrls.add(entry.frameDataUrl);
+        distinct.push(entry);
+        if (distinct.length >= safeLimit) {
+          break;
+        }
+      }
+    }
+
+    return distinct.length > 0 ? distinct : ordered.slice(0, 1);
+  };
+
+  public getBestFramesMulti = (limitPerPose: number = 3): Record<BiometricPose, string[]> => {
+    const poses: BiometricPose[] = ['CENTER', 'LEFT', 'RIGHT', 'UP', 'BLINK'];
+    const result: Record<BiometricPose, string[]> = {
+      CENTER: [],
+      LEFT: [],
+      RIGHT: [],
+      UP: [],
+      BLINK: [],
+    };
+
+    poses.forEach((pose) => {
+      result[pose] = this.getSharpestFramesForPose(pose, limitPerPose).map((entry) => entry.frameDataUrl);
     });
 
     return result;
@@ -380,11 +426,11 @@ export const extractBiometricFeatureVector = async (dataUrl: string): Promise<nu
 
 export const extractBiometricFeatureVectorDetailed = async (
   dataUrl: string
-): Promise<{ vector: number[]; isTrackedRealFace: boolean }> => {
+): Promise<{ vector: number[]; isTrackedRealFace: boolean; hasFaceSkin: boolean }> => {
   if (!dataUrl || typeof document === 'undefined') {
     const fallback = new Array<number>(128).fill(0);
     fallback[0] = 1.0;
-    return { vector: fallback, isTrackedRealFace: false };
+    return { vector: fallback, isTrackedRealFace: false, hasFaceSkin: false };
   }
 
   try {
@@ -418,16 +464,23 @@ export const extractBiometricFeatureVectorDetailed = async (
       { cx: targetW * 0.5, cy: targetH * 0.5, rx: targetW * 0.2625, ry: targetH * 0.425 }
     );
 
+    const hasFaceSkin = Boolean(
+      skinRes?.moments && skinRes.moments.m00 >= targetW * targetH * 0.015
+    );
     const desc = skinRes?.featureDescriptor || skinRes?.hybridProfile?.featureDescriptor;
-    if (desc && desc.length === 128 && skinRes?.isValidFace) {
+    if (desc && desc.length === 128 && (skinRes?.isValidFace || hasFaceSkin)) {
       const arr = Array.from(desc);
       let norm = 0;
       for (let i = 0; i < 128; i++) norm += arr[i] * arr[i];
       norm = Math.sqrt(norm);
       if (norm > 1e-6) {
-        return { vector: arr.map((v) => Number((v / norm).toFixed(4))), isTrackedRealFace: true };
+        return {
+          vector: arr.map((v) => Number((v / norm).toFixed(4))),
+          isTrackedRealFace: Boolean(skinRes?.isValidFace),
+          hasFaceSkin
+        };
       }
-      return { vector: arr, isTrackedRealFace: true };
+      return { vector: arr, isTrackedRealFace: Boolean(skinRes?.isValidFace), hasFaceSkin };
     }
 
     // Deterministic fallback from pixel sampling (guaranteed 128-D normalized vector)
@@ -449,11 +502,11 @@ export const extractBiometricFeatureVectorDetailed = async (
     } else {
       vector[0] = 1.0;
     }
-    return { vector, isTrackedRealFace: false };
+    return { vector, isTrackedRealFace: false, hasFaceSkin };
   } catch {
     const fallback = new Array<number>(128).fill(0);
     fallback[0] = 1.0;
-    return { vector: fallback, isTrackedRealFace: false };
+    return { vector: fallback, isTrackedRealFace: false, hasFaceSkin: false };
   }
 };
 
@@ -489,41 +542,93 @@ export interface MultiPoseTrainedProfile {
   fallbackUsed: boolean;
 }
 
+const averageUnitNormalizedVectors = (vectors: number[][]): number[] => {
+  if (vectors.length === 0) {
+    const def = new Array<number>(128).fill(0);
+    def[0] = 1.0;
+    return def;
+  }
+  const sum = new Array<number>(128).fill(0);
+  for (const vec of vectors) {
+    for (let i = 0; i < 128; i++) {
+      sum[i] += vec[i] ?? 0;
+    }
+  }
+  let norm = 0;
+  for (let i = 0; i < 128; i++) {
+    norm += sum[i] * sum[i];
+  }
+  norm = Math.sqrt(norm);
+  if (norm > 1e-6) {
+    return sum.map((v) => Number((v / norm).toFixed(4)));
+  }
+  const def = new Array<number>(128).fill(0);
+  def[0] = 1.0;
+  return def;
+};
+
 /**
  * Synthesizes a calibrated 128-D biometric profile from multi-pose video frames.
- * Blends CENTER, BLINK, RIGHT, and LEFT frames to train the user's ground-truth identity.
+ * Blends up to 3 sharpest frames per pose across CENTER, BLINK, RIGHT, and LEFT,
+ * keeping frontal CENTER weight primary (>= 0.72) and never discarding CENTER unless all frontal frames lack face skin.
  */
 export const synthesizeMultiPoseTrainedProfile = async (
   cacheOrBestFrames: BiometricFrameCacheStore | Record<BiometricPose, string>
 ): Promise<MultiPoseTrainedProfile> => {
+  const isStore = 'getSharpestFramesForPose' in cacheOrBestFrames;
   const bestFrames: Record<BiometricPose, string> =
     'getBestFrames' in cacheOrBestFrames
       ? cacheOrBestFrames.getBestFrames()
       : cacheOrBestFrames;
 
   const weights: Record<BiometricPose, number> = {
-    CENTER: 0.92,
-    BLINK: 0.02,
-    RIGHT: 0.03,
-    LEFT: 0.03,
-    UP: 0.03
+    CENTER: 0.78,
+    BLINK: 0.06,
+    RIGHT: 0.08,
+    LEFT: 0.08,
+    UP: 0.06
   };
 
   const poses: BiometricPose[] = ['CENTER', 'RIGHT', 'LEFT', 'BLINK'];
-  const extractedVectors: Array<{ pose: BiometricPose; vector: number[]; weight: number; isTrackedRealFace: boolean }> = [];
+  const extractionResults = await Promise.all(
+    poses.map(async (pose) => {
+      const candidateUrls: string[] = isStore
+        ? cacheOrBestFrames.getSharpestFramesForPose(pose, 3).map((e) => e.frameDataUrl)
+        : bestFrames[pose] && bestFrames[pose].length > 50
+        ? [bestFrames[pose]]
+        : [];
 
-  for (const pose of poses) {
-    const frameUrl = bestFrames[pose];
-    if (frameUrl && frameUrl.length > 50) {
-      const detailed = await extractBiometricFeatureVectorDetailed(frameUrl);
-      extractedVectors.push({
+      if (candidateUrls.length === 0) {
+        return null;
+      }
+
+      const detailedList = await Promise.all(
+        candidateUrls.map((url) => extractBiometricFeatureVectorDetailed(url))
+      );
+      const skinBearing = detailedList.filter((d) => d.isTrackedRealFace || d.hasFaceSkin);
+      const chosen = skinBearing.length > 0 ? skinBearing : detailedList;
+      const poseVector = averageUnitNormalizedVectors(chosen.map((d) => d.vector));
+
+      return {
         pose,
-        vector: detailed.vector,
+        vector: poseVector,
         weight: weights[pose],
-        isTrackedRealFace: detailed.isTrackedRealFace
-      });
-    }
-  }
+        isTrackedRealFace: detailedList.some((d) => d.isTrackedRealFace),
+        hasFaceSkin: detailedList.some((d) => d.hasFaceSkin)
+      };
+    })
+  );
+  const extractedVectors = extractionResults.filter(
+    (
+      item
+    ): item is {
+      pose: BiometricPose;
+      vector: number[];
+      weight: number;
+      isTrackedRealFace: boolean;
+      hasFaceSkin: boolean;
+    } => item !== null
+  );
 
   if (extractedVectors.length === 0) {
     const defaultVec = new Array<number>(128).fill(0);
@@ -538,17 +643,31 @@ export const synthesizeMultiPoseTrainedProfile = async (
     };
   }
 
-  const allPosesTracked =
-    extractedVectors.length === poses.length &&
-    extractedVectors.every((v) => v.isTrackedRealFace);
-  const trackedVectors = extractedVectors.filter((v) => v.isTrackedRealFace);
+  // Never discard CENTER frontal vector in favor of 100% profile unless ALL frontal frames genuinely lack face skin.
+  const trackedVectors = extractedVectors.filter(
+    (v) => v.isTrackedRealFace || (v.pose === 'CENTER' && v.hasFaceSkin)
+  );
   const vectorsForBlend = trackedVectors.length > 0 ? trackedVectors : extractedVectors;
 
-  const totalWeight = vectorsForBlend.reduce((acc, curr) => acc + curr.weight, 0);
+  // Enforce primary frontal CENTER weight >= 0.72 whenever CENTER is included in the blend.
+  const centerEntry = vectorsForBlend.find((v) => v.pose === 'CENTER');
+  const otherWeightSum = vectorsForBlend
+    .filter((v) => v.pose !== 'CENTER')
+    .reduce((acc, curr) => acc + curr.weight, 0);
+  const effectiveCenterWeight =
+    centerEntry && otherWeightSum > 0
+      ? Math.max(centerEntry.weight, otherWeightSum * (0.74 / 0.26))
+      : centerEntry?.weight ?? 0;
+
+  const totalWeight = vectorsForBlend.reduce(
+    (acc, curr) => acc + (curr.pose === 'CENTER' ? effectiveCenterWeight : curr.weight),
+    0
+  );
   const blended = new Array<number>(128).fill(0);
 
   for (const item of vectorsForBlend) {
-    const w = item.weight / Math.max(1e-6, totalWeight);
+    const rawW = item.pose === 'CENTER' ? effectiveCenterWeight : item.weight;
+    const w = rawW / Math.max(1e-6, totalWeight);
     for (let i = 0; i < 128; i++) {
       blended[i] += item.vector[i] * w;
     }
@@ -565,6 +684,10 @@ export const synthesizeMultiPoseTrainedProfile = async (
   } else {
     finalVector[0] = 1.0;
   }
+
+  const allPosesTracked =
+    extractedVectors.length === poses.length &&
+    extractedVectors.every((v) => v.isTrackedRealFace || v.hasFaceSkin);
 
   return {
     descriptorVector: finalVector,

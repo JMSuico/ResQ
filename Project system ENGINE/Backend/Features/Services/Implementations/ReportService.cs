@@ -2,11 +2,13 @@
 // Responsibility: Implements incident report ingestion, validation, agency routing, and image retrieval using Universal Lambdas (=>).
 // Zero emojis.
 
+using System.Text.Json;
 using Backend.Features.Api.DTOs;
 using Backend.Features.Data.Enums;
 using Backend.Features.Data.Models;
 using Backend.Features.Helpers.Infrastructure;
 using Backend.Features.Repositories.Interfaces;
+using Backend.Features.Services.IncidentVision;
 using Backend.Features.Services.Interfaces;
 
 namespace Backend.Features.Services.Implementations;
@@ -14,18 +16,79 @@ namespace Backend.Features.Services.Implementations;
 public class ReportService(
     IReportRepository reportRepo,
     IUserRepository userRepo,
-    IAuditLogRepository auditRepo) : IReportService
+    IAuditLogRepository auditRepo,
+    IIncidentSceneAiAnalysisStrategy? incidentVisionStrategy = null) : IReportService
 {
-    public async Task<ReportResponse> CreateReportAsync(Guid reporterId, CreateReportRequest request, string reportsRootPath, CancellationToken ct = default)
+    private readonly IIncidentSceneAiAnalysisStrategy _incidentVisionStrategy =
+        incidentVisionStrategy ?? new DualStageIncidentSceneAiStrategy();
+
+    public Task<IncidentImageAiAnalysisResponseDto> AnalyzeIncidentImageAsync(
+        AnalyzeIncidentImageRequest request,
+        CancellationToken ct = default) =>
+        _incidentVisionStrategy.AnalyzeAsync(request, ct);
+
+    public async Task<ReportResponse> CreateReportAsync(Guid reporterId, CreateReportRequest request, string reportsRootPath, CancellationToken ct = default, string? submittedIpAddress = null)
     {
         var reporter = await userRepo.GetByIdAsync(reporterId, ct);
         string? imagePath = await CaptureStorageHelper.SavePngDataUrlAsync(request.ImageDataUrl, reportsRootPath, "REPORT", ct);
 
+        IncidentCategory safeCategory = Enum.IsDefined(request.Category) ? request.Category : IncidentCategory.VehicularAccident;
+        IncidentSeverity safeSeverity = Enum.IsDefined(request.Severity) ? request.Severity : IncidentSeverity.Medium;
+
+        IncidentImageAiAnalysisResponseDto? aiAnalysis = null;
+        bool hasPreAnalyzedFields =
+            !string.IsNullOrWhiteSpace(request.RoboflowPrediction) ||
+            !string.IsNullOrWhiteSpace(request.ClaudeSituationSummary) ||
+            !string.IsNullOrWhiteSpace(request.PointerIconType);
+
+        if (!string.IsNullOrWhiteSpace(request.ImageDataUrl) && !hasPreAnalyzedFields)
+        {
+            aiAnalysis = await _incidentVisionStrategy.AnalyzeAsync(
+                new AnalyzeIncidentImageRequest(
+                    ImageDataUrl: request.ImageDataUrl,
+                    TitleHint: request.Title,
+                    NoteHint: request.Note,
+                    CategoryHint: safeCategory.ToString()),
+                ct);
+        }
+
+        string roboflowModelId = aiAnalysis?.RoboflowModelId ?? RoboflowServerlessAccidentDetectionStrategy.DefaultModelId;
+        string? roboflowPrediction = SanitizeOptionalField(request.RoboflowPrediction ?? aiAnalysis?.RoboflowPrediction, 64);
+        double? roboflowConfidence = request.RoboflowConfidence ?? aiAnalysis?.RoboflowConfidence;
+        bool roboflowNeedsReview = request.RoboflowNeedsReview ?? aiAnalysis?.RoboflowNeedsReview ?? true;
+        string? claudeModelUsed = SanitizeOptionalField(request.ClaudeModelUsed ?? aiAnalysis?.ClaudeModelUsed, 64);
+        string? claudeIncidentCategory = SanitizeOptionalField(request.ClaudeIncidentCategory ?? aiAnalysis?.DetectedCategory ?? safeCategory.ToString(), 64);
+        string? claudeSituationSummary = SanitizeOptionalField(request.ClaudeSituationSummary ?? aiAnalysis?.SituationDescription, 1000);
+        string? claudeVisibleHazards = SanitizeOptionalField(request.ClaudeVisibleHazards ?? aiAnalysis?.VisibleHazards, 600);
+        string? claudeUncertaintyNotes = SanitizeOptionalField(request.ClaudeUncertaintyNotes ?? aiAnalysis?.UncertaintyNotes, 600);
+        string pointerIconType = SanitizeOptionalField(
+            request.PointerIconType
+            ?? aiAnalysis?.PointerIconType
+            ?? ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon(claudeIncidentCategory ?? safeCategory.ToString()),
+            40) ?? ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon(safeCategory.ToString());
+
+        string? aiAnalysisJson = (aiAnalysis is not null || hasPreAnalyzedFields)
+            ? JsonSerializer.Serialize(new
+            {
+                roboflowModelId,
+                roboflowPrediction,
+                roboflowConfidence,
+                roboflowNeedsReview,
+                claudeModelUsed,
+                claudeIncidentCategory,
+                claudeSituationSummary,
+                claudeVisibleHazards,
+                claudeUncertaintyNotes,
+                pointerIconType,
+                verificationStatus = "PENDING_REVIEW"
+            })
+            : null;
+
         string refCode = $"RESQ-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid():N}"[..18].ToUpperInvariant();
-        string recommendedAgency = DetermineRecommendedAgency(request.Category, request.Severity, request.Title, request.Note);
-        bool hasLiveCameraCapture = !string.IsNullOrWhiteSpace(request.ImageDataUrl);
-        // Authenticated live camera capture with device sensor telemetry automatically passes system verification
-        bool requiresManualVerif = !hasLiveCameraCapture && (request.RequiresManualVerification == true || request.IsBlurry == true);
+        string recommendedAgency = DetermineRecommendedAgency(safeCategory, safeSeverity, request.Title, request.Note);
+
+        string? sanitizedIp = SanitizeOptionalField(submittedIpAddress, 64);
+        string? sanitizedContact = SanitizeOptionalField(request.ReporterContactNumber, 40);
 
         var report = new Report
         {
@@ -33,22 +96,35 @@ public class ReportService(
             ReporterId = reporterId,
             ReporterName = reporter?.FullName ?? "Anonymous Resident",
             ReporterRole = reporter?.Role ?? UserRole.Civilian,
+            SubmittedIpAddress = sanitizedIp,
+            ReporterContactNumber = sanitizedContact,
             Title = InputSanitizer.Sanitize(request.Title),
             Note = InputSanitizer.Sanitize(request.Note),
-            Category = request.Category,
-            Severity = request.Severity,
-            Status = requiresManualVerif ? ReportStatus.Reported : ReportStatus.Verified,
+            Category = safeCategory,
+            Severity = safeSeverity,
+            Status = ReportStatus.Reported,
             Latitude = request.Latitude,
             Longitude = request.Longitude,
             GpsAccuracyMeters = request.GpsAccuracyMeters,
             IsHardwareGeolocated = request.IsHardwareGeolocated ?? false,
             IsBlurry = request.IsBlurry ?? false,
-            RequiresManualVerification = requiresManualVerif,
+            RequiresManualVerification = true,
             RecommendedAgencyUnit = recommendedAgency,
             LocationLabel = InputSanitizer.Sanitize(request.LocationLabel),
             ImageCapturePath = imagePath,
             CreatedAt = DateTime.UtcNow,
-            VerifiedAt = requiresManualVerif ? null : DateTime.UtcNow
+            VerifiedAt = null,
+            RoboflowModelId = roboflowModelId,
+            RoboflowPrediction = roboflowPrediction,
+            RoboflowConfidence = roboflowConfidence,
+            RoboflowNeedsReview = roboflowNeedsReview,
+            ClaudeModelUsed = claudeModelUsed,
+            ClaudeIncidentCategory = claudeIncidentCategory,
+            ClaudeSituationSummary = claudeSituationSummary,
+            ClaudeVisibleHazards = claudeVisibleHazards,
+            ClaudeUncertaintyNotes = claudeUncertaintyNotes,
+            PointerIconType = pointerIconType,
+            AiAnalysisJson = aiAnalysisJson
         };
 
         await reportRepo.AddAsync(report, ct);
@@ -56,8 +132,8 @@ public class ReportService(
         // Audit Log
         string prevHash = await auditRepo.GetLatestHashAsync(ct);
         DateTime now = DateTime.UtcNow;
-        string action = requiresManualVerif ? "REPORT_CREATED" : "REPORT_AUTO_VERIFIED";
-        string payload = $"Report: {refCode}, Cat: {report.Category}, Sev: {report.Severity}, Loc: {report.Latitude:F4},{report.Longitude:F4}, Blurry: {report.IsBlurry}, RecAgency: {recommendedAgency}";
+        const string action = "REPORT_CREATED";
+        string payload = $"Report: {refCode}, Cat: {report.Category}, Sev: {report.Severity}, Loc: {report.Latitude:F4},{report.Longitude:F4}, Blurry: {report.IsBlurry}, RecAgency: {recommendedAgency}, IP: {sanitizedIp ?? "unknown"}";
         string newHash = AuditHelper.ComputeChainedHash(prevHash, now, reporterId, action, payload);
 
         await auditRepo.AddAsync(new AuditLog
@@ -133,6 +209,11 @@ public class ReportService(
         return "LDRRMO Command Triage";
     }
 
+    private static string? SanitizeOptionalField(string? value, int maxLength) =>
+        InputSanitizer.Sanitize(value) is var sanitized && !string.IsNullOrWhiteSpace(sanitized)
+            ? (sanitized.Length > maxLength ? sanitized[..maxLength] : sanitized)
+            : null;
+
     private static ReportResponse MapToResponse(Report r) =>
         new(
             r.Id,
@@ -142,9 +223,9 @@ public class ReportService(
             r.ReporterRole,
             r.Title,
             r.Note,
-            r.Category,
-            r.Severity,
-            r.Status,
+            Enum.IsDefined(r.Category) ? r.Category : IncidentCategory.VehicularAccident,
+            Enum.IsDefined(r.Severity) ? r.Severity : IncidentSeverity.Medium,
+            Enum.IsDefined(r.Status) ? r.Status : ReportStatus.Reported,
             r.Latitude,
             r.Longitude,
             r.LocationLabel,
@@ -163,6 +244,19 @@ public class ReportService(
             r.CurrentLatitude ?? r.Latitude,
             r.CurrentLongitude ?? r.Longitude,
             r.LastBeaconAt,
-            r.BeaconCount
+            r.BeaconCount,
+            r.SubmittedIpAddress,
+            r.ReporterContactNumber,
+            r.RoboflowModelId,
+            r.RoboflowPrediction,
+            r.RoboflowConfidence,
+            r.RoboflowNeedsReview,
+            r.ClaudeModelUsed,
+            r.ClaudeIncidentCategory,
+            r.ClaudeSituationSummary,
+            r.ClaudeVisibleHazards,
+            r.ClaudeUncertaintyNotes,
+            r.PointerIconType ?? ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon(
+                (Enum.IsDefined(r.Category) ? r.Category : IncidentCategory.VehicularAccident).ToString())
         );
 }

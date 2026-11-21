@@ -790,9 +790,9 @@ public class FastOcrAndHybridBiometricTests
 
         Assert.False(bioLockedSuccess);
         Assert.NotNull(bioLockedError);
-        Assert.Contains("locked", bioLockedError, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("wait 5 minute", bioLockedError, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("wait 15 minute", bioLockedError, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("locked", bioLockedError, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("wait", bioLockedError, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("No active biometric enrollment", bioLockedError, StringComparison.OrdinalIgnoreCase);
     }
 
     private static AppDbContext CreateInMemoryDbContext() =>

@@ -32,6 +32,25 @@ public static class StartupSchemaReconciler
         string[] steps =
         [
             """
+            IF OBJECT_ID(N'dbo.AuditLogs', N'U') IS NOT NULL
+            BEGIN
+                IF OBJECT_ID(N'dbo.__EFMigrationsHistory', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [dbo].[__EFMigrationsHistory] (
+                        [MigrationId] NVARCHAR(150) NOT NULL,
+                        [ProductVersion] NVARCHAR(32) NOT NULL,
+                        CONSTRAINT [PK___EFMigrationsHistory] PRIMARY KEY ([MigrationId])
+                    );
+                END;
+
+                IF NOT EXISTS (SELECT 1 FROM [dbo].[__EFMigrationsHistory] WHERE [MigrationId] = N'20261120000001_InitialBaselineSchema')
+                BEGIN
+                    INSERT INTO [dbo].[__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+                    VALUES (N'20261120000001_InitialBaselineSchema', N'10.0.12');
+                END;
+            END
+            """,
+            """
             IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='AuditLogs' AND COLUMN_NAME='PreviousHash')
             BEGIN
                 ALTER TABLE [AuditLogs] ALTER COLUMN [PreviousHash] NVARCHAR(128) NOT NULL;
@@ -73,6 +92,25 @@ public static class StartupSchemaReconciler
             """,
             "IF OBJECT_ID('BiometricEnrollments') IS NOT NULL AND COL_LENGTH('BiometricEnrollments', 'GeometricSignatureJson') IS NULL ALTER TABLE [BiometricEnrollments] ADD [GeometricSignatureJson] NVARCHAR(MAX) NULL;",
             "IF OBJECT_ID('BiometricEnrollments') IS NOT NULL AND COL_LENGTH('BiometricEnrollments', 'PoseFramesJson') IS NULL ALTER TABLE [BiometricEnrollments] ADD [PoseFramesJson] NVARCHAR(MAX) NULL;",
+            "IF OBJECT_ID('BiometricEnrollments') IS NOT NULL AND COL_LENGTH('BiometricEnrollments', 'TrainingStatus') IS NULL ALTER TABLE [BiometricEnrollments] ADD [TrainingStatus] NVARCHAR(32) NOT NULL CONSTRAINT [DF_BiometricEnrollments_TrainingStatus] DEFAULT 'READY';",
+            "IF OBJECT_ID('BiometricEnrollments') IS NOT NULL AND COL_LENGTH('BiometricEnrollments', 'TrainingStartedAtUtc') IS NULL ALTER TABLE [BiometricEnrollments] ADD [TrainingStartedAtUtc] DATETIME2 NULL;",
+            "IF OBJECT_ID('BiometricEnrollments') IS NOT NULL AND COL_LENGTH('BiometricEnrollments', 'TrainingReadyTargetUtc') IS NULL ALTER TABLE [BiometricEnrollments] ADD [TrainingReadyTargetUtc] DATETIME2 NULL;",
+            "IF OBJECT_ID('BiometricEnrollments') IS NOT NULL AND COL_LENGTH('BiometricEnrollments', 'TrainingCompletedAtUtc') IS NULL ALTER TABLE [BiometricEnrollments] ADD [TrainingCompletedAtUtc] DATETIME2 NULL;",
+            "IF OBJECT_ID('BiometricEnrollments') IS NOT NULL AND COL_LENGTH('BiometricEnrollments', 'TrainingNotes') IS NULL ALTER TABLE [BiometricEnrollments] ADD [TrainingNotes] NVARCHAR(MAX) NULL;",
+            "IF OBJECT_ID('BiometricEnrollments') IS NOT NULL AND COL_LENGTH('BiometricEnrollments', 'TrainedFrameCount') IS NULL ALTER TABLE [BiometricEnrollments] ADD [TrainedFrameCount] INT NOT NULL CONSTRAINT [DF_BiometricEnrollments_TrainedFrameCount] DEFAULT 0;",
+            "IF OBJECT_ID('Reports') IS NOT NULL AND COL_LENGTH('Reports', 'SubmittedIpAddress') IS NULL ALTER TABLE [Reports] ADD [SubmittedIpAddress] NVARCHAR(64) NULL;",
+            "IF OBJECT_ID('Reports') IS NOT NULL AND COL_LENGTH('Reports', 'ReporterContactNumber') IS NULL ALTER TABLE [Reports] ADD [ReporterContactNumber] NVARCHAR(40) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'RoboflowModelId') IS NULL ALTER TABLE [dbo].[Reports] ADD [RoboflowModelId] NVARCHAR(120) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'RoboflowPrediction') IS NULL ALTER TABLE [dbo].[Reports] ADD [RoboflowPrediction] NVARCHAR(64) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'RoboflowConfidence') IS NULL ALTER TABLE [dbo].[Reports] ADD [RoboflowConfidence] FLOAT NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'RoboflowNeedsReview') IS NULL ALTER TABLE [dbo].[Reports] ADD [RoboflowNeedsReview] BIT NOT NULL CONSTRAINT [DF_Reports_RoboflowNeedsReview] DEFAULT 1;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'ClaudeModelUsed') IS NULL ALTER TABLE [dbo].[Reports] ADD [ClaudeModelUsed] NVARCHAR(64) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'ClaudeIncidentCategory') IS NULL ALTER TABLE [dbo].[Reports] ADD [ClaudeIncidentCategory] NVARCHAR(64) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'ClaudeSituationSummary') IS NULL ALTER TABLE [dbo].[Reports] ADD [ClaudeSituationSummary] NVARCHAR(1000) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'ClaudeVisibleHazards') IS NULL ALTER TABLE [dbo].[Reports] ADD [ClaudeVisibleHazards] NVARCHAR(600) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'ClaudeUncertaintyNotes') IS NULL ALTER TABLE [dbo].[Reports] ADD [ClaudeUncertaintyNotes] NVARCHAR(600) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'PointerIconType') IS NULL ALTER TABLE [dbo].[Reports] ADD [PointerIconType] NVARCHAR(40) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'AiAnalysisJson') IS NULL ALTER TABLE [dbo].[Reports] ADD [AiAnalysisJson] NVARCHAR(MAX) NULL;",
             """
             IF OBJECT_ID('BiometricEnrollments') IS NOT NULL
             BEGIN
@@ -112,6 +150,31 @@ public static class StartupSchemaReconciler
                 CREATE UNIQUE INDEX [IX_VerificationTokenRecords_TokenId] ON [VerificationTokenRecords]([TokenId]);
                 CREATE INDEX [IX_VerificationTokenRecords_ExpiresAtUtc_ConsumedAtUtc] ON [VerificationTokenRecords]([ExpiresAtUtc], [ConsumedAtUtc]);
             END
+            """,
+            """
+            IF OBJECT_ID(N'dbo.Reports', N'U') IS NOT NULL
+            BEGIN
+                UPDATE [dbo].[Reports] SET [Category] = 1 WHERE [Category] < 1 OR [Category] > 6;
+                UPDATE [dbo].[Reports] SET [Severity] = 2 WHERE [Severity] < 1 OR [Severity] > 4;
+                UPDATE [dbo].[Reports] SET [Status] = 1 WHERE [Status] < 1 OR [Status] > 9;
+                UPDATE [dbo].[Reports] SET [Latitude] = 8.5147, [Longitude] = 123.2842 WHERE [Latitude] > 13.0;
+            END;
+            IF OBJECT_ID(N'dbo.DutyUnits', N'U') IS NOT NULL
+            BEGIN
+                UPDATE [dbo].[DutyUnits] SET [BaseLatitude] = 8.5136, [BaseLongitude] = 123.2856, [ContactHotline] = N'' WHERE [UnitCode] = N'LDRRMO-HQ' AND ([BaseLatitude] > 13.0 OR [ContactHotline] <> N'');
+                UPDATE [dbo].[DutyUnits] SET [BaseLatitude] = 8.5142, [BaseLongitude] = 123.2862, [ContactHotline] = N'' WHERE [UnitCode] = N'RHU-ALPHA' AND ([BaseLatitude] > 13.0 OR [ContactHotline] <> N'');
+                UPDATE [dbo].[DutyUnits] SET [BaseLatitude] = 8.5128, [BaseLongitude] = 123.2848, [ContactHotline] = N'' WHERE [UnitCode] = N'BFP-ENGINE-01' AND ([BaseLatitude] > 13.0 OR [ContactHotline] <> N'');
+                UPDATE [dbo].[DutyUnits] SET [BaseLatitude] = 8.5160, [BaseLongitude] = 123.2835, [ContactHotline] = N'' WHERE [UnitCode] = N'PNP-SECTOR-01' AND ([BaseLatitude] > 13.0 OR [ContactHotline] <> N'');
+                UPDATE [dbo].[DutyUnits] SET [ContactHotline] = N'' WHERE [ContactHotline] <> N'';
+            END;
+            IF OBJECT_ID(N'dbo.IncidentFixtures', N'U') IS NOT NULL
+            BEGIN
+                UPDATE [dbo].[IncidentFixtures] SET [Latitude] = 8.5145, [Longitude] = 123.2850 WHERE [Latitude] > 13.0;
+            END;
+            IF OBJECT_ID(N'dbo.Users', N'U') IS NOT NULL
+            BEGIN
+                UPDATE [dbo].[Users] SET [CityOrMunicipality] = N'Katipunan' WHERE [CityOrMunicipality] = N'Dipolog City';
+            END;
             """
         ];
 
@@ -125,6 +188,20 @@ public static class StartupSchemaReconciler
     {
         string[] steps =
         [
+            """
+            DO $$
+            BEGIN
+                IF to_regclass('public."AuditLogs"') IS NOT NULL THEN
+                    CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+                        "MigrationId" character varying(150) NOT NULL PRIMARY KEY,
+                        "ProductVersion" character varying(32) NOT NULL
+                    );
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+                    VALUES ('20261120000001_InitialBaselineSchema', '10.0.12')
+                    ON CONFLICT ("MigrationId") DO NOTHING;
+                END IF;
+            END $$;
+            """,
             "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"CurrentLatitude\" double precision;",
             "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"CurrentLongitude\" double precision;",
             "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"LastBeaconAt\" timestamp with time zone;",
@@ -143,6 +220,25 @@ public static class StartupSchemaReconciler
             "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"AutoApprovedAtUtc\" timestamp with time zone;",
             "ALTER TABLE IF EXISTS \"BiometricEnrollments\" ADD COLUMN IF NOT EXISTS \"GeometricSignatureJson\" text;",
             "ALTER TABLE IF EXISTS \"BiometricEnrollments\" ADD COLUMN IF NOT EXISTS \"PoseFramesJson\" text;",
+            "ALTER TABLE IF EXISTS \"BiometricEnrollments\" ADD COLUMN IF NOT EXISTS \"TrainingStatus\" character varying(32) NOT NULL DEFAULT 'READY';",
+            "ALTER TABLE IF EXISTS \"BiometricEnrollments\" ADD COLUMN IF NOT EXISTS \"TrainingStartedAtUtc\" timestamp with time zone;",
+            "ALTER TABLE IF EXISTS \"BiometricEnrollments\" ADD COLUMN IF NOT EXISTS \"TrainingReadyTargetUtc\" timestamp with time zone;",
+            "ALTER TABLE IF EXISTS \"BiometricEnrollments\" ADD COLUMN IF NOT EXISTS \"TrainingCompletedAtUtc\" timestamp with time zone;",
+            "ALTER TABLE IF EXISTS \"BiometricEnrollments\" ADD COLUMN IF NOT EXISTS \"TrainingNotes\" text;",
+            "ALTER TABLE IF EXISTS \"BiometricEnrollments\" ADD COLUMN IF NOT EXISTS \"TrainedFrameCount\" integer NOT NULL DEFAULT 0;",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"SubmittedIpAddress\" character varying(64);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"ReporterContactNumber\" character varying(40);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"RoboflowModelId\" character varying(120);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"RoboflowPrediction\" character varying(64);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"RoboflowConfidence\" double precision;",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"RoboflowNeedsReview\" boolean NOT NULL DEFAULT true;",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"ClaudeModelUsed\" character varying(64);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"ClaudeIncidentCategory\" character varying(64);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"ClaudeSituationSummary\" character varying(1000);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"ClaudeVisibleHazards\" character varying(600);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"ClaudeUncertaintyNotes\" character varying(600);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"PointerIconType\" character varying(40);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"AiAnalysisJson\" text;",
             "ALTER TABLE IF EXISTS \"IdentityVerificationRecords\" ADD COLUMN IF NOT EXISTS \"VerificationTokenId\" character varying(64);",
             "ALTER TABLE IF EXISTS \"IdentityVerificationRecords\" ADD COLUMN IF NOT EXISTS \"AuthenticityVerdict\" character varying(40);",
             "ALTER TABLE IF EXISTS \"IdentityVerificationRecords\" ADD COLUMN IF NOT EXISTS \"FaceToIdMatchScore\" numeric(5,4);",
@@ -167,7 +263,18 @@ public static class StartupSchemaReconciler
             );
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_VerificationTokenRecords_TokenId" ON "VerificationTokenRecords"("TokenId");
             CREATE INDEX IF NOT EXISTS "IX_VerificationTokenRecords_ExpiresAtUtc_ConsumedAtUtc" ON "VerificationTokenRecords"("ExpiresAtUtc", "ConsumedAtUtc");
-            """
+            """,
+            "UPDATE \"Reports\" SET \"Category\" = 1 WHERE \"Category\" < 1 OR \"Category\" > 6;",
+            "UPDATE \"Reports\" SET \"Severity\" = 2 WHERE \"Severity\" < 1 OR \"Severity\" > 4;",
+            "UPDATE \"Reports\" SET \"Status\" = 1 WHERE \"Status\" < 1 OR \"Status\" > 9;",
+            "UPDATE \"Reports\" SET \"Latitude\" = 8.5147, \"Longitude\" = 123.2842 WHERE \"Latitude\" > 13.0;",
+            "UPDATE \"DutyUnits\" SET \"BaseLatitude\" = 8.5136, \"BaseLongitude\" = 123.2856, \"ContactHotline\" = '' WHERE \"UnitCode\" = 'LDRRMO-HQ' AND (\"BaseLatitude\" > 13.0 OR \"ContactHotline\" <> '');",
+            "UPDATE \"DutyUnits\" SET \"BaseLatitude\" = 8.5142, \"BaseLongitude\" = 123.2862, \"ContactHotline\" = '' WHERE \"UnitCode\" = 'RHU-ALPHA' AND (\"BaseLatitude\" > 13.0 OR \"ContactHotline\" <> '');",
+            "UPDATE \"DutyUnits\" SET \"BaseLatitude\" = 8.5128, \"BaseLongitude\" = 123.2848, \"ContactHotline\" = '' WHERE \"UnitCode\" = 'BFP-ENGINE-01' AND (\"BaseLatitude\" > 13.0 OR \"ContactHotline\" <> '');",
+            "UPDATE \"DutyUnits\" SET \"BaseLatitude\" = 8.5160, \"BaseLongitude\" = 123.2835, \"ContactHotline\" = '' WHERE \"UnitCode\" = 'PNP-SECTOR-01' AND (\"BaseLatitude\" > 13.0 OR \"ContactHotline\" <> '');",
+            "UPDATE \"DutyUnits\" SET \"ContactHotline\" = '' WHERE \"ContactHotline\" <> '';",
+            "UPDATE \"IncidentFixtures\" SET \"Latitude\" = 8.5145, \"Longitude\" = 123.2850 WHERE \"Latitude\" > 13.0;",
+            "UPDATE \"Users\" SET \"CityOrMunicipality\" = 'Katipunan' WHERE \"CityOrMunicipality\" = 'Dipolog City';"
         ];
 
         foreach (string sql in steps)

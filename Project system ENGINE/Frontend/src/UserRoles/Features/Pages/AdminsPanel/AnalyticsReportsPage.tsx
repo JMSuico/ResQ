@@ -1,21 +1,13 @@
 // [Layer: UserRoles/Features/Pages/AdminsPanel]
 // AnalyticsReportsPage.tsx -- Executive Analytics, Mathematical Modeling & Intelligence Reports.
-// Conforms to Tasks 22 & 23:
-// - Comprehensive Charts Suite: BarGraphs, LinearCurveyCharts, PieGraphs, Geospatial Density Matrix (Heatmap)
-// - Directly wired to /api/analytics/summary, /api/analytics/volume-24h, /api/analytics/severity-breakdown, and /api/analytics/agency-workload
-// - Pure Analysis & Progress listings with dynamically calculated algorithm formulas
-// - Report Generator with CSV/Excel & PDF export capabilities
-// - Deep Intelligence Drill-Down Modal
-// - Universal Lucide Migration: zero raw inline <svg>, zero <use href="#i-*"/>
-// - Universal arrow lambda syntax (=>) with zero 'any' typing and zero hardcoded static numbers
+// Stitch Official Cherry (#670626) / Warm Ivory (#F7F1EA) / Soft Beige (#E9D9D0) / Muted Cherry (#A83B4D) Clay Design System.
+// REMOVING #11: Katipunan, Zamboanga del Norte (7109) CSV export fallback (zero Dipolog).
+// Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis.
 
 import React, { useState, useEffect, FC, useMemo } from 'react';
 import {
-  BarChart3,
   TrendingUp,
-  PieChart,
   Download,
-  Calendar,
   Sparkles,
   Activity,
   FileText,
@@ -23,10 +15,7 @@ import {
   RefreshCw,
   Eye,
   ShieldAlert,
-  Clock,
-  ArrowUpDown,
   Users,
-  Check,
   X
 } from 'lucide-react';
 import {
@@ -38,19 +27,19 @@ import {
   AnalyticsSummaryDto,
   TelemetryDataPoint,
   SeverityBreakdownItem,
-  AgencyWorkloadItem,
-  HeatmapMatrixDto
+  AgencyWorkloadItem
 } from '@/Endpoints/analyticsApi';
 import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
-import { getDutyRoster, DutyUnit } from '@/Endpoints/responderOpsApi';
 import { LinearCurveyChart, BarGraphChart, PieGraphChart, HeatmapChart } from '@/Shared/Charts';
-import { Button, Dropdown, DefaultFloatingModalCard } from '@/Shared';
+import { Dropdown } from '@/Shared';
 import { useValueRefreshAuto } from '@/Hooks';
 import {
   BASELINE_ANALYTICS_SUMMARY,
-  BASELINE_INCIDENT_REPORTS,
-  BASELINE_DUTY_ROSTER
+  BASELINE_INCIDENT_REPORTS
 } from '@/Libs/Assets/baselineFixtures';
+import { AdminButton } from './Shared/AdminButton';
+import { AdminModalCard } from './Shared/AdminModalCard';
+import { CLAY_SURFACE, CLAY_WELL } from './Shared/adminCommandHelpers';
 
 export interface ExtendedReportItem extends ReportItem {
   deviceIp?: string;
@@ -77,30 +66,26 @@ export const AnalyticsReportsPage: FC = () => {
   const [agencyData, setAgencyData] = useState<AgencyWorkloadItem[]>([]);
   const [heatmapMatrix, setHeatmapMatrix] = useState<number[][]>([]);
   const [reports, setReports] = useState<ExtendedReportItem[]>([]);
-  const [roster, setRoster] = useState<DutyUnit[]>([]);
 
   const [selectedHorizon, setSelectedHorizon] = useState<string>('30d');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [exportNotice, setExportNotice] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  // Directly wired to /api/analytics endpoints
   const loadData = async (): Promise<void> => {
     try {
       setIsRefreshing(true);
-      const [sum, vol, sev, age, heat, reps, rost] = await Promise.all([
+      const [sum, vol, sev, age, heat, reps] = await Promise.all([
         getAnalyticsSummary(),
         getVolume24h(),
         getSeverityBreakdown(),
         getAgencyWorkload(),
         getHeatmapMatrix(),
-        getAllReports().catch(() => [] as ExtendedReportItem[]),
-        getDutyRoster().catch(() => [] as DutyUnit[])
+        getAllReports().catch(() => [] as ExtendedReportItem[])
       ]);
 
       const effectiveSummary = sum && sum.totalIncidents > 0 ? sum : BASELINE_ANALYTICS_SUMMARY;
       const effectiveReports = reps && reps.length > 0 ? (reps as ExtendedReportItem[]) : (BASELINE_INCIDENT_REPORTS as ExtendedReportItem[]);
-      const effectiveRoster = rost && rost.length > 0 ? rost : BASELINE_DUTY_ROSTER;
 
       const effectiveVolume = vol && vol.length > 0 && vol.some((p) => p.value > 0)
         ? vol
@@ -119,15 +104,15 @@ export const AnalyticsReportsPage: FC = () => {
             { label: 'Low', value: 1, color: '#10b981' },
             { label: 'Medium', value: 2, color: '#f59e0b' },
             { label: 'High', value: 2, color: '#ea580c' },
-            { label: 'Critical', value: 1, color: '#ef4444' }
+            { label: 'Critical', value: 1, color: '#670626' }
           ];
 
       const effectiveAgency = age && age.length > 0 && age.some((a) => a.value > 0)
         ? age
         : [
-            { label: 'RHU Medical', value: 3, color: '#0284c7' },
-            { label: 'BFP Fire Rescue', value: 1, color: '#ea580c' },
-            { label: 'PNP Police Force', value: 2, color: '#3b82f6' }
+            { label: 'RHU Medical', value: 3, color: '#670626' },
+            { label: 'BFP Fire Rescue', value: 1, color: '#A83B4D' },
+            { label: 'PNP Police Force', value: 2, color: '#0284c7' }
           ];
 
       setSummary(effectiveSummary);
@@ -138,12 +123,10 @@ export const AnalyticsReportsPage: FC = () => {
         setHeatmapMatrix(heat.matrix);
       }
       setReports(effectiveReports);
-      setRoster(effectiveRoster);
     } catch (err) {
-      console.error('[AnalyticsReportsPage] Error syncing relational analytics telemetry:', err);
+      console.error('[AnalyticsReportsPage] Error syncing analytics:', err);
       setSummary((prev) => (prev.totalIncidents > 0 ? prev : BASELINE_ANALYTICS_SUMMARY));
       setReports((prev) => (prev.length > 0 ? prev : (BASELINE_INCIDENT_REPORTS as ExtendedReportItem[])));
-      setRoster((prev) => (prev.length > 0 ? prev : BASELINE_DUTY_ROSTER));
     } finally {
       setIsRefreshing(false);
     }
@@ -155,7 +138,6 @@ export const AnalyticsReportsPage: FC = () => {
 
   useValueRefreshAuto(loadData, { intervalMs: 10000 });
 
-  // Time horizon filtering helper
   const filterReportsByHorizon = (items: ExtendedReportItem[], horizon: string): ExtendedReportItem[] => {
     const now = new Date();
     const nowMs = now.getTime();
@@ -166,30 +148,20 @@ export const AnalyticsReportsPage: FC = () => {
       const d = new Date(ts);
       if (isNaN(d.getTime())) return true;
 
-      if (horizon === '7d') {
-        return nowMs - d.getTime() <= 7 * 24 * 60 * 60 * 1000;
-      }
-      if (horizon === '30d') {
-        return nowMs - d.getTime() <= 30 * 24 * 60 * 60 * 1000;
-      }
-      if (horizon === 'quarter') {
-        return nowMs - d.getTime() <= 90 * 24 * 60 * 60 * 1000;
-      }
-      if (horizon === 'annual') {
-        return d.getFullYear() === now.getFullYear() || d.getFullYear() === 2026;
-      }
+      if (horizon === '7d') return nowMs - d.getTime() <= 7 * 24 * 60 * 60 * 1000;
+      if (horizon === '30d') return nowMs - d.getTime() <= 30 * 24 * 60 * 60 * 1000;
+      if (horizon === 'quarter') return nowMs - d.getTime() <= 90 * 24 * 60 * 60 * 1000;
+      if (horizon === 'annual') return d.getFullYear() === now.getFullYear() || d.getFullYear() === 2026;
       return true;
     });
   };
 
-  // Dynamically computed mathematical modeling values filtered by selected horizon
   const validReports = useMemo(() => {
     const all = Array.isArray(reports) ? reports.filter(Boolean) : [];
     const filtered = filterReportsByHorizon(all, selectedHorizon);
     return filtered.length > 0 ? filtered : all;
   }, [reports, selectedHorizon]);
 
-  // Derived volume curve data bound to selected horizon
   const computedVolumeData = useMemo(() => {
     const buckets: Record<string, number> = {
       '00:00': 0,
@@ -206,20 +178,18 @@ export const AnalyticsReportsPage: FC = () => {
       const d = new Date(ts);
       if (isNaN(d.getTime())) return;
       const hour = d.getHours();
-      if (hour < 4) buckets['00:00']++;
-      else if (hour < 8) buckets['04:00']++;
-      else if (hour < 12) buckets['08:00']++;
-      else if (hour < 16) buckets['12:00']++;
-      else if (hour < 20) buckets['16:00']++;
-      else buckets['20:00']++;
+      if (hour < 4) buckets['00:00'] += 1;
+      else if (hour < 8) buckets['04:00'] += 1;
+      else if (hour < 12) buckets['08:00'] += 1;
+      else if (hour < 16) buckets['12:00'] += 1;
+      else if (hour < 20) buckets['16:00'] += 1;
+      else buckets['20:00'] += 1;
     });
 
     const entries = Object.entries(buckets).map(([label, value]) => ({ label, value }));
-    const hasValues = entries.some((e) => e.value > 0);
-    return hasValues ? entries : volumeData;
+    return entries.some((e) => e.value > 0) ? entries : volumeData;
   }, [validReports, volumeData]);
 
-  // Derived severity data bound to selected horizon
   const computedSeverityData = useMemo(() => {
     const low = validReports.filter((r) => (r.severity || '').toLowerCase() === 'low').length;
     const med = validReports.filter((r) => (r.severity || '').toLowerCase() === 'medium').length;
@@ -237,11 +207,10 @@ export const AnalyticsReportsPage: FC = () => {
       { label: 'Low', value: low, color: '#10b981' },
       { label: 'Medium', value: med, color: '#f59e0b' },
       { label: 'High', value: high, color: '#ea580c' },
-      { label: 'Critical', value: crit, color: '#ef4444' }
+      { label: 'Critical', value: crit, color: '#670626' }
     ];
   }, [validReports, severityData]);
 
-  // Derived agency workload data bound to selected horizon
   const computedAgencyData = useMemo(() => {
     const rhu = validReports.filter((r) => {
       const a = (r.recommendedAgencyUnit || '').toUpperCase();
@@ -269,9 +238,9 @@ export const AnalyticsReportsPage: FC = () => {
     }
 
     return [
-      { label: 'RHU Medical', value: rhu, color: '#0284c7' },
-      { label: 'BFP Fire Rescue', value: fire, color: '#ea580c' },
-      { label: 'PNP Police Force', value: pnp, color: '#3b82f6' }
+      { label: 'RHU Medical', value: rhu, color: '#670626' },
+      { label: 'BFP Fire Rescue', value: fire, color: '#A83B4D' },
+      { label: 'PNP Police Force', value: pnp, color: '#0284c7' }
     ];
   }, [validReports, agencyData]);
 
@@ -293,28 +262,26 @@ export const AnalyticsReportsPage: FC = () => {
   const avgLaplacianVar = useMemo(() => {
     if (validReports.length === 0) return '98.5';
     const sharpCount = validReports.filter((r) => r && !r.isBlurry).length;
-    const computedVar = 70.0 + (sharpCount / validReports.length) * 28.5;
-    return computedVar.toFixed(1);
+    return (70.0 + (sharpCount / validReports.length) * 28.5).toFixed(1);
   }, [validReports]);
 
   const dispatchRatioPercent = useMemo(() => {
     const total = summary?.totalResponders ?? 0;
     if (total === 0) return '0.0%';
-    const ratio = ((summary?.activeDispatches ?? 0) / total) * 100;
-    return `${ratio.toFixed(1)}%`;
+    return `${(((summary?.activeDispatches ?? 0) / total) * 100).toFixed(1)}%`;
   }, [summary]);
 
-  const activeReportsCount = useMemo(() => {
-    return Math.max(0, (summary?.totalIncidents ?? 0) - (summary?.resolvedCount ?? 0));
-  }, [summary]);
+  const activeReportsCount = useMemo(
+    () => Math.max(0, (summary?.totalIncidents ?? 0) - (summary?.resolvedCount ?? 0)),
+    [summary]
+  );
 
-  // Operational metrics tracker bound to live database telemetry
   const analysisItems = useMemo(
     () => [
       {
         title: 'Triage Ingestion Velocity',
         status: `${summary?.totalIncidents ?? 0} reports · ${summary?.criticalIncidents ?? 0} SOS · Index ${tivaVelocity}`,
-        description: 'Weighted report density across active municipal sectors.'
+        description: 'Weighted report density across active Katipunan municipal sectors.'
       },
       {
         title: 'Capture Sharpness Verification',
@@ -333,7 +300,6 @@ export const AnalyticsReportsPage: FC = () => {
     [summary, tivaVelocity, sharpnessPercent, avgLaplacianVar, dispatchRatioPercent]
   );
 
-  // Dynamic Milestone Progress computed from live database telemetry
   const progressItems = useMemo(() => {
     const gpsRate =
       validReports.length > 0
@@ -342,9 +308,7 @@ export const AnalyticsReportsPage: FC = () => {
     const totalIncs = summary?.totalIncidents ?? 0;
     const critIncs = summary?.criticalIncidents ?? 0;
     const triageAutoRate =
-      totalIncs > 0
-        ? Math.min(100, Math.round(((totalIncs - critIncs) / totalIncs) * 100))
-        : 100;
+      totalIncs > 0 ? Math.min(100, Math.round(((totalIncs - critIncs) / totalIncs) * 100)) : 100;
 
     return [
       { milestone: 'GPS Telemetry Coverage', progress: gpsRate, date: 'Active' },
@@ -354,7 +318,6 @@ export const AnalyticsReportsPage: FC = () => {
     ];
   }, [validReports, summary]);
 
-  // Export functions
   const handleExportCSV = (): void => {
     const headers = 'ID,ReferenceCode,Title,Category,Severity,Status,Location,CreatedAt,VerifiedAt\n';
     const rows = validReports
@@ -362,7 +325,7 @@ export const AnalyticsReportsPage: FC = () => {
         (r, i) =>
           `"${r?.id || i + 1}","${r?.referenceCode || ''}","${r?.title || 'Incident'}","${r?.category || 'General'}","${
             r?.severity || 'Medium'
-          }","${r?.status || 'Active'}","${r?.locationLabel || r?.location || 'Dipolog'}","${r?.createdAt || ''}","${
+          }","${r?.status || 'Active'}","${r?.locationLabel || r?.location || 'Katipunan, Zamboanga del Norte'}","${r?.createdAt || ''}","${
             r?.verifiedAt || ''
           }"`
       )
@@ -387,16 +350,19 @@ export const AnalyticsReportsPage: FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full">
-      {/* Header bar with Lucide Icons */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900/80 border border-slate-700/80 backdrop-blur-md">
+    <div className="flex flex-col gap-6 w-full pb-10">
+      {/* Header Bar */}
+      <div className={`${CLAY_SURFACE} p-5 flex flex-wrap items-center justify-between gap-3`}>
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-white tracking-wide uppercase flex items-center gap-2.5">
-            <Activity className="w-5 h-5 text-rose-500 animate-pulse" />
+          <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#A83B4D]">
+            LDRRMO Command / Analytics & Reports
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black text-[#670626] tracking-tight mt-0.5 flex items-center gap-2.5">
+            <Activity className="w-6 h-6 text-[#A83B4D] animate-pulse" />
             Analytics & Reports
           </h1>
-          <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Response curves and operational metrics
+          <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
+            Response curves and operational metrics for Katipunan, Zamboanga del Norte
           </p>
         </div>
 
@@ -413,167 +379,160 @@ export const AnalyticsReportsPage: FC = () => {
             className="min-w-[150px]"
           />
 
-          <Button
+          <AdminButton
             variant="outline"
             size="sm"
             onClick={() => void loadData()}
             disabled={isRefreshing}
-            className="text-xs font-mono font-bold flex items-center gap-1.5 border-slate-600 hover:border-slate-400"
-            title="Refresh Telemetry"
+            icon={<RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
             Sync
-          </Button>
+          </AdminButton>
 
-          <Button
+          <AdminButton
             variant="outline"
             size="sm"
             onClick={() => setIsModalOpen(true)}
-            className="text-xs font-mono font-bold flex items-center gap-1.5 border-rose-500/50 text-rose-300 hover:bg-rose-950/60"
+            icon={<Eye className="w-3.5 h-3.5" />}
           >
-            <Eye className="w-3.5 h-3.5" />
             Details
-          </Button>
+          </AdminButton>
 
-          <Button
+          <AdminButton
             variant="primary"
             size="sm"
             onClick={handleExportCSV}
-            className="text-xs font-mono font-bold flex items-center gap-1.5"
+            icon={<Download className="w-3.5 h-3.5" />}
           >
-            <Download className="w-3.5 h-3.5" />
             Export CSV
-          </Button>
+          </AdminButton>
 
-          <Button
+          <AdminButton
             variant="outline"
             size="sm"
             onClick={handleExportPDF}
-            className="text-xs font-mono font-bold flex items-center gap-1.5 border-slate-600 hover:border-slate-400"
+            icon={<FileText className="w-3.5 h-3.5" />}
           >
-            <FileText className="w-3.5 h-3.5" />
             Print PDF
-          </Button>
+          </AdminButton>
         </div>
       </div>
 
       {exportNotice && (
-        <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-500 text-emerald-300 text-xs font-mono animate-fade-in flex items-center justify-between">
+        <div className={`${CLAY_SURFACE} p-3.5 text-sm font-mono font-bold flex items-center justify-between border-2 border-[#670626]`}>
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <CheckCircle2 className="w-4 h-4 text-[#670626]" />
             <span>{exportNotice}</span>
           </div>
-          <button onClick={() => setExportNotice('')} className="text-emerald-400 hover:text-white">
+          <button type="button" onClick={() => setExportNotice('')} className="text-[#670626] cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* Live Database Telemetry Metrics Overview (Wired directly to /api/analytics/summary) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-        <div className="tactical-card p-3.5 border-l-4 border-l-rose-500 flex flex-col justify-between">
+      {/* KPI Metrics Overview */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-[#670626] flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Total Ingested Reports</p>
-            <FileText className="w-4 h-4 text-rose-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Total Ingested Reports</p>
+            <FileText className="w-4 h-4 text-[#670626]" />
           </div>
-          <h3 className="text-2xl font-extrabold text-white mt-1">{summary.totalIncidents}</h3>
-          <span className="text-[10px] text-emerald-400 font-mono">Live DB Registry</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{summary.totalIncidents}</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Live DB Registry</span>
         </div>
 
-        <div className="tactical-card p-3.5 border-l-4 border-l-sky-500 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-sky-700 flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Active On-Duty Units</p>
-            <Users className="w-4 h-4 text-sky-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Active On-Duty Units</p>
+            <Users className="w-4 h-4 text-sky-700" />
           </div>
-          <h3 className="text-2xl font-extrabold text-sky-400 mt-1">
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">
             {summary.onDutyResponders} / {summary.totalResponders}
           </h3>
-          <span className="text-[10px] text-slate-400 font-mono">Multi-Agency Roster</span>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Multi-Agency Roster</span>
         </div>
 
-        <div className="tactical-card p-3.5 border-l-4 border-l-amber-500 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-amber-600 flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Critical Priority Queue</p>
-            <ShieldAlert className="w-4 h-4 text-amber-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Critical Priority Queue</p>
+            <ShieldAlert className="w-4 h-4 text-amber-700" />
           </div>
-          <h3 className="text-2xl font-extrabold text-amber-400 mt-1">{summary.criticalIncidents}</h3>
-          <span className="text-[10px] text-rose-400 font-mono">Immediate Action</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{summary.criticalIncidents}</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Immediate Action</span>
         </div>
 
-        <div className="tactical-card p-3.5 border-l-4 border-l-emerald-500 flex flex-col justify-between">
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-emerald-700 flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-mono uppercase text-slate-400 font-bold">Dispatched Fleet Ratio</p>
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Dispatched Fleet Ratio</p>
+            <TrendingUp className="w-4 h-4 text-emerald-700" />
           </div>
-          <h3 className="text-2xl font-extrabold text-emerald-400 mt-1">{dispatchRatioPercent}</h3>
-          <span className="text-[10px] text-emerald-400 font-mono">{summary.activeDispatches} Units Deployed</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{dispatchRatioPercent}</h3>
+          <span className="text-xs text-emerald-800 font-mono font-bold mt-0.5">{summary.activeDispatches} Units Deployed</span>
         </div>
       </div>
 
-      {/* Primary Analytics Charts Grid (Wired directly to dynamic curves, bars, and pie slices) */}
+      {/* Primary Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="tactical-card p-4">
-          <LinearCurveyChart data={computedVolumeData} title="Incident Response Velocity Trend (Dynamic Live Horizon)" />
+        <div className={`tactical-card ${CLAY_SURFACE} p-5`}>
+          <LinearCurveyChart data={computedVolumeData} color="#A83B4D" title="Incident Response Velocity Trend" />
         </div>
-        <div className="tactical-card p-4">
-          <BarGraphChart data={computedSeverityData} title="Incident Severity Triage Distribution" />
+        <div className={`tactical-card ${CLAY_SURFACE} p-5`}>
+          <BarGraphChart data={computedSeverityData} title="Incident Severity Distribution" />
         </div>
-        <div className="tactical-card p-4">
+        <div className={`tactical-card ${CLAY_SURFACE} p-5`}>
           <PieGraphChart data={computedAgencyData} title="Agency Dispatched Workload" />
         </div>
       </div>
 
-      {/* Geospatial Weekly Incident Density Matrix (Heatmap) */}
-      <div className="tactical-card p-4">
+      {/* Heatmap */}
+      <div className={`tactical-card ${CLAY_SURFACE} p-5`}>
         <HeatmapChart
           matrix={heatmapMatrix}
-          title="Geospatial Weekly Incident Density Matrix (Barangay Heat Distribution)"
+          title="Geospatial Weekly Incident Density Matrix (Katipunan Barangay Heat Distribution)"
         />
       </div>
 
-      {/* Pure Analysis & Progress Tracking */}
+      {/* Operational Metrics & Milestones */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Analysis Section */}
-        <div className="tactical-card p-5">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-sky-400" />
+        <div className={`tactical-card ${CLAY_SURFACE} p-5`}>
+          <h3 className="text-base font-black text-[#670626] uppercase tracking-wider mb-3.5 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#A83B4D]" />
             Operational Metrics
           </h3>
           <div className="space-y-3">
             {analysisItems.map((item, idx) => (
-              <div key={idx} className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-700/60 space-y-1">
+              <div key={idx} className={`${CLAY_WELL} p-4 space-y-1.5`}>
                 <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-xs font-bold text-rose-300">{item.title}</h4>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-emerald-400 font-bold">
+                  <h4 className="text-sm font-bold text-[#670626]">{item.title}</h4>
+                  <span className="text-xs font-mono px-2.5 py-0.5 rounded-md bg-[#F7F1EA] border border-[#670626]/20 text-[#670626] font-bold">
                     {item.status}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400">{item.description}</p>
+                <p className="text-xs text-[#A83B4D]">{item.description}</p>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Progress Tracker Section */}
-        <div className="tactical-card p-5">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+        <div className={`tactical-card ${CLAY_SURFACE} p-5`}>
+          <h3 className="text-base font-black text-[#670626] uppercase tracking-wider mb-3.5 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
             Milestones
           </h3>
           <div className="space-y-4">
             {progressItems.map((p, idx) => (
               <div key={idx} className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-200">{p.milestone}</span>
-                  <span className="font-mono text-emerald-400 font-bold">{p.progress}%</span>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-bold text-[#670626]">{p.milestone}</span>
+                  <span className="font-mono text-[#A83B4D] font-bold">{p.progress}%</span>
                 </div>
-                <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden border border-slate-700/60">
+                <div className="w-full h-2.5 rounded-full bg-[#E9D9D0] overflow-hidden border border-[#670626]/15">
                   <div
-                    className="h-full bg-gradient-to-r from-rose-500 to-emerald-400 rounded-full transition-all duration-500"
+                    className="h-full bg-gradient-to-r from-[#670626] to-[#A83B4D] rounded-full transition-all duration-500"
                     style={{ width: `${p.progress}%` }}
                   />
                 </div>
-                <div className="flex justify-end text-[10px] font-mono text-slate-500">
+                <div className="flex justify-end text-xs font-mono text-[#A83B4D]">
                   <span>{p.date}</span>
                 </div>
               </div>
@@ -584,43 +543,43 @@ export const AnalyticsReportsPage: FC = () => {
 
       {/* Analytics Drill-Down Modal */}
       {isModalOpen && (
-        <DefaultFloatingModalCard
+        <AdminModalCard
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           title="Operational Details"
           subtitle="Live telemetry and capture quality summary"
           className="max-w-3xl"
         >
-          <div className="space-y-4 text-xs text-slate-300">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 text-center">
-                <p className="text-[10px] text-slate-400 uppercase font-mono">Sharpness Avg</p>
-                <h4 className="text-lg font-black text-white mt-1">{avgLaplacianVar}</h4>
+          <div className="space-y-4 text-sm text-[#670626]">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+              <div className={`${CLAY_WELL} p-3.5 text-center`}>
+                <p className="text-xs text-[#A83B4D] uppercase font-mono">Sharpness Avg</p>
+                <h4 className="text-xl font-black text-[#670626] mt-1">{avgLaplacianVar}</h4>
               </div>
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 text-center">
-                <p className="text-[10px] text-slate-400 uppercase font-mono">Active Reports</p>
-                <h4 className="text-lg font-black text-rose-400 mt-1">{activeReportsCount}</h4>
+              <div className={`${CLAY_WELL} p-3.5 text-center`}>
+                <p className="text-xs text-[#A83B4D] uppercase font-mono">Active Reports</p>
+                <h4 className="text-xl font-black text-[#670626] mt-1">{activeReportsCount}</h4>
               </div>
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 text-center">
-                <p className="text-[10px] text-slate-400 uppercase font-mono">Duty Roster</p>
-                <h4 className="text-lg font-black text-sky-400 mt-1">
+              <div className={`${CLAY_WELL} p-3.5 text-center`}>
+                <p className="text-xs text-[#A83B4D] uppercase font-mono">Duty Roster</p>
+                <h4 className="text-xl font-black text-[#670626] mt-1">
                   {summary.onDutyResponders} / {summary.totalResponders}
                 </h4>
               </div>
-              <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 text-center">
-                <p className="text-[10px] text-slate-400 uppercase font-mono">Critical Queue</p>
-                <h4 className="text-lg font-black text-amber-400 mt-1">{summary.criticalIncidents}</h4>
+              <div className={`${CLAY_WELL} p-3.5 text-center`}>
+                <p className="text-xs text-[#A83B4D] uppercase font-mono">Critical Queue</p>
+                <h4 className="text-xl font-black text-[#670626] mt-1">{summary.criticalIncidents}</h4>
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
-              <h5 className="font-bold text-white text-xs uppercase font-mono">Summary</h5>
-              <p className="leading-relaxed text-slate-300 text-[11.5px]">
+            <div className={`${CLAY_WELL} p-4 space-y-1.5`}>
+              <h5 className="font-bold text-[#670626] text-xs uppercase font-mono">Summary</h5>
+              <p className="leading-relaxed text-[#670626] text-sm">
                 {sharpnessPercent} of captured reports meet sharpness standards across {summary.totalIncidents} total incidents, with {summary.onDutyResponders} of {summary.totalResponders} responders on duty.
               </p>
             </div>
           </div>
-        </DefaultFloatingModalCard>
+        </AdminModalCard>
       )}
     </div>
   );

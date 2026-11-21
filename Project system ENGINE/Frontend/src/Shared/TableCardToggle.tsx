@@ -53,20 +53,20 @@ export const TableCardToggle: FC<TableCardToggleProps> = ({
 }) => {
   if (variant === 'radios') {
     return (
-      <div className={`inline-flex items-center gap-4 bg-slate-900/60 p-2 rounded-lg border border-slate-700/60 ${className}`}>
+      <div className={`inline-flex items-center gap-4 bg-[#F7F1EA] p-2 rounded-xl border border-[#E9D9D0] shadow-sm ${className}`}>
         <RadioButton
           id="view-toggle-table"
           name="view-mode-toggle"
           checked={viewMode === 'table'}
           onChange={() => onChange('table')}
-          label={<span className="text-xs font-semibold text-slate-200">Table View</span>}
+          label={<span className="text-sm font-semibold text-[#3B1722]">Table View</span>}
         />
         <RadioButton
           id="view-toggle-card"
           name="view-mode-toggle"
           checked={viewMode === 'card'}
           onChange={() => onChange('card')}
-          label={<span className="text-xs font-semibold text-slate-200">Card Grid</span>}
+          label={<span className="text-sm font-semibold text-[#3B1722]">Card Grid</span>}
         />
       </div>
     );
@@ -97,20 +97,20 @@ export const TableCardToggle: FC<TableCardToggleProps> = ({
     );
   }
 
-  // Default: Segmented Tactical HUD Pill
+  // Default: Segmented Claymorphic Pill
   return (
     <div
-      className={`inline-flex p-0.5 rounded-lg bg-slate-950/80 border border-slate-700/80 backdrop-blur-sm shadow-inner ${className}`}
+      className={`inline-flex p-0.5 rounded-xl bg-[#E9D9D0] border border-[#D4B8AA] shadow-inner ${className}`}
       role="group"
       aria-label="View layout switch"
     >
       <button
         type="button"
         onClick={() => onChange('table')}
-        className={`px-3 py-1.5 rounded-md text-xs font-mono font-bold tracking-wider transition-all flex items-center gap-1.5 ${
+        className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
           viewMode === 'table'
-            ? 'bg-rose-600 text-white shadow-[0_0_10px_rgba(225,29,72,0.4)]'
-            : 'text-slate-400 hover:text-slate-200'
+            ? 'bg-[#670626] text-[#F7F1EA] shadow-sm'
+            : 'text-[#670626] hover:text-[#3B1722]'
         }`}
         title="Switch to Table View (CardToTable)"
       >
@@ -121,10 +121,10 @@ export const TableCardToggle: FC<TableCardToggleProps> = ({
       <button
         type="button"
         onClick={() => onChange('card')}
-        className={`px-3 py-1.5 rounded-md text-xs font-mono font-bold tracking-wider transition-all flex items-center gap-1.5 ${
+        className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
           viewMode === 'card'
-            ? 'bg-rose-600 text-white shadow-[0_0_10px_rgba(225,29,72,0.4)]'
-            : 'text-slate-400 hover:text-slate-200'
+            ? 'bg-[#670626] text-[#F7F1EA] shadow-sm'
+            : 'text-[#670626] hover:text-[#3B1722]'
         }`}
         title="Switch to Card Grid View (TableToCard)"
       >

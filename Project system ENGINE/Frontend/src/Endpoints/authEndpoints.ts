@@ -120,7 +120,28 @@ export interface RegisterResponse {
   hasFaceCapture?: boolean;
   autoApprovedByAi?: boolean;
   autoApprovalReason?: string;
+  biometricTrainingStatus?: string;
+  biometricTrainingReadyTargetUtc?: string;
+  trainedFrameCount?: number;
   createdAt?: string;
+}
+
+export interface BiometricTrainingStatusResponse {
+  email?: string;
+  exists?: boolean;
+  found?: boolean;
+  hasBiometricEnrollment?: boolean;
+  biometricTrainingStatus?: string;
+  trainingStatus?: string;
+  isReady?: boolean;
+  ready?: boolean;
+  remainingSeconds?: number;
+  remainingMinutes?: number;
+  biometricTrainingReadyTargetUtc?: string;
+  readyTargetUtc?: string | null;
+  completedAtUtc?: string | null;
+  trainedFrameCount?: number;
+  message?: string;
 }
 
 export interface LoginPayload {
@@ -205,6 +226,14 @@ export const biometricLoginUser = (payload: BiometricLoginPayload): Promise<Logi
     body: JSON.stringify(payload)
   });
 
+export const getBiometricTrainingStatus = (
+  email: string
+): Promise<BiometricTrainingStatusResponse> =>
+  requestJson<BiometricTrainingStatusResponse>(
+    `/api/identity/biometrics/training-status?email=${encodeURIComponent(email.trim().toLowerCase())}`,
+    { method: 'GET' }
+  );
+
 export const getSession = (): Promise<UserSession> =>
   requestJson<UserSession>('/api/session', { method: 'GET' });
 
@@ -213,6 +242,36 @@ export const getUserSession = (): Promise<UserSession> =>
 
 export const getUserProfile = (): Promise<UserSession> =>
   requestJson<UserSession>('/api/session', { method: 'GET' });
+
+export const fetchSessionWithClientHeaders = async (
+  clientPort: string,
+  token?: string | null
+): Promise<{ ok: boolean; status: number; data: UserSession | null }> => {
+  const headers: Record<string, string> = {
+    'X-Client-Port': clientPort
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Session-Token'] = token;
+  }
+  const res = await fetch('/api/session', { headers, credentials: 'include' });
+  const data = res.ok ? ((await res.json()) as UserSession) : null;
+  return { ok: res.ok, status: res.status, data };
+};
+
+export const logoutSessionWithClientHeaders = async (
+  clientPort: string,
+  token?: string | null
+): Promise<void> => {
+  const headers: Record<string, string> = {
+    'X-Client-Port': clientPort
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Session-Token'] = token;
+  }
+  await fetch('/api/logout', { method: 'POST', headers, credentials: 'include' });
+};
 
 export const logoutUser = async (): Promise<{ message: string }> => {
   try {

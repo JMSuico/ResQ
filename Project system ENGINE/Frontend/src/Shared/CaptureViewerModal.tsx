@@ -79,12 +79,12 @@ export const CaptureViewerModal: FC<CaptureViewerModalProps> = ({
           const imageSrc = `${baseUrl}/api/users/${encodeURIComponent(userId)}/captures/${key}`;
 
           return (
-            <div key={key} className="flex flex-col items-center bg-slate-950 p-3 rounded-lg border border-slate-800">
-              <div className="flex items-center gap-1.5 text-xs font-mono font-medium text-slate-300 mb-2">
-                <IconComponent className="w-3.5 h-3.5 text-sky-400" />
+            <div key={key} className="flex flex-col items-center bg-[#E9D9D0]/60 p-3 rounded-xl border border-[#D8C1B5]">
+              <div className="flex items-center gap-1.5 text-sm font-mono font-bold text-[#670626] mb-2">
+                <IconComponent className="w-4 h-4 text-[#A83B4D]" />
                 <span>{label}</span>
               </div>
-              <div className="w-full h-64 bg-slate-900 rounded border border-slate-800 flex items-center justify-center overflow-hidden relative">
+              <div className="w-full h-64 bg-[#FFFBF7] rounded-lg border border-[#D8C1B5] flex items-center justify-center overflow-hidden relative">
                 {!hasError ? (
                   <img
                     src={imageSrc}
@@ -93,9 +93,9 @@ export const CaptureViewerModal: FC<CaptureViewerModalProps> = ({
                     onError={() => handleImageError(key)}
                   />
                 ) : (
-                  <div className="flex flex-col items-center justify-center gap-2 p-4 text-center text-slate-500">
-                    <ImageOff className="w-8 h-8 text-slate-600" />
-                    <span className="text-xs font-mono">No capture available</span>
+                  <div className="flex flex-col items-center justify-center gap-2 p-4 text-center text-[#7A4E59]">
+                    <ImageOff className="w-8 h-8 text-[#A83B4D]/60" />
+                    <span className="text-sm font-mono">No capture available</span>
                   </div>
                 )}
               </div>

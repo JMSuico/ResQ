@@ -3,6 +3,7 @@
 // DO NOT bypass GlobalExceptionMiddleware or SessionVerificationMiddleware in the HTTP pipeline.
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Scalar.AspNetCore;
 using Backend.Features.Api.Middleware;
 using Backend.Features.Data;
@@ -12,6 +13,7 @@ using Backend.Features.Management.Commands;
 using Backend.Features.Repositories.Implementations;
 using Backend.Features.Repositories.Interfaces;
 using Backend.Features.Services.Implementations;
+using Backend.Features.Services.IncidentVision;
 using Backend.Features.Services.Interfaces;
 using Backend.Features.Services.Verification;
 using ResQTrack.Backend.Features.Services.Biometrics;
@@ -43,10 +45,16 @@ builder.Services.AddHttpClient();
 builder.Services.AddOpenApi();
 
 // Configure EF Core with dynamic Enterprise RDBMS Provider
-var dbProvider = builder.Configuration["DatabaseProvider"] ?? Environment.GetEnvironmentVariable("DATABASE_PROVIDER") ?? "SqlServer";
+var dbProvider =
+    Environment.GetEnvironmentVariable("DatabaseProvider")
+    ?? Environment.GetEnvironmentVariable("DATABASE_PROVIDER")
+    ?? builder.Configuration["DatabaseProvider"]
+    ?? "SqlServer";
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
+    options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+
     switch (dbProvider.ToLowerInvariant())
     {
         case "postgresql":
@@ -143,6 +151,11 @@ builder.Services.AddScoped<IStandbyGovIdAutoApproveStrategy, ClaudeAutoApproveGo
 builder.Services.AddScoped<IStandbyResponderAutoDispatchStrategy, ClaudeAutoDispatchResponderStrategy>();
 builder.Services.AddScoped<IClaudeBiometricIdentityStrategy, ClaudeCachedPoseIdentityStrategy>();
 builder.Services.AddScoped<IBiometricLoginValidationStrategy, MultiLayerBiometricLoginStrategy>();
+builder.Services.AddScoped<IRoboflowAccidentDetectionStrategy, RoboflowServerlessAccidentDetectionStrategy>();
+builder.Services.AddScoped<IClaudeIncidentVisionStrategy, ClaudeHaikuIncidentVisionStrategy>();
+builder.Services.AddScoped<IIncidentSceneAiAnalysisStrategy, DualStageIncidentSceneAiStrategy>();
+builder.Services.AddSingleton<IBiometricTrainingQueue, BiometricTrainingChannelQueue>();
+builder.Services.AddHostedService<BiometricTrainingBackgroundService>();
 
 // Configure Distributed Cache (Redis 7 Alpine with resilient In-Memory fallback)
 var redisConnection = builder.Configuration.GetConnectionString("RedisConnection")
@@ -187,33 +200,87 @@ builder.Services.AddCors(options => options.AddPolicy("AllowViteFrontend", polic
 
 var app = builder.Build();
 
+// CLI Management Command Mode: Skip HTTP pipeline startup and execute directly
+if (args.Length > 0 && CliCommandRunner.IsCliCommand(args))
+{
+    var normalizedCliCommand = CliCommandRunner.NormalizeCommandName(args);
+    var isMigrationCommand = normalizedCliCommand is "addmigration" or "updatedatabase";
+
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var ddlLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+        if (!isMigrationCommand)
+        {
+            try
+            {
+                await StartupSchemaReconciler.ReconcileAsync(db, ddlLogger);
+
+                if (db.Database.GetMigrations().Any())
+                {
+                    try
+                    {
+                        await db.Database.MigrateAsync();
+                    }
+                    catch (Exception migrateEx)
+                    {
+                        ddlLogger.LogWarning(migrateEx, "EF Core MigrateAsync encountered pre-existing schema; falling back to EnsureCreatedAsync + StartupSchemaReconciler.");
+                        await db.Database.EnsureCreatedAsync();
+                    }
+                }
+                else
+                {
+                    await db.Database.EnsureCreatedAsync();
+                }
+
+                await StartupSchemaReconciler.ReconcileAsync(db, ddlLogger);
+            }
+            catch (Exception ex)
+            {
+                ddlLogger.LogError(ex, "CLI pre-command database initialization encountered an issue.");
+            }
+        }
+
+        await CliCommandRunner.RunAsync(args, db);
+    }
+
+    Environment.Exit(0);
+}
+
 // Run Database Migrations & Initial Seeder
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var ddlLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
-        await db.Database.EnsureCreatedAsync();
-        var ddlLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        await StartupSchemaReconciler.ReconcileAsync(db, ddlLogger);
+
+        if (db.Database.GetMigrations().Any())
+        {
+            try
+            {
+                await db.Database.MigrateAsync();
+            }
+            catch (Exception migrateEx)
+            {
+                ddlLogger.LogWarning(migrateEx, "EF Core MigrateAsync encountered pre-existing tables or transient condition; falling back safely via StartupSchemaReconciler.");
+                await db.Database.EnsureCreatedAsync();
+            }
+        }
+        else
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
         await StartupSchemaReconciler.ReconcileAsync(db, ddlLogger);
         await DatabaseSeeder.SeedAsync(db, app.Environment);
     }
     catch (Exception ex)
     {
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Database initialization or seeding encountered an issue. Ensure SQL Server is reachable.");
+        ddlLogger.LogError(ex, "Database initialization or seeding encountered an issue. Ensure database server is reachable.");
     }
-}
-
-// CLI Management Command Mode: Only execute and exit if genuine CLI management command is provided
-if (args.Length > 0 && CliCommandRunner.IsCliCommand(args))
-{
-    using (var scope = app.Services.CreateScope())
-    {
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await CliCommandRunner.RunAsync(args, db);
-    }
-    Environment.Exit(0);
 }
 
 // Exception Handling Middleware
@@ -254,6 +321,18 @@ app.UseCors("AllowViteFrontend");
 
 // Session Verification Middleware (re-checks database status per request)
 app.UseMiddleware<SessionVerificationMiddleware>();
+
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "SAMEORIGIN";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    if (context.Request.Path.Value?.EndsWith(".mjs", StringComparison.OrdinalIgnoreCase) == true)
+    {
+        context.Response.ContentType = "text/javascript; charset=utf-8";
+    }
+    await next();
+});
 
 app.MapControllers();
 

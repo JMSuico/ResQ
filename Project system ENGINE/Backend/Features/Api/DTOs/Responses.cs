@@ -25,7 +25,10 @@ public record RegistrationResponse(
     bool HasFaceCapture,
     DateTime CreatedAt,
     bool AutoApprovedByAi = false,
-    string? AutoApprovalReason = null
+    string? AutoApprovalReason = null,
+    string? BiometricTrainingStatus = null,
+    DateTime? BiometricTrainingReadyTargetUtc = null,
+    int TrainedFrameCount = 0
 );
 
 public record SessionResponse(
@@ -141,7 +144,37 @@ public record ReportResponse(
     double? CurrentLatitude = null,
     double? CurrentLongitude = null,
     DateTime? LastBeaconAt = null,
-    int BeaconCount = 0
+    int BeaconCount = 0,
+    string? SubmittedIpAddress = null,
+    string? ReporterContactNumber = null,
+    string? RoboflowModelId = null,
+    string? RoboflowPrediction = null,
+    double? RoboflowConfidence = null,
+    bool RoboflowNeedsReview = true,
+    string? ClaudeModelUsed = null,
+    string? ClaudeIncidentCategory = null,
+    string? ClaudeSituationSummary = null,
+    string? ClaudeVisibleHazards = null,
+    string? ClaudeUncertaintyNotes = null,
+    string? PointerIconType = null
+);
+
+public sealed record IncidentImageAiAnalysisResponseDto(
+    string RoboflowModelId,
+    string RoboflowPrediction,
+    double RoboflowConfidence,
+    bool RoboflowNeedsReview,
+    string RoboflowAuthTransport,
+    string ClaudeModelUsed,
+    bool IsGenuineIncident,
+    string DetectedCategory,
+    string RecommendedSeverity,
+    string PointerIconType,
+    string SituationDescription,
+    string VisibleHazards,
+    string UncertaintyNotes,
+    string VerificationStatus,
+    string RecommendedAgencyUnit
 );
 
 public record DutyUnitResponse(
@@ -193,3 +226,22 @@ public record SettingResponse(
     string Description,
     DateTime UpdatedAt
 );
+
+public sealed record BiometricTrainingStatusDto(
+    string Email,
+    bool Exists,
+    bool Found,
+    bool HasBiometricEnrollment,
+    string TrainingStatus,
+    string BiometricTrainingStatus,
+    bool IsReady,
+    bool Ready,
+    DateTime? ReadyTargetUtc,
+    DateTime? BiometricTrainingReadyTargetUtc,
+    DateTime? CompletedAtUtc,
+    int RemainingSeconds,
+    int RemainingMinutes,
+    int TrainedFrameCount,
+    string Message
+);
+
