@@ -8,6 +8,7 @@ import type {
   IAiOcrProvider,
   IdOcrResult
 } from './AiOcrProvider';
+import type { RoboflowPredictionBox } from '@/components/RoboflowDetectionOverlay';
 import {
   type OcrErrorCode,
   buildMissingFrontImageWarning,
@@ -20,6 +21,61 @@ import {
 
 export const PRIMARY_CLAUDE_OCR_MODEL = 'claude-sonnet-4-6';
 export const FALLBACK_CLAUDE_OCR_MODEL = 'claude-sonnet-5-5';
+
+const ROBOFLOW_CLASS_ALIAS_MAP: Readonly<Record<string, string>> = {
+  driver: 'drivers',
+  drivers: 'drivers',
+  driver_license: 'drivers',
+  drivers_license: 'drivers',
+  lto: 'drivers',
+  postal: 'postal',
+  postal_id: 'postal',
+  phlpost: 'postal',
+  umid: 'umid',
+  sss_umid: 'umid',
+  unified_multi_purpose_id: 'umid',
+  philsys: 'philsys',
+  national_id: 'philsys',
+  philid: 'philsys',
+  passport: 'passport',
+  dfa_passport: 'passport',
+  prc: 'prc',
+  prc_id: 'prc',
+  voters: 'voters',
+  voter: 'voters',
+  comelec: 'voters',
+  senior: 'senior',
+  senior_citizen: 'senior',
+  osca: 'senior',
+  pwd: 'pwd'
+};
+
+/**
+ * Canonicalizes Roboflow Philippine ID dataset labels (e.g., singular "driver" <-> "drivers",
+ * "postal", and "umid") into canonical registration ID type keys.
+ */
+export const canonicalizePhilippineIdClass = (rawClass?: string | null): string => {
+  if (typeof rawClass !== 'string') {
+    return '';
+  }
+  const normalized = rawClass.trim().toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+  return ROBOFLOW_CLASS_ALIAS_MAP[normalized] ?? normalized;
+};
+
+/**
+ * Checks whether a selected Government ID type and a Roboflow/OCR detected ID class are equivalent.
+ */
+export const areEquivalentPhilippineIdClasses = (
+  selectedIdType?: string | null,
+  detectedClass?: string | null
+): boolean => {
+  const left = canonicalizePhilippineIdClass(selectedIdType);
+  const right = canonicalizePhilippineIdClass(detectedClass);
+  return left.length > 0 && left === right;
+};
 
 export interface ClaudeDualSideExtractRequest {
   readonly frontImage: File | Blob | string | null | undefined;
@@ -69,6 +125,27 @@ export interface ClaudeNormalizedIdFields {
   readonly authenticityVerdict?: string;
   readonly authenticityReason?: string;
   readonly requiresPendingManualReview?: boolean;
+  readonly roboflowIdPredictions?: readonly RoboflowPredictionBox[];
+  readonly roboflowDetectedClass?: string;
+  readonly roboflowDetectedConfidence?: number;
+  readonly roboflowCacheHit?: boolean;
+  readonly roboflowDataset?: string;
+  readonly claudeTrainingCacheActive?: boolean;
+}
+
+export interface RoboflowDetectIdResult {
+  readonly success: boolean;
+  readonly ranOnline: boolean;
+  readonly cacheHit: boolean;
+  readonly datasetSlug: string | null;
+  readonly topClass: string | null;
+  readonly canonicalIdType: string | null;
+  readonly topConfidence: number | null;
+  readonly claudeTrainingCacheActive: boolean;
+  readonly matchesSelectedIdType: boolean;
+  readonly predictions: readonly RoboflowPredictionBox[];
+  readonly errorCode?: string;
+  readonly errorMessage?: string;
 }
 
 const VALID_OCR_ERROR_CODES: ReadonlySet<string> = new Set<OcrErrorCode>([
@@ -452,6 +529,12 @@ interface ClaudeDiagnosticMetadata {
   readonly authenticityVerdict?: string;
   readonly authenticityReason?: string;
   readonly requiresPendingManualReview?: boolean;
+  readonly roboflowIdPredictions?: readonly RoboflowPredictionBox[];
+  readonly roboflowDetectedClass?: string;
+  readonly roboflowDetectedConfidence?: number;
+  readonly roboflowCacheHit?: boolean;
+  readonly roboflowDataset?: string;
+  readonly claudeTrainingCacheActive?: boolean;
 }
 
 const resolveNestedFieldsRecord = (
@@ -500,6 +583,83 @@ const pickDiagnosticBoolean = (
   return typeof raw === 'boolean' ? raw : undefined;
 };
 
+const pickDiagnosticNumber = (
+  payload: Record<string, unknown> | null | undefined,
+  nestedFields: Record<string, unknown> | undefined,
+  keys: readonly string[]
+): number | undefined => {
+  const raw =
+    extractScalarFromRecord(payload ?? undefined, keys) ??
+    extractScalarFromRecord(nestedFields, keys);
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
+};
+
+const parseRoboflowPredictionBox = (item: unknown): RoboflowPredictionBox | null => {
+  if (!item || typeof item !== 'object') {
+    return null;
+  }
+  const rec = item as Record<string, unknown>;
+  const x = extractScalarFromRecord(rec, ['x', 'X']);
+  const y = extractScalarFromRecord(rec, ['y', 'Y']);
+  const width = extractScalarFromRecord(rec, ['width', 'Width']);
+  const height = extractScalarFromRecord(rec, ['height', 'Height']);
+  const rawClass = extractScalarFromRecord(rec, ['className', 'ClassName', 'class', 'Class']);
+  const confidence = extractScalarFromRecord(rec, ['confidence', 'Confidence']);
+  const imageWidth = extractScalarFromRecord(rec, ['imageWidth', 'ImageWidth']);
+  const imageHeight = extractScalarFromRecord(rec, ['imageHeight', 'ImageHeight']);
+
+  if (
+    typeof x !== 'number' ||
+    !Number.isFinite(x) ||
+    typeof y !== 'number' ||
+    !Number.isFinite(y) ||
+    typeof width !== 'number' ||
+    !Number.isFinite(width) ||
+    width <= 0 ||
+    typeof height !== 'number' ||
+    !Number.isFinite(height) ||
+    height <= 0 ||
+    typeof rawClass !== 'string' ||
+    rawClass.trim().length === 0 ||
+    typeof confidence !== 'number' ||
+    !Number.isFinite(confidence)
+  ) {
+    return null;
+  }
+
+  return {
+    x,
+    y,
+    width,
+    height,
+    className: rawClass.trim(),
+    confidence,
+    imageWidth: typeof imageWidth === 'number' && imageWidth > 0 ? imageWidth : undefined,
+    imageHeight: typeof imageHeight === 'number' && imageHeight > 0 ? imageHeight : undefined
+  };
+};
+
+const parseRoboflowPredictionsArray = (
+  payload: Record<string, unknown> | null | undefined,
+  nestedFields: Record<string, unknown> | undefined,
+  keys: readonly string[]
+): readonly RoboflowPredictionBox[] => {
+  const raw =
+    extractScalarFromRecord(payload ?? undefined, keys) ??
+    extractScalarFromRecord(nestedFields, keys);
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const boxes: RoboflowPredictionBox[] = [];
+  for (const entry of raw) {
+    const parsed = parseRoboflowPredictionBox(entry);
+    if (parsed) {
+      boxes.push(parsed);
+    }
+  }
+  return boxes;
+};
+
 const extractDiagnosticsFromPayload = (
   payload: Record<string, unknown> | null | undefined,
   nestedFields?: Record<string, unknown>
@@ -540,6 +700,40 @@ const extractDiagnosticsFromPayload = (
   requiresPendingManualReview: pickDiagnosticBoolean(payload, nestedFields, [
     'requiresPendingManualReview',
     'RequiresPendingManualReview'
+  ]),
+  roboflowIdPredictions: parseRoboflowPredictionsArray(payload, nestedFields, [
+    'roboflowIdPredictions',
+    'RoboflowIdPredictions',
+    'predictions',
+    'Predictions'
+  ]),
+  roboflowDetectedClass: pickDiagnosticString(payload, nestedFields, [
+    'roboflowDetectedClass',
+    'RoboflowDetectedClass',
+    'topClass',
+    'TopClass'
+  ]),
+  roboflowDetectedConfidence: pickDiagnosticNumber(payload, nestedFields, [
+    'roboflowDetectedConfidence',
+    'RoboflowDetectedConfidence',
+    'topConfidence',
+    'TopConfidence'
+  ]),
+  roboflowCacheHit: pickDiagnosticBoolean(payload, nestedFields, [
+    'roboflowCacheHit',
+    'RoboflowCacheHit',
+    'cacheHit',
+    'CacheHit'
+  ]),
+  roboflowDataset: pickDiagnosticString(payload, nestedFields, [
+    'roboflowDataset',
+    'RoboflowDataset',
+    'datasetSlug',
+    'DatasetSlug'
+  ]),
+  claudeTrainingCacheActive: pickDiagnosticBoolean(payload, nestedFields, [
+    'claudeTrainingCacheActive',
+    'ClaudeTrainingCacheActive'
   ])
 });
 
@@ -612,7 +806,13 @@ const buildEmptyClaudeNormalizedFields = (options?: {
     areSidesIdentical: diagnostics?.areSidesIdentical,
     authenticityVerdict: diagnostics?.authenticityVerdict,
     authenticityReason: diagnostics?.authenticityReason,
-    requiresPendingManualReview: options?.requiresPendingManualReview ?? false
+    requiresPendingManualReview: options?.requiresPendingManualReview ?? false,
+    roboflowIdPredictions: diagnostics?.roboflowIdPredictions,
+    roboflowDetectedClass: diagnostics?.roboflowDetectedClass,
+    roboflowDetectedConfidence: diagnostics?.roboflowDetectedConfidence,
+    roboflowCacheHit: diagnostics?.roboflowCacheHit,
+    roboflowDataset: diagnostics?.roboflowDataset,
+    claudeTrainingCacheActive: diagnostics?.claudeTrainingCacheActive
   };
 };
 
@@ -866,6 +1066,11 @@ export const parseClaudeOcrApiResponse = (
     ? payload.warnings.filter((w: unknown): w is string => typeof w === 'string')
     : undefined;
 
+  const parsedMatchesSelectedIdType =
+    _idType && diagnostics.detectedIdType && areEquivalentPhilippineIdClasses(_idType, diagnostics.detectedIdType)
+      ? true
+      : diagnostics.matchesSelectedIdType;
+
   return {
     firstName,
     middleName,
@@ -895,13 +1100,19 @@ export const parseClaudeOcrApiResponse = (
     idVerificationToken: diagnostics.idVerificationToken,
     detectedIdType: diagnostics.detectedIdType,
     detectedIdLabel: diagnostics.detectedIdLabel,
-    matchesSelectedIdType: diagnostics.matchesSelectedIdType,
+    matchesSelectedIdType: parsedMatchesSelectedIdType,
     frontSlotDetectedSide: diagnostics.frontSlotDetectedSide,
     backSlotDetectedSide: diagnostics.backSlotDetectedSide,
     areSidesIdentical: diagnostics.areSidesIdentical,
     authenticityVerdict: diagnostics.authenticityVerdict,
     authenticityReason: diagnostics.authenticityReason,
-    requiresPendingManualReview: diagnostics.requiresPendingManualReview ?? false
+    requiresPendingManualReview: diagnostics.requiresPendingManualReview ?? false,
+    roboflowIdPredictions: diagnostics.roboflowIdPredictions,
+    roboflowDetectedClass: diagnostics.roboflowDetectedClass,
+    roboflowDetectedConfidence: diagnostics.roboflowDetectedConfidence,
+    roboflowCacheHit: diagnostics.roboflowCacheHit,
+    roboflowDataset: diagnostics.roboflowDataset,
+    claudeTrainingCacheActive: diagnostics.claudeTrainingCacheActive
   };
 };
 
@@ -1235,3 +1446,163 @@ export class ClaudeSonnetOcrProvider implements IAiOcrProvider {
 }
 
 export const claudeSonnetOcrProvider = new ClaudeSonnetOcrProvider();
+
+const buildEmptyRoboflowDetectIdResult = (
+  errorCode?: string,
+  errorMessage?: string
+): RoboflowDetectIdResult => ({
+  success: false,
+  ranOnline: false,
+  cacheHit: false,
+  datasetSlug: null,
+  topClass: null,
+  canonicalIdType: null,
+  topConfidence: null,
+  claudeTrainingCacheActive: false,
+  matchesSelectedIdType: true,
+  predictions: [],
+  errorCode,
+  errorMessage
+});
+
+/**
+ * Non-blocking helper invoking POST /api/identity/roboflow/detect-id for yolov8-ctdd4/philippine-ids
+ * bounding box detection ("driver" <-> "drivers", "postal", "umid") with AbortSignal support.
+ */
+export const detectRoboflowPhilippineId = async (
+  imageDataUrl: string,
+  selectedIdType?: string,
+  signal?: AbortSignal
+): Promise<RoboflowDetectIdResult> => {
+  const trimmedImage = (imageDataUrl ?? '').trim();
+  if (!trimmedImage || signal?.aborted) {
+    return buildEmptyRoboflowDetectIdResult(
+      signal?.aborted ? 'ABORTED' : 'MISSING_IMAGE',
+      signal?.aborted ? 'Roboflow Philippine ID detection aborted.' : 'Image data URL is empty.'
+    );
+  }
+
+  const controller = new AbortController();
+  const onExternalAbort = (): void => {
+    controller.abort();
+  };
+  if (signal) {
+    signal.addEventListener('abort', onExternalAbort, { once: true });
+  }
+
+  const timeoutId = setTimeout((): void => controller.abort(), 12_000);
+  try {
+    const preparedImage = await downscaleIdImageDataUrl(trimmedImage);
+    if (controller.signal.aborted) {
+      return buildEmptyRoboflowDetectIdResult('ABORTED', 'Roboflow Philippine ID detection aborted.');
+    }
+
+    const endpoint = resolveOcrEndpoint('/api/identity/roboflow/detect-id');
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageDataUrl: preparedImage,
+        selectedIdType: selectedIdType?.trim() || undefined
+      }),
+      signal: controller.signal
+    });
+
+    const payload = await parseResponseJsonSafe(response);
+    if (!response.ok || !payload) {
+      return buildEmptyRoboflowDetectIdResult(
+        pickDiagnosticString(payload, undefined, ['errorCode', 'ErrorCode']) ??
+          `HTTP_${response.status}`,
+        pickDiagnosticString(payload, undefined, ['errorMessage', 'ErrorMessage']) ??
+          `Roboflow ID detection returned HTTP ${response.status}.`
+      );
+    }
+
+    const predictions = parseRoboflowPredictionsArray(payload, undefined, [
+      'predictions',
+      'Predictions',
+      'roboflowIdPredictions',
+      'RoboflowIdPredictions'
+    ]);
+    const topClass =
+      pickDiagnosticString(payload, undefined, [
+        'topClass',
+        'TopClass',
+        'roboflowDetectedClass',
+        'RoboflowDetectedClass'
+      ]) ??
+      predictions[0]?.className ??
+      null;
+    const rawCanonical = pickDiagnosticString(payload, undefined, [
+      'canonicalIdType',
+      'CanonicalIdType'
+    ]);
+    const canonicalIdType =
+      (rawCanonical ? canonicalizePhilippineIdClass(rawCanonical) : null) ??
+      (topClass ? canonicalizePhilippineIdClass(topClass) : null) ??
+      null;
+    const topConfidence =
+      pickDiagnosticNumber(payload, undefined, [
+        'topConfidence',
+        'TopConfidence',
+        'roboflowDetectedConfidence',
+        'RoboflowDetectedConfidence'
+      ]) ??
+      predictions[0]?.confidence ??
+      null;
+    const datasetSlug =
+      pickDiagnosticString(payload, undefined, [
+        'datasetSlug',
+        'DatasetSlug',
+        'roboflowDataset',
+        'RoboflowDataset'
+      ]) ?? null;
+    const cacheHit =
+      pickDiagnosticBoolean(payload, undefined, [
+        'cacheHit',
+        'CacheHit',
+        'roboflowCacheHit',
+        'RoboflowCacheHit'
+      ]) ?? false;
+    const claudeTrainingCacheActive =
+      pickDiagnosticBoolean(payload, undefined, [
+        'claudeTrainingCacheActive',
+        'ClaudeTrainingCacheActive'
+      ]) ?? false;
+    const ranOnline =
+      pickDiagnosticBoolean(payload, undefined, ['ranOnline', 'RanOnline']) ?? false;
+    const success =
+      pickDiagnosticBoolean(payload, undefined, ['success', 'Success']) ?? response.ok;
+    const cleanSelected = selectedIdType?.trim() ?? '';
+    const matchesSelectedIdType =
+      cleanSelected && (canonicalIdType || topClass)
+        ? areEquivalentPhilippineIdClasses(cleanSelected, canonicalIdType ?? topClass)
+        : true;
+
+    return {
+      success,
+      ranOnline,
+      cacheHit,
+      datasetSlug,
+      topClass,
+      canonicalIdType: canonicalIdType || null,
+      topConfidence,
+      claudeTrainingCacheActive,
+      matchesSelectedIdType,
+      predictions,
+      errorCode: pickDiagnosticString(payload, undefined, ['errorCode', 'ErrorCode']),
+      errorMessage: pickDiagnosticString(payload, undefined, ['errorMessage', 'ErrorMessage'])
+    };
+  } catch (err: unknown) {
+    const isAbort = Boolean(signal?.aborted) || (err instanceof Error && err.name === 'AbortError');
+    return buildEmptyRoboflowDetectIdResult(
+      isAbort ? 'ABORTED' : 'NETWORK_ERROR',
+      err instanceof Error ? err.message : 'Roboflow Philippine ID detection failed.'
+    );
+  } finally {
+    clearTimeout(timeoutId);
+    if (signal) {
+      signal.removeEventListener('abort', onExternalAbort);
+    }
+  }
+};

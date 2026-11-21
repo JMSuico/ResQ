@@ -5,11 +5,14 @@
 import React from 'react';
 import {
   AlertTriangle,
+  Cpu,
+  Database,
   Loader2,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
-  Upload
+  Upload,
+  Zap
 } from 'lucide-react';
 import type {
   IdVerificationErrorCode,
@@ -24,6 +27,12 @@ export interface IdVerificationBannerProps {
   readonly hasFrontImage: boolean;
   readonly hasBackImage: boolean;
   readonly hasStandbyToken?: boolean;
+  readonly confidence?: number | null;
+  readonly roboflowDetectedClass?: string | null;
+  readonly roboflowDetectedConfidence?: number | null;
+  readonly roboflowDataset?: string | null;
+  readonly roboflowCacheHit?: boolean;
+  readonly claudeTrainingCacheActive?: boolean;
   readonly onRetry: () => void;
 }
 
@@ -35,6 +44,12 @@ export const IdVerificationBanner: React.FC<IdVerificationBannerProps> = ({
   hasFrontImage,
   hasBackImage,
   hasStandbyToken = false,
+  confidence = null,
+  roboflowDetectedClass = null,
+  roboflowDetectedConfidence = null,
+  roboflowDataset = null,
+  roboflowCacheHit = false,
+  claudeTrainingCacheActive = false,
   onRetry
 }) => {
   const resolveIdleHint = (): string => {
@@ -86,35 +101,83 @@ export const IdVerificationBanner: React.FC<IdVerificationBannerProps> = ({
         </div>
       )}
 
-      {status === 'VERIFIED_GENUINE' && (
-        <div
-          id="badge-id-verified-genuine"
-          role="status"
-          aria-live="polite"
-          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-emerald-950/80 border border-emerald-500/45 shrink-0">
-              <ShieldCheck className="w-4 h-4 text-[#5fe0a4]" />
-            </div>
-            <div>
-              <div className="font-mono text-[11.5px] font-bold text-[#5fe0a4]">
-                ID Verified
+      {status === 'VERIFIED_GENUINE' && (() => {
+        const displayConfidence =
+          typeof confidence === 'number' && Number.isFinite(confidence) && confidence > 0
+            ? confidence
+            : typeof roboflowDetectedConfidence === 'number' &&
+              Number.isFinite(roboflowDetectedConfidence) &&
+              roboflowDetectedConfidence > 0
+            ? roboflowDetectedConfidence
+            : null;
+        const cleanDataset =
+          roboflowDataset?.trim() ||
+          (roboflowDetectedClass || displayConfidence !== null
+            ? 'yolov8-ctdd4/philippine-ids'
+            : null);
+
+        return (
+          <div
+            id="badge-id-verified-genuine"
+            role="status"
+            aria-live="polite"
+            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-emerald-950/80 border border-emerald-500/45 shrink-0">
+                <ShieldCheck className="w-4 h-4 text-[#5fe0a4]" />
               </div>
-              {detectedIdLabel && (
-                <div className="font-mono text-[10px] text-emerald-200/80 mt-0.5">
-                  {detectedIdLabel}
+              <div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-mono text-[11.5px] font-bold text-[#5fe0a4]">
+                    ID Verified
+                  </span>
+                  {displayConfidence !== null && (
+                    <span className="px-1.5 py-0.5 rounded border border-emerald-500/40 bg-emerald-950/80 font-mono text-[9.5px] font-bold text-emerald-200">
+                      {(Math.min(1, displayConfidence) * 100).toFixed(0)}% Conf.
+                    </span>
+                  )}
+                  {roboflowDetectedClass && (
+                    <span className="px-1.5 py-0.5 rounded border border-emerald-500/35 bg-emerald-950/60 font-mono text-[9.5px] uppercase text-emerald-200/90">
+                      {roboflowDetectedClass}
+                    </span>
+                  )}
                 </div>
+                {detectedIdLabel && (
+                  <div className="font-mono text-[10px] text-emerald-200/80 mt-0.5">
+                    {detectedIdLabel}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-center">
+              {cleanDataset && (
+                <span className="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded border border-emerald-500/35 bg-emerald-950/60 font-mono text-[9.5px] font-semibold text-emerald-200">
+                  <Database className="w-3 h-3 text-[#5fe0a4]" />
+                  <span>{cleanDataset}</span>
+                </span>
+              )}
+              {roboflowCacheHit && (
+                <span className="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded border border-amber-500/40 bg-amber-950/60 font-mono text-[9.5px] font-semibold text-amber-200">
+                  <Zap className="w-3 h-3 text-amber-300" />
+                  <span>15m Cache</span>
+                </span>
+              )}
+              {claudeTrainingCacheActive && (
+                <span className="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded border border-cyan-500/40 bg-cyan-950/60 font-mono text-[9.5px] font-semibold text-cyan-200">
+                  <Cpu className="w-3 h-3 text-cyan-300" />
+                  <span>Claude Cached</span>
+                </span>
+              )}
+              {hasStandbyToken && (
+                <span className="shrink-0 px-2.5 py-1 rounded border border-emerald-500/40 bg-emerald-950/70 font-mono text-[9.5px] font-bold uppercase tracking-wider text-emerald-200">
+                  Token Ready
+                </span>
               )}
             </div>
           </div>
-          {hasStandbyToken && (
-            <span className="self-start sm:self-center shrink-0 px-2.5 py-1 rounded border border-emerald-500/40 bg-emerald-950/70 font-mono text-[9.5px] font-bold uppercase tracking-wider text-emerald-200">
-              Token Ready
-            </span>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {status === 'PENDING_MANUAL_REVIEW' && (
         <div

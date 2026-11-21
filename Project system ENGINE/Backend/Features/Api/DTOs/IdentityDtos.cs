@@ -78,6 +78,12 @@ public class AiExtractResponseDto
     public string? ErrorMessage { get; set; }
     public List<string> Warnings { get; set; } = [];
     public long ExecutionTimeMs { get; set; }
+    public List<RoboflowWorkflowPredictionItemDto> RoboflowIdPredictions { get; set; } = [];
+    public string? RoboflowDetectedClass { get; set; }
+    public double? RoboflowDetectedConfidence { get; set; }
+    public bool RoboflowCacheHit { get; set; }
+    public string? RoboflowDataset { get; set; }
+    public bool ClaudeTrainingCacheActive { get; set; }
 }
 
 /// <summary>
@@ -125,8 +131,60 @@ public class AiProviderStatusDto
     public bool GeminiConfigured { get; set; }
     public bool OpenAiConfigured { get; set; }
     public bool AzureConfigured { get; set; }
-    public bool HasAnyProvider => ClaudeConfigured || GeminiConfigured || OpenAiConfigured || AzureConfigured;
+    public bool RoboflowConfigured { get; set; }
+    public bool RoboflowFaceWorkflowConfigured { get; set; }
+    public bool RoboflowIdWorkflowConfigured { get; set; }
+    public bool HasAnyProvider => ClaudeConfigured || GeminiConfigured || OpenAiConfigured || AzureConfigured || RoboflowConfigured;
     public string ActiveChain { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Bounding box prediction item returned by Roboflow Serverless Workflow / Pretrained Dataset inference.
+/// </summary>
+public class RoboflowWorkflowPredictionItemDto
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
+    public string ClassName { get; set; } = string.Empty;
+    public double Confidence { get; set; }
+    public int? ImageWidth { get; set; }
+    public int? ImageHeight { get; set; }
+}
+
+/// <summary>
+/// Request payload for Roboflow Serverless Workflow face ("face") or Philippine ID ("driver, postal, umid") detection.
+/// </summary>
+public class RoboflowWorkflowDetectRequestDto
+{
+    public string? ImageDataUrl { get; set; }
+    public string? ImageBase64 { get; set; }
+    public string? SelectedIdType { get; set; }
+    public string? Classes { get; set; }
+}
+
+/// <summary>
+/// Response envelope for Roboflow Serverless Workflow detection paired with Claude pretrained dataset cache state.
+/// </summary>
+public class RoboflowWorkflowDetectResponseDto
+{
+    public bool Success { get; set; }
+    public bool RanOnline { get; set; }
+    public bool CacheHit { get; set; }
+    public int CacheTtlSeconds { get; set; } = 900;
+    public string TaskType { get; set; } = string.Empty;
+    public string DatasetSlug { get; set; } = string.Empty;
+    public string RequestedClasses { get; set; } = string.Empty;
+    public string? TopClass { get; set; }
+    public double TopConfidence { get; set; }
+    public string? CanonicalIdType { get; set; }
+    public string AuthTransport { get; set; } = string.Empty;
+    public string TransportMode { get; set; } = string.Empty;
+    public bool ClaudeTrainingCacheActive { get; set; }
+    public string? ErrorCode { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<RoboflowWorkflowPredictionItemDto> Predictions { get; set; } = [];
 }
 
 /// <summary>
@@ -214,4 +272,9 @@ public class FacialGeometryAnalysisResponseDto
     public bool RequiresPendingManualReview { get; set; }
     public string? ErrorCode { get; set; }
     public string? ErrorMessage { get; set; }
+    public List<RoboflowWorkflowPredictionItemDto> RoboflowFacePredictions { get; set; } = [];
+    public double? RoboflowFaceConfidence { get; set; }
+    public bool RoboflowCacheHit { get; set; }
+    public string? RoboflowDataset { get; set; }
+    public bool ClaudeTrainingCacheActive { get; set; }
 }

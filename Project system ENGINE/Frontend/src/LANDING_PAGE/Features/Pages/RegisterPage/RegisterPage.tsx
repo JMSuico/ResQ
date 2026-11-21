@@ -55,6 +55,7 @@ import {
 } from '@/Hooks/useBackgroundIdVerification';
 import { IdVerificationBanner } from './IdVerificationBanner';
 import { ManualFacialCapturePanel } from './ManualFacialCapturePanel';
+import { RoboflowDetectionOverlay } from '@/components/RoboflowDetectionOverlay';
 import {
   biometricFrameCache,
   extractBiometricFeatureVector,
@@ -1592,6 +1593,18 @@ export const RegisterPage: React.FC = () => {
                                 className="w-full h-auto object-cover"
                                 style={{ aspectRatio: '85.6 / 53.98' }}
                               />
+                              {idVerification.roboflowIdPredictions.length > 0 && (
+                                <RoboflowDetectionOverlay
+                                  predictions={idVerification.roboflowIdPredictions}
+                                  fallbackWidth={idFrontMeta?.width}
+                                  fallbackHeight={idFrontMeta?.height}
+                                  cacheHit={idVerification.roboflowCacheHit}
+                                  datasetLabel={
+                                    idVerification.roboflowDataset ?? 'yolov8-ctdd4/philippine-ids'
+                                  }
+                                  claudeCacheActive={idVerification.claudeTrainingCacheActive}
+                                />
+                              )}
                             </div>
                             {idFrontMeta && (
                               <div className="mt-2 w-full font-mono text-xs text-[#7D2B3D] flex items-center justify-between">
@@ -1785,6 +1798,12 @@ export const RegisterPage: React.FC = () => {
                       hasFrontImage={Boolean(idFrontShot)}
                       hasBackImage={Boolean(idBackShot)}
                       hasStandbyToken={Boolean(idVerification.idVerificationToken)}
+                      confidence={idVerification.confidence}
+                      roboflowDetectedClass={idVerification.roboflowDetectedClass}
+                      roboflowDetectedConfidence={idVerification.roboflowDetectedConfidence}
+                      roboflowDataset={idVerification.roboflowDataset}
+                      roboflowCacheHit={idVerification.roboflowCacheHit}
+                      claudeTrainingCacheActive={idVerification.claudeTrainingCacheActive}
                       onRetry={idVerification.retryVerification}
                     />
                   </section>

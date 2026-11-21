@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Backend.Features.Api.DTOs;
 using Backend.Features.Services.Interfaces;
+using Backend.Features.Services.Vision;
 
 namespace Backend.Features.Api.Controllers;
 
@@ -107,6 +108,38 @@ public class IdentityController(IIdentityAiService aiService) : ControllerBase
     public async Task<IActionResult> GetBiometricTrainingStatusAsync([FromQuery] string? email, CancellationToken ct) =>
         Ok(await aiService.GetBiometricTrainingStatusAsync(email, ct));
 
+    [HttpPost("roboflow/detect-face")]
+    public async Task<IActionResult> DetectRoboflowFaceAsync(
+        [FromBody] RoboflowWorkflowDetectRequestDto? request,
+        CancellationToken ct = default) =>
+        !HasRoboflowImagePayload(request)
+            ? BadRequest(new RoboflowWorkflowDetectResponseDto
+            {
+                Success = false,
+                TaskType = "FACE_DETECTION",
+                DatasetSlug = RoboflowPretrainedDatasets.FaceDatasetSlug,
+                RequestedClasses = RoboflowPretrainedDatasets.DefaultFaceClasses,
+                ErrorCode = "MISSING_IMAGE",
+                ErrorMessage = "Image payload is required for Roboflow face detection."
+            })
+            : Ok(await aiService.DetectRoboflowFaceAsync(request!, ct));
+
+    [HttpPost("roboflow/detect-id")]
+    public async Task<IActionResult> DetectRoboflowPhilippineIdAsync(
+        [FromBody] RoboflowWorkflowDetectRequestDto? request,
+        CancellationToken ct = default) =>
+        !HasRoboflowImagePayload(request)
+            ? BadRequest(new RoboflowWorkflowDetectResponseDto
+            {
+                Success = false,
+                TaskType = "PHILIPPINE_ID_DETECTION",
+                DatasetSlug = RoboflowPretrainedDatasets.PhilippineIdsDatasetSlug,
+                RequestedClasses = RoboflowPretrainedDatasets.DefaultPhilippineIdClasses,
+                ErrorCode = "MISSING_IMAGE",
+                ErrorMessage = "Image payload is required for Roboflow Philippine ID detection."
+            })
+            : Ok(await aiService.DetectRoboflowPhilippineIdAsync(request!, ct));
+
     private IActionResult MapOcrActionResult(AiExtractResponseDto result) =>
         result.Success && string.IsNullOrWhiteSpace(result.ErrorCode)
             ? Ok(result)
@@ -178,6 +211,10 @@ public class IdentityController(IIdentityAiService aiService) : ControllerBase
 
     private static string ResolveImageMimeType(IFormFile? file) =>
         string.IsNullOrWhiteSpace(file?.ContentType) ? "image/jpeg" : file.ContentType;
+
+    private static bool HasRoboflowImagePayload(RoboflowWorkflowDetectRequestDto? request) =>
+        request is not null &&
+        (!string.IsNullOrWhiteSpace(request.ImageDataUrl) || !string.IsNullOrWhiteSpace(request.ImageBase64));
 
     private static async Task<byte[]> ReadFormFileBytesAsync(IFormFile? file, CancellationToken ct)
     {

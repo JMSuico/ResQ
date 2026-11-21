@@ -9,6 +9,7 @@ using System.Text.Json;
 using Backend.Features.Api.DTOs;
 using Backend.Features.Services.Implementations;
 using Backend.Features.Services.Interfaces;
+using Backend.Features.Services.Vision;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -44,7 +45,8 @@ public sealed record GovIdForensicsResult(
     string RawJson,
     AiOcrFieldsDto? Fields,
     string? RawText,
-    List<string> Warnings);
+    List<string> Warnings,
+    RoboflowWorkflowDetectionResult? RoboflowDetection = null);
 
 public sealed record FaceToGovIdMatchInput(
     byte[]? FrontIdBytes,
@@ -72,7 +74,8 @@ public sealed record FaceToGovIdMatchResult(
     string? ModelUsed,
     double AuthenticityConfidence,
     string GeometryVerdict,
-    List<string> Diagnostics);
+    List<string> Diagnostics,
+    RoboflowWorkflowDetectionResult? RoboflowFaceDetection = null);
 
 public interface IGovIdAuthenticityEvaluator
 {
@@ -91,13 +94,17 @@ public interface IFaceToGovIdMatchStrategy
 public class SharedGovIdForensicsEvaluator(
     IConfiguration configuration,
     IClaudeMessagesClient? claudeClient = null,
-    ILogger<SharedGovIdForensicsEvaluator>? logger = null) : IGovIdAuthenticityEvaluator
+    ILogger<SharedGovIdForensicsEvaluator>? logger = null,
+    IRoboflowWorkflowStrategy? roboflowWorkflowStrategy = null) : IGovIdAuthenticityEvaluator
 {
     private readonly IClaudeMessagesClient _claudeClient =
         claudeClient ?? new ClaudeMessagesClient(null, configuration, NullLogger<ClaudeMessagesClient>.Instance);
 
     private readonly ILogger<SharedGovIdForensicsEvaluator> _logger =
         logger ?? NullLogger<SharedGovIdForensicsEvaluator>.Instance;
+
+    private readonly IRoboflowWorkflowStrategy _roboflowWorkflowStrategy =
+        roboflowWorkflowStrategy ?? new RoboflowServerlessWorkflowStrategy(null, configuration);
 
     internal static readonly string[] CoreIdFields =
     [
@@ -242,6 +249,27 @@ public class SharedGovIdForensicsEvaluator(
                 modelUsed: _claudeClient.PrimaryModel);
         }
 
+        RoboflowWorkflowDetectionResult? rfDetection = null;
+        try
+        {
+            rfDetection = await _roboflowWorkflowStrategy.DetectPhilippineIdAsync(
+                new RoboflowWorkflowImageInput(input.FrontBytes, input.FrontMimeType, input.SelectedIdType),
+                ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Roboflow Philippine ID workflow detection failed; continuing with Claude trained dataset priors.");
+        }
+
+        string pretrainedDatasetContext = _roboflowWorkflowStrategy.GetPretrainedDatasetPromptContext(
+            "PHILIPPINE_ID_DETECTION",
+            input.SelectedIdType,
+            rfDetection);
+
         var contentBlocks = new List<object>
         {
             new
@@ -288,7 +316,7 @@ public class SharedGovIdForensicsEvaluator(
                 new
                 {
                     type = "text",
-                    text = BuildForensicSystemPrompt(input.SelectedIdType, hasBackBytes),
+                    text = BuildForensicSystemPrompt(input.SelectedIdType, hasBackBytes, pretrainedDatasetContext),
                     cache_control = new { type = "ephemeral" }
                 }
             },
@@ -323,7 +351,8 @@ public class SharedGovIdForensicsEvaluator(
                 imagePairSha256: pairSha,
                 requiresPendingManualReview: true,
                 providerUsed: _claudeClient.PrimaryModel,
-                modelUsed: _claudeClient.PrimaryModel);
+                modelUsed: _claudeClient.PrimaryModel,
+                roboflowDetection: rfDetection);
         }
 
         if (!attempt.Success)
@@ -347,22 +376,39 @@ public class SharedGovIdForensicsEvaluator(
                 imagePairSha256: pairSha,
                 requiresPendingManualReview: true,
                 providerUsed: attempt.ModelUsed,
-                modelUsed: attempt.ModelUsed);
+                modelUsed: attempt.ModelUsed,
+                roboflowDetection: rfDetection);
         }
 
-        return ParseForensicOcrResponse(
+        GovIdForensicsResult parsed = ParseForensicOcrResponse(
             rawText: attempt.RawText ?? string.Empty,
             provider: attempt.ModelUsed,
             selectedIdType: input.SelectedIdType,
             hasBackBytes: hasBackBytes,
             imagePairSha256: pairSha);
+
+        RoboflowWorkflowDetectionResult? effectiveDetection =
+            rfDetection is { Success: true, Predictions.Count: > 0 }
+                ? rfDetection
+                : TrySynthesizeClaudeDatasetDetection(parsed, rfDetection, attempt.RawText, input.SelectedIdType);
+
+        return parsed with
+        {
+            RoboflowDetection = effectiveDetection
+        };
     }
 
-    internal static string BuildForensicSystemPrompt(string? selectedIdType, bool hasBackBytes = false) =>
+    internal static string BuildForensicSystemPrompt(
+        string? selectedIdType,
+        bool hasBackBytes = false,
+        string? pretrainedDatasetContext = null) =>
         "Strict forensic verifier and OCR transcriber for Philippine Government IDs. " +
         (string.IsNullOrWhiteSpace(selectedIdType)
             ? string.Empty
             : $"Selected category: {selectedIdType} ({FormatIdTypeLabel(selectedIdType)}). ") +
+        (string.IsNullOrWhiteSpace(pretrainedDatasetContext)
+            ? string.Empty
+            : $"{pretrainedDatasetContext.Trim()} ") +
         "MANDATORY RULES:\n" +
         "1. Authenticity: Verify a genuine physical Philippine Government ID. " +
         "Set isGenuineId=false and authenticityVerdict=\"SPECIMEN\" or \"FAKE_OR_AI_GENERATED\" if watermarks (SPECIMEN, SAMPLE, VOID, TEMPLATE), AI artifacts, synthetic overlays, or screen-replay moire appear. " +
@@ -370,18 +416,108 @@ public class SharedGovIdForensicsEvaluator(
         "2. Side orientation: Image 1 MUST be FRONT (frontSlotDetectedSide: \"FRONT\"|\"BACK\"|\"UNKNOWN\"). " +
         (hasBackBytes ? "Image 2 MUST be BACK (backSlotDetectedSide: \"FRONT\"|\"BACK\"|\"UNKNOWN\"). " : string.Empty) +
         "Set areSidesIdentical=true if both slots depict the same image.\n" +
-        "3. Category: Set detectedIdType to canonical key (drivers, philsys, passport, prc, umid, postal, voters, senior_citizen, pwd, sss, tin, philhealth, pagibig, gsis, owwa, solo_parent, barangay, fire, police, rhu, unknown) and detectedIdLabel. Set matchesSelectedIdType=false if the ID differs from the selected category.\n" +
+        "3. Category & Bounding Box: Set detectedIdType to canonical key (drivers, philsys, passport, prc, umid, postal, voters, senior_citizen, pwd, sss, tin, philhealth, pagibig, gsis, owwa, solo_parent, barangay, fire, police, rhu, unknown) and detectedIdLabel. Optionally include \"bbox\":{\"x\":500,\"y\":500,\"width\":840,\"height\":540} in 0..1000 image scale locating the Front ID card. Set matchesSelectedIdType=false if the ID differs from the selected category.\n" +
         "4. Visible-only OCR: Transcribe ONLY characters literally visible in pixels. Set any unseen, absent, cropped, or illegible field to null. NEVER guess, compute, or fabricate names, dates, sexes, weights, heights, addresses, phone numbers, or ID numbers.\n" +
         "5. Blank/unreadable: If blank, solid color, too blurry, or lacking readable ID text, set unreadable=true and errorCode=\"UNREADABLE_OR_BLANK_IMAGE\".\n" +
         "6. Output ONLY one minified single-line JSON object (no newlines, no pretty indentation, no markdown fences, no prose; keep authenticityReason concise <= 12 words; use flat scalar strings/numbers inside \"fields\" and omit any key in \"fields\" whose value is unseen or null):\n" +
         "{\"unreadable\":false,\"isGenuineId\":true,\"authenticityVerdict\":\"GENUINE_PHYSICAL_ID\",\"authenticityReason\":null," +
         "\"detectedIdType\":\"<canonical key>\",\"detectedIdLabel\":\"<human label>\",\"matchesSelectedIdType\":true," +
         "\"frontSlotDetectedSide\":\"FRONT\",\"backSlotDetectedSide\":\"BACK\",\"areSidesIdentical\":false," +
+        "\"bbox\":{\"x\":500,\"y\":500,\"width\":840,\"height\":540}," +
         "\"errorCode\":null,\"confidence\":0.95,\"IdType\":\"<visible ID type code>\"," +
         "\"fields\":{\"IdNumber\":\"...\",\"LicenseNumber\":\"...\",\"FirstName\":\"...\",\"MiddleName\":\"...\"," +
         "\"Surname\":\"...\",\"Suffix\":\"...\",\"FullName\":\"...\",\"DateOfBirth\":\"YYYY-MM-DD\"," +
         "\"ExpirationDate\":\"YYYY-MM-DD\",\"Sex\":\"Male|Female\",\"Street\":\"...\",\"Barangay\":\"...\"," +
         "\"CityOrMunicipality\":\"...\",\"Province\":\"...\",\"Address\":\"...\",\"Weight\":\"...\",\"Height\":\"...\",\"PhoneNumber\":\"...\"}}";
+
+    private static RoboflowWorkflowDetectionResult? TrySynthesizeClaudeDatasetDetection(
+        GovIdForensicsResult parsed,
+        RoboflowWorkflowDetectionResult? existingRf,
+        string? rawClaudeText,
+        string? selectedIdType)
+    {
+        if (!parsed.Success || string.IsNullOrWhiteSpace(rawClaudeText))
+        {
+            return existingRf;
+        }
+
+        string cleanJson = CleanJsonFences(rawClaudeText);
+        try
+        {
+            using var doc = JsonDocument.Parse(cleanJson);
+            JsonElement root = doc.RootElement;
+            if (!TryGetPropertyCaseInsensitive(root, "bbox", out JsonElement bboxEl) ||
+                bboxEl.ValueKind != JsonValueKind.Object)
+            {
+                return existingRf;
+            }
+
+            if (!TryReadDoubleProp(bboxEl, "x", out double x) ||
+                !TryReadDoubleProp(bboxEl, "y", out double y) ||
+                !TryReadDoubleProp(bboxEl, "width", out double w) ||
+                !TryReadDoubleProp(bboxEl, "height", out double h) ||
+                w <= 0 || h <= 0)
+            {
+                return existingRf;
+            }
+
+            // Normalize 0..1 boxes into 0..1000 space to align with SVG overlay rendering
+            if (x <= 1.0 && y <= 1.0 && w <= 1.0 && h <= 1.0)
+            {
+                x *= 1000.0;
+                y *= 1000.0;
+                w *= 1000.0;
+                h *= 1000.0;
+            }
+
+            string rawClass = parsed.DetectedIdType ?? selectedIdType ?? "unknown";
+            string canonical = RoboflowPretrainedDatasets.CanonicalizePhilippineIdClass(rawClass);
+            string displayClass = string.Equals(canonical, "drivers", StringComparison.OrdinalIgnoreCase)
+                ? "driver"
+                : canonical;
+
+            var pred = new RoboflowBoundingBox(
+                X: Math.Clamp(Math.Round(x, 2), 0, 1000),
+                Y: Math.Clamp(Math.Round(y, 2), 0, 1000),
+                Width: Math.Clamp(Math.Round(w, 2), 10, 1000),
+                Height: Math.Clamp(Math.Round(h, 2), 10, 1000),
+                ClassName: displayClass,
+                Confidence: Math.Clamp(parsed.Confidence, 0.0, 1.0),
+                ImageWidth: 1000,
+                ImageHeight: 1000);
+
+            return new RoboflowWorkflowDetectionResult(
+                Success: true,
+                RanOnline: true,
+                CacheHit: false,
+                CacheTtlSeconds: RoboflowPretrainedDatasets.WorkflowCacheTtlSeconds,
+                TaskType: "PHILIPPINE_ID_DETECTION",
+                DatasetSlug: RoboflowPretrainedDatasets.PhilippineIdsDatasetSlug,
+                RequestedClasses: RoboflowPretrainedDatasets.DefaultPhilippineIdClasses,
+                TopClass: pred.ClassName,
+                TopConfidence: pred.Confidence,
+                CanonicalIdType: string.IsNullOrWhiteSpace(canonical) ? parsed.DetectedIdType : canonical,
+                AuthTransport: existingRf?.AuthTransport ?? "CLAUDE_EPHEMERAL_DATASET_VISION",
+                TransportMode: "CLAUDE_EPHEMERAL_DATASET_VISION",
+                Predictions: [pred],
+                ErrorCode: null,
+                ErrorMessage: null,
+                RawJson: existingRf?.RawJson ?? cleanJson);
+        }
+        catch (JsonException)
+        {
+            return existingRf;
+        }
+    }
+
+    private static bool TryReadDoubleProp(JsonElement obj, string key, out double val)
+    {
+        val = 0.0;
+        return TryGetPropertyCaseInsensitive(obj, key, out JsonElement prop) &&
+               prop.ValueKind == JsonValueKind.Number &&
+               prop.TryGetDouble(out val) &&
+               double.IsFinite(val);
+    }
 
     internal static GovIdForensicsResult ParseForensicOcrResponse(
         string rawText,
@@ -439,7 +575,8 @@ public class SharedGovIdForensicsEvaluator(
             bool? explicitIsGenuineId = TryReadOptionalBool(root, "isGenuineId");
             string? authenticityVerdict = TryReadOptionalString(root, "authenticityVerdict");
             string? authenticityReason = TryReadOptionalString(root, "authenticityReason");
-            string? detectedIdType = TryReadOptionalString(root, "detectedIdType") ?? TryReadOptionalString(root, "IdType");
+            string? rawDetectedIdType = TryReadOptionalString(root, "detectedIdType") ?? TryReadOptionalString(root, "IdType");
+            string? detectedIdType = CanonicalizeDetectedIdType(rawDetectedIdType);
             string? detectedIdLabel = TryReadOptionalString(root, "detectedIdLabel");
             bool? explicitMatchesSelectedType = TryReadOptionalBool(root, "matchesSelectedIdType");
             string? frontSlotSide = NormalizeSlotSide(TryReadOptionalString(root, "frontSlotDetectedSide"));
@@ -729,10 +866,19 @@ public class SharedGovIdForensicsEvaluator(
             string? parsedIdType = CleanSentinelText(TryReadOptionalString(root, "IdType"));
             string? rawVisibleText = GetVisible("RawText");
             string canonicalDetected = CanonicalizeIdCategory(detectedIdType ?? parsedIdType ?? selectedIdType);
+            bool matchesSelectedIdType = string.IsNullOrWhiteSpace(selectedIdType) ||
+                                         canonicalDetected == "unknown" ||
+                                         RoboflowPretrainedDatasets.AreEquivalentIdClasses(selectedIdType, canonicalDetected) ||
+                                         RoboflowPretrainedDatasets.AreEquivalentIdClasses(selectedIdType, detectedIdType) ||
+                                         !IsCanonicalIdTypeConflict(selectedIdType, detectedIdType ?? parsedIdType);
 
             var fieldsDto = new AiOcrFieldsDto
             {
-                IdType = parsedIdType ?? NormalizeIdTypeCode(detectedIdType ?? selectedIdType),
+                IdType = parsedIdType is not null
+                    ? (string.Equals(parsedIdType, "driver", StringComparison.OrdinalIgnoreCase)
+                        ? NormalizeIdTypeCode(parsedIdType)
+                        : parsedIdType)
+                    : NormalizeIdTypeCode(detectedIdType ?? selectedIdType),
                 FirstName = GetVisible("FirstName"),
                 MiddleName = GetVisible("MiddleName"),
                 Surname = GetVisible("Surname"),
@@ -763,7 +909,7 @@ public class SharedGovIdForensicsEvaluator(
                 AuthenticityReason: authenticityReason,
                 DetectedIdType: canonicalDetected == "unknown" ? detectedIdType : canonicalDetected,
                 DetectedIdLabel: detectedIdLabel ?? FormatIdTypeLabel(canonicalDetected),
-                MatchesSelectedIdType: true,
+                MatchesSelectedIdType: matchesSelectedIdType,
                 FrontSlotDetectedSide: frontSlotSide,
                 BackSlotDetectedSide: backSlotSide,
                 AreSidesIdentical: false,
@@ -822,7 +968,8 @@ public class SharedGovIdForensicsEvaluator(
         bool requiresPendingManualReview,
         string providerUsed,
         string? modelUsed,
-        string? authenticityReason = null) =>
+        string? authenticityReason = null,
+        RoboflowWorkflowDetectionResult? roboflowDetection = null) =>
         new(
             Success: false,
             IsGenuineId: false,
@@ -844,7 +991,8 @@ public class SharedGovIdForensicsEvaluator(
             RawJson: "{}",
             Fields: null,
             RawText: null,
-            Warnings: [errorMessage]);
+            Warnings: [errorMessage],
+            RoboflowDetection: roboflowDetection);
 
     internal static string ComputeImagePairSha256(byte[]? frontBytes, byte[]? backBytes)
     {
@@ -854,6 +1002,25 @@ public class SharedGovIdForensicsEvaluator(
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(combined))).ToLowerInvariant();
     }
 
+    private static string? CanonicalizeDetectedIdType(string? detectedIdType)
+    {
+        if (string.IsNullOrWhiteSpace(detectedIdType))
+        {
+            return null;
+        }
+
+        string trimmed = detectedIdType.Trim();
+        string rfCanonical = RoboflowPretrainedDatasets.CanonicalizePhilippineIdClass(trimmed);
+        return rfCanonical switch
+        {
+            "drivers" when trimmed.Equals("driver", StringComparison.OrdinalIgnoreCase) ||
+                           trimmed.Equals("drivers", StringComparison.OrdinalIgnoreCase) => "drivers",
+            "postal" when trimmed.Equals("postal", StringComparison.OrdinalIgnoreCase) => "postal",
+            "umid" when trimmed.Equals("umid", StringComparison.OrdinalIgnoreCase) => "umid",
+            _ => trimmed
+        };
+    }
+
     internal static string CanonicalizeIdCategory(string? idType)
     {
         if (string.IsNullOrWhiteSpace(idType))
@@ -861,7 +1028,11 @@ public class SharedGovIdForensicsEvaluator(
             return "unknown";
         }
 
-        string s = idType.Trim().ToLowerInvariant();
+        string rfCanonical = RoboflowPretrainedDatasets.CanonicalizePhilippineIdClass(idType);
+        string s = string.IsNullOrWhiteSpace(rfCanonical)
+            ? idType.Trim().ToLowerInvariant()
+            : rfCanonical;
+
         return s switch
         {
             var x when x == "dl" || x.Contains("driver", StringComparison.Ordinal) || x.Contains("lto", StringComparison.Ordinal) => "drivers",
@@ -890,10 +1061,16 @@ public class SharedGovIdForensicsEvaluator(
 
     internal static bool IsCanonicalIdTypeConflict(string? selectedIdType, string? detectedIdType)
     {
+        if (RoboflowPretrainedDatasets.AreEquivalentIdClasses(selectedIdType, detectedIdType))
+        {
+            return false;
+        }
+
         string selectedCanonical = CanonicalizeIdCategory(selectedIdType);
         string detectedCanonical = CanonicalizeIdCategory(detectedIdType);
         return selectedCanonical != "unknown" &&
                detectedCanonical != "unknown" &&
+               !RoboflowPretrainedDatasets.AreEquivalentIdClasses(selectedCanonical, detectedCanonical) &&
                !string.Equals(selectedCanonical, detectedCanonical, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -924,7 +1101,10 @@ public class SharedGovIdForensicsEvaluator(
         };
 
     internal static string NormalizeIdTypeCode(string? idType) =>
-        CanonicalizeIdCategory(idType) switch
+        CanonicalizeIdCategory(
+            RoboflowPretrainedDatasets.CanonicalizePhilippineIdClass(idType) is { Length: > 0 } rfClass
+                ? rfClass
+                : idType) switch
         {
             "drivers" => "DRIVERS_LICENSE",
             "philsys" => "PH_NATIONAL_ID",
@@ -1295,7 +1475,8 @@ public class ClaudeFaceToGovIdMatchStrategy(
     IConfiguration configuration,
     IClaudeMessagesClient? claudeClient = null,
     IOptions<VerificationTokenOptions>? tokenOptions = null,
-    ILogger<ClaudeFaceToGovIdMatchStrategy>? logger = null) : IFaceToGovIdMatchStrategy
+    ILogger<ClaudeFaceToGovIdMatchStrategy>? logger = null,
+    IRoboflowWorkflowStrategy? roboflowWorkflowStrategy = null) : IFaceToGovIdMatchStrategy
 {
     private const int MinimumBlurVariance = 80;
     private const double MinimumLivenessConfidence = 0.70;
@@ -1306,6 +1487,9 @@ public class ClaudeFaceToGovIdMatchStrategy(
 
     private readonly ILogger<ClaudeFaceToGovIdMatchStrategy> _logger =
         logger ?? NullLogger<ClaudeFaceToGovIdMatchStrategy>.Instance;
+
+    private readonly IRoboflowWorkflowStrategy _roboflowWorkflowStrategy =
+        roboflowWorkflowStrategy ?? new RoboflowServerlessWorkflowStrategy(null, configuration);
 
     public async Task<FaceToGovIdMatchResult> EvaluateMatchAsync(
         FaceToGovIdMatchInput input,
@@ -1401,6 +1585,31 @@ public class ClaudeFaceToGovIdMatchStrategy(
                 diagnostics: ["Claude API key is not configured."]);
         }
 
+        RoboflowWorkflowDetectionResult? rfFaceDetection = null;
+        try
+        {
+            rfFaceDetection = await _roboflowWorkflowStrategy.DetectFaceAsync(
+                new RoboflowWorkflowImageInput(input.LiveFacialBytes, input.LiveFacialMimeType),
+                ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Roboflow face workflow detection failed; continuing with Claude pretrained face dataset priors.");
+        }
+
+        string faceDatasetContext = _roboflowWorkflowStrategy.GetPretrainedDatasetPromptContext(
+            "FACE_DETECTION",
+            null,
+            rfFaceDetection);
+
+        string systemPromptText = string.IsNullOrWhiteSpace(faceDatasetContext)
+            ? BuildBiometricMatchSystemPrompt()
+            : $"{BuildBiometricMatchSystemPrompt()}\n{faceDatasetContext}";
+
         var contentBlocks = new List<object>
         {
             new
@@ -1451,7 +1660,15 @@ public class ClaudeFaceToGovIdMatchStrategy(
         {
             ["max_tokens"] = 768,
             ["temperature"] = 0.0,
-            ["system"] = BuildBiometricMatchSystemPrompt(),
+            ["system"] = new object[]
+            {
+                new
+                {
+                    type = "text",
+                    text = systemPromptText,
+                    cache_control = new { type = "ephemeral" }
+                }
+            },
             ["messages"] = new object[]
             {
                 new
@@ -1479,7 +1696,8 @@ public class ClaudeFaceToGovIdMatchStrategy(
                 faceToIdSimilarity: 0.0,
                 requiresPendingManualReview: true,
                 geometryVerdict: "PROVIDER_UNAVAILABLE",
-                diagnostics: [ex.Message]);
+                diagnostics: [ex.Message],
+                roboflowFaceDetection: rfFaceDetection);
         }
 
         if (!attempt.Success)
@@ -1493,7 +1711,8 @@ public class ClaudeFaceToGovIdMatchStrategy(
                 faceToIdSimilarity: 0.0,
                 requiresPendingManualReview: true,
                 geometryVerdict: "PROVIDER_UNAVAILABLE",
-                diagnostics: [attempt.ErrorCode ?? "PROVIDER_UNAVAILABLE"]);
+                diagnostics: [attempt.ErrorCode ?? "PROVIDER_UNAVAILABLE"],
+                roboflowFaceDetection: rfFaceDetection);
         }
 
         double threshold = ResolveSimilarityThreshold();
@@ -1501,7 +1720,10 @@ public class ClaudeFaceToGovIdMatchStrategy(
             attempt.RawText ?? string.Empty,
             attempt.ModelUsed,
             threshold,
-            input.IdVerificationToken);
+            input.IdVerificationToken) with
+        {
+            RoboflowFaceDetection = rfFaceDetection
+        };
     }
 
     private double ResolveSimilarityThreshold()
@@ -1788,7 +2010,8 @@ public class ClaudeFaceToGovIdMatchStrategy(
         double faceToIdSimilarity,
         bool requiresPendingManualReview,
         string geometryVerdict,
-        List<string> diagnostics) =>
+        List<string> diagnostics,
+        RoboflowWorkflowDetectionResult? roboflowFaceDetection = null) =>
         new(
             Success: false,
             IsLiveHuman: isLiveHuman,
@@ -1803,5 +2026,6 @@ public class ClaudeFaceToGovIdMatchStrategy(
             ModelUsed: modelUsed,
             AuthenticityConfidence: 0.0,
             GeometryVerdict: geometryVerdict,
-            Diagnostics: diagnostics);
+            Diagnostics: diagnostics,
+            RoboflowFaceDetection: roboflowFaceDetection);
 }

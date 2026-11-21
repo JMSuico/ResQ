@@ -121,7 +121,16 @@ services:
       Claude__FallbackModel: ${CLAUDE_FALLBACK_MODEL:-claude-sonnet-5-5}
       Claude__IncidentVisionModel: ${CLAUDE_INCIDENT_VISION_MODEL:-claude-haiku-4-5-20251001}
       Claude__Endpoint: ${CLAUDE_ENDPOINT:-https://api.anthropic.com/v1/messages}
+      Roboflow__ApiUrl: ${ROBOFLOW_API_URL:-https://serverless.roboflow.com}
       Roboflow__ModelId: ${ROBOFLOW_MODEL_ID:-accident-and-non-accident-label-image-dataset/14}
+      Roboflow__WorkspaceName: ${ROBOFLOW_WORKSPACE_NAME:-}
+      Roboflow__FaceWorkflowId: ${ROBOFLOW_FACE_WORKFLOW_ID:-}
+      Roboflow__FaceClasses: ${ROBOFLOW_FACE_CLASSES:-face}
+      Roboflow__PhilippineIdsWorkflowId: ${ROBOFLOW_ID_WORKFLOW_ID:-}
+      Roboflow__PhilippineIdsModelId: ${ROBOFLOW_PHILIPPINE_IDS_MODEL_ID:-philippine-ids/1}
+      Roboflow__IdClasses: ${ROBOFLOW_ID_CLASSES:-driver, postal, umid}
+      Roboflow__UseWorkflowCache: ${ROBOFLOW_USE_CACHE:-true}
+      Roboflow__WorkflowCacheTtlMinutes: ${ROBOFLOW_CACHE_TTL_MINUTES:-15}
       VerificationTokens__HmacSecret: ${VERIFICATION_HMAC_SECRET:-RESQTRACK-V2-TOKEN-HMAC-SHA256-DEV-SIGNING-KEY-2026-KATIPUNAN-7109}
       Cors__AllowedOrigins: ${ALLOWED_ORIGINS:-}
     extra_hosts:
