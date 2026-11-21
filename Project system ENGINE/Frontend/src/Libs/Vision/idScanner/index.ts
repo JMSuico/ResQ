@@ -13,7 +13,6 @@ export * from './validators';
 export * from './ccl';
 export * from './fontBank';
 export * from './glyphMatcher';
-export * from './templateMatch';
 export * from './ai';
 export * from './idScanWorker';
 export * from './idScanEngine';

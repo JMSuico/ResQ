@@ -147,7 +147,8 @@ public record CreateAlertBroadcastRequest(
     string? Severity = null,
     string? ExternalLink = null,
     bool? HasImage = false,
-    bool? HasVideo = false
+    bool? HasVideo = false,
+    string? ImageDataUrl = null
 );
 
 public record UpdateProfileRequest(
@@ -172,7 +173,25 @@ public record UpdateProfileRequest(
     string? EmployeeOrResidentId = null,
     string? GovernmentIdType = null,
     string? GovernmentIdNumber = null,
-    string? DisplayName = null
+    string? DisplayName = null,
+    string? Allergies = null,
+    string? MedicalConditions = null,
+    bool? IsOrganDonor = null,
+    string? SecondaryContactName = null,
+    string? SecondaryContactPhone = null,
+    string? AvatarDataUrl = null
+);
+
+public record CreateReportEvidenceRequest(
+    string? ImageDataUrl = null,
+    string? DataUrl = null,
+    string? Caption = null,
+    string? MediaType = "image"
+);
+
+public record SubmitReportFeedbackRequest(
+    [Range(1, 5)] int Rating,
+    string? Comment = null
 );
 
 public record UpdateUserStatusRequest(

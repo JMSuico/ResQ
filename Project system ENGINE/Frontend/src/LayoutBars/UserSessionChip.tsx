@@ -26,7 +26,7 @@ export interface UserSessionChipProps {
 }
 
 const DEFAULT_OPERATOR_NAME = 'Active Operator';
-const DEFAULT_OPERATOR_ID = 'OP-773-567-009';
+const DEFAULT_OPERATOR_ID = '-';
 const DEFAULT_ROLE_FALLBACK = 'Responder';
 
 const AVATAR_LOCAL_STORAGE_KEYS = [

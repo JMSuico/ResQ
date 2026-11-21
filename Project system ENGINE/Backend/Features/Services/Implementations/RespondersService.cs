@@ -1,5 +1,5 @@
 // [Layer: Backend/Services/Implementations]
-// Responsibility: Implements responder fleet operations, status updates, PCR submissions, blotters, and alarm telemetry using Universal Lambdas (=>).
+// Responsibility: Implements responder fleet operations, status updates, PCR submissions, and blotter telemetry using Universal Lambdas (=>).
 // Zero emojis.
 
 using Microsoft.EntityFrameworkCore;
@@ -17,11 +17,8 @@ public class RespondersService(
     IDutyUnitRepository unitRepo,
     IIncidentFixtureRepository fixtureRepo,
     IAuditLogRepository auditRepo,
-    AppDbContext db) : IRespondersService
+    AppDbContext db) : IResponderOpsService
 {
-    public Task<List<DutyUnitResponse>> GetRosterAsync(CancellationToken ct = default) =>
-        GetRosterAsync(null, ct);
-
     public async Task<List<DutyUnitResponse>> GetRosterAsync(ResponderUnitType? agency, CancellationToken ct = default) =>
         (await unitRepo.GetAllAsync(ct))
             .Where(d => agency == null || agency == ResponderUnitType.None || d.Agency == agency.Value)
@@ -58,17 +55,6 @@ public class RespondersService(
             .OrderByDescending(b => b.CreatedAt)
             .ToListAsync(ct))
             .Select(MapToBlotterResponse)
-            .ToList();
-
-    public async Task<(bool Success, string? Error, AlarmLevelResponse? Alarm)> SetAlarmLevelAsync(SetAlarmLevelRequest request, Guid? userId = null, CancellationToken ct = default) =>
-        await ExecuteAlarmSaveAsync(request, userId, ct);
-
-    public async Task<List<AlarmLevelResponse>> GetAlarmStatusesAsync(Guid? reportId = null, CancellationToken ct = default) =>
-        (await db.FireAlarmStatuses
-            .Where(f => reportId == null || f.ReportId == reportId)
-            .OrderByDescending(f => f.UpdatedAt)
-            .ToListAsync(ct))
-            .Select(MapToAlarmResponse)
             .ToList();
 
     public async Task<List<HydrantResponse>> GetHydrantsAsync(CancellationToken ct = default) =>
@@ -165,7 +151,7 @@ public class RespondersService(
             IncidentDateTime = incidentTime,
             InvestigatingOfficerName = InputSanitizer.Sanitize(request.InvestigatingOfficerName ?? "Desk Officer"),
             InvestigatingOfficerBadge = InputSanitizer.Sanitize(request.InvestigatingOfficerBadge ?? "PNP-OFFICER"),
-            Station = InputSanitizer.Sanitize(request.Station ?? "Dipolog City Police Station"),
+            Station = InputSanitizer.Sanitize(request.Station ?? "Katipunan Municipal Police Station"),
             CryptographicSeal = seal,
             CreatedAt = DateTime.UtcNow
         };
@@ -174,30 +160,6 @@ public class RespondersService(
         await db.SaveChangesAsync(ct);
         await AppendAuditLogAsync(userId, "BLOTTER_ENTRY_FILED", nameof(PoliceBlotterEntry), $"Number: {entry.BlotterNumber}, Seal: {entry.CryptographicSeal}", ct);
         return (true, null, MapToBlotterResponse(entry));
-    }
-
-    private async Task<(bool Success, string? Error, AlarmLevelResponse? Alarm)> ExecuteAlarmSaveAsync(SetAlarmLevelRequest request, Guid? userId, CancellationToken ct)
-    {
-        var existing = request.ReportId.HasValue
-            ? await db.FireAlarmStatuses.FirstOrDefaultAsync(f => f.ReportId == request.ReportId.Value, ct)
-            : null;
-
-        var status = existing ?? new FireAlarmStatusRecord { ReportId = request.ReportId };
-        status.AlarmLevel = InputSanitizer.Sanitize(request.AlarmLevel);
-        status.BuildingType = InputSanitizer.Sanitize(request.BuildingType ?? "Residential");
-        status.TrappedOccupantsCount = Math.Max(0, request.TrappedOccupantsCount);
-        status.CommanderName = InputSanitizer.Sanitize(request.CommanderName ?? "Ground Commander");
-        status.ReportingUnit = InputSanitizer.Sanitize(request.ReportingUnit ?? "BFP-ALPHA");
-        status.Remarks = InputSanitizer.Sanitize(request.Remarks ?? string.Empty);
-        status.WaterSupplyGallons = Math.Max(0, request.WaterSupplyGallons);
-        status.UpdatedAt = DateTime.UtcNow;
-
-        if (existing == null)
-            await db.FireAlarmStatuses.AddAsync(status, ct);
-
-        await db.SaveChangesAsync(ct);
-        await AppendAuditLogAsync(userId, "FIRE_ALARM_ESCALATED", nameof(FireAlarmStatusRecord), $"Alarm: {status.AlarmLevel}, Building: {status.BuildingType}, Trapped: {status.TrappedOccupantsCount}", ct);
-        return (true, null, MapToAlarmResponse(status));
     }
 
     private async Task AppendAuditLogAsync(Guid? actorId, string action, string entity, string payload, CancellationToken ct)
@@ -242,10 +204,6 @@ public class RespondersService(
             b.Witnesses, b.NarrativeStatement, b.IncidentLocation, b.IncidentDateTime,
             b.InvestigatingOfficerName, b.InvestigatingOfficerBadge, b.Station,
             b.CryptographicSeal, b.CreatedAt);
-
-    private static AlarmLevelResponse MapToAlarmResponse(FireAlarmStatusRecord a) =>
-        new(a.Id, a.ReportId, a.AlarmLevel, a.BuildingType, a.TrappedOccupantsCount,
-            a.CommanderName, a.ReportingUnit, a.Remarks, a.WaterSupplyGallons, a.UpdatedAt);
 
     private static HydrantResponse MapToHydrantResponse(IncidentFixture f) =>
         new(f.Id, f.FixtureCode, f.Title, f.Description, f.Latitude, f.Longitude,

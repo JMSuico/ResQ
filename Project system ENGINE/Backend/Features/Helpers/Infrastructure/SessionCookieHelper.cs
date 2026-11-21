@@ -44,6 +44,7 @@ public static class SessionCookieHelper
         // 1. Authorization: Bearer <token> FIRST!
         var authHeader = request.Headers.Authorization.ToString();
         if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        //this will first check if the token is in the header
         {
             var bearerToken = authHeader["Bearer ".Length..].Trim();
             if (!string.IsNullOrWhiteSpace(bearerToken))
@@ -71,3 +72,4 @@ public static class SessionCookieHelper
         return null;
     }
 }
+//stable in the mobile device , for the web browser i will see you 

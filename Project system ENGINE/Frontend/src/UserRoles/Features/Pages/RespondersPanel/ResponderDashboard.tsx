@@ -1,6 +1,7 @@
 // [Layer: UserRoles/Features/Pages/RespondersPanel]
 // Responsibility: Tactical field operations console for RHU, BFP Fire, and PNP units with live dispatches,
-// authorized Verify / Reject / Dispatch verification actions for Submitted/Pending incidents, and satellite GPS radar.
+// authorized Verify / Reject / Dispatch verification actions for Submitted/Pending incidents, and satellite GPS radar
+// strictly backed by PostgreSQL /api/reports, /api/incidents/fixtures, and /api/responder-ops/roster.
 // Stitch Official Cherry (#670626) / Warm Ivory (#F7F1EA) / Soft Beige (#E9D9D0) / Muted Cherry (#A83B4D) Clay Design System.
 // Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis, ZERO external Unsplash URLs.
 
@@ -8,6 +9,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSession } from '@/Hooks/useSession';
 import {
+  getAllReports,
   getAgencyReports,
   verifyReport,
   assignUnitToReport,
@@ -27,7 +29,6 @@ import {
   TableCardToggle,
   useTableCardView,
   PatientCareRecordModal,
-  FireAlarmEscalationModal,
   PoliceBlotterModal,
   Dropdown
 } from '@/Shared';
@@ -68,7 +69,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
-  X
+  X,
+  Image as ImageIcon
 } from 'lucide-react';
 
 export type FieldStatusType = 'AVAILABLE' | 'EN ROUTE' | 'ON SCENE' | 'RETURNING';
@@ -91,26 +93,7 @@ export interface TacticalRadarPointer {
   agency: 'RHU' | 'FIRE' | 'PNP' | 'MDRRMO';
 }
 
-const buildTelemetryPlaceholderDataUri = (refCode: string, subtitle: string): string => {
-  const safeCode = refCode.replace(/[<>&"']/g, '');
-  const safeSub = subtitle.replace(/[<>&"']/g, '').slice(0, 40);
-  const svg = [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">',
-    '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">',
-    '<stop offset="0%" stop-color="#4A041A"/><stop offset="100%" stop-color="#670626"/>',
-    '</linearGradient></defs>',
-    '<rect width="640" height="360" fill="url(#bg)"/>',
-    '<rect x="24" y="24" width="592" height="312" rx="22" fill="#F7F1EA" fill-opacity="0.96"/>',
-    '<rect x="44" y="44" width="180" height="34" rx="10" fill="#670626"/>',
-    `<text x="134" y="66" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#F7F1EA">${safeCode}</text>`,
-    '<circle cx="320" cy="175" r="46" fill="#E9D9D0" stroke="#A83B4D" stroke-width="2"/>',
-    '<path d="M320 148v54M293 175h54" stroke="#670626" stroke-width="6" stroke-linecap="round"/>',
-    `<text x="320" y="256" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18" font-weight="800" fill="#2B010E">${safeSub}</text>`,
-    '<text x="320" y="284" text-anchor="middle" font-family="monospace" font-size="12" fill="#A83B4D">RESQTRACK KATIPUNAN TELEMETRY</text>',
-    '</svg>'
-  ].join('');
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-};
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
 // 7 Medic-Allowed Categories
 export const MEDIC_ALLOWED_CATEGORIES: readonly string[] = [
@@ -121,295 +104,6 @@ export const MEDIC_ALLOWED_CATEGORIES: readonly string[] = [
   'Obstetric / Childbirth Emergency',
   'Drowning / Water Rescue Medical',
   'Mass Casualty Incident'
-];
-
-// 9 Non-Medic View-Only Categories
-export const NON_MEDIC_VIEW_ONLY_CATEGORIES: readonly string[] = [
-  'Fire Incident',
-  'Flooding',
-  'Landslide',
-  'Infrastructure Collapse',
-  'Power Outage',
-  'Armed Conflict / Disturbance',
-  'Missing Person',
-  'Robbery / Theft',
-  'Public Disturbance'
-];
-
-// Deterministic 16-Category Baseline Radar Pointers in Katipunan, Zamboanga del Norte
-const BASELINE_16_RADAR_POINTERS: TacticalRadarPointer[] = [
-  {
-    id: 'ptr-med-01',
-    referenceCode: 'RHU-MED-101',
-    title: 'Acute Respiratory Distress & Syncope',
-    category: 'Medical Emergency',
-    isMedicAllowed: true,
-    severity: 'Critical',
-    status: 'Submitted',
-    latitude: 8.5162,
-    longitude: 123.2858,
-    physicalAddress: 'Purok 2, Barangay Uno (Poblacion), Katipunan, ZN',
-    ipAddress: '103.62.154.21',
-    imageUrl: buildTelemetryPlaceholderDataUri('RHU-MED-101', 'Acute Respiratory Distress'),
-    note: 'Elderly civilian experiencing severe dyspnea; pulse oximetry requested immediately.',
-    createdAt: new Date(Date.now() - 8 * 60000).toISOString(),
-    agency: 'RHU'
-  },
-  {
-    id: 'ptr-med-02',
-    referenceCode: 'RHU-MED-102',
-    title: 'Multi-Vehicle Highway Collision',
-    category: 'Vehicular Accident',
-    isMedicAllowed: true,
-    severity: 'Critical',
-    status: 'Pending',
-    latitude: 8.5119,
-    longitude: 123.2814,
-    physicalAddress: 'National Highway Junction, Barangay Dos, Katipunan, ZN',
-    ipAddress: '103.62.154.44',
-    imageUrl: buildTelemetryPlaceholderDataUri('RHU-MED-102', 'Highway Collision Trauma'),
-    note: 'Motorcycle vs utility van collision; two conscious patients with suspected lower-limb fractures.',
-    createdAt: new Date(Date.now() - 14 * 60000).toISOString(),
-    agency: 'RHU'
-  },
-  {
-    id: 'ptr-med-03',
-    referenceCode: 'RHU-MED-103',
-    title: 'Sudden Unresponsive Adult — CPR Initiated',
-    category: 'Cardiac Arrest / Resuscitation',
-    isMedicAllowed: true,
-    severity: 'Critical',
-    status: 'Reported',
-    latitude: 8.5184,
-    longitude: 123.2891,
-    physicalAddress: 'Municipal Public Market Stall B-4, Barangay Uno, Katipunan, ZN',
-    ipAddress: '112.198.89.107',
-    imageUrl: buildTelemetryPlaceholderDataUri('RHU-MED-103', 'Cardiac Arrest Alert'),
-    note: 'Bystander CPR in progress; AED defibrillator and advanced airway kit required on scene.',
-    createdAt: new Date(Date.now() - 4 * 60000).toISOString(),
-    agency: 'RHU'
-  },
-  {
-    id: 'ptr-med-04',
-    referenceCode: 'RHU-MED-104',
-    title: 'Deep Laceration & Arterial Hemorrhage',
-    category: 'Trauma / Severe Bleeding',
-    isMedicAllowed: true,
-    severity: 'High',
-    status: 'Submitted',
-    latitude: 8.5085,
-    longitude: 123.2775,
-    physicalAddress: 'Sitio Malugas, Barangay Daanglungsod, Katipunan, ZN',
-    ipAddress: '103.62.154.88',
-    imageUrl: buildTelemetryPlaceholderDataUri('RHU-MED-104', 'Trauma Hemorrhage Alert'),
-    note: 'Agricultural machinery injury; tourniquet applied by barangay health worker.',
-    createdAt: new Date(Date.now() - 19 * 60000).toISOString(),
-    agency: 'RHU'
-  },
-  {
-    id: 'ptr-med-05',
-    referenceCode: 'RHU-MED-105',
-    title: 'Active Labor with High-Risk Pre-Eclampsia',
-    category: 'Obstetric / Childbirth Emergency',
-    isMedicAllowed: true,
-    severity: 'High',
-    status: 'Verified',
-    latitude: 8.5042,
-    longitude: 123.2923,
-    physicalAddress: 'Purok Kalubihan, Barangay Tuburan, Katipunan, ZN',
-    ipAddress: '120.28.45.192',
-    imageUrl: buildTelemetryPlaceholderDataUri('RHU-MED-105', 'Obstetric Emergency'),
-    note: 'G3P2 patient at 38 weeks gestation presenting with elevated blood pressure 160/105 mmHg.',
-    createdAt: new Date(Date.now() - 27 * 60000).toISOString(),
-    agency: 'RHU'
-  },
-  {
-    id: 'ptr-med-06',
-    referenceCode: 'RHU-MED-106',
-    title: 'Near-Drowning Pediatric Recovery',
-    category: 'Drowning / Water Rescue Medical',
-    isMedicAllowed: true,
-    severity: 'Critical',
-    status: 'Dispatched',
-    latitude: 8.5182,
-    longitude: 123.2798,
-    physicalAddress: 'Coastal Boulevard Seawall, Barangay Tambo, Katipunan, ZN',
-    ipAddress: '103.62.154.119',
-    imageUrl: buildTelemetryPlaceholderDataUri('RHU-MED-106', 'Coastal Water Rescue'),
-    note: 'Patient pulled from surf; conscious but coughing foam and hypothermic. High-flow oxygen needed.',
-    createdAt: new Date(Date.now() - 11 * 60000).toISOString(),
-    agency: 'RHU'
-  },
-  {
-    id: 'ptr-med-07',
-    referenceCode: 'RHU-MED-107',
-    title: 'Passenger Mini-Bus Rollover — Multiple Injured',
-    category: 'Mass Casualty Incident',
-    isMedicAllowed: true,
-    severity: 'Critical',
-    status: 'Pending',
-    latitude: 8.4978,
-    longitude: 123.2864,
-    physicalAddress: 'Provincial Road Curve, Barangay Nanginan, Katipunan, ZN',
-    ipAddress: '112.198.92.14',
-    imageUrl: buildTelemetryPlaceholderDataUri('RHU-MED-107', 'Mass Casualty Incident'),
-    note: 'START triage protocol activated; 6 yellow-tag and 2 red-tag casualties reported on roadside.',
-    createdAt: new Date(Date.now() - 6 * 60000).toISOString(),
-    agency: 'RHU'
-  },
-  {
-    id: 'ptr-non-01',
-    referenceCode: 'BFP-FIR-201',
-    title: 'Residential Structure Fire — Second Alarm',
-    category: 'Fire Incident',
-    isMedicAllowed: false,
-    severity: 'Critical',
-    status: 'Submitted',
-    latitude: 8.5155,
-    longitude: 123.2829,
-    physicalAddress: 'Rizal Avenue Ext., Barangay Dos, Katipunan, ZN',
-    ipAddress: '103.62.155.10',
-    imageUrl: buildTelemetryPlaceholderDataUri('BFP-FIR-201', 'Residential Structure Fire'),
-    note: 'BFP Fire Engine dispatched for suppression; perimeter safety cordon established.',
-    createdAt: new Date(Date.now() - 22 * 60000).toISOString(),
-    agency: 'FIRE'
-  },
-  {
-    id: 'ptr-non-02',
-    referenceCode: 'DRR-FLD-202',
-    title: 'Riverbank Overflow & Low-Lying Inundation',
-    category: 'Flooding',
-    isMedicAllowed: false,
-    severity: 'High',
-    status: 'Pending',
-    latitude: 8.5067,
-    longitude: 123.2882,
-    physicalAddress: 'Katipunan River Basin, Barangay Dicayo, Katipunan, ZN',
-    ipAddress: '103.62.155.18',
-    imageUrl: buildTelemetryPlaceholderDataUri('DRR-FLD-202', 'Riverbank Flooding Alert'),
-    note: 'Water level at 1.4 meters above normal; MDRRMO flood boats positioned.',
-    createdAt: new Date(Date.now() - 35 * 60000).toISOString(),
-    agency: 'MDRRMO'
-  },
-  {
-    id: 'ptr-non-03',
-    referenceCode: 'DRR-LND-203',
-    title: 'Slope Soil Erosion Blocking Mountain Pass',
-    category: 'Landslide',
-    isMedicAllowed: false,
-    severity: 'Medium',
-    status: 'Verified',
-    latitude: 8.4892,
-    longitude: 123.3015,
-    physicalAddress: 'Upland Access Road, Barangay Seres, Katipunan, ZN',
-    ipAddress: '103.62.155.29',
-    imageUrl: buildTelemetryPlaceholderDataUri('DRR-LND-203', 'Upland Slope Erosion'),
-    note: 'Heavy equipment clearing debris; no trapped commuters reported.',
-    createdAt: new Date(Date.now() - 48 * 60000).toISOString(),
-    agency: 'MDRRMO'
-  },
-  {
-    id: 'ptr-non-04',
-    referenceCode: 'ENG-INF-204',
-    title: 'Footbridge Support Girder Structural Sag',
-    category: 'Infrastructure Collapse',
-    isMedicAllowed: false,
-    severity: 'High',
-    status: 'Verified',
-    latitude: 8.5012,
-    longitude: 123.2741,
-    physicalAddress: 'Crossing Creek Footbridge, Barangay Matam, Katipunan, ZN',
-    ipAddress: '103.62.155.34',
-    imageUrl: buildTelemetryPlaceholderDataUri('ENG-INF-204', 'Footbridge Structural Alert'),
-    note: 'Municipal engineers cordoned pedestrian access; zero casualties.',
-    createdAt: new Date(Date.now() - 55 * 60000).toISOString(),
-    agency: 'MDRRMO'
-  },
-  {
-    id: 'ptr-non-05',
-    referenceCode: 'UTL-PWR-205',
-    title: 'High-Voltage Transformer Arcing & Feeder Trip',
-    category: 'Power Outage',
-    isMedicAllowed: false,
-    severity: 'Medium',
-    status: 'Reported',
-    latitude: 8.5138,
-    longitude: 123.2904,
-    physicalAddress: 'Substation Feeder Post 14, Barangay Dos, Katipunan, ZN',
-    ipAddress: '103.62.155.52',
-    imageUrl: buildTelemetryPlaceholderDataUri('UTL-PWR-205', 'Transformer Arcing Alert'),
-    note: 'BFP standby fire crew & ZANECO lineman isolating primary fuse.',
-    createdAt: new Date(Date.now() - 64 * 60000).toISOString(),
-    agency: 'FIRE'
-  },
-  {
-    id: 'ptr-non-06',
-    referenceCode: 'PNP-SEC-206',
-    title: 'Perimeter Security Alert & Checkpoint Lockdown',
-    category: 'Armed Conflict / Disturbance',
-    isMedicAllowed: false,
-    severity: 'Critical',
-    status: 'Submitted',
-    latitude: 8.4935,
-    longitude: 123.2958,
-    physicalAddress: 'Boundary Checkpoint, Barangay Balok, Katipunan, ZN',
-    ipAddress: '103.62.155.67',
-    imageUrl: buildTelemetryPlaceholderDataUri('PNP-SEC-206', 'Checkpoint Perimeter Alert'),
-    note: 'PNP mobile patrol securing perimeter; medical units hold outside hot zone until cleared.',
-    createdAt: new Date(Date.now() - 31 * 60000).toISOString(),
-    agency: 'PNP'
-  },
-  {
-    id: 'ptr-non-07',
-    referenceCode: 'PNP-MIS-207',
-    title: 'Missing Fisherman Overdue from Dawn Patrol',
-    category: 'Missing Person',
-    isMedicAllowed: false,
-    severity: 'Medium',
-    status: 'Pending',
-    latitude: 8.5188,
-    longitude: 123.2835,
-    physicalAddress: 'Fisherman Wharf Anchorage, Barangay Tambo, Katipunan, ZN',
-    ipAddress: '103.62.155.73',
-    imageUrl: buildTelemetryPlaceholderDataUri('PNP-MIS-207', 'Coastal SAR Missing Person'),
-    note: 'Bantay Dagat and PNP Maritime conducting coastal sweep.',
-    createdAt: new Date(Date.now() - 78 * 60000).toISOString(),
-    agency: 'PNP'
-  },
-  {
-    id: 'ptr-non-08',
-    referenceCode: 'PNP-ROB-208',
-    title: 'Commercial Establishment Break-In Report',
-    category: 'Robbery / Theft',
-    isMedicAllowed: false,
-    severity: 'Low',
-    status: 'Reported',
-    latitude: 8.5171,
-    longitude: 123.2849,
-    physicalAddress: 'Bonifacio Street Commercial Strip, Barangay Uno, Katipunan, ZN',
-    ipAddress: '103.62.155.89',
-    imageUrl: buildTelemetryPlaceholderDataUri('PNP-ROB-208', 'Commercial Break-In Report'),
-    note: 'PNP SOCO and investigator recording CCTV footage; no physical injuries.',
-    createdAt: new Date(Date.now() - 92 * 60000).toISOString(),
-    agency: 'PNP'
-  },
-  {
-    id: 'ptr-non-09',
-    referenceCode: 'PNP-PUB-209',
-    title: 'Late-Night Noise & Crowd Altercation',
-    category: 'Public Disturbance',
-    isMedicAllowed: false,
-    severity: 'Low',
-    status: 'Resolved',
-    latitude: 8.5103,
-    longitude: 123.2869,
-    physicalAddress: 'Plaza Covered Court Area, Barangay Uno, Katipunan, ZN',
-    ipAddress: '103.62.155.94',
-    imageUrl: buildTelemetryPlaceholderDataUri('PNP-PUB-209', 'Plaza Crowd Dispersal'),
-    note: 'Patrol sector unit dispersing crowd peacefully; no medical transport needed.',
-    createdAt: new Date(Date.now() - 110 * 60000).toISOString(),
-    agency: 'PNP'
-  }
 ];
 
 const classifyIsMedicCategory = (category: unknown, title?: unknown): boolean => {
@@ -432,14 +126,16 @@ const classifyIsMedicCategory = (category: unknown, title?: unknown): boolean =>
   );
 };
 
-const deriveDeterministicIp = (seed: string): string => {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash * 31 + seed.charCodeAt(i)) % 254;
-  }
-  const octet3 = 140 + (hash % 45);
-  const octet4 = Math.max(12, (hash * 7) % 240);
-  return `103.62.${octet3}.${octet4}`;
+const resolvePointerAgency = (
+  recommendedUnit?: string | null,
+  isMedic?: boolean
+): 'RHU' | 'FIRE' | 'PNP' | 'MDRRMO' => {
+  const norm = String(recommendedUnit ?? '').trim().toUpperCase();
+  if (norm === 'RHU') return 'RHU';
+  if (norm === 'FIRE' || norm === 'BFP') return 'FIRE';
+  if (norm === 'PNP' || norm === 'POLICE') return 'PNP';
+  if (norm === 'MDRRMO' || norm === 'LDRRMO') return 'MDRRMO';
+  return isMedic ? 'RHU' : 'MDRRMO';
 };
 
 const SEVERITY_PRIORITY_WEIGHT: Record<string, number> = {
@@ -466,6 +162,20 @@ const isSubmittedOrPendingStatus = (status?: string | null): boolean => {
 const isVerifiedStatus = (status?: string | null): boolean => {
   const normalized = (status || '').trim().toLowerCase();
   return normalized === 'verified' || normalized === 'responded';
+};
+
+const computeRemainingSecondsFromVerifiedAt = (
+  verifiedAt?: string | null,
+  resolvedAt?: string | null,
+  status?: string | null,
+  nowMs: number = Date.now()
+): number | null => {
+  const st = (status || '').trim().toLowerCase();
+  if (resolvedAt || st === 'resolved' || st === 'closed') return 0;
+  if (!verifiedAt) return null;
+  const verifiedMs = new Date(verifiedAt).getTime();
+  if (Number.isNaN(verifiedMs)) return null;
+  return Math.max(0, Math.floor((verifiedMs + FIVE_MINUTES_MS - nowMs) / 1000));
 };
 
 const formatQueueStatusBadge = (
@@ -525,21 +235,11 @@ export const ResponderDashboard: React.FC = () => {
   const { coords, isLocating, refreshGps } = useGpsLocation();
   const { dispatchReportEvent } = useReportEventBus();
 
+  const [allReports, setAllReports] = useState<ReportItem[]>([]);
   const [dispatches, setDispatches] = useState<ReportItem[]>([]);
   const [fixtures, setFixtures] = useState<IncidentFixture[]>([]);
   const [roster, setRoster] = useState<DutyUnit[]>([]);
-  const [fieldStatus, setFieldStatus] = useState<FieldStatusType>(() => {
-    const saved = localStorage.getItem('resqtrack_responder_field_status');
-    if (
-      saved === 'AVAILABLE' ||
-      saved === 'EN ROUTE' ||
-      saved === 'ON SCENE' ||
-      saved === 'RETURNING'
-    ) {
-      return saved;
-    }
-    return 'AVAILABLE';
-  });
+  const [fieldStatus, setFieldStatus] = useState<FieldStatusType>('AVAILABLE');
   const [pendingStatusTarget, setPendingStatusTarget] = useState<FieldStatusType | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<boolean>(false);
 
@@ -556,10 +256,9 @@ export const ResponderDashboard: React.FC = () => {
   const debouncedSearch = useDebounce(searchQuery, 250);
   const [severityFilter, setSeverityFilter] = useState<string>('ALL');
   const [selectedIncident, setSelectedIncident] = useState<ReportItem | null>(null);
-  const [incidentModalSecondsLeft, setIncidentModalSecondsLeft] = useState<number>(300);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [isPcrModalOpen, setIsPcrModalOpen] = useState<boolean>(false);
-  const [isAlarmModalOpen, setIsAlarmModalOpen] = useState<boolean>(false);
   const [isBlotterModalOpen, setIsBlotterModalOpen] = useState<boolean>(false);
   const { viewMode, setViewMode } = useTableCardView('card');
 
@@ -575,23 +274,26 @@ export const ResponderDashboard: React.FC = () => {
   const loadData = useCallback(async () => {
     if (!session || session.unit === 'None') return;
     try {
-      const [reps, fixs, rost] = await Promise.all([
+      const [allReps, agencyReps, fixs, rost] = await Promise.all([
+        getAllReports().catch(() => [] as ReportItem[]),
         getAgencyReports(activeUnit).catch(() => [] as ReportItem[]),
         getIncidentFixtures().catch(() => [] as IncidentFixture[]),
         getDutyRoster(activeUnit).catch(() => [] as DutyUnit[])
       ]);
-      setDispatches(reps);
-      setFixtures(fixs);
-      setRoster(rost);
+      const safeAll = Array.isArray(allReps) ? allReps : [];
+      const safeAgency = Array.isArray(agencyReps) ? agencyReps : [];
+      setAllReports(safeAll.length > 0 ? safeAll : safeAgency);
+      setDispatches(safeAgency);
+      setFixtures(Array.isArray(fixs) ? fixs : []);
+      setRoster(Array.isArray(rost) ? rost : []);
 
-      const savedLocalStatus = localStorage.getItem('resqtrack_responder_field_status');
-      if (!savedLocalStatus) {
-        const myUnit = rost.find((u) => (u.agency || '').toUpperCase() === activeUnit);
-        if (myUnit) {
-          if (myUnit.status === 'OnDuty') setFieldStatus('AVAILABLE');
-          else if (myUnit.status === 'Dispatched') setFieldStatus('EN ROUTE');
-          else if (myUnit.status === 'Standby') setFieldStatus('RETURNING');
-        }
+      const myUnit = (Array.isArray(rost) ? rost : []).find(
+        (u) => (u.agency || '').toUpperCase() === activeUnit
+      );
+      if (myUnit) {
+        if (myUnit.status === 'OnDuty') setFieldStatus('AVAILABLE');
+        else if (myUnit.status === 'Dispatched') setFieldStatus('EN ROUTE');
+        else if (myUnit.status === 'Standby') setFieldStatus('RETURNING');
       }
     } catch (err) {
       console.error('Failed to load tactical responder telemetry:', err);
@@ -616,51 +318,42 @@ export const ResponderDashboard: React.FC = () => {
     window.setTimeout(() => setStatusToast(null), 3500);
   }, []);
 
-  const allRadarPointers: TacticalRadarPointer[] = useMemo(() => {
-    const liveMapped: TacticalRadarPointer[] = dispatches.map((d) => {
-      const isMedic = classifyIsMedicCategory(d.category, d.title);
-      const refCode = d.referenceCode || `INC-${d.id.slice(0, 6).toUpperCase()}`;
-      const cleanImage =
-        d.imageUrl && !String(d.imageUrl ?? '').toLowerCase().includes('unsplash.com')
-          ? d.imageUrl
-          : buildTelemetryPlaceholderDataUri(refCode, d.title);
+  const allRadarPointers: TacticalRadarPointer[] = useMemo(
+    () =>
+      allReports.map((d) => {
+        const isMedic = classifyIsMedicCategory(d.category, d.title);
+        const refCode = d.referenceCode || `INC-${d.id.slice(0, 6).toUpperCase()}`;
+        const cleanImage =
+          d.imageUrl && !String(d.imageUrl).toLowerCase().includes('unsplash.com')
+            ? d.imageUrl
+            : '';
 
-      return {
-        id: d.id,
-        referenceCode: refCode,
-        title: d.title,
-        category: String(d.category ?? '').trim() || (isMedic ? 'Medical Emergency' : 'Public Disturbance'),
-        isMedicAllowed: isMedic,
-        severity:
-          d.severity === 'Critical' ||
-          d.severity === 'High' ||
-          d.severity === 'Medium' ||
-          d.severity === 'Low'
-            ? d.severity
-            : 'High',
-        status: d.status || 'Submitted',
-        latitude: d.latitude,
-        longitude: d.longitude,
-        physicalAddress: d.locationLabel || 'Barangay Uno, Katipunan, Zamboanga del Norte',
-        ipAddress: deriveDeterministicIp(d.id || refCode),
-        imageUrl: cleanImage,
-        note: d.note || 'Live telemetry report received from field terminal.',
-        createdAt: d.createdAt,
-        agency:
-          (String(d.recommendedAgencyUnit ?? '').toUpperCase() as 'RHU' | 'FIRE' | 'PNP' | 'MDRRMO') ||
-          (isMedic ? 'RHU' : activeUnit)
-      };
-    });
-
-    const existingIds = new Set(liveMapped.map((p) => p.id));
-    const merged = [...liveMapped];
-    BASELINE_16_RADAR_POINTERS.forEach((basePtr) => {
-      if (!existingIds.has(basePtr.id)) {
-        merged.push(basePtr);
-      }
-    });
-    return merged;
-  }, [dispatches, activeUnit]);
+        return {
+          id: d.id,
+          referenceCode: refCode,
+          title: d.title,
+          category: String(d.category ?? '').trim() || 'Incident',
+          isMedicAllowed: isMedic,
+          severity:
+            d.severity === 'Critical' ||
+            d.severity === 'High' ||
+            d.severity === 'Medium' ||
+            d.severity === 'Low'
+              ? d.severity
+              : 'High',
+          status: d.status || 'Submitted',
+          latitude: d.latitude,
+          longitude: d.longitude,
+          physicalAddress: d.locationLabel || formatGpsCoord(d.latitude, d.longitude),
+          ipAddress: d.submittedIpAddress || 'Unavailable',
+          imageUrl: cleanImage,
+          note: d.note || 'No field notes.',
+          createdAt: d.createdAt,
+          agency: resolvePointerAgency(d.recommendedAgencyUnit, isMedic)
+        };
+      }),
+    [allReports]
+  );
 
   const isPointerInUnitScope = useCallback(
     (ptr: TacticalRadarPointer): boolean => {
@@ -702,20 +395,25 @@ export const ResponderDashboard: React.FC = () => {
     }
   }, [location.search, allRadarPointers]);
 
+  // Real-time 1s clock for DB verifiedAt + 5m - now countdown
   useEffect(() => {
     if (!selectedIncident) return;
-    setIncidentModalSecondsLeft(300);
+    setNowMs(Date.now());
     const interval = window.setInterval(() => {
-      setIncidentModalSecondsLeft((prev) => {
-        if (prev <= 1) {
-          setSelectedIncident(null);
-          return 0;
-        }
-        return prev - 1;
-      });
+      setNowMs(Date.now());
     }, 1000);
     return () => window.clearInterval(interval);
   }, [selectedIncident]);
+
+  const selectedIncidentSecondsLeft = useMemo(() => {
+    if (!selectedIncident) return null;
+    return computeRemainingSecondsFromVerifiedAt(
+      selectedIncident.verifiedAt,
+      selectedIncident.resolvedAt,
+      selectedIncident.status,
+      nowMs
+    );
+  }, [selectedIncident, nowMs]);
 
   const formatCountdownTimer = (totalSeconds: number): string => {
     const mins = Math.floor(totalSeconds / 60);
@@ -731,18 +429,14 @@ export const ResponderDashboard: React.FC = () => {
     if (!pendingStatusTarget) return;
     const nextStatus = pendingStatusTarget;
     setPendingStatusTarget(null);
-    setFieldStatus(nextStatus);
     setIsUpdatingStatus(true);
-
-    localStorage.setItem('resqtrack_responder_field_status', nextStatus);
 
     let mappedDuty: 'OnDuty' | 'Dispatched' | 'Standby' | 'OffDuty' = 'OnDuty';
     if (nextStatus === 'AVAILABLE') mappedDuty = 'OnDuty';
     else if (nextStatus === 'EN ROUTE' || nextStatus === 'ON SCENE') mappedDuty = 'Dispatched';
     else if (nextStatus === 'RETURNING') mappedDuty = 'Standby';
 
-    const responderFullName =
-      session?.fullName || (isRhuMedic ? 'Dr. Maria Clara Santos MD' : 'Tactical Officer');
+    const responderFullName = session?.fullName || `${activeUnit} Responder`;
     const myUnit = roster.find((u) => (u.agency || '').toUpperCase() === activeUnit);
 
     try {
@@ -751,45 +445,31 @@ export const ResponderDashboard: React.FC = () => {
       } else {
         await updateDutyStatus(mappedDuty);
       }
+      setFieldStatus(nextStatus);
       showStatusFeedback(`Status broadcast to command: Unit is now ${nextStatus}`);
-    } catch {
-      try {
-        const offlineQueue = JSON.parse(
-          localStorage.getItem('resqtrack_offline_status_queue') || '[]'
-        ) as Array<Record<string, string>>;
-        offlineQueue.push({
-          unitId: myUnit?.id || `${activeUnit}-UNIT-1`,
-          responderName: responderFullName,
-          fieldStatus: nextStatus,
-          status: mappedDuty,
-          timestamp: new Date().toISOString()
-        });
-        localStorage.setItem('resqtrack_offline_status_queue', JSON.stringify(offlineQueue));
-      } catch {
-        // Ignore storage write error
+
+      const eventPayload = {
+        type: 'RESPONDER_STATUS_CHANGE',
+        unit: activeUnit,
+        responderName: responderFullName,
+        rank: session?.rankOrTitle || 'Responder',
+        fieldStatus: nextStatus,
+        dutyStatus: mappedDuty,
+        timestamp: new Date().toISOString()
+      };
+
+      dispatchReportEvent(eventPayload);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('resqtrack:notification', { detail: eventPayload }));
       }
-      showStatusFeedback(`Status updated: ${nextStatus} (Telemetry Synced)`);
+      await loadData();
+    } catch {
+      showStatusFeedback('Failed to update unit duty status on server.');
     } finally {
       setIsUpdatingStatus(false);
     }
-
-    const eventPayload = {
-      type: 'RESPONDER_STATUS_CHANGE',
-      unit: activeUnit,
-      responderName: responderFullName,
-      rank: session?.rankOrTitle || 'Field Responder',
-      fieldStatus: nextStatus,
-      dutyStatus: mappedDuty,
-      timestamp: new Date().toISOString()
-    };
-
-    dispatchReportEvent(eventPayload);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('resqtrack:notification', { detail: eventPayload }));
-    }
   };
 
-  // Authorized Responder Verification Action -> Verify or Reject (Instructor #4, #7)
   const handleVerifyOrReject = async (
     item: ReportItem,
     targetStatus: 'Verified' | 'Rejected'
@@ -801,93 +481,39 @@ export const ResponderDashboard: React.FC = () => {
         ? `Verified by ${responderActor} (${activeUnit}) at ${new Date().toLocaleTimeString()}`
         : `Rejected by ${responderActor} (${activeUnit}) at ${new Date().toLocaleTimeString()}`;
 
-    const applyLocalUpdate = () => {
-      const nowIso = new Date().toISOString();
-      setDispatches((prev) => {
-        const exists = prev.some((r) => r.id === item.id);
-        const updatedItem: ReportItem = {
-          ...item,
-          status: targetStatus,
-          verifiedAt: targetStatus === 'Verified' ? nowIso : item.verifiedAt
-        };
-        if (exists) {
-          return prev.map((r) => (r.id === item.id ? updatedItem : r));
-        }
-        return [updatedItem, ...prev];
-      });
+    try {
+      await verifyReport(item.id, targetStatus, note);
+      showStatusFeedback(`Incident ${item.referenceCode} updated to ${targetStatus}.`);
+      dispatchReportEvent({ type: 'REPORT_VERIFIED', reportId: item.id, status: targetStatus });
+      await loadData();
       if (selectedIncident?.id === item.id) {
         setSelectedIncident({
           ...item,
           status: targetStatus,
-          verifiedAt: targetStatus === 'Verified' ? nowIso : item.verifiedAt
+          verifiedAt: targetStatus === 'Verified' ? item.verifiedAt || new Date().toISOString() : item.verifiedAt
         });
       }
-    };
-
-    try {
-      await verifyReport(item.id, targetStatus, note);
-      applyLocalUpdate();
-      showStatusFeedback(`Incident ${item.referenceCode} updated to ${targetStatus}.`);
-      dispatchReportEvent({ type: 'REPORT_VERIFIED', reportId: item.id, status: targetStatus });
-      await loadData();
     } catch {
-      applyLocalUpdate();
-      showStatusFeedback(`Incident ${item.referenceCode} marked ${targetStatus}.`);
-      dispatchReportEvent({ type: 'REPORT_VERIFIED', reportId: item.id, status: targetStatus });
+      showStatusFeedback(`Failed to mark ${item.referenceCode} as ${targetStatus} on server.`);
     } finally {
       setActionBusyId(null);
     }
   };
 
-  // Authorized Responder Dispatch Action for Submitted / Pending / Verified incidents
   const handleQuickDispatch = async (item: ReportItem): Promise<void> => {
-    setActionBusyId(item.id);
     const myUnit = roster.find((u) => (u.agency || '').toUpperCase() === activeUnit);
-    const targetUnitId = myUnit?.id || `${activeUnit}-UNIT-01`;
-    const targetUnitCode = myUnit?.unitCode || `${activeUnit}-01`;
-
-    const applyLocalDispatch = () => {
-      const nowIso = new Date().toISOString();
-      setDispatches((prev) => {
-        const exists = prev.some((r) => r.id === item.id);
-        const updatedItem: ReportItem = {
-          ...item,
-          status: 'Dispatched',
-          allocatedUnitId: targetUnitId,
-          allocatedUnitCode: targetUnitCode,
-          verifiedAt: item.verifiedAt || nowIso
-        };
-        if (exists) {
-          return prev.map((r) => (r.id === item.id ? updatedItem : r));
-        }
-        return [updatedItem, ...prev];
-      });
-      if (selectedIncident?.id === item.id) {
-        setSelectedIncident({
-          ...item,
-          status: 'Dispatched',
-          allocatedUnitId: targetUnitId,
-          allocatedUnitCode: targetUnitCode,
-          verifiedAt: item.verifiedAt || nowIso
-        });
-      }
-    };
-
+    if (!myUnit) {
+      showStatusFeedback(`No active ${activeUnit} duty unit registered to dispatch.`);
+      return;
+    }
+    setActionBusyId(item.id);
     try {
-      await assignUnitToReport(item.id, targetUnitId);
-      applyLocalDispatch();
-      showStatusFeedback(`Dispatched ${targetUnitCode} to ${item.referenceCode}.`);
-      dispatchReportEvent({ type: 'UNIT_DISPATCHED', reportId: item.id, unitCode: targetUnitCode });
+      await assignUnitToReport(item.id, myUnit.id);
+      showStatusFeedback(`Dispatched ${myUnit.unitCode} to ${item.referenceCode}.`);
+      dispatchReportEvent({ type: 'UNIT_DISPATCHED', reportId: item.id, unitCode: myUnit.unitCode });
       await loadData();
     } catch {
-      await verifyReport(
-        item.id,
-        'Dispatched',
-        `Dispatched by ${activeUnit} unit ${targetUnitCode}`
-      ).catch(() => undefined);
-      applyLocalDispatch();
-      showStatusFeedback(`Dispatched ${targetUnitCode} to ${item.referenceCode}.`);
-      dispatchReportEvent({ type: 'UNIT_DISPATCHED', reportId: item.id, unitCode: targetUnitCode });
+      showStatusFeedback(`Failed to dispatch ${myUnit.unitCode} on server.`);
     } finally {
       setActionBusyId(null);
     }
@@ -916,65 +542,17 @@ export const ResponderDashboard: React.FC = () => {
     setIsExpandMapOpen(true);
   };
 
-  const combinedQueueItems: ReportItem[] = useMemo(() => {
-    let aiVisionCache: Record<string, Partial<ReportItem>> = {};
-    try {
-      const cachedAiRaw = localStorage.getItem('resqtrack_ai_vision_by_report');
-      if (cachedAiRaw) {
-        aiVisionCache = JSON.parse(cachedAiRaw) as Record<string, Partial<ReportItem>>;
-      }
-    } catch {}
-
-    if (dispatches.length > 0) {
-      return dispatches.map((d) => {
-        const cached = aiVisionCache[d.id] || (d.referenceCode ? aiVisionCache[d.referenceCode] : undefined);
-        return {
-          ...d,
-          imageUrl:
-            d.imageUrl && !String(d.imageUrl ?? '').toLowerCase().includes('unsplash.com')
-              ? d.imageUrl
-              : buildTelemetryPlaceholderDataUri(d.referenceCode || 'RESQ', d.title),
-          roboflowModelId: d.roboflowModelId ?? cached?.roboflowModelId,
-          roboflowPrediction: d.roboflowPrediction ?? cached?.roboflowPrediction,
-          roboflowConfidence: d.roboflowConfidence ?? cached?.roboflowConfidence,
-          roboflowNeedsReview: d.roboflowNeedsReview ?? cached?.roboflowNeedsReview,
-          claudeModelUsed: d.claudeModelUsed ?? cached?.claudeModelUsed,
-          claudeIncidentCategory: d.claudeIncidentCategory ?? cached?.claudeIncidentCategory,
-          claudeSituationSummary: d.claudeSituationSummary ?? cached?.claudeSituationSummary,
-          claudeVisibleHazards: d.claudeVisibleHazards ?? cached?.claudeVisibleHazards,
-          claudeUncertaintyNotes: d.claudeUncertaintyNotes ?? cached?.claudeUncertaintyNotes,
-          pointerIconType: d.pointerIconType ?? cached?.pointerIconType
-        };
-      });
-    }
-    return BASELINE_16_RADAR_POINTERS.filter((p) => isPointerInUnitScope(p)).map((p) => ({
-      id: p.id,
-      referenceCode: p.referenceCode,
-      reporterId: 'civ-terminal',
-      reporterName: 'Verified Field Terminal',
-      reporterRole: 'Civilian',
-      title: p.title,
-      note: p.note,
-      category: p.category,
-      severity: p.severity,
-      status: p.status,
-      latitude: p.latitude,
-      longitude: p.longitude,
-      locationLabel: p.physicalAddress,
-      hasImage: true,
-      imageUrl: p.imageUrl,
-      allocatedUnitId: p.status === 'Dispatched' ? `${activeUnit}-1` : null,
-      allocatedUnitCode: p.status === 'Dispatched' ? `${activeUnit}-01` : null,
-      createdAt: p.createdAt,
-      verifiedAt: p.status === 'Verified' || p.status === 'Dispatched' ? p.createdAt : null,
-      resolvedAt: p.status === 'Resolved' ? p.createdAt : null,
-      gpsAccuracyMeters: 3.4,
-      isHardwareGeolocated: true,
-      isBlurry: false,
-      requiresManualVerification: false,
-      recommendedAgencyUnit: p.agency
-    }));
-  }, [dispatches, isPointerInUnitScope, activeUnit]);
+  const combinedQueueItems: ReportItem[] = useMemo(
+    () =>
+      dispatches.map((d) => ({
+        ...d,
+        imageUrl:
+          d.imageUrl && !String(d.imageUrl).toLowerCase().includes('unsplash.com')
+            ? d.imageUrl
+            : null
+      })),
+    [dispatches]
+  );
 
   const sortedAndFilteredQueue = useMemo(() => {
     const filtered = combinedQueueItems.filter((item) => {
@@ -1030,9 +608,7 @@ export const ResponderDashboard: React.FC = () => {
       case 'FIRE':
         return {
           title: 'BFP FIRE SUPPRESSION & RESCUE',
-          defaultName: 'FO3 Ramon Magsaysay BFP',
-          defaultRank: 'Fire Officer III',
-          defaultSector: 'Katipunan Central Fire Station',
+          defaultSector: 'BFP Fire Station',
           badgeBg: 'bg-amber-100 text-amber-900 border-amber-700/30',
           scopeLabel: 'Fire Scope',
           icon: Flame
@@ -1040,9 +616,7 @@ export const ResponderDashboard: React.FC = () => {
       case 'PNP':
         return {
           title: 'PNP POLICE TACTICAL PATROL',
-          defaultName: 'PCPT Gregorio del Pilar PNP',
-          defaultRank: 'Police Captain',
-          defaultSector: 'Katipunan Municipal Police HQ',
+          defaultSector: 'PNP Municipal Police Station',
           badgeBg: 'bg-sky-100 text-sky-900 border-sky-700/30',
           scopeLabel: 'Police Scope',
           icon: Shield
@@ -1051,9 +625,7 @@ export const ResponderDashboard: React.FC = () => {
       default:
         return {
           title: 'RHU EMERGENCY MEDICAL SERVICES',
-          defaultName: 'Dr. Maria Clara Santos MD',
-          defaultRank: 'Medical Officer III',
-          defaultSector: 'Rural Health Unit 1 — Katipunan',
+          defaultSector: 'Rural Health Unit',
           badgeBg: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/40',
           scopeLabel: 'Medic Scope',
           icon: Ambulance
@@ -1061,22 +633,9 @@ export const ResponderDashboard: React.FC = () => {
     }
   }, [activeUnit]);
 
-  const responderFullName =
-    session?.fullName &&
-    session.fullName.trim().length > 0 &&
-    session.fullName !== 'Tactical Officer'
-      ? session.fullName
-      : agencyMeta.defaultName;
-
-  const responderRank =
-    session?.rankOrTitle && session.rankOrTitle.trim().length > 0
-      ? session.rankOrTitle
-      : agencyMeta.defaultRank;
-
-  const responderSector =
-    session?.departmentOrBarangay && session.departmentOrBarangay.trim().length > 0
-      ? session.departmentOrBarangay
-      : agencyMeta.defaultSector;
+  const responderFullName = session?.fullName?.trim() || `${activeUnit} Responder`;
+  const responderRank = session?.rankOrTitle?.trim() || 'Field Responder';
+  const responderSector = session?.departmentOrBarangay?.trim() || agencyMeta.defaultSector;
 
   const totalDispatchesCount = combinedQueueItems.length;
 
@@ -1105,14 +664,11 @@ export const ResponderDashboard: React.FC = () => {
     [combinedQueueItems]
   );
 
-  const onlineUnitsCount = useMemo(() => {
-    const activeRoster = roster.filter(
-      (u) => u.status === 'OnDuty' || u.status === 'Dispatched'
-    ).length;
-    return activeRoster > 0 ? activeRoster : 4;
-  }, [roster]);
+  const onlineUnitsCount = useMemo(
+    () => roster.filter((u) => u.status === 'OnDuty' || u.status === 'Dispatched').length,
+    [roster]
+  );
 
-  // Clean unit-scoped map markers (Self GPS + active agency units + visible radar pointers + fixtures)
   const markers: MapMarker[] = useMemo(() => {
     const list: MapMarker[] = [
       {
@@ -1154,10 +710,13 @@ export const ResponderDashboard: React.FC = () => {
         lng: ptr.longitude,
         title: `${inScope ? activeUnit : 'View-Only'} · ${ptr.title}`,
         type: 'incident',
-        category: `${ptr.category} • IP: ${ptr.ipAddress}`,
+        category:
+          ptr.ipAddress && ptr.ipAddress !== 'Unavailable'
+            ? `${ptr.category} • IP: ${ptr.ipAddress}`
+            : ptr.category,
         agency: ptr.agency,
         status: ptr.status,
-        evidenceUrl: ptr.imageUrl,
+        evidenceUrl: ptr.imageUrl || undefined,
         severity: inScope
           ? ptr.severity === 'Critical'
             ? 'critical'
@@ -1227,7 +786,6 @@ export const ResponderDashboard: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 text-[#F7F1EA] select-none pb-8 w-full">
-      {/* Tactical Status Broadcast Toast */}
       {statusToast && (
         <div className="fixed top-20 right-6 z-50 px-4 py-3 rounded-2xl bg-[#F7F1EA] border-2 border-[#670626] text-[#670626] font-mono text-sm font-bold shadow-[0_14px_34px_rgba(74,4,26,0.35)] flex items-center gap-2.5">
           <CheckCircle2 className="w-4 h-4 text-emerald-700 flex-shrink-0" />
@@ -1235,9 +793,7 @@ export const ResponderDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* =====================================================================
-          HEADER IDENTITY & FIELD READINESS CONSOLE
-         ===================================================================== */}
+      {/* HEADER IDENTITY & FIELD READINESS CONSOLE */}
       <div className="clay-surface rounded-2xl p-5 sm:p-6 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
           <div className="flex items-start gap-4">
@@ -1282,9 +838,11 @@ export const ResponderDashboard: React.FC = () => {
               <span className="text-[#670626] font-bold">
                 GPS: {coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}
               </span>
-              <span className="text-emerald-800 font-bold">
-                (±{coords.accuracy ? coords.accuracy.toFixed(1) : '3.2'}m)
-              </span>
+              {typeof coords.accuracy === 'number' && (
+                <span className="text-emerald-800 font-bold">
+                  (±{coords.accuracy.toFixed(1)}m)
+                </span>
+              )}
             </div>
 
             <ResponderButton
@@ -1294,7 +852,7 @@ export const ResponderDashboard: React.FC = () => {
               disabled={isLocating}
               icon={<Radio className={`w-4 h-4 ${isLocating ? 'animate-spin' : ''}`} />}
             >
-              {isLocating ? 'LOCKING GPS...' : 'BROADCAST PING'}
+              {isLocating ? 'Locating...' : 'Ping GPS'}
             </ResponderButton>
 
             {isRhuMedic && (
@@ -1304,18 +862,7 @@ export const ResponderDashboard: React.FC = () => {
                 onClick={() => setIsPcrModalOpen(true)}
                 icon={<HeartPulse className="w-4 h-4" />}
               >
-                LOG PCR VITALS
-              </ResponderButton>
-            )}
-
-            {activeUnit === 'FIRE' && (
-              <ResponderButton
-                variant="warning"
-                size="sm"
-                onClick={() => setIsAlarmModalOpen(true)}
-                icon={<Flame className="w-4 h-4" />}
-              >
-                FIRE ALARM
+                Log PCR
               </ResponderButton>
             )}
 
@@ -1326,7 +873,7 @@ export const ResponderDashboard: React.FC = () => {
                 onClick={() => setIsBlotterModalOpen(true)}
                 icon={<Shield className="w-4 h-4" />}
               >
-                POLICE BLOTTER
+                Blotter
               </ResponderButton>
             )}
           </div>
@@ -1400,9 +947,7 @@ export const ResponderDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* =====================================================================
-          RESPONDER TELEMETRY KPI CARDS
-         ===================================================================== */}
+      {/* RESPONDER TELEMETRY KPI CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="clay-surface p-5 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 rounded-2xl hover:-translate-y-0.5 transition-all duration-200">
           <div className="flex items-center justify-between">
@@ -1439,7 +984,7 @@ export const ResponderDashboard: React.FC = () => {
         <div className="clay-surface p-5 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 rounded-2xl hover:-translate-y-0.5 transition-all duration-200">
           <div className="flex items-center justify-between">
             <span className="text-xs font-mono font-bold uppercase text-[#A83B4D] tracking-wider">
-              Critical &amp; High Alerts
+              Priority Alerts
             </span>
             <AlertTriangle className="w-5 h-5 text-[#670626]" />
           </div>
@@ -1467,14 +1012,12 @@ export const ResponderDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* =====================================================================
-          SATELLITE COMMAND RADAR HUD (PRESERVES .leaflet-container Z-INDEX)
-         ===================================================================== */}
+      {/* SATELLITE COMMAND RADAR HUD */}
       <div className="clay-surface bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 rounded-2xl overflow-hidden">
         <div className="p-4 bg-[#E9D9D0] border-b border-[#670626]/15 flex flex-wrap items-center justify-between gap-3">
           <span className="flex items-center gap-2 font-mono text-sm font-bold text-[#670626]">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping" />
-            <span>Katipunan Satellite Radar HUD</span>
+            <span>Satellite Radar</span>
           </span>
 
           <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
@@ -1583,72 +1126,76 @@ export const ResponderDashboard: React.FC = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-              {visibleRadarPointers.map((ptr) => {
-                const inScope = isPointerInUnitScope(ptr);
-                const isPale = !inScope && palePointerEnabled;
-                return (
-                  <button
-                    key={ptr.id}
-                    type="button"
-                    onClick={() => {
-                      setMapCenterOverride({ lat: ptr.latitude, lng: ptr.longitude });
-                      setSelectedPointer(ptr);
-                    }}
-                    className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex flex-col gap-1.5 ${
-                      isPale
-                        ? 'bg-[#F7F1EA]/55 border-[#670626]/10 opacity-60 hover:opacity-100'
-                        : inScope
-                        ? 'bg-[#F7F1EA] border-[#670626]/35 hover:border-[#670626] shadow-sm'
-                        : 'bg-[#F7F1EA] border-[#670626]/15 hover:border-[#A83B4D]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`px-2 py-0.5 rounded-md text-xs font-mono font-extrabold uppercase ${
-                          inScope
-                            ? 'bg-[#670626] text-[#F7F1EA]'
-                            : 'bg-[#E9D9D0] text-[#670626] border border-[#670626]/20'
-                        }`}
-                      >
-                        {ptr.category}
-                      </span>
-                      <span className="font-mono text-xs text-[#A83B4D] font-bold">
-                        {ptr.referenceCode}
-                      </span>
-                    </div>
+              {visibleRadarPointers.length === 0 ? (
+                <div className="p-6 text-center font-mono text-xs text-[#5B2A35]">
+                  No active incident reports in PostgreSQL.
+                </div>
+              ) : (
+                visibleRadarPointers.map((ptr) => {
+                  const inScope = isPointerInUnitScope(ptr);
+                  const isPale = !inScope && palePointerEnabled;
+                  return (
+                    <button
+                      key={ptr.id}
+                      type="button"
+                      onClick={() => {
+                        setMapCenterOverride({ lat: ptr.latitude, lng: ptr.longitude });
+                        setSelectedPointer(ptr);
+                      }}
+                      className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex flex-col gap-1.5 ${
+                        isPale
+                          ? 'bg-[#F7F1EA]/55 border-[#670626]/10 opacity-60 hover:opacity-100'
+                          : inScope
+                          ? 'bg-[#F7F1EA] border-[#670626]/35 hover:border-[#670626] shadow-sm'
+                          : 'bg-[#F7F1EA] border-[#670626]/15 hover:border-[#A83B4D]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-xs font-mono font-extrabold uppercase ${
+                            inScope
+                              ? 'bg-[#670626] text-[#F7F1EA]'
+                              : 'bg-[#E9D9D0] text-[#670626] border border-[#670626]/20'
+                          }`}
+                        >
+                          {ptr.category}
+                        </span>
+                        <span className="font-mono text-xs text-[#A83B4D] font-bold">
+                          {ptr.referenceCode}
+                        </span>
+                      </div>
 
-                    <p className="text-sm font-bold text-[#2B010E] line-clamp-1 mt-0.5">
-                      {ptr.title}
-                    </p>
+                      <p className="text-sm font-bold text-[#2B010E] line-clamp-1 mt-0.5">
+                        {ptr.title}
+                      </p>
 
-                    <div className="flex items-center justify-between text-xs font-mono text-[#5B2A35] mt-0.5">
-                      <span className="truncate max-w-[175px]">{ptr.physicalAddress}</span>
-                      <span
-                        className={
-                          inScope ? 'text-emerald-800 font-bold' : 'text-[#A83B4D] font-semibold'
-                        }
-                      >
-                        {inScope ? `${activeUnit} SCOPE` : 'VIEW-ONLY'}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
+                      <div className="flex items-center justify-between text-xs font-mono text-[#5B2A35] mt-0.5">
+                        <span className="truncate max-w-[175px]">{ptr.physicalAddress}</span>
+                        <span
+                          className={
+                            inScope ? 'text-emerald-800 font-bold' : 'text-[#A83B4D] font-semibold'
+                          }
+                        >
+                          {inScope ? `${activeUnit} SCOPE` : 'VIEW-ONLY'}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* =====================================================================
-          PRIORITY INCIDENT DISPATCH QUEUE (VERIFY / REJECT / DISPATCH)
-         ===================================================================== */}
+      {/* PRIORITY INCIDENT DISPATCH QUEUE */}
       <div className="clay-surface p-5 sm:p-6 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 rounded-2xl">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-4 pb-3.5 border-b border-[#670626]/15">
           <div>
             <div className="flex flex-wrap items-center gap-2.5">
               <h2 className="text-lg md:text-xl font-black font-sans text-[#670626] tracking-tight flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-[#A83B4D]" />
-                <span>{activeUnit} Dispatch &amp; Verification Queue</span>
+                <span>{activeUnit} Dispatch Queue</span>
               </h2>
               <span className="px-3 py-0.5 rounded-full bg-[#670626] text-[#F7F1EA] font-mono text-xs font-bold">
                 {activeDispatchesCount} Active
@@ -1669,11 +1216,11 @@ export const ResponderDashboard: React.FC = () => {
               value={severityFilter}
               onChange={(val) => setSeverityFilter(val)}
               options={[
-                { value: 'ALL', label: 'All Priorities' },
-                { value: 'CRITICAL', label: 'Critical Only' },
-                { value: 'HIGH', label: 'High Priority' },
-                { value: 'MEDIUM', label: 'Medium Priority' },
-                { value: 'LOW', label: 'Low Priority' }
+                { value: 'ALL', label: 'All' },
+                { value: 'CRITICAL', label: 'Critical' },
+                { value: 'HIGH', label: 'High' },
+                { value: 'MEDIUM', label: 'Medium' },
+                { value: 'LOW', label: 'Low' }
               ]}
             />
 
@@ -1683,12 +1230,12 @@ export const ResponderDashboard: React.FC = () => {
 
         {paginatedItems.length === 0 ? (
           <div className="clay-well p-8 text-center bg-[#E9D9D0] rounded-xl border border-[#670626]/15 font-mono text-sm text-[#5B2A35]">
-            No incidents match the current filter.
+            No {activeUnit} dispatches match the current filter.
           </div>
         ) : viewMode === 'card' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {paginatedItems.map((item) => {
-              const itemIp = deriveDeterministicIp(item.id || item.referenceCode);
+              const itemIp = item.submittedIpAddress || 'Unavailable';
               const statusBadge = formatQueueStatusBadge(
                 item.status,
                 item.allocatedUnitCode,
@@ -1739,7 +1286,7 @@ export const ResponderDashboard: React.FC = () => {
                       {item.title}
                     </h3>
                     <p className="text-sm text-[#5B2A35] mt-1 line-clamp-2">
-                      {item.note || 'No immediate field notes provided.'}
+                      {item.note || 'No field notes.'}
                     </p>
                     {(item.roboflowPrediction || item.claudeSituationSummary || item.claudeVisibleHazards) && (
                       <div className="mt-2 p-2.5 rounded-xl bg-[#F7F1EA] border border-[#670626]/20 text-xs font-mono text-[#670626] flex flex-col gap-1">
@@ -1955,9 +1502,9 @@ export const ResponderDashboard: React.FC = () => {
         <div className="mt-4 pt-3.5 border-t border-[#670626]/15 flex flex-wrap items-center justify-between gap-3 text-sm font-mono text-[#5B2A35]">
           <div className="flex items-center gap-2.5">
             <span>
-              SHOWING <strong className="text-[#670626]">{totalItems === 0 ? 0 : startIndex + 1}</strong>
-              –<strong className="text-[#670626]">{endIndex}</strong> OF{' '}
-              <strong className="text-[#670626]">{totalItems}</strong> INCIDENTS
+              <strong className="text-[#670626]">{totalItems === 0 ? 0 : startIndex + 1}</strong>
+              –<strong className="text-[#670626]">{endIndex}</strong> of{' '}
+              <strong className="text-[#670626]">{totalItems}</strong>
             </span>
             <Dropdown
               variant="pagination"
@@ -1997,9 +1544,7 @@ export const ResponderDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* =====================================================================
-          STATUS CHANGE CONFIRMATION MODAL
-         ===================================================================== */}
+      {/* STATUS CHANGE CONFIRMATION MODAL */}
       {pendingStatusTarget !== null && (
         <ResponderModalCard
           isOpen={pendingStatusTarget !== null}
@@ -2012,7 +1557,7 @@ export const ResponderDashboard: React.FC = () => {
             <div className="p-4 rounded-xl bg-amber-100 border border-amber-700/30 flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-800 flex-shrink-0" />
               <p className="text-sm font-mono text-amber-900 font-semibold">
-                Update broadcasts immediately to LDRRMO command dispatch.
+                Broadcasts immediately to command dispatch.
               </p>
             </div>
 
@@ -2045,9 +1590,7 @@ export const ResponderDashboard: React.FC = () => {
         </ResponderModalCard>
       )}
 
-      {/* =====================================================================
-          INCIDENT DISPATCH QUEUE DETAILS & VERIFICATION MODAL
-         ===================================================================== */}
+      {/* INCIDENT DISPATCH QUEUE DETAILS & VERIFICATION MODAL */}
       {selectedIncident && (
         <ResponderModalCard
           isOpen={selectedIncident !== null}
@@ -2060,10 +1603,14 @@ export const ResponderDashboard: React.FC = () => {
             <div className="clay-well px-4 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex items-center justify-between font-mono text-sm">
               <span className="text-[#670626] font-bold flex items-center gap-1.5">
                 <Clock className="w-4 h-4 text-[#A83B4D]" />
-                <span>AUTO-CLOSE WINDOW TIMER</span>
+                <span>Verification Auto-Close Timer</span>
               </span>
               <span className="text-[#670626] font-black">
-                {formatCountdownTimer(incidentModalSecondsLeft)}
+                {selectedIncidentSecondsLeft === null
+                  ? 'Pending Verification'
+                  : selectedIncidentSecondsLeft === 0
+                  ? '00:00 (Completed)'
+                  : formatCountdownTimer(selectedIncidentSecondsLeft)}
               </span>
             </div>
 
@@ -2120,28 +1667,28 @@ export const ResponderDashboard: React.FC = () => {
               <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10">
                 <span className="text-[#A83B4D] block text-xs font-bold">REPORTER IP</span>
                 <span className="text-[#2B010E] font-bold">
-                  {deriveDeterministicIp(selectedIncident.id || selectedIncident.referenceCode)}
+                  {selectedIncident.submittedIpAddress || 'Unavailable'}
                 </span>
               </div>
               <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10 sm:col-span-3">
                 <span className="text-[#A83B4D] block text-xs font-bold">
-                  GPS COORDINATES &amp; PHYSICAL STREET ADDRESS
+                  GPS &amp; Address
                 </span>
                 <span className="text-emerald-800 font-bold">
                   {formatGpsCoord(selectedIncident.latitude, selectedIncident.longitude)}
                 </span>
                 <p className="text-[#2B010E] text-sm mt-0.5 font-sans font-semibold">
-                  {selectedIncident.locationLabel || 'Barangay Uno, Katipunan, Zamboanga del Norte'}
+                  {selectedIncident.locationLabel || formatGpsCoord(selectedIncident.latitude, selectedIncident.longitude)}
                 </p>
               </div>
             </div>
 
             <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10 text-sm">
               <span className="text-[#A83B4D] block font-mono text-xs font-bold mb-1">
-                FIELD OBSERVATIONS
+                Field Notes
               </span>
               <p className="text-[#2B010E] leading-relaxed">
-                {selectedIncident.note || 'No notes provided by reporter.'}
+                {selectedIncident.note || 'No notes.'}
               </p>
             </div>
 
@@ -2151,10 +1698,8 @@ export const ResponderDashboard: React.FC = () => {
               <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-xs font-mono text-[#670626] flex flex-col gap-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-black uppercase text-[#670626]">
-                    AI Scene Verification · Roboflow (
-                    {selectedIncident.roboflowModelId ||
-                      'accident-and-non-accident-label-image-dataset/14'}
-                    ): {selectedIncident.roboflowPrediction || 'incident'}
+                    AI Scene Verification · Roboflow ({selectedIncident.roboflowModelId || 'Vision'}):{' '}
+                    {selectedIncident.roboflowPrediction || 'incident'}
                     {typeof selectedIncident.roboflowConfidence === 'number'
                       ? ` (${Math.round(selectedIncident.roboflowConfidence * 100)}%)`
                       : ''}
@@ -2181,19 +1726,19 @@ export const ResponderDashboard: React.FC = () => {
             )}
 
             <div className="rounded-xl overflow-hidden border border-[#670626]/20 bg-[#4A041A]">
-              <img
-                src={
-                  selectedIncident.imageUrl &&
-                  !selectedIncident.imageUrl.toLowerCase().includes('unsplash.com')
-                    ? selectedIncident.imageUrl
-                    : buildTelemetryPlaceholderDataUri(
-                        selectedIncident.referenceCode || 'RESQ',
-                        selectedIncident.title
-                      )
-                }
-                alt="Incident Evidence"
-                className="w-full h-48 object-cover"
-              />
+              {selectedIncident.imageUrl &&
+              !selectedIncident.imageUrl.toLowerCase().includes('unsplash.com') ? (
+                <img
+                  src={selectedIncident.imageUrl}
+                  alt="Incident Evidence"
+                  className="w-full h-48 object-cover"
+                />
+              ) : (
+                <div className="w-full h-32 bg-[#E9D9D0] flex flex-col items-center justify-center gap-1.5 text-[#5B2A35] font-mono text-xs">
+                  <ImageIcon className="w-6 h-6 text-[#A83B4D]" />
+                  <span>No photographic evidence attached to report</span>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-[#670626]/15">
@@ -2202,7 +1747,7 @@ export const ResponderDashboard: React.FC = () => {
                 size="sm"
                 onClick={() => setSelectedIncident(null)}
               >
-                EXIT
+                Close
               </ResponderButton>
 
               {isSubmittedOrPendingStatus(selectedIncident.status) && (
@@ -2248,17 +1793,7 @@ export const ResponderDashboard: React.FC = () => {
                   onClick={() => setIsPcrModalOpen(true)}
                   icon={<HeartPulse className="w-4 h-4" />}
                 >
-                  Record PCR Vitals
-                </ResponderButton>
-              )}
-              {activeUnit === 'FIRE' && (
-                <ResponderButton
-                  variant="warning"
-                  size="sm"
-                  onClick={() => setIsAlarmModalOpen(true)}
-                  icon={<Flame className="w-4 h-4" />}
-                >
-                  Update Fire Alarm
+                  Log PCR
                 </ResponderButton>
               )}
               {activeUnit === 'PNP' && (
@@ -2268,7 +1803,7 @@ export const ResponderDashboard: React.FC = () => {
                   onClick={() => setIsBlotterModalOpen(true)}
                   icon={<Shield className="w-4 h-4" />}
                 >
-                  File Police Blotter
+                  File Blotter
                 </ResponderButton>
               )}
               <ResponderButton
@@ -2280,7 +1815,7 @@ export const ResponderDashboard: React.FC = () => {
                   handleQuickNavigate(inc.latitude, inc.longitude, inc.id);
                 }}
               >
-                Focus Radar Map
+                Focus Map
               </ResponderButton>
               <ResponderButton
                 variant="primary"
@@ -2293,7 +1828,7 @@ export const ResponderDashboard: React.FC = () => {
                 }
                 icon={<Send className="w-4 h-4" />}
               >
-                REQUEST TO DISPATCH OR DEPLOY
+                Request Deploy
               </ResponderButton>
             </div>
           </div>
@@ -2313,24 +1848,12 @@ export const ResponderDashboard: React.FC = () => {
         />
       )}
 
-      {isAlarmModalOpen && (
-        <FireAlarmEscalationModal
-          isOpen={isAlarmModalOpen}
-          onClose={() => setIsAlarmModalOpen(false)}
-          reportId={selectedIncident?.id}
-          onSuccess={(alarm) => {
-            showStatusFeedback(`Fire alarm level updated to ${alarm.alarmLevel}`);
-            void loadData();
-          }}
-        />
-      )}
-
       {isBlotterModalOpen && (
         <PoliceBlotterModal
           isOpen={isBlotterModalOpen}
           onClose={() => setIsBlotterModalOpen(false)}
           reportId={selectedIncident?.id}
-          defaultLocation={selectedIncident?.locationLabel || 'Katipunan Location'}
+          defaultLocation={selectedIncident?.locationLabel || 'Reported Location'}
           onSuccess={(blotter) => {
             showStatusFeedback(`Police blotter ${blotter.blotterNumber} sealed`);
             void loadData();

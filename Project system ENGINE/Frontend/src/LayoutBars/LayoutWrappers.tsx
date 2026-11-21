@@ -6,7 +6,6 @@ import React from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
-import { ResQTrackSvgSprite } from '../Shared/ResQTrackSvgSprite';
 import { PageErrorBoundary } from '../Shared/PageErrorBoundary';
 import { useSession } from '../Hooks/useSession';
 import { DrawerSidebarProvider } from '../Shared/ToggleDrawerSidebarMenu';
@@ -82,7 +81,7 @@ export const LayoutWrappers: React.FC<LayoutWrappersProps> = ({
 
   const user = {
     name: tabSession?.displayName || tabSession?.fullName || session?.displayName || session?.fullName || (isAdmin ? 'LDRRMO Commander' : 'Active Duty Officer'),
-    id: tabSession?.employeeOrResidentId || tabSession?.employeeId || session?.employeeOrResidentId || session?.employeeId || 'OP-773-567-009',
+    id: tabSession?.employeeOrResidentId || tabSession?.employeeId || session?.employeeOrResidentId || session?.employeeId || '-',
     role: activeRole,
     unit: activeUnit,
     status: tabSession?.status || session?.status || 'Verified',
@@ -92,7 +91,6 @@ export const LayoutWrappers: React.FC<LayoutWrappersProps> = ({
   return (
     <DrawerSidebarProvider>
       <div className="app-shell bg-[#4A041A] text-[#F7F1EA]">
-        <ResQTrackSvgSprite />
         <Header user={user} />
         <div className="dash relative z-10 flex flex-1 min-h-0 w-full overflow-hidden bg-[#4A041A]">
           <Sidebar userRole={activeRole} userUnit={activeUnit} />
@@ -114,7 +112,6 @@ export const LayoutWrappers: React.FC<LayoutWrappersProps> = ({
 export const LandingLayout: React.FC = () => {
   return (
     <div className="landing-shell bg-[#4A041A] text-[#F7F1EA]">
-      <ResQTrackSvgSprite />
       <Outlet />
     </div>
   );

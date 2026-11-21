@@ -1,5 +1,5 @@
 // [Layer: Backend/Api/DTOs]
-// Responsibility: Encapsulates incoming requests and responses for responder operational telemetry, roster, PCR, blotter, and alarms.
+// Responsibility: Encapsulates incoming requests and responses for responder operational telemetry, roster, PCR, and blotter.
 // DO NOT expose raw internal database entities across these contracts.
 
 using System.ComponentModel.DataAnnotations;
@@ -97,30 +97,6 @@ public record BlotterResponse(
     string Station,
     string CryptographicSeal,
     DateTime CreatedAt
-);
-
-public record SetAlarmLevelRequest(
-    Guid? ReportId,
-    [Required(ErrorMessage = "Alarm level is required."), MaxLength(80)] string AlarmLevel,
-    [MaxLength(100)] string? BuildingType,
-    int TrappedOccupantsCount,
-    [MaxLength(120)] string? CommanderName,
-    [MaxLength(50)] string? ReportingUnit,
-    [MaxLength(500)] string? Remarks,
-    int WaterSupplyGallons
-);
-
-public record AlarmLevelResponse(
-    Guid Id,
-    Guid? ReportId,
-    string AlarmLevel,
-    string BuildingType,
-    int TrappedOccupantsCount,
-    string CommanderName,
-    string ReportingUnit,
-    string Remarks,
-    int WaterSupplyGallons,
-    DateTime UpdatedAt
 );
 
 public record HydrantResponse(

@@ -35,4 +35,47 @@ public class AlertRepository(AppDbContext db) : IAlertRepository
             await db.SaveChangesAsync(ct);
         }
     }
+
+    public async Task<int> MarkAllAsReadAsync(Guid userId, IEnumerable<Guid> reportIds, CancellationToken ct = default)
+    {
+        if (userId == Guid.Empty) return 0;
+
+        List<Guid> targetIds = reportIds.Distinct().ToList();
+        if (targetIds.Count == 0) return 0;
+
+        DateTime now = DateTime.UtcNow;
+        List<AlertReadState> existingStates = await db.AlertReadStates
+            .Where(a => a.UserId == userId && targetIds.Contains(a.ReportId))
+            .ToListAsync(ct);
+
+        HashSet<Guid> existingIds = [];
+        foreach (AlertReadState state in existingStates)
+        {
+            existingIds.Add(state.ReportId);
+            if (!state.IsRead)
+            {
+                state.IsRead = true;
+                state.ReadAt = now;
+            }
+        }
+
+        List<AlertReadState> newStates = targetIds
+            .Where(rid => !existingIds.Contains(rid))
+            .Select(rid => new AlertReadState
+            {
+                UserId = userId,
+                ReportId = rid,
+                IsRead = true,
+                ReadAt = now
+            })
+            .ToList();
+
+        if (newStates.Count > 0)
+        {
+            await db.AlertReadStates.AddRangeAsync(newStates, ct);
+        }
+
+        await db.SaveChangesAsync(ct);
+        return targetIds.Count;
+    }
 }

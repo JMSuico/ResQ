@@ -98,6 +98,10 @@ artifacts/
 secrets.json
 appsettings.Local.json
 **/appsettings.Local.json
+Project system ENGINE/Backend/LocalConfig/appsettings.Local.json
+!Project system ENGINE/Backend/LocalConfig/
+!Project system ENGINE/Backend/LocalConfig/README.md
+!Project system ENGINE/Backend/LocalConfig/appsettings.Local.example.json
 
 # -----------------------------------------------------------------------------
 # 5. Database, Local Storage & Dump Files

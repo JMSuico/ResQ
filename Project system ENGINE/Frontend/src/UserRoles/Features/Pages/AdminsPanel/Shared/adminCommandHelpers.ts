@@ -50,9 +50,6 @@ export const CLAY_SURFACE =
 export const CLAY_WELL =
   'clay-well rounded-xl bg-[#E9D9D0] text-[#670626] border border-[#670626]/15 shadow-inner';
 
-export const CLAY_BUTTON_CHERRY =
-  'clay-button-cherry bg-[#670626] hover:bg-[#4A041A] active:bg-[#4A041A] text-[#F7F1EA] border border-[#670626] shadow-[0_6px_18px_rgba(74,4,26,0.32)]';
-
 export const CLAY_INPUT =
   'w-full bg-[#E9D9D0]/75 border border-[#670626]/20 rounded-xl px-3.5 py-2.5 text-sm text-[#670626] placeholder-[#A83B4D]/75 focus:outline-none focus:border-[#670626] focus:bg-[#F7F1EA] transition-colors';
 

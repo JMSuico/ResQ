@@ -16,13 +16,14 @@ public class ReportRepository(AppDbContext db) : IReportRepository
         db.Reports.Include(r => r.AllocatedUnit).FirstOrDefaultAsync(r => r.Id == id, ct);
 
     public Task<List<Report>> GetAllAsync(CancellationToken ct = default) =>
-        db.Reports.Include(r => r.AllocatedUnit).OrderByDescending(r => r.CreatedAt).ToListAsync(ct);
+        db.Reports.AsNoTracking().Include(r => r.AllocatedUnit).OrderByDescending(r => r.CreatedAt).Take(500).ToListAsync(ct);
 
     public Task<List<Report>> GetByReporterIdAsync(Guid reporterId, CancellationToken ct = default) =>
-        db.Reports.Include(r => r.AllocatedUnit).Where(r => r.ReporterId == reporterId).OrderByDescending(r => r.CreatedAt).ToListAsync(ct);
+        db.Reports.AsNoTracking().Include(r => r.AllocatedUnit).Where(r => r.ReporterId == reporterId).OrderByDescending(r => r.CreatedAt).Take(500).ToListAsync(ct);
 
     public Task<List<Report>> GetByUnitAgencyAsync(ResponderUnitType agency, CancellationToken ct = default) =>
         db.Reports
+            .AsNoTracking()
             .Include(r => r.AllocatedUnit)
             .Where(r => (r.AllocatedUnit != null && r.AllocatedUnit.Agency == agency) ||
                         (r.AllocatedUnitId == null && r.RecommendedAgencyUnit != null &&
@@ -32,6 +33,7 @@ public class ReportRepository(AppDbContext db) : IReportRepository
                           (agency == ResponderUnitType.PNP && r.RecommendedAgencyUnit.Contains("Police")) ||
                           r.RecommendedAgencyUnit.Contains("Joint Dispatch"))))
             .OrderByDescending(r => r.CreatedAt)
+            .Take(500)
             .ToListAsync(ct);
 
     public async Task AddAsync(Report report, CancellationToken ct = default)

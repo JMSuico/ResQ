@@ -32,7 +32,6 @@ import { useDebounce, usePagination, useToasts } from '@/Hooks';
 import {
   getUsers,
   updateUserStatus,
-  deleteUser,
   UserSummary,
   AccountStatus
 } from '@/Endpoints/adminGovernanceApi';
@@ -42,7 +41,6 @@ import {
   EditUserModal,
   DeleteUserConfirmModal
 } from './Components';
-import { BASELINE_USER_SUMMARY } from '@/Libs/Assets/baselineFixtures';
 import { AdminButton } from './Shared/AdminButton';
 import { CLAY_SURFACE, CLAY_WELL } from './Shared/adminCommandHelpers';
 
@@ -77,13 +75,15 @@ export const UserManagementPage: React.FC = () => {
     setIsLoading(true);
     try {
       const data = await getUsers();
-      setUsers(Array.isArray(data) && data.length > 0 ? data : BASELINE_USER_SUMMARY);
-    } catch {
-      setUsers((prev) => (prev.length > 0 ? prev : BASELINE_USER_SUMMARY));
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to load user registry.';
+      addToast(msg, 'error');
+      setUsers([]);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     void loadUsers();
@@ -314,7 +314,7 @@ export const UserManagementPage: React.FC = () => {
               User Management
             </h1>
             <p className="text-sm text-[#A83B4D] font-mono">
-              Identity accounts, Katipunan residency registry, and access control
+              Accounts, residency &amp; access control
             </p>
           </div>
 
@@ -487,9 +487,9 @@ export const UserManagementPage: React.FC = () => {
                 <tr>
                   <td colSpan={TABLE_COLUMNS_COUNT} className="py-16 text-center text-[#A83B4D]">
                     <Search className="w-10 h-10 mx-auto mb-3 opacity-60" />
-                    <div className="font-bold text-[#670626] text-base">No Matching Personnel Found</div>
+                    <div className="font-bold text-[#670626] text-base">No Matching Accounts</div>
                     <p className="text-sm mt-1 max-w-md mx-auto">
-                      Adjust your search filters or enroll a new official into the registry.
+                      Adjust filters or add a new user.
                     </p>
                   </td>
                 </tr>

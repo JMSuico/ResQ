@@ -19,12 +19,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<PatientCareRecord> PatientCareRecords => Set<PatientCareRecord>();
     public DbSet<PoliceBlotterEntry> PoliceBlotterEntries => Set<PoliceBlotterEntry>();
-    public DbSet<FireAlarmStatusRecord> FireAlarmStatuses => Set<FireAlarmStatusRecord>();
     public DbSet<IdentityVerificationRecord> IdentityVerificationRecords => Set<IdentityVerificationRecord>();
     public DbSet<BiometricEnrollment> BiometricEnrollments => Set<BiometricEnrollment>();
     public DbSet<UserConsent> UserConsents => Set<UserConsent>();
     public DbSet<LoginAttempt> LoginAttempts => Set<LoginAttempt>();
     public DbSet<VerificationTokenRecord> VerificationTokenRecords => Set<VerificationTokenRecord>();
+    public DbSet<DispatchRequestRecord> DispatchRequests => Set<DispatchRequestRecord>();
+    public DbSet<ReportEvidenceRecord> ReportEvidences => Set<ReportEvidenceRecord>();
+    public DbSet<ReportFeedbackRecord> ReportFeedbacks => Set<ReportFeedbackRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -146,13 +148,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(b => b.CreatedAt);
         });
 
-        // FireAlarmStatusRecord index
-        modelBuilder.Entity<FireAlarmStatusRecord>(entity =>
-        {
-            entity.HasIndex(f => f.ReportId);
-            entity.HasIndex(f => f.UpdatedAt);
-        });
-
         // IdentityVerificationRecord configuration
         modelBuilder.Entity<IdentityVerificationRecord>(entity =>
         {
@@ -214,6 +209,31 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.HasIndex(e => e.TokenId).IsUnique();
             entity.HasIndex(e => new { e.ExpiresAtUtc, e.ConsumedAtUtc });
+        });
+
+        // DispatchRequestRecord configuration
+        modelBuilder.Entity<DispatchRequestRecord>(entity =>
+        {
+            entity.HasIndex(d => d.RequestCode).IsUnique();
+            entity.HasIndex(d => d.Status);
+            entity.HasIndex(d => d.TargetUnit);
+            entity.HasIndex(d => d.OriginUnit);
+            entity.HasIndex(d => d.CreatedAtUtc);
+        });
+
+        // ReportEvidenceRecord configuration
+        modelBuilder.Entity<ReportEvidenceRecord>(entity =>
+        {
+            entity.HasIndex(e => e.ReportId);
+            entity.HasIndex(e => e.CreatedAtUtc);
+        });
+
+        // ReportFeedbackRecord configuration
+        modelBuilder.Entity<ReportFeedbackRecord>(entity =>
+        {
+            entity.HasIndex(f => f.ReportId);
+            entity.HasIndex(f => f.UserId);
+            entity.HasIndex(f => new { f.ReportId, f.UserId });
         });
     }
 }

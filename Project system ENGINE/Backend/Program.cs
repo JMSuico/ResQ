@@ -24,9 +24,20 @@ RuntimePortabilityHelper.LoadOptionalDotEnv(
     AppContext.BaseDirectory);
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Configuration
-    .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
-    .AddEnvironmentVariables();
+string[] localConfigPaths =
+[
+    "appsettings.Local.json",
+    Path.Combine("LocalConfig", "appsettings.Local.json")
+];
+foreach (string localConfigRelativePath in localConfigPaths)
+{
+    string localConfigFullPath = Path.Combine(builder.Environment.ContentRootPath, localConfigRelativePath);
+    if (!Directory.Exists(localConfigFullPath) && File.Exists(localConfigFullPath))
+    {
+        builder.Configuration.AddJsonFile(localConfigRelativePath, optional: true, reloadOnChange: true);
+    }
+}
+builder.Configuration.AddEnvironmentVariables();
 
 // Honor explicit --urls / ASPNETCORE_URLS / PORT when set, otherwise bind Kestrel to 0.0.0.0:1999 for localhost + LAN/Docker access
 string? fallbackBindUrl = RuntimePortabilityHelper.ResolveExplicitOrFallbackServerUrl(args, builder.Configuration);
@@ -134,8 +145,8 @@ builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<IAlertService, AlertService>();
 builder.Services.AddScoped<IIdentityAiService, IdentityAiService>();
 builder.Services.AddScoped<ITriageService, TriageService>();
-builder.Services.AddScoped<IRespondersService, RespondersService>();
 builder.Services.AddScoped<IResponderOpsService, RespondersService>();
+builder.Services.AddScoped<IDispatchRequestService, DispatchRequestService>();
 builder.Services.AddScoped<IUserGovernanceService, UserGovernanceService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
@@ -154,6 +165,7 @@ builder.Services.AddScoped<IBiometricLoginValidationStrategy, MultiLayerBiometri
 builder.Services.AddScoped<IRoboflowAccidentDetectionStrategy, RoboflowServerlessAccidentDetectionStrategy>();
 builder.Services.AddScoped<IClaudeIncidentVisionStrategy, ClaudeHaikuIncidentVisionStrategy>();
 builder.Services.AddScoped<IIncidentSceneAiAnalysisStrategy, DualStageIncidentSceneAiStrategy>();
+builder.Services.AddScoped<IIncidentAutoApprovalStrategy, ClaudeIncidentAutoApprovalStrategy>();
 builder.Services.AddSingleton<IBiometricTrainingQueue, BiometricTrainingChannelQueue>();
 builder.Services.AddHostedService<BiometricTrainingBackgroundService>();
 

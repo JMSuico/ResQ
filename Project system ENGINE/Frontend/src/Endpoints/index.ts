@@ -4,7 +4,6 @@
 export * from './apiClient';
 export * from './authEndpoints';
 export * from './authApi';
-export * from './civilianPortalApi';
 export * from './reportsApi';
 export * from './responderOpsApi';
 export * from './userEndpoints';

@@ -11,4 +11,5 @@ public interface IAlertService
     Task<List<AlertResponse>> GetAlertsAsync(Guid userId, CancellationToken ct = default);
     Task<object> CreateBroadcastAsync(Guid adminId, CreateAlertBroadcastRequest request, CancellationToken ct = default);
     Task MarkReadAsync(Guid userId, string reportId, CancellationToken ct = default);
+    Task<int> MarkAllReadAsync(Guid userId, CancellationToken ct = default);
 }

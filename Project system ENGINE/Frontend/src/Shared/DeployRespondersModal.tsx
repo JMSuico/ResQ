@@ -6,7 +6,7 @@
 // to penalize over-selected units and prioritize fresh units that have not been chosen yet.
 // Strictly 100% arrow functions (=>), ZERO 'any', and ZERO emojis.
 
-import React, { FC, useState, useMemo, useEffect, useCallback } from 'react';
+import React, { FC, useState, useMemo, useEffect } from 'react';
 import {
   Send,
   Zap,
@@ -17,15 +17,21 @@ import {
   HeartPulse,
   Activity,
   CheckCircle2,
+  AlertCircle,
   Sliders,
   Check
 } from 'lucide-react';
 import { DefaultFloatingModalCard } from './DefaultFloatingModalCard';
 import { Button } from './Button';
 import { calculateHaversineDistanceKm, calculateDynamicEtaMinutes } from '@/Libs/Map/mapAccuracy';
-import { DutyUnit, getDutyRoster, pushResponderNotification, DispatchRequestRecord } from '@/Endpoints/responderOpsApi';
+import {
+  DutyUnit,
+  getDutyRoster,
+  getDispatchRequests,
+  createMedicDispatchRequest,
+  DispatchRequestRecord
+} from '@/Endpoints/responderOpsApi';
 import { assignUnitToReport } from '@/Endpoints/reportsApi';
-import { BASELINE_DUTY_ROSTER } from '@/Libs/Assets/baselineFixtures';
 import { IncidentPinData } from './SatelliteCommandMap';
 
 export interface DeployRespondersModalProps {
@@ -49,21 +55,6 @@ export interface EvaluatedResponderUnit extends DutyUnit {
   recommendationTag: 'OPTIMAL_BALANCED' | 'CLOSEST_BUT_FATIGUED' | 'FRESH_UNCHOSEN' | 'STANDARD_AVAILABLE';
   tagLabel: string;
 }
-
-const DISPATCH_STORAGE_KEY = 'resqtrack_dispatch_requests';
-
-// Read all past and active dispatch records from persistent storage
-const readHistoricalDispatches = (): DispatchRequestRecord[] => {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(DISPATCH_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
 
 // Agency match score: 100 for primary agency, 60 for secondary cross-agency support
 const computeAgencyMatchScore = (category: string | undefined, agency: string | undefined): number => {
@@ -110,37 +101,52 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
   rosterProp,
   onDeploySuccess
 }) => {
-  const [dutyRoster, setDutyRoster] = useState<DutyUnit[]>(rosterProp || BASELINE_DUTY_ROSTER);
+  const [dutyRoster, setDutyRoster] = useState<DutyUnit[]>(rosterProp || []);
+  const [dispatchHistory, setDispatchHistory] = useState<DispatchRequestRecord[]>([]);
   const [selectedUnitId, setSelectedUnitId] = useState<string>('');
   const [sortStrategy, setSortStrategy] = useState<'BALANCED' | 'PROXIMITY' | 'FRESH'>('BALANCED');
   const [agencyFilter, setAgencyFilter] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchQuery] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
-  // Sync duty roster from API or fallback
+  // Sync duty roster and dispatch history from real PostgreSQL APIs
   useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+    setErrorBanner(null);
+
     if (rosterProp && rosterProp.length > 0) {
       setDutyRoster(rosterProp);
-      return;
+    } else {
+      getDutyRoster()
+        .then((units) => {
+          if (isMounted) setDutyRoster(Array.isArray(units) ? units : []);
+        })
+        .catch((err: unknown) => {
+          if (isMounted) {
+            setDutyRoster([]);
+            setErrorBanner(err instanceof Error ? err.message : 'Failed to load responder duty roster.');
+          }
+        });
     }
-    let isMounted = true;
-    getDutyRoster()
-      .then((units) => {
-        if (isMounted && units && units.length > 0) {
-          setDutyRoster(units);
-        }
+
+    getDispatchRequests()
+      .then((records) => {
+        if (isMounted) setDispatchHistory(Array.isArray(records) ? records : []);
       })
-      .catch(() => {
-        if (isMounted) setDutyRoster(BASELINE_DUTY_ROSTER);
+      .catch((err: unknown) => {
+        if (isMounted) {
+          setDispatchHistory([]);
+          setErrorBanner((prev) => prev || (err instanceof Error ? err.message : 'Failed to load dispatch telemetry.'));
+        }
       });
+
     return () => {
       isMounted = false;
     };
-  }, [rosterProp]);
-
-  // Compute unit dispatch frequency ledger from historical requests
-  const dispatchHistory = useMemo(() => readHistoricalDispatches(), [isOpen]);
+  }, [isOpen, rosterProp]);
 
   const dispatchCountMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -295,19 +301,14 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
 
     setIsSubmitting(true);
     setSuccessBanner(null);
+    setErrorBanner(null);
 
     try {
       // 1. Call backend API to allocate unit to report
-      await assignUnitToReport(incident.id, unitToDeploy.id).catch(() => ({
-        message: 'Allocated with local resilience',
-        reportId: incident.id,
-        unitId: unitToDeploy.id
-      }));
+      await assignUnitToReport(incident.id, unitToDeploy.id);
 
-      // 2. Persist dispatch record into shared ledger
-      const nowIso = new Date().toISOString();
-      const newRecord: DispatchRequestRecord = {
-        id: `ORD-ADM-${Date.now()}`,
+      // 2. Persist dispatch order into PostgreSQL via POST /api/dispatch-requests
+      const createdOrder = await createMedicDispatchRequest({
         incidentId: incident.id,
         incidentCode: incident.id,
         incidentTitle: incTitle,
@@ -315,31 +316,22 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
         severity: incident.severity || 'Medium',
         location: incident.place || 'Katipunan Sector',
         coordinates: `${incident.lat.toFixed(4)}° N, ${incident.lng.toFixed(4)}° E`,
-        ipAddress: incident.ipAddress || 'Pending / Direct GPS',
+        latitude: incident.lat,
+        longitude: incident.lng,
+        ipAddress: incident.ipAddress,
         evidenceUrl: incident.evidenceUrl,
         responderId: unitToDeploy.id,
+        targetUnit: unitToDeploy.unitCode,
+        originUnit: 'LDRRMO',
         responderName: `${unitToDeploy.unitName} (${unitToDeploy.unitCode})`,
         direction: 'ADMIN_ORDER',
         status: 'TO BE DEPLOYED',
-        requestedAt: nowIso,
-        updatedAt: nowIso,
         notes: `Dispatched via Map C2. Match: ${unitToDeploy.compositeScore}%, Dist: ${unitToDeploy.distanceKm}km.`
-      };
-
-      const updatedHistory = [newRecord, ...readHistoricalDispatches()];
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(DISPATCH_STORAGE_KEY, JSON.stringify(updatedHistory));
-      }
-
-      // 3. Emit real-time notification
-      pushResponderNotification({
-        title: `Deploy Order (${unitToDeploy.unitCode})`,
-        message: `${unitToDeploy.unitName} deployed to ${incTitle}.`,
-        category: 'ADMIN_REQUEST_DEPLOY',
-        incidentId: incident.id
       });
 
-      // 4. Dispatch global window event for real-time reactivity across C2 deck
+      setDispatchHistory((prev) => [createdOrder, ...prev]);
+
+      // 3. Dispatch global window event for real-time reactivity across C2 deck
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('resqtrack:report', {
@@ -365,8 +357,8 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
         setSuccessBanner(null);
         onClose();
       }, 1400);
-    } catch (err) {
-      console.error('Failed to deploy responder unit:', err);
+    } catch (err: unknown) {
+      setErrorBanner(err instanceof Error ? err.message : 'Failed to deploy responder unit.');
       setIsSubmitting(false);
     }
   };
@@ -389,6 +381,14 @@ export const DeployRespondersModal: FC<DeployRespondersModalProps> = ({
       className="p-1"
     >
       <div className="space-y-4">
+        {/* Error Banner */}
+        {errorBanner && (
+          <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-[#991B1B] text-sm flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-[#991B1B] shrink-0" />
+            <span className="font-mono font-semibold">{errorBanner}</span>
+          </div>
+        )}
+
         {/* Success Banner */}
         {successBanner && (
           <div className="p-3.5 rounded-xl bg-emerald-50 border-2 border-emerald-400 text-emerald-900 text-sm flex items-center gap-3 animate-pulse">

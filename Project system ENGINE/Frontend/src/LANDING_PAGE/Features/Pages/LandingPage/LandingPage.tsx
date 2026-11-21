@@ -4,7 +4,7 @@
 // Official Cherry (#670626 / #4A041A / #400014) & Warm Ivory (#F7F1EA / #FAF5EE / #E9D9D0) Stitch Claymorphism.
 // DO NOT expose admin management actions or hotline/phone call links on public landing screens.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ExternalLink,
@@ -22,11 +22,100 @@ import {
   Activity
 } from 'lucide-react';
 import { AGENCY_METADATA } from '@/Libs/Assets/data';
+import { getApiBaseUrl } from '@/Endpoints/apiClient';
 import { InkOrbitFeatures } from '@/components/ui';
+
+interface PublicHealthPayload {
+  status?: string;
+}
+
+interface PublicAnalyticsOverviewPayload {
+  volumeSeries?: number[];
+  values?: number[];
+  points?: Array<{ value?: number }>;
+}
+
+const EMPTY_TELEMETRY_SERIES: number[] = [0, 0, 0, 0, 0, 0];
 
 export const LandingPage: React.FC = () => {
   const [activePathway, setActivePathway] = useState<'civilian' | 'responder'>('civilian');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+  const [telemetryValues, setTelemetryValues] = useState<number[]>(EMPTY_TELEMETRY_SERIES);
+
+  useEffect(() => {
+    let isMounted = true;
+    const baseUrl = getApiBaseUrl();
+
+    const loadPublicTelemetry = async (): Promise<void> => {
+      try {
+        const healthRes = await fetch(baseUrl ? `${baseUrl}/api/health` : '/api/health', {
+          method: 'GET',
+          headers: { Accept: 'application/json' }
+        });
+        if (isMounted) {
+          if (healthRes.ok) {
+            const healthBody = (await healthRes.json()) as PublicHealthPayload;
+            setApiOnline(String(healthBody?.status || '').toLowerCase() === 'healthy');
+          } else {
+            setApiOnline(false);
+          }
+        }
+      } catch {
+        if (isMounted) {
+          setApiOnline(false);
+        }
+      }
+
+      try {
+        const overviewRes = await fetch(
+          baseUrl ? `${baseUrl}/api/analytics/overview` : '/api/analytics/overview',
+          {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            credentials: 'include'
+          }
+        );
+        if (!overviewRes.ok) {
+          if (isMounted) {
+            setTelemetryValues(EMPTY_TELEMETRY_SERIES);
+          }
+          return;
+        }
+        const data = (await overviewRes.json()) as PublicAnalyticsOverviewPayload | Array<{ value?: number }>;
+        if (!isMounted) return;
+        if (Array.isArray(data)) {
+          const parsed = data
+            .map((d) => (typeof d?.value === 'number' && Number.isFinite(d.value) ? d.value : 0));
+          setTelemetryValues(parsed.length > 1 ? parsed : EMPTY_TELEMETRY_SERIES);
+        } else if (Array.isArray(data?.volumeSeries) && data.volumeSeries.length > 1) {
+          setTelemetryValues(data.volumeSeries);
+        } else if (Array.isArray(data?.values) && data.values.length > 1) {
+          setTelemetryValues(data.values);
+        } else if (Array.isArray(data?.points) && data.points.length > 1) {
+          setTelemetryValues(
+            data.points.map((p) => (typeof p?.value === 'number' && Number.isFinite(p.value) ? p.value : 0))
+          );
+        } else {
+          setTelemetryValues(EMPTY_TELEMETRY_SERIES);
+        }
+      } catch {
+        if (isMounted) {
+          setTelemetryValues(EMPTY_TELEMETRY_SERIES);
+        }
+      }
+    };
+
+    void loadPublicTelemetry();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const agencyStatusLabel =
+    apiOnline === true ? 'Online' : apiOnline === false ? 'Offline' : 'Checking';
+  const dispatchChannelLabel =
+    apiOnline === true ? 'API Connected' : apiOnline === false ? 'Standby' : 'Checking';
 
   return (
     <div className="min-h-screen bg-[#4A041A] text-[#F7F1EA] flex flex-col selection:bg-[#F7F1EA] selection:text-[#670626]">
@@ -449,8 +538,12 @@ export const LandingPage: React.FC = () => {
                       {meta.short}
                     </span>
                     <span className="flex items-center gap-1.5 font-mono text-xs font-bold text-[#670626]">
-                      <span className="w-2 h-2 rounded-full bg-[#670626] animate-pulse" />
-                      Online
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          apiOnline === true ? 'bg-emerald-600 animate-pulse' : 'bg-[#670626]'
+                        }`}
+                      />
+                      {agencyStatusLabel}
                     </span>
                   </div>
                   <h3 className="text-lg font-extrabold text-[#2B010E]">{meta.name}</h3>
@@ -460,7 +553,7 @@ export const LandingPage: React.FC = () => {
                 <div className="mt-6 pt-4 border-t border-[#A83B4D]/20">
                   <div className="flex items-center justify-between font-mono text-xs">
                     <span className="text-[#A83B4D] uppercase font-bold">Dispatch Channel</span>
-                    <span className="text-[#670626] font-extrabold">Mesh Active</span>
+                    <span className="text-[#670626] font-extrabold">{dispatchChannelLabel}</span>
                   </div>
                 </div>
               </div>
@@ -513,8 +606,8 @@ export const LandingPage: React.FC = () => {
             insights={{
               title: 'Risk & Velocity Analytics',
               description: 'Municipal risk scoring and response velocity tracking.',
-              values: [14, 18, 16, 25, 23, 31, 29, 38, 35, 44, 49, 56],
-              forecastFrom: 8
+              values: telemetryValues,
+              forecastFrom: Math.max(1, telemetryValues.length - 2)
             }}
           />
         </div>

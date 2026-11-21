@@ -236,7 +236,7 @@ public class UserGovernanceService(
         return (true, null);
     }
 
-    public async Task<(bool Success, string? Error)> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default)
+    public async Task<(bool Success, string? Error)> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default, string? capturesRootPath = null)
     {
         var user = await userRepo.GetByIdAsync(userId, ct);
         if (user == null) return (false, "User not found.");
@@ -270,6 +270,27 @@ public class UserGovernanceService(
         if (request.GovernmentIdType != null) user.GovernmentIdType = InputSanitizer.Sanitize(request.GovernmentIdType);
         if (request.GovernmentIdNumber != null) user.GovernmentIdNumber = InputSanitizer.Sanitize(request.GovernmentIdNumber);
         if (!string.IsNullOrWhiteSpace(request.DisplayName)) user.DisplayName = InputSanitizer.Sanitize(request.DisplayName);
+
+        if (request.Allergies != null) user.Allergies = InputSanitizer.Sanitize(request.Allergies);
+        if (request.MedicalConditions != null) user.MedicalConditions = InputSanitizer.Sanitize(request.MedicalConditions);
+        if (request.IsOrganDonor.HasValue) user.IsOrganDonor = request.IsOrganDonor.Value;
+        if (request.SecondaryContactName != null) user.SecondaryContactName = InputSanitizer.Sanitize(request.SecondaryContactName);
+        if (request.SecondaryContactPhone != null) user.SecondaryContactPhone = InputSanitizer.Sanitize(request.SecondaryContactPhone);
+
+        if (!string.IsNullOrWhiteSpace(request.AvatarDataUrl))
+        {
+            string effectiveCapturesRoot = string.IsNullOrWhiteSpace(capturesRootPath)
+                ? Path.Combine(Directory.GetCurrentDirectory(), "server-data", "uploads", "captures")
+                : capturesRootPath;
+            string? savedAvatarPath = await CaptureStorageHelper.SaveCaptureDataUrlAsync(
+                request.AvatarDataUrl,
+                effectiveCapturesRoot,
+                $"AVATAR_{user.Id:N}",
+                ct);
+            if (savedAvatarPath == null)
+                return (false, "Invalid avatar image format. Only PNG, JPEG, or WebP images up to 5 MB are allowed.");
+            user.AvatarCapturePath = savedAvatarPath;
+        }
 
         user.UpdatedAt = DateTime.UtcNow;
         await userRepo.UpdateAsync(user, ct);
@@ -398,6 +419,9 @@ public class UserGovernanceService(
             _ => null
         };
 
+    public async Task<string?> GetUserAvatarCapturePathAsync(Guid userId, CancellationToken ct = default) =>
+        (await userRepo.GetByIdWithDeletedAsync(userId, ct))?.AvatarCapturePath;
+
     private static UserResponse MapToUserResponse(User u) => new(
         u.Id,
         u.FullName,
@@ -482,6 +506,12 @@ public class UserGovernanceService(
         u.EffectiveDisplayName,
         u.IdentityVerificationStatus,
         u.FacialVerificationStatus,
-        !string.IsNullOrWhiteSpace(u.IdBackCapturePath)
+        !string.IsNullOrWhiteSpace(u.IdBackCapturePath),
+        u.Allergies,
+        u.MedicalConditions,
+        u.IsOrganDonor,
+        u.SecondaryContactName,
+        u.SecondaryContactPhone,
+        !string.IsNullOrWhiteSpace(u.AvatarCapturePath) ? $"/api/users/{u.Id}/captures/avatar" : null
     );
 }

@@ -1,5 +1,5 @@
 // [Layer: Endpoints]
-// Responsibility: Incident reporting and alert endpoint stubs using universal arrow lambda syntax (=>).
+// Responsibility: Incident reporting, evidence media, feedback, and alert endpoint stubs using universal arrow lambda syntax (=>).
 // Katipuneros Architecture: Strictly typed request/response contracts with ZERO 'any' usage.
 
 import { requestJson } from './apiClient';
@@ -21,6 +21,8 @@ export interface IncidentImageAiAnalysisResponse {
   roboflowAuthTransport: string;
   claudeModelUsed: string;
   isGenuineIncident: boolean;
+  autoApproveEligible?: boolean;
+  aiVerificationStatus?: string | null;
   detectedCategory: string;
   recommendedSeverity: string;
   pointerIconType: IncidentPointerIconType;
@@ -30,6 +32,8 @@ export interface IncidentImageAiAnalysisResponse {
   verificationStatus: string;
   recommendedAgencyUnit: string;
 }
+
+export type IncidentImageAiAnalysisResult = IncidentImageAiAnalysisResponse;
 
 export interface CreateReportPayload {
   title: string;
@@ -63,6 +67,30 @@ export interface IncidentEvidenceItem {
   caption?: string;
   timestamp?: string;
   type?: string;
+}
+
+export interface ReportEvidenceRecordDto {
+  id: string;
+  reportId: string;
+  filePath?: string;
+  url?: string;
+  dataUrl?: string;
+  mediaType?: string;
+  caption?: string;
+  uploadedByUserId?: string | null;
+  uploadedByName?: string;
+  createdAtUtc?: string;
+  createdAt?: string;
+}
+
+export interface ReportFeedbackRecordDto {
+  id: string;
+  reportId: string;
+  userId?: string;
+  rating: number;
+  comment: string;
+  createdAtUtc?: string;
+  createdAt?: string;
 }
 
 export interface ReportItem {
@@ -114,6 +142,16 @@ export interface ReportItem {
   claudeVisibleHazards?: string | null;
   claudeUncertaintyNotes?: string | null;
   pointerIconType?: string | null;
+  aiAutoApproved?: boolean;
+  aiVerificationStatus?: string | null;
+}
+
+export interface AiAutoApproveReportResponse {
+  autoApproved: boolean;
+  status: string;
+  aiVerificationStatus: string;
+  message: string;
+  report?: ReportItem;
 }
 
 export interface AlertItem {
@@ -136,31 +174,7 @@ export interface EmergencyBroadcastPayload {
   externalLink?: string;
   hasImage?: boolean;
   hasVideo?: boolean;
-}
-
-export interface IncidentFieldLog {
-  reportId: string;
-  evidences: IncidentEvidenceItem[];
-  evidencePhotos: string[];
-  pcrRecords: unknown[];
-  casualties: unknown[];
-  isVerified: boolean;
-  adminAiVerified: boolean;
-  verifiedAt: string | null;
-  submittedAt: string;
-  notes?: string;
-}
-
-export interface PersistIncidentFieldLogPayload {
-  evidences?: IncidentEvidenceItem[] | string[];
-  evidencePhotos?: string[];
-  pcrRecords?: unknown[];
-  casualties?: unknown[];
-  isVerified?: boolean;
-  adminAiVerified?: boolean;
-  verifiedAt?: string | null;
-  submittedAt?: string;
-  notes?: string;
+  imageDataUrl?: string;
 }
 
 export const analyzeIncidentImage = (
@@ -188,11 +202,50 @@ export const getMyReports = (): Promise<ReportItem[]> =>
 export const getAgencyReports = (agency: string): Promise<ReportItem[]> =>
   requestJson<ReportItem[]>(`/api/reports/agency/${agency}`, { method: 'GET' });
 
+export const getReportEvidences = (reportId: string): Promise<ReportEvidenceRecordDto[]> =>
+  requestJson<ReportEvidenceRecordDto[]>(`/api/reports/${encodeURIComponent(reportId)}/evidences`, {
+    method: 'GET'
+  });
+
+export const uploadReportEvidence = (
+  reportId: string,
+  dataUrl: string,
+  caption?: string
+): Promise<{ message?: string; data?: ReportEvidenceRecordDto } & Partial<ReportEvidenceRecordDto>> =>
+  requestJson<{ message?: string; data?: ReportEvidenceRecordDto } & Partial<ReportEvidenceRecordDto>>(
+    `/api/reports/${encodeURIComponent(reportId)}/evidences`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        dataUrl,
+        imageDataUrl: dataUrl,
+        caption: caption || '',
+        mediaType: 'image'
+      })
+    }
+  );
+
+export const submitReportFeedback = (
+  reportId: string,
+  rating: number,
+  comment: string
+): Promise<{ message?: string; data?: ReportFeedbackRecordDto } & Partial<ReportFeedbackRecordDto>> =>
+  requestJson<{ message?: string; data?: ReportFeedbackRecordDto } & Partial<ReportFeedbackRecordDto>>(
+    `/api/reports/${encodeURIComponent(reportId)}/feedback`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ rating, comment })
+    }
+  );
+
 export const getAlerts = (): Promise<AlertItem[]> =>
   requestJson<AlertItem[]>('/api/alerts', { method: 'GET' });
 
 export const markAlertRead = (reportId: string): Promise<{ message: string }> =>
-  requestJson<{ message: string }>(`/api/alerts/${reportId}/read`, { method: 'POST' });
+  requestJson<{ message: string }>(`/api/alerts/${encodeURIComponent(reportId)}/read`, { method: 'POST' });
+
+export const markAllAlertsRead = (): Promise<{ message: string }> =>
+  requestJson<{ message: string }>('/api/alerts/mark-all-read', { method: 'POST' });
 
 export const verifyReport = (
   reportId: string,
@@ -207,6 +260,11 @@ export const verifyReport = (
       adminNote: note,
       severity
     })
+  });
+
+export const autoApproveReportWithAi = (id: string): Promise<AiAutoApproveReportResponse> =>
+  requestJson<AiAutoApproveReportResponse>(`/api/reports/${encodeURIComponent(id)}/ai-auto-approve`, {
+    method: 'POST'
   });
 
 export const updateReportSeverity = async (
@@ -262,128 +320,3 @@ export const sendEmergencyBroadcast = (
     method: 'POST',
     body: JSON.stringify(payload)
   });
-
-const FIELD_LOG_STORAGE_PREFIX = 'resqtrack_field_log_';
-
-export const getStoredIncidentFieldLog = (reportId: string): IncidentFieldLog | null => {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(`${FIELD_LOG_STORAGE_PREFIX}${reportId}`);
-    return raw ? (JSON.parse(raw) as IncidentFieldLog) : null;
-  } catch {
-    return null;
-  }
-};
-
-export const persistIncidentFieldLog = async (
-  reportId: string,
-  payload: PersistIncidentFieldLogPayload
-): Promise<IncidentFieldLog> => {
-  const existing = getStoredIncidentFieldLog(reportId);
-
-  const normalizedEvidences: IncidentEvidenceItem[] = [];
-  if (Array.isArray(payload.evidences)) {
-    for (const item of payload.evidences) {
-      if (typeof item === 'string') {
-        normalizedEvidences.push({ url: item });
-      } else if (item && typeof item.url === 'string') {
-        normalizedEvidences.push(item);
-      }
-    }
-  } else if (existing?.evidences) {
-    normalizedEvidences.push(...existing.evidences);
-  }
-
-  const normalizedPhotos: string[] = Array.isArray(payload.evidencePhotos)
-    ? [...payload.evidencePhotos]
-    : normalizedEvidences.map((e) => e.url);
-
-  if (Array.isArray(payload.evidencePhotos)) {
-    for (const photo of payload.evidencePhotos) {
-      if (!normalizedEvidences.some((e) => e.url === photo)) {
-        normalizedEvidences.push({ url: photo });
-      }
-    }
-  }
-
-  const pcrList = Array.isArray(payload.pcrRecords)
-    ? payload.pcrRecords
-    : Array.isArray(payload.casualties)
-    ? payload.casualties
-    : existing?.pcrRecords ?? [];
-
-  const casualtiesList = Array.isArray(payload.casualties)
-    ? payload.casualties
-    : pcrList;
-
-  const isVerified = payload.isVerified ?? payload.adminAiVerified ?? existing?.isVerified ?? false;
-  const adminAiVerified = payload.adminAiVerified ?? payload.isVerified ?? existing?.adminAiVerified ?? false;
-  const verifiedAt =
-    payload.verifiedAt !== undefined
-      ? payload.verifiedAt
-      : isVerified
-      ? existing?.verifiedAt ?? new Date().toISOString()
-      : null;
-
-  const submittedAt = payload.submittedAt || existing?.submittedAt || new Date().toISOString();
-
-  const record: IncidentFieldLog = {
-    reportId,
-    evidences: normalizedEvidences,
-    evidencePhotos: normalizedPhotos,
-    pcrRecords: pcrList,
-    casualties: casualtiesList,
-    isVerified,
-    adminAiVerified,
-    verifiedAt,
-    submittedAt,
-    notes: payload.notes ?? existing?.notes ?? ''
-  };
-
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(`${FIELD_LOG_STORAGE_PREFIX}${reportId}`, JSON.stringify(record));
-    } catch {
-      // Storage fallback
-    }
-  }
-
-  try {
-    await requestJson<{ message: string }>(`/api/settings/FIELD_LOG_${reportId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ value: JSON.stringify(record) })
-    });
-  } catch {
-    // Non-fatal if setting key is absent on backend
-  }
-
-  return record;
-};
-
-export const getIncidentFieldLog = async (reportId: string): Promise<IncidentFieldLog | null> => {
-  const local = getStoredIncidentFieldLog(reportId);
-
-  try {
-    const settings = await requestJson<Array<{ key: string; value: string }>>('/api/settings', {
-      method: 'GET'
-    });
-    if (Array.isArray(settings)) {
-      const match = settings.find((s) => s.key === `FIELD_LOG_${reportId}`);
-      if (match?.value) {
-        const parsed = JSON.parse(match.value) as IncidentFieldLog;
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem(`${FIELD_LOG_STORAGE_PREFIX}${reportId}`, JSON.stringify(parsed));
-          } catch {
-            // Storage quota fallback
-          }
-        }
-        return parsed;
-      }
-    }
-  } catch {
-    // Fall back to local storage
-  }
-
-  return local;
-};

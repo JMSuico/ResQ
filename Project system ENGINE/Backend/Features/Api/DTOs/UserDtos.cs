@@ -166,7 +166,13 @@ public record UserDetailResponse(
     string DisplayName = "",
     string IdentityVerificationStatus = "PendingReview",
     string FacialVerificationStatus = "PendingReview",
-    bool HasIdBackCapture = false
+    bool HasIdBackCapture = false,
+    string? Allergies = null,
+    string? MedicalConditions = null,
+    bool IsOrganDonor = false,
+    string? SecondaryContactName = null,
+    string? SecondaryContactPhone = null,
+    string? AvatarUrl = null
 );
 
 public record PagedResult<T>(

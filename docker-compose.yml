@@ -115,10 +115,13 @@ services:
       ConnectionStrings__PostgreSqlConnection_Replica: Host=resqtrack-db-replica;Port=5432;Database=${POSTGRES_DB:-ResQTrackDb};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-YourPassword123!};
       ConnectionStrings__DefaultConnection: ${SQLSERVER_CONNECTION:-Server=host.docker.internal;Database=ResQTrackDb;User Id=sa;Password=YourPassword123!;TrustServerCertificate=True;MultipleActiveResultSets=true;}
       RedisConnection: ${REDIS_CONNECTION:-resqtrack-cache:6379}
-      Claude__ApiKey: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ROBOFLOW_API_KEY: ${ROBOFLOW_API_KEY:-}
       Claude__Model: ${CLAUDE_MODEL:-claude-sonnet-4-6}
       Claude__FallbackModel: ${CLAUDE_FALLBACK_MODEL:-claude-sonnet-5-5}
+      Claude__IncidentVisionModel: ${CLAUDE_INCIDENT_VISION_MODEL:-claude-haiku-4-5-20251001}
       Claude__Endpoint: ${CLAUDE_ENDPOINT:-https://api.anthropic.com/v1/messages}
+      Roboflow__ModelId: ${ROBOFLOW_MODEL_ID:-accident-and-non-accident-label-image-dataset/14}
       VerificationTokens__HmacSecret: ${VERIFICATION_HMAC_SECRET:-RESQTRACK-V2-TOKEN-HMAC-SHA256-DEV-SIGNING-KEY-2026-KATIPUNAN-7109}
       Cors__AllowedOrigins: ${ALLOWED_ORIGINS:-}
     extra_hosts:
@@ -126,7 +129,8 @@ services:
     ports:
       - "${BACKEND_PORT:-1999}:1999"
     volumes:
-      - resqtrack_uploads_data:/app/server-data/uploads
+      - "./Project system ENGINE/Backend/server-data/uploads:/app/server-data/uploads"
+      - "./Project system ENGINE/Backend/LocalConfig:/app/LocalConfig:ro"
     depends_on:
       resqtrack-db-primary:
         condition: service_healthy
@@ -147,14 +151,20 @@ services:
     environment:
       PORT: 1996
       BACKEND_URL: ${BACKEND_INTERNAL_URL:-http://resqtrack-backend:1999}
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
     ports:
       - "${ADMIN_PORT:-1996}:1996"
     volumes:
       - "./Project system ENGINE/Frontend/src:/app/src"
+      - "./Project system ENGINE/Frontend/public:/app/public"
       - "./Project system ENGINE/Frontend/index.html:/app/index.html"
       - "./Project system ENGINE/Frontend/vite.config.ts:/app/vite.config.ts"
       - "./Project system ENGINE/Frontend/tsconfig.json:/app/tsconfig.json"
       - "./Project system ENGINE/Frontend/tsconfig.app.json:/app/tsconfig.app.json"
+      - "./Project system ENGINE/Frontend/tailwind.config.cjs:/app/tailwind.config.cjs"
+      - "./Project system ENGINE/Frontend/postcss.config.cjs:/app/postcss.config.cjs"
+      - "resqtrack_admin_node_modules:/app/node_modules"
     depends_on:
       - resqtrack-backend
     networks:
@@ -172,14 +182,20 @@ services:
     environment:
       PORT: 1997
       BACKEND_URL: ${BACKEND_INTERNAL_URL:-http://resqtrack-backend:1999}
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
     ports:
       - "${RESPONDER_PORT:-1997}:1997"
     volumes:
       - "./Project system ENGINE/Frontend/src:/app/src"
+      - "./Project system ENGINE/Frontend/public:/app/public"
       - "./Project system ENGINE/Frontend/index.html:/app/index.html"
       - "./Project system ENGINE/Frontend/vite.config.ts:/app/vite.config.ts"
       - "./Project system ENGINE/Frontend/tsconfig.json:/app/tsconfig.json"
       - "./Project system ENGINE/Frontend/tsconfig.app.json:/app/tsconfig.app.json"
+      - "./Project system ENGINE/Frontend/tailwind.config.cjs:/app/tailwind.config.cjs"
+      - "./Project system ENGINE/Frontend/postcss.config.cjs:/app/postcss.config.cjs"
+      - "resqtrack_responders_node_modules:/app/node_modules"
     depends_on:
       - resqtrack-backend
     networks:
@@ -197,14 +213,20 @@ services:
     environment:
       PORT: 1998
       BACKEND_URL: ${BACKEND_INTERNAL_URL:-http://resqtrack-backend:1999}
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
     ports:
       - "${CIVILIAN_PORT:-1998}:1998"
     volumes:
       - "./Project system ENGINE/Frontend/src:/app/src"
+      - "./Project system ENGINE/Frontend/public:/app/public"
       - "./Project system ENGINE/Frontend/index.html:/app/index.html"
       - "./Project system ENGINE/Frontend/vite.config.ts:/app/vite.config.ts"
       - "./Project system ENGINE/Frontend/tsconfig.json:/app/tsconfig.json"
       - "./Project system ENGINE/Frontend/tsconfig.app.json:/app/tsconfig.app.json"
+      - "./Project system ENGINE/Frontend/tailwind.config.cjs:/app/tailwind.config.cjs"
+      - "./Project system ENGINE/Frontend/postcss.config.cjs:/app/postcss.config.cjs"
+      - "resqtrack_civilian_node_modules:/app/node_modules"
     depends_on:
       - resqtrack-backend
     networks:
@@ -247,3 +269,9 @@ volumes:
     name: resqtrack_postgres_replica_data
   resqtrack_uploads_data:
     name: resqtrack_uploads_data
+  resqtrack_admin_node_modules:
+    name: resqtrack_admin_node_modules
+  resqtrack_responders_node_modules:
+    name: resqtrack_responders_node_modules
+  resqtrack_civilian_node_modules:
+    name: resqtrack_civilian_node_modules

@@ -1,8 +1,8 @@
 // [Layer: UserRoles/Features/Pages/RespondersPanel]
 // Responsibility: Casualty Field Dispatches feed allocated to the active responder agency with tactical progression controls,
-// backend-connected sort/filter tabs, 3-option Call Backup modal, 40-image timestamped Evidence lightbox modal,
-// multi-casualty PCR vitals ("ADD NEW PCR VITAL"), green pointer "RESPONDED" state (#10B981), and "SUBMIT REPORT" to Incident Logs.
-// Strictly uses arrow lambda functions (=>), pure lucide-react icons, and @/Shared + @/Hooks primitives.
+// PostgreSQL-backed evidence gallery (GET/POST /api/reports/{id}/evidences), multi-casualty PCR vitals,
+// backup dispatch requests (POST /api/dispatch-requests), and real verifiedAt + 5m auto-close countdown.
+// Strictly uses arrow lambda functions (=>), ZERO 'any', ZERO emojis, pure lucide-react icons, and @/Shared + @/Hooks primitives.
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -15,6 +15,9 @@ import {
 } from '@/Hooks';
 import {
   getAgencyReports,
+  getReportEvidences,
+  uploadReportEvidence,
+  ReportEvidenceRecordDto,
   ReportItem,
   sendEmergencyBroadcast,
   verifyReport
@@ -22,7 +25,9 @@ import {
 import {
   submitPcrRecord,
   getPcrRecords,
-  CreatePcrPayload
+  createMedicDispatchRequest,
+  CreatePcrPayload,
+  PatientCareRecord
 } from '@/Endpoints/responderOpsApi';
 import {
   Button,
@@ -32,11 +37,9 @@ import {
   useTableCardView,
   DefaultFloatingModalCard,
   Dropdown,
-  FireAlarmEscalationModal,
   PoliceBlotterModal
 } from '@/Shared';
 import { formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
-import { BASELINE_INCIDENT_REPORTS } from '@/Libs/Assets/baselineFixtures';
 import {
   Ambulance,
   Flame,
@@ -84,81 +87,21 @@ export interface EvidenceMediaItem {
 export interface CasualtyVitalEntry {
   id: string;
   patientName: string;
-  age: number;
+  age: string;
   gender: string;
   levelOfConsciousness: string;
-  bpSystolic: number;
-  bpDiastolic: number;
-  heartRate: number;
-  respiratoryRate: number;
-  spO2: number;
-  glucose: number;
-  temp: number;
+  bpSystolic: string;
+  bpDiastolic: string;
+  heartRate: string;
+  respiratoryRate: string;
+  spO2: string;
+  glucose: string;
+  temp: string;
   chiefComplaint: string;
   narrative: string;
   interventions: string[];
   recordedAt: string;
   pcrReference?: string;
-}
-
-export interface IncidentLogSubmission {
-  id: string;
-  incidentId: string;
-  referenceCode: string;
-  title: string;
-  category: string;
-  severity: string;
-  status: string;
-  pointerColor: string;
-  latitude: number;
-  longitude: number;
-  locationLabel: string;
-  responderName: string;
-  responderUnit: string;
-  evidences: EvidenceMediaItem[];
-  pcrRecords: CasualtyVitalEntry[];
-  submittedAt: string;
-  submittedAtFormatted: string;
-  adminAiVerified: boolean;
-  countdownSecondsRemaining: number;
-  evidencePhotos?: Array<{
-    id?: string;
-    url: string;
-    timestamp?: string;
-    caption?: string;
-    latitude?: number;
-    longitude?: number;
-  }>;
-  casualties?: Array<{
-    id?: string;
-    patientName: string;
-    age?: number | string;
-    gender?: string;
-    triageColor?: 'Red' | 'Yellow' | 'Green' | 'Black';
-    triageTag?: string;
-    consciousness?: string;
-    levelOfConsciousness?: string;
-    bloodPressure?: string;
-    bloodPressureSystolic?: number;
-    bloodPressureDiastolic?: number;
-    heartRate?: number | string;
-    heartRateBpm?: number;
-    respiratoryRate?: number | string;
-    oxygenSaturation?: number | string;
-    spO2Percent?: number;
-    glucose?: number;
-    bloodGlucoseMgDl?: number;
-    temperature?: number | string;
-    temperatureCelsius?: number;
-    chiefComplaint?: string;
-    treatmentNotes?: string;
-    narrative?: string;
-    interventions?: string[];
-    recordedAt?: string;
-    pcrReference?: string;
-  }>;
-  isVerified?: boolean;
-  verifiedAt?: string;
 }
 
 type FilterTabMode = 'ALL' | 'CRITICAL' | 'ACTIVE' | 'RESOLVED';
@@ -221,23 +164,76 @@ export const formatCountdownMmSs = (totalSeconds: number): string => {
   return `${mins}:${secs}`;
 };
 
-const createBlankCasualtyEntry = (indexNum: number): CasualtyVitalEntry => ({
+const computeRemainingSecondsFromVerifiedAt = (
+  verifiedAt?: string | null,
+  nowMs: number = Date.now()
+): number => {
+  if (!verifiedAt) return COUNTDOWN_TOTAL_SECONDS;
+  const verifiedMs = new Date(verifiedAt).getTime();
+  if (Number.isNaN(verifiedMs)) return COUNTDOWN_TOTAL_SECONDS;
+  const elapsed = Math.floor((nowMs - verifiedMs) / 1000);
+  return Math.max(0, COUNTDOWN_TOTAL_SECONDS - elapsed);
+};
+
+const createBlankCasualtyEntry = (): CasualtyVitalEntry => ({
   id: `pcr-casualty-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-  patientName: indexNum > 1 ? `Casualty Patient #${indexNum}` : '',
-  age: 28,
+  patientName: '',
+  age: '',
   gender: 'Male',
   levelOfConsciousness: 'Alert',
-  bpSystolic: 120,
-  bpDiastolic: 80,
-  heartRate: 78,
-  respiratoryRate: 16,
-  spO2: 98,
-  glucose: 105,
-  temp: 36.8,
+  bpSystolic: '',
+  bpDiastolic: '',
+  heartRate: '',
+  respiratoryRate: '',
+  spO2: '',
+  glucose: '',
+  temp: '',
   chiefComplaint: '',
   narrative: '',
   interventions: [],
   recordedAt: formatExactTimestampWithSeconds(new Date())
+});
+
+const mapApiEvidenceToMediaItem = (
+  ev: ReportEvidenceRecordDto,
+  index: number,
+  fallbackId: string
+): EvidenceMediaItem => {
+  const ts = ev.createdAtUtc || ev.createdAt || new Date().toISOString();
+  const resolvedUrl = ev.url || ev.dataUrl || ev.filePath || '';
+  const isVideo =
+    (ev.mediaType || '').toLowerCase() === 'video' ||
+    resolvedUrl.startsWith('data:video/');
+  return {
+    id: ev.id || `ev-${fallbackId}-${index + 1}`,
+    slotIndex: index + 1,
+    url: resolvedUrl,
+    mediaType: isVideo ? 'video' : 'image',
+    caption: ev.caption || `Evidence #${index + 1}`,
+    capturedAtFormatted: formatExactTimestampWithSeconds(ts),
+    capturedAtIso: ts,
+    uploadedBy: ev.uploadedByName || 'Responder'
+  };
+};
+
+const mapPcrRecordToEntry = (r: PatientCareRecord): CasualtyVitalEntry => ({
+  id: r.id,
+  patientName: r.patientName,
+  age: String(r.age),
+  gender: r.gender,
+  levelOfConsciousness: r.levelOfConsciousness,
+  bpSystolic: String(r.bloodPressureSystolic),
+  bpDiastolic: String(r.bloodPressureDiastolic),
+  heartRate: String(r.heartRateBpm),
+  respiratoryRate: String(r.respiratoryRate),
+  spO2: String(r.spO2Percent),
+  glucose: String(r.bloodGlucoseMgDl),
+  temp: String(r.temperatureCelsius),
+  chiefComplaint: r.chiefComplaint,
+  narrative: r.narrative,
+  interventions: r.interventions || [],
+  recordedAt: formatExactTimestampWithSeconds(r.createdAt),
+  pcrReference: r.pcrReference
 });
 
 export const UnitIncidentsFeed: React.FC = () => {
@@ -253,6 +249,7 @@ export const UnitIncidentsFeed: React.FC = () => {
 
   const [incidents, setIncidents] = useState<ReportItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [filterMode, setFilterMode] = useState<FilterTabMode>('ALL');
   const [sortMode, setSortMode] = useState<SortMode>('CRITICAL_FIRST');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -262,66 +259,33 @@ export const UnitIncidentsFeed: React.FC = () => {
   const [actionSuccessToast, setActionSuccessToast] = useState<string | null>(null);
   const [selectedDetailIncident, setSelectedDetailIncident] = useState<ReportItem | null>(null);
 
-  // Task 3: 3-Option Backup Modal State
   const [backupModalIncident, setBackupModalIncident] = useState<ReportItem | null>(null);
   const [selectedBackupOption, setSelectedBackupOption] = useState<string>(BACKUP_OPTIONS[0].id);
   const [backupAgency, setBackupAgency] = useState<'RHU' | 'FIRE' | 'PNP' | 'ALL'>('ALL');
   const [backupNote, setBackupNote] = useState<string>('');
   const [dispatchChannel, setDispatchChannel] = useState<string>('KATIPUNAN-C2-TAC1');
+  const [isSendingBackup, setIsSendingBackup] = useState<boolean>(false);
 
-  // Task 4: 40-Image Timestamped Evidence Modal State
   const [evidenceModalIncident, setEvidenceModalIncident] = useState<ReportItem | null>(null);
-  const [evidenceMap, setEvidenceMap] = useState<Record<string, EvidenceMediaItem[]>>(() => {
-    try {
-      const raw = localStorage.getItem('resqtrack_incident_evidences');
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [evidenceMap, setEvidenceMap] = useState<Record<string, EvidenceMediaItem[]>>({});
+  const [isUploadingEvidence, setIsUploadingEvidence] = useState<boolean>(false);
   const [selectedEvidenceSlot, setSelectedEvidenceSlot] = useState<number>(0);
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
   const [lightboxTitle, setLightboxTitle] = useState<string>('Field Incident Photographic Evidence');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Task 5: Multi-Casualty PCR Vitals, RESPONDED (#10B981), SUBMIT REPORT & 5-Min Verification Countdown
   const [activePcrIncident, setActivePcrIncident] = useState<ReportItem | null>(null);
-  const [pcrRecordsByIncident, setPcrRecordsByIncident] = useState<Record<string, CasualtyVitalEntry[]>>(() => {
-    try {
-      const raw = localStorage.getItem('resqtrack_pcr_records');
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
-  const [draftCasualties, setDraftCasualties] = useState<CasualtyVitalEntry[]>([createBlankCasualtyEntry(1)]);
+  const [pcrRecordsByIncident, setPcrRecordsByIncident] = useState<Record<string, CasualtyVitalEntry[]>>({});
+  const [draftCasualties, setDraftCasualties] = useState<CasualtyVitalEntry[]>([createBlankCasualtyEntry()]);
   const [activeCasualtyTabIndex, setActiveCasualtyTabIndex] = useState<number>(0);
   const [isSavingPcr, setIsSavingPcr] = useState<boolean>(false);
 
-  const [respondedMap, setRespondedMap] = useState<Record<string, { respondedAt: string; pointerColor: string; responderName: string }>>(() => {
-    try {
-      const raw = localStorage.getItem('resqtrack_responded_incidents');
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  const [countdownTimers, setCountdownTimers] = useState<Record<string, { remaining: number; verified: boolean; closed: boolean }>>(() => {
-    try {
-      const raw = localStorage.getItem('resqtrack_verification_countdowns');
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  const [activeAlarmIncident, setActiveAlarmIncident] = useState<ReportItem | null>(null);
   const [activeBlotterIncident, setActiveBlotterIncident] = useState<ReportItem | null>(null);
+  const autoClosedIdsRef = useRef<Set<string>>(new Set());
 
   const showToast = useCallback((msg: string) => {
     setActionSuccessToast(msg);
-    setTimeout(() => setActionSuccessToast(null), 3500);
+    window.setTimeout(() => setActionSuccessToast(null), 3500);
   }, []);
 
   const broadcastNotificationEvent = useCallback((title: string, message: string, metadata?: Record<string, unknown>) => {
@@ -340,53 +304,74 @@ export const UnitIncidentsFeed: React.FC = () => {
     }
   }, []);
 
-  const loadIncidents = useCallback(async () => {
-    const targetUnit = activeAgencyUnit;
-    let aiVisionCache: Record<string, Partial<ReportItem>> = {};
+  const refreshEvidencesForIncident = useCallback(async (inc: ReportItem) => {
     try {
-      const cachedAiRaw = localStorage.getItem('resqtrack_ai_vision_by_report');
-      if (cachedAiRaw) {
-        aiVisionCache = JSON.parse(cachedAiRaw) as Record<string, Partial<ReportItem>>;
-      }
-    } catch {}
-
-    const enrichList = (list: ReportItem[]): ReportItem[] =>
-      list.map((r) => {
-        const cached = aiVisionCache[r.id] || (r.referenceCode ? aiVisionCache[r.referenceCode] : undefined);
-        return {
-          ...r,
-          roboflowModelId: r.roboflowModelId ?? cached?.roboflowModelId,
-          roboflowPrediction: r.roboflowPrediction ?? cached?.roboflowPrediction,
-          roboflowConfidence: r.roboflowConfidence ?? cached?.roboflowConfidence,
-          roboflowNeedsReview: r.roboflowNeedsReview ?? cached?.roboflowNeedsReview,
-          claudeModelUsed: r.claudeModelUsed ?? cached?.claudeModelUsed,
-          claudeIncidentCategory: r.claudeIncidentCategory ?? cached?.claudeIncidentCategory,
-          claudeSituationSummary: r.claudeSituationSummary ?? cached?.claudeSituationSummary,
-          claudeVisibleHazards: r.claudeVisibleHazards ?? cached?.claudeVisibleHazards,
-          claudeUncertaintyNotes: r.claudeUncertaintyNotes ?? cached?.claudeUncertaintyNotes,
-          pointerIconType: r.pointerIconType ?? cached?.pointerIconType
-        };
-      });
-
-    try {
-      const data = await getAgencyReports(targetUnit);
-      if (Array.isArray(data) && data.length > 0) {
-        setIncidents(enrichList(data));
-      } else {
-        const agencyFiltered = BASELINE_INCIDENT_REPORTS.filter((r) => {
-          const rec = (r.recommendedAgencyUnit || '').toUpperCase();
-          const alloc = (r.allocatedUnitCode || '').toUpperCase();
-          return rec.includes(targetUnit) || alloc.includes(targetUnit);
+      const apiEvidences = await getReportEvidences(inc.id);
+      const list: EvidenceMediaItem[] = Array.isArray(apiEvidences)
+        ? apiEvidences
+            .map((ev, idx) => mapApiEvidenceToMediaItem(ev, idx, inc.id))
+            .filter((item) => Boolean(item.url))
+        : [];
+      if (inc.imageUrl && !list.some((item) => item.url === inc.imageUrl)) {
+        list.unshift({
+          id: `ev-primary-${inc.id}`,
+          slotIndex: 1,
+          url: inc.imageUrl,
+          mediaType: 'image',
+          caption: `${inc.referenceCode} — Initial Field Capture`,
+          capturedAtFormatted: formatExactTimestampWithSeconds(inc.createdAt),
+          capturedAtIso: inc.createdAt || new Date().toISOString(),
+          uploadedBy: inc.reporterName || 'Reporter'
         });
-        setIncidents(enrichList(agencyFiltered.length > 0 ? agencyFiltered : BASELINE_INCIDENT_REPORTS));
       }
+      const reindexed = list.map((item, idx) => ({ ...item, slotIndex: idx + 1 }));
+      setEvidenceMap((prev) => ({ ...prev, [inc.id]: reindexed }));
+    } catch {
+      if (inc.imageUrl) {
+        setEvidenceMap((prev) => ({
+          ...prev,
+          [inc.id]: [
+            {
+              id: `ev-primary-${inc.id}`,
+              slotIndex: 1,
+              url: inc.imageUrl || '',
+              mediaType: 'image',
+              caption: `${inc.referenceCode} — Initial Field Capture`,
+              capturedAtFormatted: formatExactTimestampWithSeconds(inc.createdAt),
+              capturedAtIso: inc.createdAt || new Date().toISOString(),
+              uploadedBy: inc.reporterName || 'Reporter'
+            }
+          ]
+        }));
+      }
+    }
+  }, []);
+
+  const loadIncidents = useCallback(async () => {
+    try {
+      const [data, allPcrs] = await Promise.all([
+        getAgencyReports(activeAgencyUnit),
+        getPcrRecords().catch(() => [] as PatientCareRecord[])
+      ]);
+      const reportList = Array.isArray(data) ? data : [];
+      setIncidents(reportList);
+
+      const pcrGrouped: Record<string, CasualtyVitalEntry[]> = {};
+      (Array.isArray(allPcrs) ? allPcrs : []).forEach((p) => {
+        if (!p.reportId) return;
+        if (!pcrGrouped[p.reportId]) pcrGrouped[p.reportId] = [];
+        pcrGrouped[p.reportId].push(mapPcrRecordToEntry(p));
+      });
+      setPcrRecordsByIncident(pcrGrouped);
+
+      await Promise.all(reportList.slice(0, 20).map((inc) => refreshEvidencesForIncident(inc)));
     } catch (err) {
       console.error('Failed to load agency incident dispatches:', err);
-      setIncidents((prev) => (prev.length > 0 ? prev : enrichList(BASELINE_INCIDENT_REPORTS)));
+      setIncidents([]);
     } finally {
       setLoading(false);
     }
-  }, [activeAgencyUnit]);
+  }, [activeAgencyUnit, refreshEvidencesForIncident]);
 
   useValueRefreshAuto(loadIncidents, {
     intervalMs: 6000,
@@ -394,87 +379,41 @@ export const UnitIncidentsFeed: React.FC = () => {
   });
 
   useEffect(() => {
-    loadIncidents();
+    void loadIncidents();
   }, [loadIncidents]);
 
-  // Seed initial evidence items from incident imageUrl if not yet populated
-  useEffect(() => {
-    if (incidents.length === 0) return;
-    setEvidenceMap((prev) => {
-      let mutated = false;
-      const next = { ...prev };
-      incidents.forEach((inc) => {
-        if (!next[inc.id] || next[inc.id].length === 0) {
-          const initialList: EvidenceMediaItem[] = [];
-          if (inc.imageUrl) {
-            initialList.push({
-              id: `ev-init-${inc.id}-1`,
-              slotIndex: 1,
-              url: inc.imageUrl,
-              mediaType: 'image',
-              caption: `${inc.referenceCode} — Initial Field Capture (${inc.title})`,
-              capturedAtFormatted: formatExactTimestampWithSeconds(inc.createdAt),
-              capturedAtIso: inc.createdAt || new Date().toISOString(),
-              uploadedBy: inc.reporterName || 'Field Civilian Sensor'
-            });
-            mutated = true;
-          }
-          if (initialList.length > 0) {
-            next[inc.id] = initialList;
-          }
-        }
-      });
-      if (mutated) {
-        try {
-          localStorage.setItem('resqtrack_incident_evidences', JSON.stringify(next));
-        } catch {
-          // ignore storage quota errors
-        }
-      }
-      return mutated ? next : prev;
-    });
-  }, [incidents]);
-
-  // 1-second tick for 5-minute verification countdowns (05:00 -> 00:00 -> Closed)
+  // 1-second tick for real DB verifiedAt + 5m - now countdown; persists Resolved to PostgreSQL upon reaching 00:00
   useEffect(() => {
     const interval = window.setInterval(() => {
-      setCountdownTimers((prev) => {
-        const keys = Object.keys(prev);
-        if (keys.length === 0) return prev;
-        let changed = false;
-        const next = { ...prev };
-        keys.forEach((incId) => {
-          const entry = next[incId];
-          if (entry && entry.verified && !entry.closed && entry.remaining > 0) {
-            const nextRemaining = entry.remaining - 1;
-            changed = true;
-            if (nextRemaining <= 0) {
-              next[incId] = { remaining: 0, verified: true, closed: true };
-              setIncidents((currIncidents) =>
-                currIncidents.map((item) =>
-                  item.id === incId ? { ...item, status: 'Closed' } : item
-                )
-              );
-              verifyReport(incId, 'Closed', '5-minute post-verification countdown completed. Green pointer faded out & case 100% solved.').catch(() => undefined);
-            } else {
-              next[incId] = { ...entry, remaining: nextRemaining };
-            }
-          }
-        });
-        if (changed) {
-          try {
-            localStorage.setItem('resqtrack_verification_countdowns', JSON.stringify(next));
-          } catch {
-            // ignore
+      const currentNow = Date.now();
+      setNowMs(currentNow);
+
+      incidents.forEach((inc) => {
+        const isTerminal =
+          inc.status === 'Resolved' ||
+          inc.status === 'Closed' ||
+          inc.status === 'Rejected' ||
+          Boolean(inc.resolvedAt);
+        if (!isTerminal && inc.verifiedAt) {
+          const remaining = computeRemainingSecondsFromVerifiedAt(inc.verifiedAt, currentNow);
+          if (remaining <= 0 && !autoClosedIdsRef.current.has(inc.id)) {
+            autoClosedIdsRef.current.add(inc.id);
+            void verifyReport(
+              inc.id,
+              'Resolved',
+              '5-minute post-verification countdown completed. Case resolved.'
+            )
+              .then(() => loadIncidents())
+              .catch(() => {
+                autoClosedIdsRef.current.delete(inc.id);
+              });
           }
         }
-        return changed ? next : prev;
       });
     }, 1000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [incidents, loadIncidents]);
 
-  // Agency Emblem & Title (FIX #6: FIRE branch displays 'Reports')
   const agencyBadge = useMemo(() => {
     switch (activeAgencyUnit) {
       case 'FIRE':
@@ -508,20 +447,8 @@ export const UnitIncidentsFeed: React.FC = () => {
     }
   }, [activeAgencyUnit]);
 
-  // Effective status helper incorporating local Responded / Closed progression
-  const getEffectiveStatus = useCallback(
-    (inc: ReportItem): string => {
-      const timer = countdownTimers[inc.id];
-      if (timer?.closed || inc.status === 'Closed') return 'Closed';
-      if (respondedMap[inc.id] && inc.status !== 'Resolved' && inc.status !== 'Closed') {
-        return 'Responded';
-      }
-      return inc.status;
-    },
-    [countdownTimers, respondedMap]
-  );
+  const getEffectiveStatus = useCallback((inc: ReportItem): string => inc.status, []);
 
-  // Task 2: Live Counts for Filter Tabs
   const allCount = incidents.length;
 
   const criticalCount = useMemo(
@@ -557,7 +484,6 @@ export const UnitIncidentsFeed: React.FC = () => {
     [incidents, getEffectiveStatus]
   );
 
-  // Task 2: Filtered + Sorted Incidents
   const filteredAndSortedIncidents = useMemo(() => {
     const filtered = incidents.filter((inc) => {
       const effectiveStatus = getEffectiveStatus(inc);
@@ -635,7 +561,6 @@ export const UnitIncidentsFeed: React.FC = () => {
     });
   }, [incidents, filterMode, debouncedSearch, sortMode, getEffectiveStatus]);
 
-  // Task 2: Global Pagination Hook
   const {
     currentPage,
     pageSize,
@@ -664,27 +589,8 @@ export const UnitIncidentsFeed: React.FC = () => {
     showToast(`Coordinates copied: ${text}`);
   };
 
-  // Task 3: NAVIGATE GPS redirect to /responder?expandMap=true&focusIncidentId={incident.id}
   const handleNavigateGpsToTraumaBoard = (inc: ReportItem, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    try {
-      localStorage.setItem(
-        'resqtrack_focus_incident',
-        JSON.stringify({
-          incidentId: inc.id,
-          referenceCode: inc.referenceCode,
-          latitude: inc.latitude,
-          longitude: inc.longitude,
-          title: inc.title,
-          pointerColor: respondedMap[inc.id]?.pointerColor || '#EF4444',
-          expandMap: true,
-          timestamp: new Date().toISOString()
-        })
-      );
-    } catch {
-      // ignore storage error
-    }
-
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('resqtrack:map-focus', {
@@ -702,247 +608,149 @@ export const UnitIncidentsFeed: React.FC = () => {
     navigate(`/responder?expandMap=true&focusIncidentId=${encodeURIComponent(inc.id)}`);
   };
 
-  // Task 3: Execute 3-Option Call Backup Action
+  // Wire backup dispatch request cleanly through POST /api/dispatch-requests (+ optional broadcast)
   const handleExecuteBackupOption = async (optionId: string) => {
     if (!backupModalIncident) return;
     const chosenOption = BACKUP_OPTIONS.find((o) => o.id === optionId) || BACKUP_OPTIONS[0];
     const nowFormatted = formatExactTimestampWithSeconds(new Date());
-
-    const backupRecord = {
-      id: `backup-${Date.now()}`,
-      incidentId: backupModalIncident.id,
-      referenceCode: backupModalIncident.referenceCode,
-      incidentTitle: backupModalIncident.title,
-      locationLabel:
-        backupModalIncident.locationLabel ||
-        formatGpsCoord(backupModalIncident.latitude, backupModalIncident.longitude),
-      latitude: backupModalIncident.latitude,
-      longitude: backupModalIncident.longitude,
-      optionId: chosenOption.id,
-      optionLabel: chosenOption.label,
-      targetAgency: backupAgency,
-      note: backupNote,
-      dispatchChannel,
-      requestedBy: session?.fullName || 'Field Responder',
-      requesterUnit: session?.unit || 'RHU',
-      timestamp: nowFormatted
-    };
+    setIsSendingBackup(true);
 
     try {
-      const existingRaw = localStorage.getItem('resqtrack_backup_requests');
-      const existing = existingRaw ? JSON.parse(existingRaw) : [];
-      localStorage.setItem('resqtrack_backup_requests', JSON.stringify([backupRecord, ...existing]));
-    } catch {
-      // ignore storage error
-    }
-
-    try {
-      await sendEmergencyBroadcast({
-        title: `Backup Request · ${backupModalIncident.referenceCode}`,
-        message: `${chosenOption.label} — ${backupNote} (Target: ${backupAgency}, Channel: ${dispatchChannel})`,
-        severity: 'Critical'
+      const dispatchRecord = await createMedicDispatchRequest({
+        incidentId: backupModalIncident.id,
+        incidentCode: backupModalIncident.referenceCode,
+        incidentTitle: `Backup: ${backupModalIncident.title}`,
+        category: backupModalIncident.category,
+        severity: backupModalIncident.severity,
+        location:
+          backupModalIncident.locationLabel ||
+          formatGpsCoord(backupModalIncident.latitude, backupModalIncident.longitude),
+        coordinates: `${backupModalIncident.latitude.toFixed(6)}, ${backupModalIncident.longitude.toFixed(6)}`,
+        latitude: backupModalIncident.latitude,
+        longitude: backupModalIncident.longitude,
+        targetUnit: backupAgency,
+        originUnit: activeAgencyUnit,
+        responderId: session?.employeeOrResidentId || session?.userId || activeAgencyUnit,
+        responderName: session?.fullName || `${activeAgencyUnit} Responder`,
+        notes: `[${chosenOption.label}] Target: ${backupAgency} | Channel: ${dispatchChannel} | ${backupNote}`
       });
+
+      if (optionId !== 'OPTION_1_ADMIN_DISPATCH') {
+        await sendEmergencyBroadcast({
+          title: `Backup Request · ${backupModalIncident.referenceCode}`,
+          message: `${chosenOption.label} — ${backupNote} (Target: ${backupAgency}, Channel: ${dispatchChannel})`,
+          severity: 'Critical'
+        }).catch(() => undefined);
+      }
+
+      dispatchReportEvent({
+        type: 'BACKUP_REQUEST_DISPATCHED',
+        backupRecord: dispatchRecord
+      });
+
+      broadcastNotificationEvent(
+        `Backup Request · ${backupModalIncident.referenceCode}`,
+        `${chosenOption.label} (${nowFormatted})`,
+        { backupRecord: dispatchRecord }
+      );
+
+      if (optionId === 'OPTION_3_OFFICIAL_DISPATCH') {
+        showToast(`Official dispatch message sent on ${dispatchChannel}`);
+      } else if (optionId === 'OPTION_2_NEARBY_DISTRESS') {
+        showToast('Distress signal sent to nearby units');
+      } else {
+        showToast('Backup request persisted to Central Command');
+      }
+
+      setBackupModalIncident(null);
     } catch {
-      // fallback to local event bus
+      showToast('Failed to send backup dispatch request to server.');
+    } finally {
+      setIsSendingBackup(false);
     }
-
-    dispatchReportEvent({
-      type: 'BACKUP_REQUEST_DISPATCHED',
-      backupRecord
-    });
-
-    broadcastNotificationEvent(
-      `Backup Request · ${backupModalIncident.referenceCode}`,
-      `${chosenOption.label} (${nowFormatted})`,
-      { backupRecord }
-    );
-
-    if (optionId === 'OPTION_3_OFFICIAL_DISPATCH') {
-      showToast(`Official dispatch message sent on ${dispatchChannel}`);
-    } else if (optionId === 'OPTION_2_NEARBY_DISTRESS') {
-      showToast('Distress signal sent to nearby units');
-    } else {
-      showToast('Backup request sent to Admin');
-    }
-
-    setBackupModalIncident(null);
   };
 
-  // Task 4: Open 40-Image Timestamped Evidence Modal
-  const openEvidenceModal = (inc: ReportItem, e?: React.MouseEvent) => {
+  const openEvidenceModal = async (inc: ReportItem, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setEvidenceModalIncident(inc);
     setSelectedEvidenceSlot(0);
+    await refreshEvidencesForIncident(inc);
   };
 
-  const handleUploadEvidenceFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const readFileAsDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') resolve(reader.result);
+        else reject(new Error('Failed to read file'));
+      };
+      reader.onerror = () => reject(new Error('FileReader error'));
+      reader.readAsDataURL(file);
+    });
+
+  const handleUploadEvidenceFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!evidenceModalIncident || !e.target.files || e.target.files.length === 0) return;
+    const targetIncident = evidenceModalIncident;
     const files = Array.from(e.target.files);
-    const currentList = evidenceMap[evidenceModalIncident.id] || [];
+    const currentList = evidenceMap[targetIncident.id] || [];
     const remainingSlots = MAX_EVIDENCE_SLOTS - currentList.length;
 
     if (remainingSlots <= 0) {
-      showToast(`Max 40 evidence items reached for ${evidenceModalIncident.referenceCode}`);
+      showToast(`Max 40 evidence items reached for ${targetIncident.referenceCode}`);
+      e.target.value = '';
       return;
     }
 
     const filesToProcess = files.slice(0, remainingSlots);
+    setIsUploadingEvidence(true);
+    let uploadedCount = 0;
 
-    filesToProcess.forEach((file, idx) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = typeof reader.result === 'string' ? reader.result : '';
-        if (!dataUrl) return;
-        const now = new Date();
-        const isVideo = file.type.startsWith('video/');
-        setEvidenceMap((prev) => {
-          const existing = prev[evidenceModalIncident.id] || [];
-          if (existing.length >= MAX_EVIDENCE_SLOTS) return prev;
-          const newSlotNumber = existing.length + 1;
-          const newItem: EvidenceMediaItem = {
-            id: `ev-${evidenceModalIncident.id}-${Date.now()}-${idx}`,
-            slotIndex: newSlotNumber,
-            url: dataUrl,
-            mediaType: isVideo ? 'video' : 'image',
-            caption: `${file.name} (${newSlotNumber}/40)`,
-            capturedAtFormatted: formatExactTimestampWithSeconds(now),
-            capturedAtIso: now.toISOString(),
-            uploadedBy: session?.fullName || 'RHU Field Responder'
-          };
-          const updatedList = [...existing, newItem];
-          const nextMap = { ...prev, [evidenceModalIncident.id]: updatedList };
-          try {
-            localStorage.setItem('resqtrack_incident_evidences', JSON.stringify(nextMap));
-          } catch {
-            // ignore storage limit
-          }
-          return nextMap;
-        });
-      };
-      reader.readAsDataURL(file);
-    });
-
-    showToast(`Attached ${filesToProcess.length} file(s) to ${evidenceModalIncident.referenceCode}`);
-    e.target.value = '';
-  };
-
-  const handleGenerateTacticalEvidenceSnapshot = () => {
-    if (!evidenceModalIncident) return;
-    const currentList = evidenceMap[evidenceModalIncident.id] || [];
-    if (currentList.length >= MAX_EVIDENCE_SLOTS) {
-      showToast(`All 40 evidence slots full (${evidenceModalIncident.referenceCode})`);
-      return;
-    }
-
-    const now = new Date();
-    const formattedTs = formatExactTimestampWithSeconds(now);
-    const nextSlot = currentList.length + 1;
-
-    // Generate deterministic SVG data URL with exact date & time including seconds and AM/PM
-    const svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
-      <rect width="800" height="500" fill="#4A041A"/>
-      <rect x="20" y="20" width="760" height="460" rx="16" fill="#F7F1EA" stroke="#670626" stroke-width="2"/>
-      <text x="45" y="65" fill="#670626" font-family="monospace" font-size="20" font-weight="bold">RESQTRACK FIELD EVIDENCE CAPTURE // SLOT #${nextSlot} OF 40</text>
-      <text x="45" y="105" fill="#2B010E" font-family="sans-serif" font-size="24" font-weight="bold">${evidenceModalIncident.referenceCode} - ${evidenceModalIncident.title.replace(/[<>&"']/g, '')}</text>
-      <text x="45" y="145" fill="#047857" font-family="monospace" font-size="18" font-weight="bold">TIMESTAMP: ${formattedTs}</text>
-      <text x="45" y="180" fill="#5C313E" font-family="monospace" font-size="15">GPS LOCK: ${formatGpsCoord(evidenceModalIncident.latitude, evidenceModalIncident.longitude)} (${evidenceModalIncident.locationLabel || 'Katipunan Sector'})</text>
-      <text x="45" y="215" fill="#A83B4D" font-family="monospace" font-size="15">SEVERITY: ${String(evidenceModalIncident.severity ?? 'HIGH').toUpperCase()} | RESPONDER: ${session?.fullName || 'Field Responder'}</text>
-      <rect x="45" y="250" width="710" height="190" rx="12" fill="#E9D9D0" stroke="#A83B4D" stroke-width="1"/>
-      <text x="400" y="345" text-anchor="middle" fill="#670626" font-family="monospace" font-size="16">VERIFIED HARDWARE GEOLOCATED OPTICAL TELEMETRY FRAME #${nextSlot}</text>
-      <text x="400" y="375" text-anchor="middle" fill="#A83B4D" font-family="monospace" font-size="14">${formattedTs}</text>
-    </svg>`;
-    const dataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svgMarkup)}`;
-
-    const newItem: EvidenceMediaItem = {
-      id: `ev-${evidenceModalIncident.id}-${Date.now()}`,
-      slotIndex: nextSlot,
-      url: dataUrl,
-      mediaType: 'image',
-      caption: `Field Optical Evidence #${nextSlot} — ${formattedTs}`,
-      capturedAtFormatted: formattedTs,
-      capturedAtIso: now.toISOString(),
-      uploadedBy: session?.fullName || 'RHU Field Responder'
-    };
-
-    const updated = [...currentList, newItem];
-    const nextMap = { ...evidenceMap, [evidenceModalIncident.id]: updated };
-    setEvidenceMap(nextMap);
-    setSelectedEvidenceSlot(updated.length - 1);
     try {
-      localStorage.setItem('resqtrack_incident_evidences', JSON.stringify(nextMap));
-    } catch {
-      // ignore
-    }
-    showToast(`Captured evidence #${nextSlot}/40`);
-  };
-
-  const handleRemoveEvidenceSlot = (incidentId: string, evidenceId: string) => {
-    setEvidenceMap((prev) => {
-      const current = prev[incidentId] || [];
-      const filtered = current
-        .filter((item) => item.id !== evidenceId)
-        .map((item, idx) => ({ ...item, slotIndex: idx + 1 }));
-      const nextMap = { ...prev, [incidentId]: filtered };
-      try {
-        localStorage.setItem('resqtrack_incident_evidences', JSON.stringify(nextMap));
-      } catch {
-        // ignore
+      for (let i = 0; i < filesToProcess.length; i += 1) {
+        const file = filesToProcess[i];
+        const dataUrl = await readFileAsDataUrl(file);
+        const slotNumber = currentList.length + i + 1;
+        await uploadReportEvidence(
+          targetIncident.id,
+          dataUrl,
+          `${file.name} (${slotNumber}/40)`
+        );
+        uploadedCount += 1;
       }
-      return nextMap;
-    });
-    setSelectedEvidenceSlot(0);
+      await refreshEvidencesForIncident(targetIncident);
+      showToast(`Uploaded ${uploadedCount} evidence file(s) to ${targetIncident.referenceCode}`);
+    } catch {
+      showToast('Failed to upload evidence to server.');
+    } finally {
+      setIsUploadingEvidence(false);
+      e.target.value = '';
+    }
   };
 
-  // Task 5: Open Multi-Casualty PCR Modal
   const openPcrModalForIncident = async (inc: ReportItem, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setActivePcrIncident(inc);
-    const localSaved = pcrRecordsByIncident[inc.id] || [];
-    if (localSaved.length > 0) {
-      setDraftCasualties(localSaved);
-      setActiveCasualtyTabIndex(0);
-      return;
-    }
 
     try {
       const apiRecords = await getPcrRecords(inc.id);
       if (apiRecords && apiRecords.length > 0) {
-        const mapped: CasualtyVitalEntry[] = apiRecords.map((r) => ({
-          id: r.id,
-          patientName: r.patientName,
-          age: r.age,
-          gender: r.gender,
-          levelOfConsciousness: r.levelOfConsciousness,
-          bpSystolic: r.bloodPressureSystolic,
-          bpDiastolic: r.bloodPressureDiastolic,
-          heartRate: r.heartRateBpm,
-          respiratoryRate: r.respiratoryRate,
-          spO2: r.spO2Percent,
-          glucose: r.bloodGlucoseMgDl,
-          temp: r.temperatureCelsius,
-          chiefComplaint: r.chiefComplaint,
-          narrative: r.narrative,
-          interventions: r.interventions || [],
-          recordedAt: formatExactTimestampWithSeconds(r.createdAt),
-          pcrReference: r.pcrReference
-        }));
+        const mapped = apiRecords.map(mapPcrRecordToEntry);
+        setPcrRecordsByIncident((prev) => ({ ...prev, [inc.id]: mapped }));
         setDraftCasualties(mapped);
         setActiveCasualtyTabIndex(0);
         return;
       }
     } catch {
-      // fallback to blank entry
+      // fall through to blank entry
     }
 
-    setDraftCasualties([createBlankCasualtyEntry(1)]);
+    setDraftCasualties([createBlankCasualtyEntry()]);
     setActiveCasualtyTabIndex(0);
   };
 
-  // Task 5: "ADD NEW PCR VITAL" button handler for multiple injured persons/civilians
   const handleAddNewPcrVital = () => {
     setDraftCasualties((prev) => {
-      const nextIndex = prev.length + 1;
-      const newEntry = createBlankCasualtyEntry(nextIndex);
+      const newEntry = createBlankCasualtyEntry();
       const updated = [...prev, newEntry];
       setActiveCasualtyTabIndex(updated.length - 1);
       return updated;
@@ -985,125 +793,108 @@ export const UnitIncidentsFeed: React.FC = () => {
   const handleSaveAllCasualtyPcrRecords = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activePcrIncident) return;
+
+    const invalidEntry = draftCasualties.find(
+      (entry) =>
+        !entry.patientName.trim() ||
+        !entry.age.trim() ||
+        !entry.bpSystolic.trim() ||
+        !entry.bpDiastolic.trim() ||
+        !entry.heartRate.trim() ||
+        !entry.spO2.trim() ||
+        !entry.respiratoryRate.trim()
+    );
+    if (invalidEntry) {
+      showToast('Please enter patient name, age, and all required vitals (BP, HR, SpO2, RR).');
+      return;
+    }
+
     setIsSavingPcr(true);
-
-    const validatedEntries = draftCasualties.map((entry, idx) => ({
-      ...entry,
-      patientName: entry.patientName.trim() || `Unidentified Casualty #${idx + 1}`,
-      recordedAt: formatExactTimestampWithSeconds(new Date())
-    }));
-
     try {
-      for (const entry of validatedEntries) {
+      for (const entry of draftCasualties) {
         const payload: CreatePcrPayload = {
           reportId: activePcrIncident.id,
-          patientName: entry.patientName,
-          age: Number(entry.age) || 0,
+          patientName: entry.patientName.trim(),
+          age: Number(entry.age),
           gender: entry.gender,
           levelOfConsciousness: entry.levelOfConsciousness,
-          bloodPressureSystolic: Number(entry.bpSystolic) || 120,
-          bloodPressureDiastolic: Number(entry.bpDiastolic) || 80,
-          heartRateBpm: Number(entry.heartRate) || 80,
-          respiratoryRate: Number(entry.respiratoryRate) || 16,
-          spO2Percent: Number(entry.spO2) || 98,
-          bloodGlucoseMgDl: Number(entry.glucose) || 100,
-          temperatureCelsius: Number(entry.temp) || 36.8,
+          bloodPressureSystolic: Number(entry.bpSystolic),
+          bloodPressureDiastolic: Number(entry.bpDiastolic),
+          heartRateBpm: Number(entry.heartRate),
+          respiratoryRate: Number(entry.respiratoryRate),
+          spO2Percent: Number(entry.spO2),
+          bloodGlucoseMgDl: entry.glucose.trim() ? Number(entry.glucose) : 0,
+          temperatureCelsius: entry.temp.trim() ? Number(entry.temp) : 0,
           interventions: entry.interventions,
-          chiefComplaint: entry.chiefComplaint,
-          narrative: entry.narrative,
+          chiefComplaint: entry.chiefComplaint.trim(),
+          narrative: entry.narrative.trim(),
           medicName: session?.fullName || 'RHU Paramedic',
           unitCode: session?.unit || 'RHU-EMS'
         };
-        try {
-          const res = await submitPcrRecord(payload);
-          if (res?.data?.pcrReference) {
-            entry.pcrReference = res.data.pcrReference;
-          }
-        } catch {
-          entry.pcrReference = entry.pcrReference || `PCR-${Date.now().toString().slice(-6)}`;
-        }
+        await submitPcrRecord(payload);
       }
 
-      const nextPcrMap = {
-        ...pcrRecordsByIncident,
-        [activePcrIncident.id]: validatedEntries
-      };
-      setPcrRecordsByIncident(nextPcrMap);
-      localStorage.setItem('resqtrack_pcr_records', JSON.stringify(nextPcrMap));
+      const refreshed = await getPcrRecords(activePcrIncident.id);
+      const mapped = refreshed.map(mapPcrRecordToEntry);
+      setPcrRecordsByIncident((prev) => ({
+        ...prev,
+        [activePcrIncident.id]: mapped
+      }));
 
       dispatchReportEvent({
         type: 'MULTI_CASUALTY_PCR_SAVED',
         incidentId: activePcrIncident.id,
         referenceCode: activePcrIncident.referenceCode,
-        casualtyCount: validatedEntries.length,
-        records: validatedEntries
+        casualtyCount: draftCasualties.length
       });
 
       showToast(
-        `Saved ${validatedEntries.length} PCR record(s) for ${activePcrIncident.referenceCode}`
+        `Saved ${draftCasualties.length} PCR record(s) for ${activePcrIncident.referenceCode}`
       );
       setActivePcrIncident(null);
+    } catch {
+      showToast('Failed to save PCR records to PostgreSQL.');
     } finally {
       setIsSavingPcr(false);
     }
   };
 
-  // Task 5: "RESPONDED" Button -> Marks incident Responded & turns radar pointer GREEN (#10B981)
   const handleMarkRespondedGreenPointer = async (inc: ReportItem, e?: React.MouseEvent) => {
     e?.stopPropagation();
     const nowFormatted = formatExactTimestampWithSeconds(new Date());
-    const responderName = session?.fullName || 'RHU Field Responder';
-
-    const nextRespondedMap = {
-      ...respondedMap,
-      [inc.id]: {
-        respondedAt: nowFormatted,
-        pointerColor: '#10B981',
-        responderName
-      }
-    };
-    setRespondedMap(nextRespondedMap);
-    try {
-      localStorage.setItem('resqtrack_responded_incidents', JSON.stringify(nextRespondedMap));
-    } catch {
-      // ignore
-    }
-
-    setIncidents((prev) =>
-      prev.map((item) => (item.id === inc.id ? { ...item, status: 'Responded' } : item))
-    );
+    const responderName = session?.fullName || `${activeAgencyUnit} Responder`;
 
     try {
       await verifyReport(
         inc.id,
         'Responded',
-        `Incident marked RESPONDED by ${responderName} at ${nowFormatted}. Radar pointer set to GREEN (#10B981).`
+        `Incident marked RESPONDED by ${responderName} at ${nowFormatted}.`
       );
+      await loadIncidents();
+
+      dispatchReportEvent({
+        type: 'INCIDENT_RESPONDED_GREEN_POINTER',
+        incidentId: inc.id,
+        referenceCode: inc.referenceCode,
+        status: 'Responded',
+        pointerColor: '#10B981',
+        respondedAt: nowFormatted,
+        latitude: inc.latitude,
+        longitude: inc.longitude
+      });
+
+      broadcastNotificationEvent(
+        `Responded · ${inc.referenceCode}`,
+        `${inc.locationLabel || 'Incident Sector'} (${nowFormatted})`,
+        { incidentId: inc.id, pointerColor: '#10B981', status: 'Responded' }
+      );
+
+      showToast(`${inc.referenceCode} marked Responded`);
     } catch {
-      // continue with local + event bus state
+      showToast(`Failed to mark ${inc.referenceCode} as Responded on server.`);
     }
-
-    dispatchReportEvent({
-      type: 'INCIDENT_RESPONDED_GREEN_POINTER',
-      incidentId: inc.id,
-      referenceCode: inc.referenceCode,
-      status: 'Responded',
-      pointerColor: '#10B981',
-      respondedAt: nowFormatted,
-      latitude: inc.latitude,
-      longitude: inc.longitude
-    });
-
-    broadcastNotificationEvent(
-      `Responded · ${inc.referenceCode}`,
-      `${inc.locationLabel || 'Incident Sector'} (${nowFormatted})`,
-      { incidentId: inc.id, pointerColor: '#10B981', status: 'Responded' }
-    );
-
-    showToast(`${inc.referenceCode} marked Responded`);
   };
 
-  // Instructor #4, #7: Authorized Responder Incident Verification (Verify / Reject / Dispatch)
   const handleVerifyIncidentAction = async (
     inc: ReportItem,
     nextStatus: 'Verified' | 'Rejected' | 'Allocated',
@@ -1112,20 +903,7 @@ export const UnitIncidentsFeed: React.FC = () => {
     e?.stopPropagation();
     const responderName = session?.fullName || `${activeAgencyUnit} Responder`;
     const nowFormatted = formatExactTimestampWithSeconds(new Date());
-    const actionLabel =
-      nextStatus === 'Allocated' ? 'Dispatched' : nextStatus;
-
-    setIncidents((prev) =>
-      prev.map((item) =>
-        item.id === inc.id
-          ? {
-              ...item,
-              status: nextStatus,
-              verifiedAt: nextStatus === 'Verified' || nextStatus === 'Allocated' ? new Date().toISOString() : item.verifiedAt
-            }
-          : item
-      )
-    );
+    const actionLabel = nextStatus === 'Allocated' ? 'Dispatched' : nextStatus;
 
     try {
       await verifyReport(
@@ -1133,169 +911,75 @@ export const UnitIncidentsFeed: React.FC = () => {
         nextStatus,
         `Incident ${actionLabel} by ${responderName} (${activeAgencyUnit}) at ${nowFormatted}.`
       );
+      await loadIncidents();
+
+      dispatchReportEvent({
+        type: `INCIDENT_${actionLabel.toUpperCase()}`,
+        incidentId: inc.id,
+        referenceCode: inc.referenceCode,
+        status: nextStatus
+      });
+
+      broadcastNotificationEvent(
+        `${actionLabel} · ${inc.referenceCode}`,
+        `${inc.title} marked ${actionLabel} by ${responderName} (${nowFormatted})`,
+        { incidentId: inc.id, status: nextStatus }
+      );
+
+      showToast(`${inc.referenceCode} ${actionLabel}`);
     } catch (err: unknown) {
-      console.warn('[UnitIncidentsFeed] verifyReport transition fallback:', err);
+      console.warn('[UnitIncidentsFeed] verifyReport failed:', err);
+      showToast(`Failed to update ${inc.referenceCode} on server.`);
     }
-
-    dispatchReportEvent({
-      type: `INCIDENT_${actionLabel.toUpperCase()}`,
-      incidentId: inc.id,
-      referenceCode: inc.referenceCode,
-      status: nextStatus
-    });
-
-    broadcastNotificationEvent(
-      `${actionLabel} · ${inc.referenceCode}`,
-      `${inc.title} marked ${actionLabel} by ${responderName} (${nowFormatted})`,
-      { incidentId: inc.id, status: nextStatus }
-    );
-
-    showToast(`${inc.referenceCode} ${actionLabel}`);
   };
 
-  // Task 5: "SUBMIT REPORT" Button -> Submits evidences & multi-casualty PCRs to Admin and saves into "INCIDENT LOGS"
   const handleSubmitReportToIncidentLogs = async (inc: ReportItem, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    const now = new Date();
-    const nowFormatted = formatExactTimestampWithSeconds(now);
     const incEvidences = evidenceMap[inc.id] || [];
     const incPcrs = pcrRecordsByIncident[inc.id] || [];
-
-    // Ensure incident is also marked Responded with green pointer (#10B981)
-    if (!respondedMap[inc.id]) {
-      await handleMarkRespondedGreenPointer(inc);
-    }
-
-    const logSubmission: IncidentLogSubmission = {
-      id: `log-${inc.id}-${Date.now()}`,
-      incidentId: inc.id,
-      referenceCode: inc.referenceCode,
-      title: inc.title,
-      category: inc.category,
-      severity: inc.severity,
-      status: 'Responded',
-      pointerColor: '#10B981',
-      latitude: inc.latitude,
-      longitude: inc.longitude,
-      locationLabel: inc.locationLabel || formatGpsCoord(inc.latitude, inc.longitude),
-      responderName: session?.fullName || 'RHU Field Responder',
-      responderUnit: session?.unit || 'RHU',
-      evidences: incEvidences,
-      pcrRecords: incPcrs,
-      submittedAt: now.toISOString(),
-      submittedAtFormatted: nowFormatted,
-      adminAiVerified: true,
-      countdownSecondsRemaining: COUNTDOWN_TOTAL_SECONDS,
-      evidencePhotos: incEvidences.map((e, idx) => ({
-        id: e.id || `photo-${inc.id}-${idx}`,
-        url: e.url,
-        timestamp: e.capturedAtFormatted || nowFormatted,
-        caption: e.caption || `Field Evidence #${idx + 1}`,
-        latitude: inc.latitude,
-        longitude: inc.longitude
-      })),
-      casualties: incPcrs.map((pcr) => ({
-        id: pcr.id,
-        patientName: pcr.patientName,
-        age: pcr.age,
-        gender: pcr.gender,
-        triageColor: (pcr.spO2 < 92 || pcr.heartRate > 120 ? 'Red' : 'Yellow') as 'Red' | 'Yellow' | 'Green' | 'Black',
-        triageTag: pcr.spO2 < 92 || pcr.heartRate > 120 ? 'RED — IMMEDIATE' : 'YELLOW — DELAYED',
-        consciousness: pcr.levelOfConsciousness,
-        levelOfConsciousness: pcr.levelOfConsciousness,
-        bloodPressure: `${pcr.bpSystolic}/${pcr.bpDiastolic}`,
-        bloodPressureSystolic: pcr.bpSystolic,
-        bloodPressureDiastolic: pcr.bpDiastolic,
-        heartRate: pcr.heartRate,
-        heartRateBpm: pcr.heartRate,
-        respiratoryRate: pcr.respiratoryRate,
-        oxygenSaturation: pcr.spO2,
-        spO2Percent: pcr.spO2,
-        glucose: pcr.glucose,
-        bloodGlucoseMgDl: pcr.glucose,
-        temperature: pcr.temp,
-        temperatureCelsius: pcr.temp,
-        chiefComplaint: pcr.chiefComplaint,
-        treatmentNotes: pcr.narrative,
-        narrative: pcr.narrative,
-        interventions: pcr.interventions,
-        recordedAt: pcr.recordedAt || nowFormatted,
-        pcrReference: pcr.pcrReference
-      })),
-      isVerified: true,
-      verifiedAt: now.toISOString()
-    };
-
-    try {
-      const existingRaw = localStorage.getItem('resqtrack_incident_logs');
-      const existingLogs: IncidentLogSubmission[] = existingRaw ? JSON.parse(existingRaw) : [];
-      const filteredLogs = existingLogs.filter((l) => l.incidentId !== inc.id);
-      const updatedLogs = [logSubmission, ...filteredLogs];
-      localStorage.setItem('resqtrack_incident_logs', JSON.stringify(updatedLogs));
-    } catch {
-      // ignore storage error
-    }
-
-    // Activate 5-minute Admin/AI verification countdown timer (05:00 -> 00:00 -> Closed)
-    setCountdownTimers((prev) => {
-      const next = {
-        ...prev,
-        [inc.id]: {
-          remaining: COUNTDOWN_TOTAL_SECONDS,
-          verified: true,
-          closed: false
-        }
-      };
-      try {
-        localStorage.setItem('resqtrack_verification_countdowns', JSON.stringify(next));
-      } catch {
-        // ignore
-      }
-      return next;
-    });
 
     try {
       await verifyReport(
         inc.id,
-        'Resolved',
-        `Field Report submitted to INCIDENT LOGS by ${session?.fullName || 'Responder'} with ${incEvidences.length} evidence item(s) and ${incPcrs.length} PCR vital record(s). 05:00 verification countdown initiated.`
+        'Verified',
+        `Field Report verified by ${session?.fullName || 'Responder'} with ${incEvidences.length} evidence item(s) and ${incPcrs.length} PCR vital record(s). 05:00 countdown initiated.`
       );
+      await loadIncidents();
+
+      dispatchReportEvent({
+        type: 'INCIDENT_REPORT_SUBMITTED_TO_LOGS',
+        incidentId: inc.id,
+        referenceCode: inc.referenceCode
+      });
+
+      broadcastNotificationEvent(
+        `Report Submitted · ${inc.referenceCode}`,
+        `${incEvidences.length} Evidence · ${incPcrs.length} PCR · 05:00 verification timer active`,
+        { incidentId: inc.id }
+      );
+
+      showToast(`${inc.referenceCode} verified — 05:00 auto-close countdown active`);
     } catch {
-      // fallback to local state
+      showToast(`Failed to submit report for ${inc.referenceCode} to server.`);
     }
-
-    dispatchReportEvent({
-      type: 'INCIDENT_REPORT_SUBMITTED_TO_LOGS',
-      logSubmission
-    });
-
-    broadcastNotificationEvent(
-      `Report Submitted · ${inc.referenceCode}`,
-      `${incEvidences.length} Evidence · ${incPcrs.length} PCR · 05:00 countdown started`,
-      { logSubmission }
-    );
-
-    showToast(`${inc.referenceCode} submitted to Incident Logs`);
   };
 
-  const handleCompleteCountdownImmediately = (inc: ReportItem, e?: React.MouseEvent) => {
+  const handleCompleteCountdownImmediately = async (inc: ReportItem, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    setCountdownTimers((prev) => {
-      const next = {
-        ...prev,
-        [inc.id]: { remaining: 0, verified: true, closed: true }
-      };
-      try {
-        localStorage.setItem('resqtrack_verification_countdowns', JSON.stringify(next));
-      } catch {
-        // ignore
+    try {
+      await verifyReport(
+        inc.id,
+        'Resolved',
+        `Incident closed by ${session?.fullName || 'Responder'} after verification.`
+      );
+      await loadIncidents();
+      if (selectedDetailIncident?.id === inc.id) {
+        setSelectedDetailIncident({ ...inc, status: 'Resolved', resolvedAt: new Date().toISOString() });
       }
-      return next;
-    });
-    setIncidents((prev) =>
-      prev.map((item) => (item.id === inc.id ? { ...item, status: 'Closed' } : item))
-    );
-    showToast(`${inc.referenceCode} closed`);
+      showToast(`${inc.referenceCode} resolved and persisted to PostgreSQL`);
+    } catch {
+      showToast(`Failed to resolve ${inc.referenceCode} on server.`);
+    }
   };
 
   const activeCasualtyDraft = draftCasualties[activeCasualtyTabIndex] || draftCasualties[0];
@@ -1306,7 +990,6 @@ export const UnitIncidentsFeed: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 text-[#2B010E] select-none pb-8 w-full">
-      {/* Toast Notification */}
       {actionSuccessToast && (
         <div className="clay-surface fixed top-5 right-5 z-50 px-4 py-3 rounded-xl bg-[#F7F1EA] border-2 border-[#670626] text-[#670626] font-mono text-sm font-bold shadow-2xl flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-[#670626] animate-ping" />
@@ -1331,7 +1014,6 @@ export const UnitIncidentsFeed: React.FC = () => {
             </h1>
           </div>
 
-          {/* Rapid Field Telemetry Badges */}
           <div className="flex flex-wrap items-center gap-2.5 font-mono text-sm">
             <div className="px-4 py-2 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col items-center">
               <span className="text-xs text-[#A83B4D] font-bold">Total</span>
@@ -1408,11 +1090,10 @@ export const UnitIncidentsFeed: React.FC = () => {
             <SearchBar
               value={searchQuery}
               onChange={setSearchQuery}
-              placeholder="Search ref, location, reporter..."
+              placeholder="Search ref, location..."
               className="w-full sm:w-60"
             />
 
-            {/* Priority / Severity Sort Selector */}
             <div className="flex items-center gap-1.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl px-3 py-2 text-sm font-mono">
               <ArrowUpDown className="w-4 h-4 text-[#A83B4D] flex-shrink-0" />
               <select
@@ -1443,21 +1124,27 @@ export const UnitIncidentsFeed: React.FC = () => {
           <Radio className="w-9 h-9 mx-auto mb-2.5 text-[#A83B4D]" />
           <h3 className="text-lg font-black text-[#670626] font-mono">No dispatches</h3>
           <p className="text-sm text-[#A83B4D] font-mono mt-1">
-            No matching dispatches.
+            No {activeAgencyUnit} dispatches found in database.
           </p>
         </div>
       ) : viewMode === 'card' ? (
-        /* CARD VIEW */
         <div className="flex flex-col gap-4">
           {paginatedItems.map((inc) => {
             const effectiveStatus = getEffectiveStatus(inc);
-            const isResponded = effectiveStatus === 'Responded' || Boolean(respondedMap[inc.id]);
+            const isResponded = effectiveStatus === 'Responded';
             const isRejected = effectiveStatus === 'Rejected';
+            const isClosedOrResolved =
+              effectiveStatus === 'Resolved' ||
+              effectiveStatus === 'Closed' ||
+              Boolean(inc.resolvedAt);
             const isAwaitingVerification =
               effectiveStatus === 'Reported' ||
               effectiveStatus === 'Submitted' ||
               effectiveStatus === 'Pending';
-            const timerState = countdownTimers[inc.id];
+            const hasActiveTimer = Boolean(inc.verifiedAt) && !isClosedOrResolved && !isRejected;
+            const remainingSeconds = hasActiveTimer
+              ? computeRemainingSecondsFromVerifiedAt(inc.verifiedAt, nowMs)
+              : 0;
             const incEvidences = evidenceMap[inc.id] || [];
             const incPcrs = pcrRecordsByIncident[inc.id] || [];
 
@@ -1592,12 +1279,10 @@ export const UnitIncidentsFeed: React.FC = () => {
                 onClick={() => setSelectedDetailIncident(inc)}
                 className={`clay-surface p-5 border bg-[#F7F1EA] rounded-2xl shadow-[0_14px_34px_rgba(74,4,26,0.2)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-5 cursor-pointer hover:border-[#670626]/50 ${cardBorder}`}
               >
-                {/* Left: Visual Evidence & Telemetry Details */}
                 <div className="flex flex-col sm:flex-row items-start gap-4 w-full xl:w-auto">
-                  {/* Evidence Thumbnail */}
                   <div
                     className="relative flex-shrink-0"
-                    onClick={(e) => openEvidenceModal(inc, e)}
+                    onClick={(e) => void openEvidenceModal(inc, e)}
                   >
                     {previewThumb ? (
                       <div className="relative group">
@@ -1621,13 +1306,12 @@ export const UnitIncidentsFeed: React.FC = () => {
                       <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 hover:border-[#670626] flex flex-col items-center justify-center text-[#670626] transition-colors">
                         <Camera className="w-6 h-6 mb-1 text-[#A83B4D]" />
                         <span className="text-xs font-mono text-[#670626] font-bold">
-                          0/40
+                          {incEvidences.length}/40
                         </span>
                       </div>
                     )}
                   </div>
 
-                  {/* Incident Context & Header */}
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-2">
                       <span className="font-mono text-sm font-black text-[#670626] bg-[#E9D9D0] px-2.5 py-0.5 rounded-lg border border-[#670626]/20">
@@ -1657,10 +1341,10 @@ export const UnitIncidentsFeed: React.FC = () => {
                         </span>
                       )}
 
-                      {timerState?.verified && !timerState.closed && (
+                      {hasActiveTimer && (
                         <span className="px-3 py-0.5 rounded-lg bg-emerald-100 text-emerald-900 border border-emerald-700/35 text-xs font-mono font-black inline-flex items-center gap-1.5">
                           <Timer className="w-3.5 h-3.5 text-emerald-700" />
-                          <span>{formatCountdownMmSs(timerState.remaining)}</span>
+                          <span>{formatCountdownMmSs(remainingSeconds)}</span>
                         </span>
                       )}
                     </div>
@@ -1677,7 +1361,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       <div className="mt-2.5 p-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-xs font-mono text-[#670626] flex flex-col gap-1 max-w-2xl">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="font-black">
-                            AI Scene Verification · Roboflow ({inc.roboflowModelId || 'accident-and-non-accident-label-image-dataset/14'}):{' '}
+                            AI Scene Verification · Roboflow ({inc.roboflowModelId || 'Vision'}):{' '}
                             {inc.roboflowPrediction || 'incident'}
                             {typeof inc.roboflowConfidence === 'number'
                               ? ` (${Math.round(inc.roboflowConfidence * 100)}%)`
@@ -1737,12 +1421,11 @@ export const UnitIncidentsFeed: React.FC = () => {
                   className="flex flex-wrap items-center gap-2 w-full xl:w-auto justify-end pt-3 xl:pt-0 border-t xl:border-t-0 border-[#670626]/12"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {/* Authorized Responder Verification Controls for Submitted/Pending Incidents (Instructor #4, #7) */}
                   {isAwaitingVerification && (
                     <>
                       <button
                         type="button"
-                        onClick={(e) => handleVerifyIncidentAction(inc, 'Verified', e)}
+                        onClick={(e) => void handleVerifyIncidentAction(inc, 'Verified', e)}
                         className="flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-mono font-bold shadow-sm cursor-pointer"
                         title="Verify submitted incident"
                       >
@@ -1751,7 +1434,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={(e) => handleVerifyIncidentAction(inc, 'Allocated', e)}
+                        onClick={(e) => void handleVerifyIncidentAction(inc, 'Allocated', e)}
                         className="flex items-center gap-1 px-3 py-2 rounded-xl bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] text-xs font-mono font-bold shadow-sm cursor-pointer"
                         title="Dispatch unit to incident"
                       >
@@ -1760,7 +1443,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={(e) => handleVerifyIncidentAction(inc, 'Rejected', e)}
+                        onClick={(e) => void handleVerifyIncidentAction(inc, 'Rejected', e)}
                         className="flex items-center gap-1 px-3 py-2 rounded-xl bg-[#E9D9D0] hover:bg-rose-100 text-[#991B1B] border border-[#991B1B]/30 text-xs font-mono font-bold cursor-pointer"
                         title="Reject invalid report"
                       >
@@ -1773,7 +1456,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   {effectiveStatus === 'Verified' && (
                     <button
                       type="button"
-                      onClick={(e) => handleVerifyIncidentAction(inc, 'Allocated', e)}
+                      onClick={(e) => void handleVerifyIncidentAction(inc, 'Allocated', e)}
                       className="flex items-center gap-1 px-3 py-2 rounded-xl bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] text-xs font-mono font-bold shadow-sm cursor-pointer"
                       title="Dispatch unit to verified incident"
                     >
@@ -1782,7 +1465,6 @@ export const UnitIncidentsFeed: React.FC = () => {
                     </button>
                   )}
 
-                  {/* TASK 3: NAVIGATE GPS Redirect to EMS Trauma Board Expanded Map */}
                   <button
                     type="button"
                     onClick={(e) => handleNavigateGpsToTraumaBoard(inc, e)}
@@ -1793,13 +1475,12 @@ export const UnitIncidentsFeed: React.FC = () => {
                     <span>Navigate</span>
                   </button>
 
-                  {/* TASK 3: 3-Option Backup Modal Trigger */}
                   <button
                     type="button"
                     onClick={() => {
                       setBackupModalIncident(inc);
                       setBackupNote(
-                        `Backup requested at ${inc.locationLabel || 'Katipunan Sector'} (${inc.referenceCode})`
+                        `Backup requested at ${inc.locationLabel || formatGpsCoord(inc.latitude, inc.longitude)} (${inc.referenceCode})`
                       );
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626] border border-[#670626]/20 text-xs font-mono font-bold active:scale-95 transition-all cursor-pointer"
@@ -1809,10 +1490,9 @@ export const UnitIncidentsFeed: React.FC = () => {
                     <span>Backup</span>
                   </button>
 
-                  {/* TASK 4: 40-Image Timestamped EVIDENCE Lightbox Modal Trigger */}
                   <button
                     type="button"
-                    onClick={(e) => openEvidenceModal(inc, e)}
+                    onClick={(e) => void openEvidenceModal(inc, e)}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626] border border-[#670626]/20 text-xs font-mono font-bold active:scale-95 transition-all cursor-pointer"
                     title="View or attach evidence"
                   >
@@ -1820,28 +1500,15 @@ export const UnitIncidentsFeed: React.FC = () => {
                     <span>Evidence ({incEvidences.length}/40)</span>
                   </button>
 
-                  {/* TASK 5: Specialized Agency Operation Trigger */}
                   {activeAgencyUnit === 'RHU' && (
                     <button
                       type="button"
-                      onClick={(e) => openPcrModalForIncident(inc, e)}
+                      onClick={(e) => void openPcrModalForIncident(inc, e)}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-900 border border-rose-700/30 text-xs font-mono font-bold active:scale-95 transition-all cursor-pointer"
                       title="Record patient vitals"
                     >
                       <HeartPulse className="w-4 h-4 text-rose-700" />
                       <span>PCR {incPcrs.length > 0 ? `(${incPcrs.length})` : ''}</span>
-                    </button>
-                  )}
-
-                  {activeAgencyUnit === 'FIRE' && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveAlarmIncident(inc)}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-700/30 text-xs font-mono font-bold active:scale-95 transition-all cursor-pointer"
-                      title="Update Fire Alarm Level"
-                    >
-                      <Flame className="w-4 h-4 text-amber-700" />
-                      <span>Fire Alarm</span>
                     </button>
                   )}
 
@@ -1859,10 +1526,9 @@ export const UnitIncidentsFeed: React.FC = () => {
 
                   {!isRejected && (
                     <>
-                      {/* TASK 5: "RESPONDED" Green Pointer Button (#10B981) */}
                       <button
                         type="button"
-                        onClick={(e) => handleMarkRespondedGreenPointer(inc, e)}
+                        onClick={(e) => void handleMarkRespondedGreenPointer(inc, e)}
                         className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-mono text-xs font-black border active:scale-95 transition-all cursor-pointer ${
                           isResponded
                             ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm'
@@ -1874,12 +1540,11 @@ export const UnitIncidentsFeed: React.FC = () => {
                         <span>Responded</span>
                       </button>
 
-                      {/* TASK 5: "SUBMIT REPORT" Button to Admin & INCIDENT LOGS */}
                       <button
                         type="button"
-                        onClick={(e) => handleSubmitReportToIncidentLogs(inc, e)}
+                        onClick={(e) => void handleSubmitReportToIncidentLogs(inc, e)}
                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-mono text-xs font-black border border-[#670626] shadow-sm active:scale-95 transition-all cursor-pointer"
-                        title="Submit report to Incident Logs"
+                        title="Verify & initiate 5-minute countdown"
                       >
                         <Send className="w-4 h-4" />
                         <span>Submit Report</span>
@@ -1892,7 +1557,6 @@ export const UnitIncidentsFeed: React.FC = () => {
           })}
         </div>
       ) : (
-        /* TABLE VIEW */
         <div className="clay-surface overflow-x-auto rounded-2xl border border-[#670626]/15 bg-[#F7F1EA] shadow-[0_14px_34px_rgba(74,4,26,0.22)]">
           <table className="w-full text-left text-sm font-mono">
             <thead className="bg-[#E9D9D0] text-[#670626] text-xs uppercase border-b border-[#670626]/15">
@@ -1909,7 +1573,7 @@ export const UnitIncidentsFeed: React.FC = () => {
             <tbody className="divide-y divide-[#670626]/12 bg-[#F7F1EA]">
               {paginatedItems.map((inc) => {
                 const effectiveStatus = getEffectiveStatus(inc);
-                const isResponded = effectiveStatus === 'Responded' || Boolean(respondedMap[inc.id]);
+                const isResponded = effectiveStatus === 'Responded';
                 const isRejected = effectiveStatus === 'Rejected';
                 const isAwaitingVerification =
                   effectiveStatus === 'Reported' ||
@@ -1976,21 +1640,21 @@ export const UnitIncidentsFeed: React.FC = () => {
                           <>
                             <button
                               type="button"
-                              onClick={(e) => handleVerifyIncidentAction(inc, 'Verified', e)}
+                              onClick={(e) => void handleVerifyIncidentAction(inc, 'Verified', e)}
                               className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer"
                             >
                               Verify
                             </button>
                             <button
                               type="button"
-                              onClick={(e) => handleVerifyIncidentAction(inc, 'Allocated', e)}
+                              onClick={(e) => void handleVerifyIncidentAction(inc, 'Allocated', e)}
                               className="px-2.5 py-1.5 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-bold text-xs cursor-pointer"
                             >
                               Dispatch
                             </button>
                             <button
                               type="button"
-                              onClick={(e) => handleVerifyIncidentAction(inc, 'Rejected', e)}
+                              onClick={(e) => void handleVerifyIncidentAction(inc, 'Rejected', e)}
                               className="px-2.5 py-1.5 rounded-lg bg-[#E9D9D0] hover:bg-rose-100 text-[#991B1B] border border-[#991B1B]/30 font-bold text-xs cursor-pointer"
                             >
                               Reject
@@ -2010,7 +1674,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                           onClick={() => {
                             setBackupModalIncident(inc);
                             setBackupNote(
-                              `Backup requested at ${inc.locationLabel || 'Katipunan Sector'}`
+                              `Backup requested at ${inc.locationLabel || formatGpsCoord(inc.latitude, inc.longitude)}`
                             );
                           }}
                           className="px-2.5 py-1.5 rounded-lg bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626] border border-[#670626]/20 font-bold text-xs inline-flex items-center gap-1 cursor-pointer"
@@ -2019,7 +1683,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={(e) => openEvidenceModal(inc, e)}
+                          onClick={(e) => void openEvidenceModal(inc, e)}
                           className="px-2.5 py-1.5 rounded-lg bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626] border border-[#670626]/20 font-bold text-xs cursor-pointer"
                         >
                           Evidence
@@ -2027,19 +1691,10 @@ export const UnitIncidentsFeed: React.FC = () => {
                         {activeAgencyUnit === 'RHU' && (
                           <button
                             type="button"
-                            onClick={(e) => openPcrModalForIncident(inc, e)}
+                            onClick={(e) => void openPcrModalForIncident(inc, e)}
                             className="px-2.5 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-900 border border-rose-700/25 font-bold text-xs cursor-pointer"
                           >
                             PCR
-                          </button>
-                        )}
-                        {activeAgencyUnit === 'FIRE' && (
-                          <button
-                            type="button"
-                            onClick={() => setActiveAlarmIncident(inc)}
-                            className="px-2.5 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-700/25 font-bold text-xs cursor-pointer"
-                          >
-                            Alarm
                           </button>
                         )}
                         {activeAgencyUnit === 'PNP' && (
@@ -2055,14 +1710,14 @@ export const UnitIncidentsFeed: React.FC = () => {
                           <>
                             <button
                               type="button"
-                              onClick={(e) => handleMarkRespondedGreenPointer(inc, e)}
+                              onClick={(e) => void handleMarkRespondedGreenPointer(inc, e)}
                               className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs cursor-pointer"
                             >
                               Responded
                             </button>
                             <button
                               type="button"
-                              onClick={(e) => handleSubmitReportToIncidentLogs(inc, e)}
+                              onClick={(e) => void handleSubmitReportToIncidentLogs(inc, e)}
                               className="px-2.5 py-1.5 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-black text-xs cursor-pointer"
                             >
                               Submit
@@ -2149,7 +1804,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   onClick={() => {
                     const target = selectedDetailIncident;
                     setSelectedDetailIncident(null);
-                    openEvidenceModal(target);
+                    void openEvidenceModal(target);
                   }}
                   icon={<Camera className="w-4 h-4" />}
                 >
@@ -2164,7 +1819,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                     <Button
                       variant="action-green"
                       size="sm"
-                      onClick={(e) => handleVerifyIncidentAction(selectedDetailIncident, 'Verified', e)}
+                      onClick={(e) => void handleVerifyIncidentAction(selectedDetailIncident, 'Verified', e)}
                       icon={<Check className="w-4 h-4" />}
                     >
                       Verify
@@ -2172,7 +1827,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                     <Button
                       variant="danger"
                       size="sm"
-                      onClick={(e) => handleVerifyIncidentAction(selectedDetailIncident, 'Rejected', e)}
+                      onClick={(e) => void handleVerifyIncidentAction(selectedDetailIncident, 'Rejected', e)}
                       icon={<XCircle className="w-4 h-4" />}
                     >
                       Reject
@@ -2182,7 +1837,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                 <Button
                   variant="action-green"
                   size="sm"
-                  onClick={() => handleMarkRespondedGreenPointer(selectedDetailIncident)}
+                  onClick={() => void handleMarkRespondedGreenPointer(selectedDetailIncident)}
                   icon={<CheckCircle2 className="w-4 h-4" />}
                 >
                   Responded
@@ -2190,7 +1845,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => handleSubmitReportToIncidentLogs(selectedDetailIncident)}
+                  onClick={() => void handleSubmitReportToIncidentLogs(selectedDetailIncident)}
                   icon={<Send className="w-4 h-4" />}
                 >
                   Submit Report
@@ -2251,10 +1906,8 @@ export const UnitIncidentsFeed: React.FC = () => {
               <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 space-y-2 text-xs font-mono text-[#670626]">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-black uppercase">
-                    AI Scene Verification · Roboflow (
-                    {selectedDetailIncident.roboflowModelId ||
-                      'accident-and-non-accident-label-image-dataset/14'}
-                    ): {selectedDetailIncident.roboflowPrediction || 'incident'}
+                    AI Scene Verification · Roboflow ({selectedDetailIncident.roboflowModelId || 'Vision'}):{' '}
+                    {selectedDetailIncident.roboflowPrediction || 'incident'}
                     {typeof selectedDetailIncident.roboflowConfidence === 'number'
                       ? ` (${Math.round(selectedDetailIncident.roboflowConfidence * 100)}%)`
                       : ''}
@@ -2280,8 +1933,8 @@ export const UnitIncidentsFeed: React.FC = () => {
               </div>
             )}
 
-            {/* 5-Minute Verification Countdown */}
-            {countdownTimers[selectedDetailIncident.id]?.verified && (
+            {/* 5-Minute Verification Countdown from real DB verifiedAt */}
+            {selectedDetailIncident.verifiedAt && (
               <div className="p-4 rounded-xl bg-emerald-100 border-2 border-emerald-700/35 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-black text-emerald-900 flex items-center gap-1.5">
@@ -2289,22 +1942,39 @@ export const UnitIncidentsFeed: React.FC = () => {
                     <span>Verification Countdown</span>
                   </div>
                   <p className="text-xs text-emerald-800 mt-1">
-                    Auto-closes at 00:00.
+                    {selectedDetailIncident.status === 'Resolved' ||
+                    selectedDetailIncident.status === 'Closed' ||
+                    Boolean(selectedDetailIncident.resolvedAt)
+                      ? 'Resolved in PostgreSQL.'
+                      : 'Auto-closes at 00:00 via verifyReport.'}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="px-3.5 py-2 rounded-xl bg-[#F7F1EA] border border-emerald-700/35 text-xl font-black text-emerald-900">
-                    {formatCountdownMmSs(countdownTimers[selectedDetailIncident.id].remaining)}
+                    {selectedDetailIncident.status === 'Resolved' ||
+                    selectedDetailIncident.status === 'Closed' ||
+                    Boolean(selectedDetailIncident.resolvedAt)
+                      ? '00:00'
+                      : formatCountdownMmSs(
+                          computeRemainingSecondsFromVerifiedAt(
+                            selectedDetailIncident.verifiedAt,
+                            nowMs
+                          )
+                        )}
                   </span>
-                  {!countdownTimers[selectedDetailIncident.id].closed && (
-                    <Button
-                      variant="action-green"
-                      size="xs"
-                      onClick={(e) => handleCompleteCountdownImmediately(selectedDetailIncident, e)}
-                    >
-                      Close Now
-                    </Button>
-                  )}
+                  {selectedDetailIncident.status !== 'Resolved' &&
+                    selectedDetailIncident.status !== 'Closed' &&
+                    !selectedDetailIncident.resolvedAt && (
+                      <Button
+                        variant="action-green"
+                        size="xs"
+                        onClick={(e) =>
+                          void handleCompleteCountdownImmediately(selectedDetailIncident, e)
+                        }
+                      >
+                        Close Now
+                      </Button>
+                    )}
                 </div>
               </div>
             )}
@@ -2312,7 +1982,7 @@ export const UnitIncidentsFeed: React.FC = () => {
         </DefaultFloatingModalCard>
       )}
 
-      {/* 3-Option Backup Modal (Official Digital/Radio Dispatch — zero phone/email hotlines) */}
+      {/* 3-Option Backup Modal */}
       {backupModalIncident && (
         <DefaultFloatingModalCard
           isOpen={backupModalIncident !== null}
@@ -2331,7 +2001,8 @@ export const UnitIncidentsFeed: React.FC = () => {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => handleExecuteBackupOption(selectedBackupOption)}
+                isLoading={isSendingBackup}
+                onClick={() => void handleExecuteBackupOption(selectedBackupOption)}
                 icon={<Radio className="w-4 h-4" />}
               >
                 Send Backup Request
@@ -2347,7 +2018,6 @@ export const UnitIncidentsFeed: React.FC = () => {
               </p>
             </div>
 
-            {/* 3 Backup Options */}
             <div className="flex flex-col gap-2.5">
               <label className="text-sm font-mono font-bold text-[#670626]">
                 Protocol
@@ -2365,10 +2035,12 @@ export const UnitIncidentsFeed: React.FC = () => {
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-2.5">
+                      <div className="flex items-start gap-3">
                         <span
-                          className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center text-xs font-mono font-black flex-shrink-0 ${
-                            isSelected ? 'bg-[#670626] text-[#F7F1EA]' : 'bg-[#E9D9D0] text-[#670626]'
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-mono text-xs font-black flex-shrink-0 ${
+                            isSelected
+                              ? 'bg-[#670626] text-[#F7F1EA]'
+                              : 'bg-[#E9D9D0] text-[#670626]'
                           }`}
                         >
                           {opt.number}
@@ -2382,12 +2054,13 @@ export const UnitIncidentsFeed: React.FC = () => {
                       </div>
                       <button
                         type="button"
+                        disabled={isSendingBackup}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedBackupOption(opt.id);
-                          handleExecuteBackupOption(opt.id);
+                          void handleExecuteBackupOption(opt.id);
                         }}
-                        className="px-3 py-1.5 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-mono text-xs font-bold flex-shrink-0 cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-mono text-xs font-bold flex-shrink-0 cursor-pointer disabled:opacity-50"
                       >
                         Send
                       </button>
@@ -2401,7 +2074,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
                 <label className="text-xs font-mono font-bold text-[#670626] flex items-center gap-1.5 mb-1">
                   <Radio className="w-3.5 h-3.5 text-[#A83B4D]" />
-                  <span>Radio / Digital Dispatch Channel</span>
+                  <span>Dispatch Channel</span>
                 </label>
                 <input
                   type="text"
@@ -2455,7 +2128,7 @@ export const UnitIncidentsFeed: React.FC = () => {
         </DefaultFloatingModalCard>
       )}
 
-      {/* 40-Image Timestamped Evidence Modal */}
+      {/* 40-Image Timestamped Evidence Modal (PostgreSQL-backed) */}
       {evidenceModalIncident && (
         <DefaultFloatingModalCard
           isOpen={evidenceModalIncident !== null}
@@ -2469,7 +2142,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                 <strong className="text-[#670626]">
                   {currentModalEvidences.length} / {MAX_EVIDENCE_SLOTS}
                 </strong>{' '}
-                used
+                stored in PostgreSQL
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -2477,33 +2150,24 @@ export const UnitIncidentsFeed: React.FC = () => {
                   type="file"
                   accept="image/*,video/*"
                   multiple
-                  onChange={handleUploadEvidenceFiles}
+                  onChange={(e) => void handleUploadEvidenceFiles(e)}
                   className="hidden"
                 />
                 <Button
-                  variant="outline"
+                  variant="primary"
                   size="sm"
+                  isLoading={isUploadingEvidence}
                   onClick={() => fileInputRef.current?.click()}
                   disabled={currentModalEvidences.length >= MAX_EVIDENCE_SLOTS}
                   icon={<Upload className="w-4 h-4" />}
                 >
-                  Upload
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleGenerateTacticalEvidenceSnapshot}
-                  disabled={currentModalEvidences.length >= MAX_EVIDENCE_SLOTS}
-                  icon={<Camera className="w-4 h-4" />}
-                >
-                  Capture Frame (+1)
+                  Upload Evidence
                 </Button>
               </div>
             </div>
           }
         >
           <div className="flex flex-col gap-4">
-            {/* Active Evidence Viewer */}
             {activeEvidenceItem ? (
               <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#670626]/15 pb-2.5">
@@ -2535,16 +2199,6 @@ export const UnitIncidentsFeed: React.FC = () => {
                         <span>Zoom</span>
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleRemoveEvidenceSlot(evidenceModalIncident.id, activeEvidenceItem.id)
-                      }
-                      className="p-2 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-900 border border-rose-700/30 cursor-pointer"
-                      title="Remove item"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 </div>
 
@@ -2572,11 +2226,10 @@ export const UnitIncidentsFeed: React.FC = () => {
               </div>
             ) : (
               <div className="p-8 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 text-center font-mono text-sm text-[#5C313E]">
-                No evidence recorded. Upload or capture a frame below.
+                No evidence uploaded yet. Use Upload Evidence below.
               </div>
             )}
 
-            {/* 40-Slot Interactive Matrix (1..40) */}
             <div>
               <div className="flex items-center justify-between mb-2 font-mono text-sm">
                 <span className="text-[#670626] font-bold">
@@ -2595,7 +2248,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                         if (item) {
                           setSelectedEvidenceSlot(idx);
                         } else {
-                          handleGenerateTacticalEvidenceSnapshot();
+                          fileInputRef.current?.click();
                         }
                       }}
                       className={`relative h-20 rounded-xl border font-mono text-xs flex flex-col items-center justify-center overflow-hidden transition-all cursor-pointer ${
@@ -2608,7 +2261,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                       title={
                         item
                           ? `#${idx + 1}: ${item.capturedAtFormatted}`
-                          : `Slot #${idx + 1}`
+                          : `Upload to Slot #${idx + 1}`
                       }
                     >
                       {item ? (
@@ -2649,7 +2302,7 @@ export const UnitIncidentsFeed: React.FC = () => {
         title={lightboxTitle}
       />
 
-      {/* Multi-Casualty PCR Vitals Modal */}
+      {/* Multi-Casualty PCR Vitals Modal (requires real input — zero prefilled mock vitals) */}
       {activePcrIncident && (
         <DefaultFloatingModalCard
           isOpen={activePcrIncident !== null}
@@ -2659,7 +2312,6 @@ export const UnitIncidentsFeed: React.FC = () => {
           size="2xl"
         >
           <form onSubmit={handleSaveAllCasualtyPcrRecords} className="space-y-4 text-[#2B010E]">
-            {/* Multi-Casualty Selector Strip */}
             <div className="flex flex-wrap items-center justify-between gap-2 p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20">
               <div className="flex flex-wrap items-center gap-2">
                 {draftCasualties.map((c, idx) => (
@@ -2710,11 +2362,10 @@ export const UnitIncidentsFeed: React.FC = () => {
                   )}
                 </div>
 
-                {/* Patient Demographics */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                   <div className="sm:col-span-2">
                     <label className="block text-sm font-bold text-[#670626] mb-1.5">
-                      Patient Name
+                      Patient Name *
                     </label>
                     <input
                       type="text"
@@ -2728,14 +2379,16 @@ export const UnitIncidentsFeed: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-[#670626] mb-1.5">Age</label>
+                    <label className="block text-sm font-bold text-[#670626] mb-1.5">Age *</label>
                     <input
                       type="number"
+                      required
                       min={0}
                       max={150}
                       value={activeCasualtyDraft.age}
+                      placeholder="Age"
                       onChange={(e) =>
-                        handleUpdateActiveCasualtyField('age', Number(e.target.value))
+                        handleUpdateActiveCasualtyField('age', e.target.value)
                       }
                       className="w-full px-3.5 py-2.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-xl text-[#2B010E] text-sm focus:outline-none focus:border-[#670626]"
                     />
@@ -2776,21 +2429,22 @@ export const UnitIncidentsFeed: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Vitals Matrix */}
                 <div className="p-4 bg-[#E9D9D0] border border-[#670626]/15 rounded-xl">
                   <div className="flex items-center gap-2 mb-2.5 text-[#670626] text-sm font-bold">
                     <Activity className="w-4 h-4 text-[#A83B4D]" />
-                    <span>Vitals</span>
+                    <span>Vitals *</span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div>
-                      <label className="block text-xs font-bold text-[#5C313E] mb-1">BP (mmHg)</label>
+                      <label className="block text-xs font-bold text-[#5C313E] mb-1">BP (mmHg) *</label>
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
+                          required
+                          min={0}
                           value={activeCasualtyDraft.bpSystolic}
                           onChange={(e) =>
-                            handleUpdateActiveCasualtyField('bpSystolic', Number(e.target.value))
+                            handleUpdateActiveCasualtyField('bpSystolic', e.target.value)
                           }
                           className="w-1/2 px-2 py-1.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-lg text-center text-sm text-[#2B010E]"
                           placeholder="SYS"
@@ -2798,9 +2452,11 @@ export const UnitIncidentsFeed: React.FC = () => {
                         <span className="text-[#670626] font-bold">/</span>
                         <input
                           type="number"
+                          required
+                          min={0}
                           value={activeCasualtyDraft.bpDiastolic}
                           onChange={(e) =>
-                            handleUpdateActiveCasualtyField('bpDiastolic', Number(e.target.value))
+                            handleUpdateActiveCasualtyField('bpDiastolic', e.target.value)
                           }
                           className="w-1/2 px-2 py-1.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-lg text-center text-sm text-[#2B010E]"
                           placeholder="DIA"
@@ -2809,37 +2465,47 @@ export const UnitIncidentsFeed: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-[#5C313E] mb-1">
-                        HR (BPM)
+                        HR (BPM) *
                       </label>
                       <input
                         type="number"
+                        required
+                        min={0}
+                        placeholder="BPM"
                         value={activeCasualtyDraft.heartRate}
                         onChange={(e) =>
-                          handleUpdateActiveCasualtyField('heartRate', Number(e.target.value))
+                          handleUpdateActiveCasualtyField('heartRate', e.target.value)
                         }
                         className="w-full px-2 py-1.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-lg text-center text-sm text-[#2B010E]"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-[#5C313E] mb-1">SpO2 (%)</label>
+                      <label className="block text-xs font-bold text-[#5C313E] mb-1">SpO2 (%) *</label>
                       <input
                         type="number"
+                        required
+                        min={0}
+                        max={100}
+                        placeholder="%"
                         value={activeCasualtyDraft.spO2}
                         onChange={(e) =>
-                          handleUpdateActiveCasualtyField('spO2', Number(e.target.value))
+                          handleUpdateActiveCasualtyField('spO2', e.target.value)
                         }
                         className="w-full px-2 py-1.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-lg text-center text-sm text-[#2B010E]"
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-[#5C313E] mb-1">
-                        RR (/min)
+                        RR (/min) *
                       </label>
                       <input
                         type="number"
+                        required
+                        min={0}
+                        placeholder="/min"
                         value={activeCasualtyDraft.respiratoryRate}
                         onChange={(e) =>
-                          handleUpdateActiveCasualtyField('respiratoryRate', Number(e.target.value))
+                          handleUpdateActiveCasualtyField('respiratoryRate', e.target.value)
                         }
                         className="w-full px-2 py-1.5 bg-[#FFFBF7] border border-[#D8C1B5] rounded-lg text-center text-sm text-[#2B010E]"
                       />
@@ -2847,7 +2513,6 @@ export const UnitIncidentsFeed: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Interventions Checkchips */}
                 <div>
                   <label className="block text-sm font-bold text-[#670626] mb-2">
                     Interventions
@@ -2878,7 +2543,6 @@ export const UnitIncidentsFeed: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Chief Complaint & Field Notes */}
                 <div className="space-y-3">
                   <div>
                     <label className="block text-sm font-bold text-[#670626] mb-1.5">
@@ -2946,28 +2610,15 @@ export const UnitIncidentsFeed: React.FC = () => {
         </DefaultFloatingModalCard>
       )}
 
-      {/* Fire & Police Compatibility Modals */}
-      {activeAlarmIncident && (
-        <FireAlarmEscalationModal
-          isOpen={activeAlarmIncident !== null}
-          onClose={() => setActiveAlarmIncident(null)}
-          reportId={activeAlarmIncident.id}
-          onSuccess={(alarm) => {
-            showToast(`Alarm level: ${alarm.alarmLevel}`);
-            loadIncidents();
-          }}
-        />
-      )}
-
       {activeBlotterIncident && (
         <PoliceBlotterModal
           isOpen={activeBlotterIncident !== null}
           onClose={() => setActiveBlotterIncident(null)}
           reportId={activeBlotterIncident.id}
-          defaultLocation={activeBlotterIncident.locationLabel || 'Katipunan Municipal Sector'}
+          defaultLocation={activeBlotterIncident.locationLabel || 'Reported Location'}
           onSuccess={(blotter) => {
             showToast(`Blotter ${blotter.blotterNumber} sealed`);
-            loadIncidents();
+            void loadIncidents();
           }}
         />
       )}

@@ -66,29 +66,58 @@ export const getAuthToken = (): string | null => {
   return null;
 };
 
-export const requestJson = async <T>(url: string, options: RequestInit = {}): Promise<T> => {
-  const token = getAuthToken();
-  const defaultHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-    ...(token
-      ? {
-          'Authorization': `Bearer ${token}`,
-          'X-Session-Token': token
-        }
-      : {})
-  };
-
-  const baseUrl = getApiBaseUrl();
-  const resolvedUrl = url.startsWith('/') && baseUrl ? `${baseUrl}${url}` : url;
-
-  let response: Response;
+export const clearStalePortTokens = (): void => {
+  if (typeof window === 'undefined') return;
   try {
-    response = await fetch(resolvedUrl, {
+    const port = window.location.port || '1998';
+    const tabUnit = (sessionStorage.getItem('resqtrack_unit') || '').toLowerCase().trim();
+    sessionStorage.removeItem('resqtrack_token');
+    sessionStorage.removeItem('resqtrack_session');
+    sessionStorage.removeItem('resqtrack_user');
+    if (tabUnit && tabUnit !== 'none') {
+      localStorage.removeItem(`resqtrack_token_${tabUnit}`);
+      localStorage.removeItem(`resqtrack_session_${tabUnit}`);
+      localStorage.removeItem(`resqtrack_user_${tabUnit}`);
+    }
+    localStorage.removeItem(`resqtrack_token_${port}`);
+    localStorage.removeItem(`resqtrack_session_${port}`);
+    localStorage.removeItem(`resqtrack_user_${port}`);
+    localStorage.removeItem('resqtrack_token');
+  } catch {
+    // Storage cleanup safeguard
+  }
+};
+
+export const requestJson = async <T>(url: string, options: RequestInit = {}): Promise<T> => {
+  const executeFetch = async (overrideToken?: string | null): Promise<Response> => {
+    const token = overrideToken !== undefined ? overrideToken : getAuthToken();
+    const defaultHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...(token
+        ? {
+            'Authorization': `Bearer ${token}`,
+            'X-Session-Token': token
+          }
+        : {})
+    };
+    const baseUrl = getApiBaseUrl();
+    const resolvedUrl = url.startsWith('/') && baseUrl ? `${baseUrl}${url}` : url;
+    return fetch(resolvedUrl, {
       ...options,
       credentials: 'include',
       headers: { ...defaultHeaders, ...options.headers }
     });
+  };
+
+  let response: Response;
+  try {
+    response = await executeFetch();
+    const isAuthAttempt =
+      url.includes('/login') || url.includes('/biometric-login') || url.includes('/register') || url.includes('/logout');
+    if (response.status === 401 && !isAuthAttempt) {
+      clearStalePortTokens();
+    }
   } catch (err: unknown) {
     const rawError = err instanceof Error ? err.message : String(err);
     throw new ApiError(

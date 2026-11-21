@@ -26,16 +26,27 @@ import {
 import { RadioButton } from '@/Shared';
 import { usePagination } from '@/Hooks';
 import { useSession } from '@/Hooks/useSession';
+import { requestJson } from '@/Endpoints/apiClient';
 import {
   getSystemSettings,
   updateSystemSetting,
   getAuditLogs,
-  updateUser,
   SystemSetting
 } from '@/Endpoints/adminGovernanceApi';
-import { BASELINE_AUDIT_LOGS } from '@/Libs/Assets/baselineFixtures';
 import { AdminButton } from './Shared/AdminButton';
 import { CLAY_SURFACE, CLAY_WELL, CLAY_INPUT, CLAY_SELECT } from './Shared/adminCommandHelpers';
+
+interface AdminProfileDto {
+  userId?: string;
+  id?: string;
+  fullName?: string;
+  email?: string;
+  phoneNumber?: string;
+  rankOrTitle?: string;
+  employeeOrResidentId?: string;
+  avatarDataUrl?: string | null;
+  avatarUrl?: string | null;
+}
 
 export interface CryptographicAuditItem {
   id: string;
@@ -61,16 +72,16 @@ const DEFAULT_REFRESH_RATE_SEC = 6;
 const EMPTY_COUNT = 0;
 
 export const SettingsPage: FC = () => {
-  const { session } = useSession();
+  const { session, refreshSession } = useSession();
   const [activeTab, setActiveTab] = useState<'profile' | 'platform' | 'audit'>('profile');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  const [fullName, setFullName] = useState<string>('Commander Carlos Mendez');
-  const [email, setEmail] = useState<string>('ldrrmo.admin@resqtrack.gov.ph');
-  const [phone, setPhone] = useState<string>('+63 917 889 4432');
-  const [rank, setRank] = useState<string>('Executive Director / C2 Commander');
-  const [employeeId, setEmployeeId] = useState<string>('EMP-LDRRMO-001');
+  const [fullName, setFullName] = useState<string>('');
+  const [email, setEmail] = useState<string>('');
+  const [phone, setPhone] = useState<string>('');
+  const [rank, setRank] = useState<string>('');
+  const [employeeId, setEmployeeId] = useState<string>('');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
 
   const [broadcastRadius, setBroadcastRadius] = useState<string>('15km');
@@ -112,10 +123,10 @@ export const SettingsPage: FC = () => {
     setIsLoadingAudit(true);
     try {
       const logs = (await getAuditLogs()) as unknown as CryptographicAuditItem[];
-      setAuditLogs(Array.isArray(logs) && logs.length > 0 ? logs : (BASELINE_AUDIT_LOGS as unknown as CryptographicAuditItem[]));
+      setAuditLogs(Array.isArray(logs) ? logs : []);
     } catch (err: unknown) {
       console.warn('[SettingsPage] Could not load cryptographic audit trail:', err);
-      setAuditLogs((prev) => (prev.length > 0 ? prev : (BASELINE_AUDIT_LOGS as unknown as CryptographicAuditItem[])));
+      setAuditLogs([]);
     } finally {
       setIsLoadingAudit(false);
     }
@@ -134,36 +145,40 @@ export const SettingsPage: FC = () => {
           if (s.key === 'highContrastHud' && s.value !== undefined) setHighContrastHud(s.value === 'true');
         });
       }
-    } catch {
-      const storedSettings = localStorage.getItem('resqtrack_platform_settings');
-      if (storedSettings) {
-        try {
-          const parsed = JSON.parse(storedSettings);
-          if (parsed.broadcastRadius) setBroadcastRadius(parsed.broadcastRadius);
-          if (parsed.laplacianThreshold) setLaplacianThreshold(parsed.laplacianThreshold);
-          if (parsed.autoDispatchMode !== undefined) setAutoDispatchMode(parsed.autoDispatchMode);
-          if (parsed.audioChimesEnabled !== undefined) setAudioChimesEnabled(parsed.audioChimesEnabled);
-          if (parsed.refreshIntervalSec) setRefreshIntervalSec(parsed.refreshIntervalSec);
-          if (parsed.highContrastHud !== undefined) setHighContrastHud(parsed.highContrastHud);
-        } catch {}
-      }
+    } catch (err: unknown) {
+      console.warn('[SettingsPage] Failed to load platform settings:', err);
     }
   }, []);
 
-  useEffect(() => {
+  const loadProfile = useCallback(async () => {
     if (session) {
-      if (session.fullName) setFullName(session.fullName);
-      if (session.email) setEmail(session.email);
+      if (session.fullName) setFullName((prev) => prev || session.fullName);
+      if (session.email) setEmail((prev) => prev || session.email);
+      if (session.rankOrTitle) setRank((prev) => prev || session.rankOrTitle || '');
+      if (session.employeeOrResidentId) setEmployeeId((prev) => prev || session.employeeOrResidentId || '');
     }
 
-    const storedAvatar =
-      localStorage.getItem('resqtrack_user_avatar') ||
-      localStorage.getItem('resqtrack_admin_avatar');
-    if (storedAvatar) setAvatarUrl(storedAvatar);
+    try {
+      const profile = await requestJson<AdminProfileDto>('/api/profile', { method: 'GET' });
+      if (profile) {
+        if (profile.fullName !== undefined) setFullName(profile.fullName || '');
+        if (profile.email !== undefined) setEmail(profile.email || '');
+        if (profile.phoneNumber !== undefined) setPhone(profile.phoneNumber || '');
+        if (profile.rankOrTitle !== undefined) setRank(profile.rankOrTitle || '');
+        if (profile.employeeOrResidentId !== undefined) setEmployeeId(profile.employeeOrResidentId || '');
+        const resolvedAvatar = profile.avatarDataUrl || profile.avatarUrl || '';
+        setAvatarUrl(resolvedAvatar);
+      }
+    } catch (err: unknown) {
+      console.warn('[SettingsPage] Could not hydrate profile from /api/profile:', err);
+    }
+  }, [session]);
 
+  useEffect(() => {
+    void loadProfile();
     void loadPlatformSettings();
     void loadAuditTrail();
-  }, [session, loadPlatformSettings, loadAuditTrail]);
+  }, [loadProfile, loadPlatformSettings, loadAuditTrail]);
 
   const handleAvatarChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -176,83 +191,89 @@ export const SettingsPage: FC = () => {
 
     const reader = new FileReader();
     reader.onload = () => {
-      const result = reader.result as string;
-      setAvatarUrl(result);
-      try {
-        localStorage.setItem('resqtrack_admin_avatar', result);
-        localStorage.setItem('resqtrack_user_avatar', result);
-        window.dispatchEvent(new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: result } }));
-        showToast('Profile photo updated.');
-      } catch {
-        showToast('Avatar set for current session.');
-      }
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!result) return;
+      void (async () => {
+        setIsSaving(true);
+        try {
+          await requestJson<{ message?: string }>('/api/profile', {
+            method: 'PUT',
+            body: JSON.stringify({ avatarDataUrl: result })
+          });
+          setAvatarUrl(result);
+          window.dispatchEvent(new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: result } }));
+          await refreshSession();
+          showToast('Profile photo saved to database.');
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Failed to save profile photo.';
+          showToast(msg);
+        } finally {
+          setIsSaving(false);
+        }
+      })();
     };
     reader.readAsDataURL(file);
   };
 
-  const updateOwnProfile = async (payload: {
-    fullName: string;
-    email: string;
-    phone: string;
-    rank: string;
-    employeeId: string;
-  }): Promise<void> => {
-    if (!session?.userId) return;
-    const parts = payload.fullName.trim().split(' ');
-    const firstName = parts[0] || 'Commander';
-    const surname = parts.slice(1).join(' ') || 'Admin';
-
-    await updateUser(session.userId, {
-      firstName,
-      surname,
-      phoneNumber: payload.phone,
-      rankOrTitle: payload.rank,
-      employeeOrResidentId: payload.employeeId,
-      role: 'LDRRMO_Admin',
-      unit: 'None',
-      status: 'Verified',
-      province: 'Zamboanga del Norte',
-      cityOrMunicipality: 'Katipunan',
-      barangay: 'Barangay Uno (Poblacion)'
-    });
+  const handleResetAvatar = async (): Promise<void> => {
+    setIsSaving(true);
+    try {
+      await requestJson<{ message?: string }>('/api/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ avatarDataUrl: null })
+      });
+      setAvatarUrl('');
+      window.dispatchEvent(new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } }));
+      await refreshSession();
+      showToast('Profile photo cleared.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to clear profile photo.';
+      showToast(msg);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSaveProfile = async (e: FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    const payload = { fullName, email, phone, rank, employeeId };
+    const trimmedName = fullName.trim();
+    const parts = trimmedName ? trimmedName.split(/\s+/) : [];
+    const firstName = parts[0] || '';
+    const surname = parts.slice(1).join(' ');
+
+    const payload = {
+      fullName: trimmedName,
+      firstName,
+      surname,
+      phoneNumber: phone.trim(),
+      rankOrTitle: rank.trim(),
+      employeeOrResidentId: employeeId.trim(),
+      ...(avatarUrl ? { avatarDataUrl: avatarUrl } : {})
+    };
 
     try {
-      await updateOwnProfile(payload);
-      const existingUser = localStorage.getItem('resqtrack_user');
-      const parsedUser = existingUser ? (JSON.parse(existingUser) as Record<string, unknown>) : {};
-      const updatedUser = { ...parsedUser, ...payload };
-      localStorage.setItem('resqtrack_user', JSON.stringify(updatedUser));
-
-      const existingSession = localStorage.getItem('resqtrack_session');
-      if (existingSession) {
-        try {
-          const sess = JSON.parse(existingSession) as Record<string, unknown>;
-          localStorage.setItem(
-            'resqtrack_session',
-            JSON.stringify({
-              ...sess,
-              fullName,
-              email,
-              rankOrTitle: rank,
-              employeeOrResidentId: employeeId
-            })
-          );
-        } catch {}
-      }
-
-      window.dispatchEvent(new CustomEvent('resqtrack:profile_updated', { detail: updatedUser }));
-      showToast('Settings saved.');
-    } catch {
-      const existingUser = localStorage.getItem('resqtrack_user');
-      const parsedUser = existingUser ? (JSON.parse(existingUser) as Record<string, unknown>) : {};
-      localStorage.setItem('resqtrack_user', JSON.stringify({ ...parsedUser, ...payload }));
-      showToast('Settings saved.');
+      await requestJson<{ message?: string }>('/api/profile', {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      await loadProfile();
+      await refreshSession();
+      window.dispatchEvent(
+        new CustomEvent('resqtrack:profile_updated', {
+          detail: {
+            fullName: trimmedName,
+            email: email.trim(),
+            phone: phone.trim(),
+            rank: rank.trim(),
+            employeeId: employeeId.trim()
+          }
+        })
+      );
+      showToast('Profile saved.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to save profile.';
+      showToast(msg);
     } finally {
       setIsSaving(false);
     }
@@ -272,7 +293,7 @@ export const SettingsPage: FC = () => {
     };
 
     try {
-      await Promise.allSettled([
+      await Promise.all([
         updateSystemSetting('broadcastRadius', broadcastRadius),
         updateSystemSetting('laplacianThreshold', String(laplacianThreshold)),
         updateSystemSetting('autoDispatchMode', String(autoDispatchMode)),
@@ -280,14 +301,12 @@ export const SettingsPage: FC = () => {
         updateSystemSetting('refreshIntervalSec', String(refreshIntervalSec)),
         updateSystemSetting('highContrastHud', String(highContrastHud))
       ]);
-      localStorage.setItem('resqtrack_platform_settings', JSON.stringify(payload));
       window.dispatchEvent(new CustomEvent('resqtrack:settings_updated', { detail: payload }));
       showToast('Settings saved.');
       await loadAuditTrail();
-    } catch {
-      localStorage.setItem('resqtrack_platform_settings', JSON.stringify(payload));
-      window.dispatchEvent(new CustomEvent('resqtrack:settings_updated', { detail: payload }));
-      showToast('Settings saved.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to save platform settings.';
+      showToast(msg);
     } finally {
       setIsSaving(false);
     }
@@ -313,7 +332,7 @@ export const SettingsPage: FC = () => {
             System Settings
           </h1>
           <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
-            Configuration, profile governance, and cryptographic audit log
+            Profile, platform &amp; audit log
           </p>
         </div>
 
@@ -384,13 +403,8 @@ export const SettingsPage: FC = () => {
                 {avatarUrl && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setAvatarUrl('');
-                      localStorage.removeItem('resqtrack_admin_avatar');
-                      localStorage.removeItem('resqtrack_user_avatar');
-                      window.dispatchEvent(new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } }));
-                      showToast('Reverted to default static avatar.');
-                    }}
+                    onClick={() => void handleResetAvatar()}
+                    disabled={isSaving}
                     className="text-xs text-[#A83B4D] hover:text-[#670626] font-mono font-bold cursor-pointer"
                   >
                     Reset to Default
@@ -460,7 +474,7 @@ export const SettingsPage: FC = () => {
                   {broadcastRadius}
                 </span>
               </div>
-              <p className="text-xs text-[#A83B4D]">Filters advisory pushes sent to resident Notification Bells.</p>
+              <p className="text-xs text-[#A83B4D]">Filters resident bell pushes.</p>
               <select
                 value={broadcastRadius}
                 onChange={(e) => setBroadcastRadius(e.target.value)}
@@ -483,7 +497,7 @@ export const SettingsPage: FC = () => {
                   {laplacianThreshold}.0 Min
                 </span>
               </div>
-              <p className="text-xs text-[#A83B4D]">Minimum sharpness required for live camera photo uploads.</p>
+              <p className="text-xs text-[#A83B4D]">Min sharpness for photo uploads.</p>
               <input
                 type="range"
                 min={MIN_LAPLACIAN_THRESHOLD}
@@ -507,7 +521,7 @@ export const SettingsPage: FC = () => {
                   Auto-Dispatch Mode
                 </h4>
                 <p className="text-xs text-[#A83B4D] mt-1">
-                  Assigns the nearest available unit upon report verification.
+                  Auto-assigns nearest unit on verify.
                 </p>
               </div>
               <button
@@ -532,7 +546,7 @@ export const SettingsPage: FC = () => {
                   Alert Audio Chime
                 </h4>
                 <p className="text-xs text-[#A83B4D] mt-1">
-                  Plays an audio alert when critical dispatches arrive.
+                  Sound alert for critical dispatches.
                 </p>
               </div>
               <button
@@ -560,7 +574,7 @@ export const SettingsPage: FC = () => {
                   {refreshIntervalSec} Seconds
                 </span>
               </div>
-              <p className="text-xs text-[#A83B4D]">Refresh interval for background telemetry updates.</p>
+              <p className="text-xs text-[#A83B4D]">Telemetry refresh interval.</p>
               <select
                 value={refreshIntervalSec}
                 onChange={(e) => setRefreshIntervalSec(Number(e.target.value))}
@@ -579,7 +593,7 @@ export const SettingsPage: FC = () => {
                   High-Contrast HUD
                 </h4>
                 <p className="text-xs text-[#A83B4D] mt-1">
-                  Increases border and text contrast for field visibility.
+                  Boosts field border &amp; text contrast.
                 </p>
               </div>
               <button
@@ -651,8 +665,8 @@ export const SettingsPage: FC = () => {
                   </tr>
                 ) : (
                   paginatedAuditLogs.map((log) => {
-                    const actorDisplay = log.userEmail || (log.actorUserId ? `Officer ${log.actorUserId.slice(0, 8)}` : 'LDRRMO Admin');
-                    const uidDisplay = log.actorUserId || log.userId || 'SEC-LDRRMO-01';
+                    const actorDisplay = log.userEmail || (log.actorUserId ? `Officer ${log.actorUserId.slice(0, 8)}` : 'System');
+                    const uidDisplay = log.actorUserId || log.userId || 'N/A';
                     const targetDisplay = log.targetEntity ? `${log.targetEntity} · ` : '';
                     const payloadDisplay = log.payload || log.details || 'State verified';
 

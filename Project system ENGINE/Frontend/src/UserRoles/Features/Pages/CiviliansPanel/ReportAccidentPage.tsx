@@ -1,8 +1,8 @@
 // [Layer: UserRoles/Features/Pages/CiviliansPanel]
 // Responsibility: Detailed emergency report submission screen with live GPS tracking,
-// live camera capture verification, optional personal contact text field (no tel: links),
-// pre-submission confirmation modal, and post-submit Submitted / Pending Verification status receipt.
-// ABSOLUTE INVARIANT: Preserves createReport API calls, payload fields, and base64 camera capture handlers.
+// live camera capture / image upload with clean un-watermarked AI vision analysis,
+// visible AI Processing & Auto-Approve Evaluation indicator, optional personal contact text field (no tel: links),
+// pre-submission confirmation modal, and dynamic AI Auto-Approved vs Pending Review receipt.
 // Strictly 100% arrow functions (=>), ZERO 'any', and ZERO emojis.
 
 import React, { useState, useRef } from 'react';
@@ -37,6 +37,11 @@ import { CameraCaptureModal, CameraCaptureMetadata } from '@/Shared/CameraCaptur
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { CATEGORY_LABELS } from '@/Libs/Assets/data';
+import {
+  computeLaplacianVariance,
+  calculateDynamicClarityThreshold,
+  DEFAULT_CLARITY_THRESHOLD
+} from '@/Libs/Vision/cameraClarityHelper';
 import { CivilianButton } from './Shared/CivilianButton';
 import { CivilianModalCard } from './Shared/CivilianModalCard';
 
@@ -45,6 +50,16 @@ const CONTACT_STORAGE_KEY = 'resqtrack_reporter_contact_number';
 const AI_VISION_CACHE_KEY = 'resqtrack_ai_vision_by_report';
 
 const VALID_SEVERITIES = ['Critical', 'High', 'Medium', 'Low'] as const;
+
+type ExtendedAiAnalysisResponse = IncidentImageAiAnalysisResponse & {
+  autoApproveEligible?: boolean;
+  aiVerificationStatus?: string | null;
+};
+
+type ExtendedReportItem = ReportItem & {
+  aiAutoApproved?: boolean;
+  aiVerificationStatus?: string | null;
+};
 
 const resolveValidCategoryKey = (candidate?: string | null): string | null => {
   if (!candidate) return null;
@@ -124,17 +139,10 @@ interface CivilianCreateReportPayload extends CreateReportPayload {
 
 const getInitialStoredContact = (): string => {
   try {
-    const direct = localStorage.getItem(CONTACT_STORAGE_KEY);
-    if (direct) return direct;
-    const rawProfile = localStorage.getItem('resqtrack_civilian_medical_profile');
-    if (rawProfile) {
-      const parsed = JSON.parse(rawProfile) as { reporterContactNumber?: string };
-      return parsed.reporterContactNumber || '';
-    }
+    return localStorage.getItem(CONTACT_STORAGE_KEY) || '';
   } catch {
     return '';
   }
-  return '';
 };
 
 export const ReportAccidentPage: React.FC = () => {
@@ -154,12 +162,13 @@ export const ReportAccidentPage: React.FC = () => {
   const [captureMetadata, setCaptureMetadata] = useState<CameraCaptureMetadata | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false);
   const [isAnalyzingAi, setIsAnalyzingAi] = useState<boolean>(false);
-  const [aiAnalysis, setAiAnalysis] = useState<IncidentImageAiAnalysisResponse | null>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<ExtendedAiAnalysisResponse | null>(null);
+  const [aiAnalysisUnavailable, setAiAnalysisUnavailable] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isResyncing, setIsResyncing] = useState<boolean>(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
-  const [submittedReport, setSubmittedReport] = useState<ReportItem | null>(null);
+  const [submittedReport, setSubmittedReport] = useState<ExtendedReportItem | null>(null);
 
   const stepGpsRef = useRef<HTMLDivElement>(null);
   const stepCameraRef = useRef<HTMLDivElement>(null);
@@ -170,16 +179,10 @@ export const ReportAccidentPage: React.FC = () => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const triggerDualAiVisionAnalysis = async (nextImageDataUrl: string): Promise<void> => {
-    setIsAnalyzingAi(true);
-    try {
-      const res = await analyzeIncidentImage({
-        imageDataUrl: nextImageDataUrl,
-        titleHint: title.trim() || undefined,
-        noteHint: note.trim() || undefined,
-        categoryHint: category
-      });
-      setAiAnalysis(res);
+  const applyAiAnalysisResult = (res: ExtendedAiAnalysisResponse): void => {
+    setAiAnalysisUnavailable(null);
+    setAiAnalysis(res);
+    if (res.isGenuineIncident !== false) {
       const matchedCategory = resolveValidCategoryKey(res.detectedCategory);
       if (matchedCategory) {
         setCategory(matchedCategory);
@@ -188,35 +191,25 @@ export const ReportAccidentPage: React.FC = () => {
       if (matchedSeverity) {
         setSeverity(matchedSeverity);
       }
+    }
+  };
+
+  const triggerDualAiVisionAnalysis = async (nextImageDataUrl: string): Promise<void> => {
+    setIsAnalyzingAi(true);
+    setAiAnalysisUnavailable(null);
+    try {
+      const res = (await analyzeIncidentImage({
+        imageDataUrl: nextImageDataUrl,
+        titleHint: title.trim() || undefined,
+        noteHint: note.trim() || undefined,
+        categoryHint: category
+      })) as ExtendedAiAnalysisResponse;
+      applyAiAnalysisResult(res);
     } catch {
-      const fallbackPointer = derivePointerIconFromCategory(category);
-      setAiAnalysis({
-        roboflowModelId: 'accident-and-non-accident-label-image-dataset/14',
-        roboflowPrediction: category === 'VehicularAccident' ? 'accident' : 'incident-scene',
-        roboflowConfidence: 0.91,
-        roboflowNeedsReview: false,
-        roboflowAuthTransport: 'api_key',
-        claudeModelUsed: 'claude-haiku-4-5',
-        isGenuineIncident: true,
-        detectedCategory: category,
-        recommendedSeverity: severity,
-        pointerIconType: fallbackPointer,
-        situationDescription:
-          title.trim() ||
-          `Field incident scene captured for ${CATEGORY_LABELS[category] || category} in Katipunan 7109.`,
-        visibleHazards:
-          note.trim() ||
-          'Roadway or perimeter hazard requiring responder verification and traffic/scene safety cordon.',
-        uncertaintyNotes:
-          'Automated Dual-AI scene classification completed; final dispatch confirmation required by duty officer.',
-        verificationStatus: 'SUBMITTED / PENDING_REVIEW',
-        recommendedAgencyUnit:
-          category === 'StructuralFire'
-            ? 'FIRE'
-            : category === 'CrimeOrSecurity'
-            ? 'PNP'
-            : 'RHU'
-      });
+      setAiAnalysis(null);
+      setAiAnalysisUnavailable(
+        'AI scene analysis service is currently unavailable. Your report will be submitted for manual responder verification.'
+      );
     } finally {
       setIsAnalyzingAi(false);
     }
@@ -225,7 +218,12 @@ export const ReportAccidentPage: React.FC = () => {
   const handleCaptureComplete = (dataUrl: string, meta: CameraCaptureMetadata): void => {
     setImageDataUrl(dataUrl);
     setCaptureMetadata(meta);
-    void triggerDualAiVisionAnalysis(dataUrl);
+    if (meta.aiPreview) {
+      applyAiAnalysisResult(meta.aiPreview);
+      setIsAnalyzingAi(false);
+      return;
+    }
+    void triggerDualAiVisionAnalysis(meta.analysisImageDataUrl || dataUrl);
   };
 
   const handleFileUploadChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -235,19 +233,54 @@ export const ReportAccidentPage: React.FC = () => {
     reader.onload = () => {
       const result = typeof reader.result === 'string' ? reader.result : '';
       if (!result) return;
-      setImageDataUrl(result);
-      setCaptureMetadata({
-        varianceScore: 142.5,
-        isBlurry: false,
-        requiresManualVerification: false,
-        dynamicThreshold: 80,
-        thresholdReasoning: 'Uploaded Incident Photo',
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        accuracyMeters: coords.accuracy,
-        isHardwareGeolocated
-      });
-      void triggerDualAiVisionAnalysis(result);
+
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 1280;
+        const maxH = 720;
+        const scale = Math.min(1, maxW / Math.max(1, img.naturalWidth), maxH / Math.max(1, img.naturalHeight));
+        const targetW = Math.max(1, Math.round(img.naturalWidth * scale));
+        const targetH = Math.max(1, Math.round(img.naturalHeight * scale));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        let varianceScore = 0;
+        let dynamicThreshold = DEFAULT_CLARITY_THRESHOLD;
+        let thresholdReasoning = 'Uploaded Photo · Canvas unavailable';
+        let isBlurry = true;
+
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+          const lap = computeLaplacianVariance(ctx, targetW, targetH);
+          const dyn = calculateDynamicClarityThreshold(targetW, targetH, lap.meanLuminance);
+          varianceScore = lap.variance;
+          dynamicThreshold = dyn.threshold;
+          thresholdReasoning = `Uploaded Photo · ${dyn.reasoning}`;
+          isBlurry = varianceScore < dynamicThreshold;
+        }
+
+        setImageDataUrl(result);
+        setCaptureMetadata({
+          varianceScore,
+          isBlurry,
+          requiresManualVerification: isBlurry,
+          dynamicThreshold,
+          thresholdReasoning,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracyMeters: coords.accuracy,
+          isHardwareGeolocated,
+          analysisImageDataUrl: result
+        });
+        void triggerDualAiVisionAnalysis(result);
+      };
+      img.onerror = () => {
+        setError('Unable to decode uploaded image file.');
+      };
+      img.src = result;
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -271,20 +304,26 @@ export const ReportAccidentPage: React.FC = () => {
   const handleOpenConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
-      setError('Incident title / headline is required.');
+      setError('Incident title is required.');
       scrollToStep(stepTriageRef);
       return;
     }
     if (!isHardwareGeolocated && coords.isFallback) {
       refreshGps();
-      setError(
-        'Active Location Required: Please enable and authorize device GPS / WiFi location to pinpoint exact coordinates in Katipunan 7109.'
-      );
+      setError('Enable device GPS/location to submit.');
       return;
     }
     setError(null);
     setIsConfirmModalOpen(true);
   };
+
+  const isAutoApproveEligible = Boolean(
+    aiAnalysis &&
+      (aiAnalysis.autoApproveEligible ||
+        (aiAnalysis.isGenuineIncident !== false &&
+          !aiAnalysis.roboflowNeedsReview &&
+          !captureMetadata?.isBlurry))
+  );
 
   const handleFinalSubmit = async () => {
     setIsLoading(true);
@@ -292,6 +331,12 @@ export const ReportAccidentPage: React.FC = () => {
 
     try {
       const trimmedContact = reporterContactNumber.trim();
+      const aiConfirmedClean =
+        Boolean(aiAnalysis?.isGenuineIncident) && !aiAnalysis?.roboflowNeedsReview;
+      const requiresManualVerification =
+        Boolean(captureMetadata?.isBlurry) ||
+        (aiAnalysis ? !aiConfirmedClean : Boolean(captureMetadata?.requiresManualVerification));
+
       const payload: CivilianCreateReportPayload = {
         title: title.trim(),
         note: note.trim(),
@@ -302,38 +347,37 @@ export const ReportAccidentPage: React.FC = () => {
         gpsAccuracyMeters: coords.accuracy,
         isHardwareGeolocated,
         isBlurry: captureMetadata?.isBlurry ?? false,
-        requiresManualVerification:
-          (captureMetadata?.requiresManualVerification ?? false) ||
-          (aiAnalysis?.roboflowNeedsReview ?? false),
-        locationLabel: locationLabel.trim() || 'Katipunan, ZN (Live Hardware Sensor Geotag)',
+        requiresManualVerification,
+        locationLabel: locationLabel.trim() || 'Katipunan, ZN (GPS Geotag)',
         imageDataUrl: imageDataUrl || undefined,
         reporterContactNumber: trimmedContact || undefined,
-        roboflowModelId: aiAnalysis?.roboflowModelId || 'accident-and-non-accident-label-image-dataset/14',
-        roboflowPrediction: aiAnalysis?.roboflowPrediction || null,
+        roboflowModelId: aiAnalysis?.roboflowModelId ?? null,
+        roboflowPrediction: aiAnalysis?.roboflowPrediction ?? null,
         roboflowConfidence:
           typeof aiAnalysis?.roboflowConfidence === 'number' ? aiAnalysis.roboflowConfidence : null,
         roboflowNeedsReview: aiAnalysis?.roboflowNeedsReview ?? false,
-        claudeModelUsed: aiAnalysis?.claudeModelUsed || (aiAnalysis ? 'claude-haiku-4-5' : null),
-        claudeIncidentCategory: aiAnalysis?.detectedCategory || null,
-        claudeSituationSummary: aiAnalysis?.situationDescription || null,
-        claudeVisibleHazards: aiAnalysis?.visibleHazards || null,
-        claudeUncertaintyNotes: aiAnalysis?.uncertaintyNotes || null,
-        pointerIconType: aiAnalysis?.pointerIconType || derivePointerIconFromCategory(category)
+        claudeModelUsed: aiAnalysis?.claudeModelUsed ?? null,
+        claudeIncidentCategory: aiAnalysis?.detectedCategory ?? null,
+        claudeSituationSummary: aiAnalysis?.situationDescription ?? null,
+        claudeVisibleHazards: aiAnalysis?.visibleHazards ?? null,
+        claudeUncertaintyNotes: aiAnalysis?.uncertaintyNotes ?? null,
+        pointerIconType: aiAnalysis?.pointerIconType ?? derivePointerIconFromCategory(category)
       };
 
       const res = await createReport(payload);
-      const enrichedReport: ReportItem = {
-        ...res.report,
-        roboflowModelId: res.report.roboflowModelId ?? payload.roboflowModelId,
-        roboflowPrediction: res.report.roboflowPrediction ?? payload.roboflowPrediction,
-        roboflowConfidence: res.report.roboflowConfidence ?? payload.roboflowConfidence,
-        roboflowNeedsReview: res.report.roboflowNeedsReview ?? payload.roboflowNeedsReview,
-        claudeModelUsed: res.report.claudeModelUsed ?? payload.claudeModelUsed,
-        claudeIncidentCategory: res.report.claudeIncidentCategory ?? payload.claudeIncidentCategory,
-        claudeSituationSummary: res.report.claudeSituationSummary ?? payload.claudeSituationSummary,
-        claudeVisibleHazards: res.report.claudeVisibleHazards ?? payload.claudeVisibleHazards,
-        claudeUncertaintyNotes: res.report.claudeUncertaintyNotes ?? payload.claudeUncertaintyNotes,
-        pointerIconType: res.report.pointerIconType ?? payload.pointerIconType
+      const rawReport = res.report as ExtendedReportItem;
+      const enrichedReport: ExtendedReportItem = {
+        ...rawReport,
+        roboflowModelId: rawReport.roboflowModelId ?? payload.roboflowModelId,
+        roboflowPrediction: rawReport.roboflowPrediction ?? payload.roboflowPrediction,
+        roboflowConfidence: rawReport.roboflowConfidence ?? payload.roboflowConfidence,
+        roboflowNeedsReview: rawReport.roboflowNeedsReview ?? payload.roboflowNeedsReview,
+        claudeModelUsed: rawReport.claudeModelUsed ?? payload.claudeModelUsed,
+        claudeIncidentCategory: rawReport.claudeIncidentCategory ?? payload.claudeIncidentCategory,
+        claudeSituationSummary: rawReport.claudeSituationSummary ?? payload.claudeSituationSummary,
+        claudeVisibleHazards: rawReport.claudeVisibleHazards ?? payload.claudeVisibleHazards,
+        claudeUncertaintyNotes: rawReport.claudeUncertaintyNotes ?? payload.claudeUncertaintyNotes,
+        pointerIconType: rawReport.pointerIconType ?? payload.pointerIconType
       };
       dispatchReportEvent(enrichedReport);
 
@@ -349,8 +393,8 @@ export const ReportAccidentPage: React.FC = () => {
         }
         if (aiAnalysis) {
           const cachedRaw = localStorage.getItem(AI_VISION_CACHE_KEY);
-          const cachedMap = cachedRaw ? (JSON.parse(cachedRaw) as Record<string, Partial<ReportItem>>) : {};
-          const aiEntry: Partial<ReportItem> = {
+          const cachedMap = cachedRaw ? (JSON.parse(cachedRaw) as Record<string, Partial<ExtendedReportItem>>) : {};
+          const aiEntry: Partial<ExtendedReportItem> = {
             roboflowModelId: enrichedReport.roboflowModelId,
             roboflowPrediction: enrichedReport.roboflowPrediction,
             roboflowConfidence: enrichedReport.roboflowConfidence,
@@ -375,7 +419,7 @@ export const ReportAccidentPage: React.FC = () => {
       setIsConfirmModalOpen(false);
       setSubmittedReport(enrichedReport);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to transmit report.';
+      const msg = err instanceof Error ? err.message : 'Failed to submit report.';
       setError(msg);
       setIsConfirmModalOpen(false);
     } finally {
@@ -391,6 +435,7 @@ export const ReportAccidentPage: React.FC = () => {
     setImageDataUrl(null);
     setCaptureMetadata(null);
     setAiAnalysis(null);
+    setAiAnalysisUnavailable(null);
     setIsAnalyzingAi(false);
     setError(null);
   };
@@ -398,48 +443,33 @@ export const ReportAccidentPage: React.FC = () => {
   const getCategoryRoutingTag = (catKey: string): { agencies: string[]; desc: string } => {
     switch (catKey) {
       case 'VehicularAccident':
-        return {
-          agencies: ['RHU (Medics)', 'PNP (Traffic)'],
-          desc: 'Trauma ambulance and traffic cordon routing'
-        };
+        return { agencies: ['RHU (Medics)', 'PNP (Traffic)'], desc: 'Trauma & traffic routing' };
       case 'MedicalEmergency':
-        return {
-          agencies: ['RHU (Paramedics)'],
-          desc: 'Emergency medical services routing'
-        };
+        return { agencies: ['RHU (Paramedics)'], desc: 'Medical routing' };
       case 'StructuralFire':
-        return {
-          agencies: ['BFP (Fire)', 'RHU (Triage)'],
-          desc: 'Fire suppression and standby medical triage'
-        };
+        return { agencies: ['BFP (Fire)', 'RHU (Triage)'], desc: 'Fire & triage routing' };
       case 'CrimeOrSecurity':
-        return {
-          agencies: ['PNP (Police Patrol)'],
-          desc: 'Sector patrol dispatch routing'
-        };
+        return { agencies: ['PNP (Patrol)'], desc: 'Police patrol routing' };
       case 'NaturalDisaster':
-        return {
-          agencies: ['LDRRMO Command', 'RHU', 'BFP'],
-          desc: 'Multi-agency disaster response routing'
-        };
+        return { agencies: ['LDRRMO', 'RHU', 'BFP'], desc: 'Disaster response routing' };
       case 'HazardFixture':
       default:
-        return {
-          agencies: ['LDRRMO', 'Municipal Engineering'],
-          desc: 'Infrastructure hazard inspection routing'
-        };
+        return { agencies: ['LDRRMO', 'Engineering'], desc: 'Hazard inspection routing' };
     }
   };
 
   const routingInfo = getCategoryRoutingTag(category);
 
   if (submittedReport) {
+    const isReceiptVerified =
+      submittedReport.status === 'Verified' || Boolean(submittedReport.aiAutoApproved);
+
     return (
       <div className="flex flex-col gap-6 w-full pb-12">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F7F1EA]/20 pb-4">
           <div>
             <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#E9D9D0]">
-              Incident Submission Receipt
+              Submission Receipt
             </span>
             <h1 className="text-2xl md:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
               Report Submitted
@@ -459,8 +489,18 @@ export const ReportAccidentPage: React.FC = () => {
         <div className="clay-surface p-6 sm:p-8 rounded-2xl bg-[#F7F1EA] text-[#670626] border border-[#670626]/20 shadow-[0_18px_42px_rgba(74,4,26,0.28)] flex flex-col gap-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#670626]/15 pb-4">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 flex items-center justify-center flex-shrink-0">
-                <Clock className="w-6 h-6 text-[#670626]" />
+              <div
+                className={`w-11 h-11 rounded-xl border flex items-center justify-center flex-shrink-0 ${
+                  isReceiptVerified
+                    ? 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                    : 'bg-[#E9D9D0] border-[#670626]/20 text-[#670626]'
+                }`}
+              >
+                {isReceiptVerified ? (
+                  <CheckCircle2 className="w-6 h-6" />
+                ) : (
+                  <Clock className="w-6 h-6" />
+                )}
               </div>
               <div>
                 <span className="text-xs font-mono font-bold uppercase text-[#A83B4D] block">
@@ -472,16 +512,22 @@ export const ReportAccidentPage: React.FC = () => {
               </div>
             </div>
 
-            <span className="px-4 py-1.5 rounded-full bg-[#E9D9D0] text-[#670626] border border-[#A83B4D]/50 text-xs font-mono font-bold uppercase self-start sm:self-auto">
-              Submitted / Pending Verification
+            <span
+              className={`px-4 py-1.5 rounded-full border text-xs font-mono font-bold uppercase self-start sm:self-auto ${
+                isReceiptVerified
+                  ? 'bg-emerald-100 text-emerald-900 border-emerald-400'
+                  : 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/50'
+              }`}
+            >
+              {isReceiptVerified ? 'AI Auto-Approved (Verified)' : 'Submitted — Pending Review'}
             </span>
           </div>
 
           <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-2.5 text-sm font-mono">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[#A83B4D]">Initial Status</span>
-              <span className="text-[#670626] font-black">
-                Submitted / Pending Verification
+              <span className="text-[#A83B4D]">Status</span>
+              <span className={isReceiptVerified ? 'text-emerald-800 font-black' : 'text-[#670626] font-black'}>
+                {isReceiptVerified ? 'AI Auto-Approved (Verified)' : 'Submitted — Pending Review'}
               </span>
             </div>
             <div className="flex items-center justify-between gap-2">
@@ -493,7 +539,7 @@ export const ReportAccidentPage: React.FC = () => {
             </div>
             {reporterContactNumber.trim() && (
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[#A83B4D]">Personal Contact</span>
+                <span className="text-[#A83B4D]">Contact</span>
                 <span className="text-[#670626] font-bold">
                   {reporterContactNumber.trim()}
                 </span>
@@ -501,8 +547,10 @@ export const ReportAccidentPage: React.FC = () => {
             )}
           </div>
 
-          <p className="text-sm text-[#A83B4D] leading-relaxed">
-            Your report has been logged in the Katipunan dispatch queue and awaits verification by LDRRMO / agency duty officers.
+          <p className={`text-sm leading-relaxed font-medium ${isReceiptVerified ? 'text-emerald-900' : 'text-[#A83B4D]'}`}>
+            {isReceiptVerified
+              ? 'AI verified this incident scene. Dispatched to active responders.'
+              : 'Logged in the Katipunan dispatch queue for duty officer verification.'}
           </p>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
@@ -538,13 +586,13 @@ export const ReportAccidentPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F7F1EA]/20 pb-4">
         <div>
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#E9D9D0]">
-            Citizen Incident Filing
+            Incident Filing
           </span>
           <h1 className="text-2xl md:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
             Report Emergency
           </h1>
           <p className="text-sm text-[#E9D9D0] mt-1">
-            Direct report to LDRRMO, RHU, BFP, and PNP.
+            Direct to LDRRMO, RHU, BFP, and PNP.
           </p>
         </div>
 
@@ -584,14 +632,12 @@ export const ReportAccidentPage: React.FC = () => {
         >
           <span
             className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${
-              imageDataUrl
-                ? 'bg-[#670626] text-[#F7F1EA]'
-                : 'bg-[#A83B4D] text-[#F7F1EA]'
+              imageDataUrl ? 'bg-[#670626] text-[#F7F1EA]' : 'bg-[#A83B4D] text-[#F7F1EA]'
             }`}
           >
             {imageDataUrl ? <CheckCircle2 className="w-4 h-4" /> : '2'}
           </span>
-          <span className="text-[#670626] text-sm font-bold truncate">2. Live Photo</span>
+          <span className="text-[#670626] text-sm font-bold truncate">2. Scene Photo</span>
         </button>
 
         <button
@@ -646,7 +692,7 @@ export const ReportAccidentPage: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
             <div className="flex flex-col">
               <span className="text-xs font-mono uppercase font-bold text-[#A83B4D]">
-                Continuous Coordinates
+                Coordinates
               </span>
               <span className="text-base sm:text-lg font-mono font-black text-[#670626] mt-1">
                 {coords.latitude.toFixed(6)}° N, {coords.longitude.toFixed(6)}° E
@@ -655,11 +701,11 @@ export const ReportAccidentPage: React.FC = () => {
 
             <div className="flex flex-col sm:items-end justify-center">
               <span className="text-xs font-mono uppercase font-bold text-[#A83B4D]">
-                Sensor Accuracy & Quality
+                Accuracy
               </span>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-sm font-mono text-[#670626]">
-                  ±<strong>{Math.round(coords.accuracy)}</strong> meters
+                  ±<strong>{Math.round(coords.accuracy)}</strong> m
                 </span>
                 <span className="px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold uppercase bg-[#F7F1EA] text-[#670626] border border-[#670626]/25">
                   {signalQuality}
@@ -670,14 +716,13 @@ export const ReportAccidentPage: React.FC = () => {
 
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-bold text-[#670626]">
-              Landmark, Street, or Barangay Description{' '}
-              <span className="text-[#A83B4D] font-normal">(Optional)</span>
+              Landmark or Barangay <span className="text-[#A83B4D] font-normal">(Optional)</span>
             </label>
             <input
               type="text"
               value={locationLabel}
               onChange={(e) => setLocationLabel(e.target.value)}
-              placeholder="e.g. Near Katipunan Public Market, KM Post 284, Purok 3"
+              placeholder="e.g. Katipunan Public Market, Purok 3"
               className="px-4 py-3 bg-[#E9D9D0] border border-[#670626]/20 rounded-xl text-sm text-[#670626] placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
             />
           </div>
@@ -692,12 +737,12 @@ export const ReportAccidentPage: React.FC = () => {
             <div className="flex items-center gap-2.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#670626] animate-pulse" />
               <h2 className="text-sm font-mono font-black uppercase tracking-wider text-[#670626]">
-                2. Live Photo / Incident Image Upload
+                2. Scene Photo
               </h2>
             </div>
             <span className="text-xs font-mono font-bold text-[#A83B4D] flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-[#670626] flex-shrink-0" />
-              <span>Roboflow CV + Claude Haiku 4.5 Vision</span>
+              <span>Roboflow CV + Claude Haiku 4.5</span>
             </span>
           </div>
 
@@ -719,23 +764,33 @@ export const ReportAccidentPage: React.FC = () => {
                   className="w-full h-full object-cover"
                 />
 
-                <div className="absolute top-0 inset-x-0 bg-[#4A041A]/90 px-2.5 py-1 text-xs font-mono text-[#F7F1EA] flex items-center justify-between">
+                <div className="absolute top-0 inset-x-0 bg-[#2B010E]/85 px-2.5 py-1 text-xs font-mono text-[#F7F1EA] flex items-center justify-between">
                   <span>
                     {coords.latitude.toFixed(4)}°, {coords.longitude.toFixed(4)}°
                   </span>
                   <span>±{Math.round(coords.accuracy)}m</span>
                 </div>
 
+                {isAnalyzingAi && (
+                  <div className="absolute inset-0 bg-[#2B010E]/60 backdrop-blur-[1px] flex flex-col items-center justify-center gap-2 text-[#F7F1EA] px-3 text-center">
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span className="text-xs font-mono font-black uppercase">AI Analyzing...</span>
+                  </div>
+                )}
+
                 {captureMetadata?.isBlurry ? (
                   <div className="absolute bottom-1 left-1 right-1 px-2.5 py-1 bg-[#670626] text-[#F7F1EA] text-xs font-mono font-bold rounded flex items-center gap-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
                     <span>BLUR: {captureMetadata.varianceScore.toFixed(1)}</span>
-                    <span className="truncate">(Manual Review)</span>
                   </div>
                 ) : (
-                  <div className="absolute bottom-1 left-1 right-1 px-2.5 py-1 bg-[#4A041A]/95 text-[#F7F1EA] text-xs font-mono font-bold rounded flex items-center gap-1.5">
+                  <div className="absolute bottom-1 left-1 right-1 px-2.5 py-1 bg-[#2B010E]/90 text-[#F7F1EA] text-xs font-mono font-bold rounded flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>CLARITY: {(captureMetadata?.varianceScore ?? 142.5).toFixed(1)}</span>
+                    <span>
+                      {captureMetadata
+                        ? `CLARITY: ${captureMetadata.varianceScore.toFixed(1)}`
+                        : 'CLARITY: PENDING'}
+                    </span>
                   </div>
                 )}
               </div>
@@ -758,9 +813,7 @@ export const ReportAccidentPage: React.FC = () => {
                     onClick={() => {
                       if (!isHardwareGeolocated && coords.isFallback) {
                         refreshGps();
-                        setError(
-                          'Active Location Required: Please enable and authorize device GPS / WiFi location to pinpoint exact coordinates in Katipunan 7109 before activating emergency camera.'
-                        );
+                        setError('Enable device GPS/location before opening camera.');
                         scrollToStep(stepGpsRef);
                         return;
                       }
@@ -814,24 +867,48 @@ export const ReportAccidentPage: React.FC = () => {
 
                   <p className="text-sm text-[#A83B4D] leading-relaxed font-medium">
                     {captureMetadata?.isBlurry
-                      ? `Low clarity (${captureMetadata.varianceScore.toFixed(1)}) — marked for manual review.`
-                      : `Clarity verified (${(captureMetadata?.varianceScore ?? 142.5).toFixed(1)}).`}
+                      ? `Low clarity (${captureMetadata.varianceScore.toFixed(1)}) — manual review required.`
+                      : captureMetadata
+                      ? `Clarity verified (${captureMetadata.varianceScore.toFixed(1)}).`
+                      : 'Clarity measurement pending.'}
                   </p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Dual-AI Analyzing Assurance Banner */}
+          {/* High-Visibility AI Processing & Auto-Approve Evaluation Banner */}
           {isAnalyzingAi && (
             <div
               id="incident-ai-analyzing-banner"
-              className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/30 text-[#670626] font-mono text-xs sm:text-sm font-bold flex items-center gap-3 shadow-inner"
+              className="p-4 rounded-xl bg-[#670626] border border-[#2B010E] text-[#F7F1EA] font-mono flex flex-col gap-2.5 shadow-lg"
             >
-              <RefreshCw className="w-4 h-4 text-[#670626] animate-spin flex-shrink-0" />
-              <span>
-                Running Roboflow (accident-and-non-accident-label-image-dataset/14) &amp; Claude Haiku 4.5 Scene Analysis...
-              </span>
+              <div className="flex items-center gap-3">
+                <RefreshCw className="w-5 h-5 text-[#F7F1EA] animate-spin flex-shrink-0" />
+                <div className="flex flex-col">
+                  <span className="text-sm font-black uppercase tracking-wide">
+                    AI Processing &amp; Auto-Approve Evaluation...
+                  </span>
+                  <span className="text-xs text-[#E9D9D0]">
+                    Checking Scene Clarity -&gt; Running Roboflow &amp; Claude Haiku 4.5 Verification...
+                  </span>
+                </div>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-[#F7F1EA]/25 overflow-hidden">
+                <div className="h-full w-2/3 bg-[#F7F1EA] rounded-full animate-pulse" />
+              </div>
+            </div>
+          )}
+
+          {/* AI Service Unavailable Notice */}
+          {aiAnalysisUnavailable && !isAnalyzingAi && !aiAnalysis && (
+            <div
+              id="incident-ai-unavailable-banner"
+              className="p-4 rounded-xl bg-[#E9D9D0] border border-[#A83B4D]/45 text-[#670626] font-mono text-xs flex items-center gap-3"
+              role="status"
+            >
+              <AlertTriangle className="w-4 h-4 text-[#A83B4D] flex-shrink-0" />
+              <span>{aiAnalysisUnavailable}</span>
             </div>
           )}
 
@@ -845,11 +922,23 @@ export const ReportAccidentPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-[#670626]" />
                   <h3 className="text-xs sm:text-sm font-mono font-black uppercase tracking-wider text-[#670626]">
-                    Dual-AI Incident Scene Analysis
+                    AI Scene Analysis
                   </h3>
                 </div>
-                <span className="px-3 py-1 rounded-full bg-[#E9D9D0] border border-[#A83B4D]/50 text-[#670626] font-mono text-xs font-bold">
-                  SUBMITTED / PENDING_REVIEW — Authorized Responder / Admin Verification Required
+                <span
+                  className={`px-3 py-1 rounded-full font-mono text-xs font-bold border ${
+                    aiAnalysis.isGenuineIncident === false
+                      ? 'bg-[#FFF5D6] border-[#B45309]/50 text-[#7C2D12]'
+                      : isAutoApproveEligible
+                      ? 'bg-emerald-100 border-emerald-400 text-emerald-900'
+                      : 'bg-[#E9D9D0] border-[#A83B4D]/50 text-[#670626]'
+                  }`}
+                >
+                  {aiAnalysis.isGenuineIncident === false
+                    ? 'No emergency detected in photo — manual review required if submitted'
+                    : isAutoApproveEligible
+                    ? 'AI Verified — Auto-Approve Eligible'
+                    : 'Incident Detected — Pending Review'}
                 </span>
               </div>
 
@@ -857,26 +946,27 @@ export const ReportAccidentPage: React.FC = () => {
                 {/* Roboflow CV Badge */}
                 <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-2">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[#A83B4D] font-bold uppercase">Roboflow CV Engine</span>
+                    <span className="text-[#A83B4D] font-bold uppercase">Roboflow CV</span>
                     <span className="px-2 py-0.5 rounded bg-[#F7F1EA] border border-[#670626]/20 text-[#670626] font-bold">
-                      {Math.round((aiAnalysis.roboflowConfidence ?? 0) * 100)}% Confidence
+                      {aiAnalysis.roboflowAuthTransport?.startsWith('LOCAL_FALLBACK') ||
+                      aiAnalysis.roboflowAuthTransport === 'OFFLINE_FALLBACK'
+                        ? 'Local Fallback'
+                        : `${Math.round((aiAnalysis.roboflowConfidence ?? 0) * 100)}%`}
                     </span>
                   </div>
                   <div className="text-[#670626] font-bold break-all">
-                    Model: {aiAnalysis.roboflowModelId || 'accident-and-non-accident-label-image-dataset/14'}
+                    {aiAnalysis.roboflowModelId || 'Unavailable'}
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[#A83B4D]">Prediction:</span>
                     <span className="text-[#670626] font-black uppercase">
-                      {aiAnalysis.roboflowPrediction || 'incident'}
+                      {aiAnalysis.roboflowPrediction || 'Pending'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[#A83B4D]">Review Status:</span>
+                    <span className="text-[#A83B4D]">Status:</span>
                     <span className="text-[#670626] font-bold">
-                      {aiAnalysis.roboflowNeedsReview
-                        ? 'Further Human Review Flagged'
-                        : 'High-Confidence Scene Match'}
+                      {aiAnalysis.roboflowNeedsReview ? 'Human Review Flagged' : 'Scene Match'}
                     </span>
                   </div>
                 </div>
@@ -884,26 +974,26 @@ export const ReportAccidentPage: React.FC = () => {
                 {/* Claude Haiku 4.5 Vision Analysis */}
                 <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-2">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[#A83B4D] font-bold uppercase">Claude Haiku 4.5 Vision</span>
+                    <span className="text-[#A83B4D] font-bold uppercase">Claude Haiku 4.5</span>
                     <span className="px-2 py-0.5 rounded bg-[#F7F1EA] border border-[#670626]/20 text-[#670626] font-bold">
-                      {aiAnalysis.claudeModelUsed || 'claude-haiku-4-5'}
+                      {aiAnalysis.claudeModelUsed || 'Unavailable'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[#A83B4D]">Detected Category:</span>
+                    <span className="text-[#A83B4D]">Category:</span>
                     <span className="text-[#670626] font-black">
                       {CATEGORY_LABELS[aiAnalysis.detectedCategory] || aiAnalysis.detectedCategory}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[#A83B4D]">Map Pointer Icon:</span>
+                    <span className="text-[#A83B4D]">Map Icon:</span>
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#F7F1EA] border border-[#670626]/25 text-[#670626] font-bold uppercase">
                       {renderPointerTypeIcon(aiAnalysis.pointerIconType)}
                       <span>{aiAnalysis.pointerIconType}</span>
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[#A83B4D]">Recommended Unit:</span>
+                    <span className="text-[#A83B4D]">Unit:</span>
                     <span className="text-[#670626] font-bold">
                       {aiAnalysis.recommendedAgencyUnit || routingInfo.agencies.join(', ')}
                     </span>
@@ -914,7 +1004,7 @@ export const ReportAccidentPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div className="p-3 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
                   <span className="font-mono font-bold uppercase text-[#A83B4D] block mb-1">
-                    Visible Situation
+                    Situation
                   </span>
                   <p className="text-[#670626] font-medium leading-relaxed">
                     {aiAnalysis.situationDescription}
@@ -922,7 +1012,7 @@ export const ReportAccidentPage: React.FC = () => {
                 </div>
                 <div className="p-3 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
                   <span className="font-mono font-bold uppercase text-[#A83B4D] block mb-1">
-                    Visible Hazards
+                    Hazards
                   </span>
                   <p className="text-[#670626] font-medium leading-relaxed">
                     {aiAnalysis.visibleHazards}
@@ -930,7 +1020,7 @@ export const ReportAccidentPage: React.FC = () => {
                 </div>
                 <div className="p-3 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
                   <span className="font-mono font-bold uppercase text-[#A83B4D] block mb-1">
-                    Uncertainty / Evidence Notes
+                    Notes
                   </span>
                   <p className="text-[#670626] font-medium leading-relaxed">
                     {aiAnalysis.uncertaintyNotes}
@@ -955,7 +1045,6 @@ export const ReportAccidentPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Headline */}
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-bold text-[#670626]">
               Title <span className="text-[#A83B4D]">*</span>
@@ -970,7 +1059,6 @@ export const ReportAccidentPage: React.FC = () => {
             />
           </div>
 
-          {/* Category & Severity Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-bold text-[#670626]">Category</label>
@@ -988,9 +1076,7 @@ export const ReportAccidentPage: React.FC = () => {
 
               <div className="mt-1 p-2.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/15 text-xs font-mono">
                 <span className="text-[#A83B4D]">Routes to: </span>
-                <span className="text-[#670626] font-bold">
-                  {routingInfo.agencies.join(', ')}
-                </span>
+                <span className="text-[#670626] font-bold">{routingInfo.agencies.join(', ')}</span>
               </div>
             </div>
 
@@ -1001,10 +1087,10 @@ export const ReportAccidentPage: React.FC = () => {
                 onChange={(e) => setSeverity(e.target.value)}
                 className="px-4 py-3 bg-[#E9D9D0] border border-[#670626]/20 rounded-xl text-sm text-[#670626] font-bold focus:outline-none focus:border-[#670626]"
               >
-                <option value="Critical">Critical — Immediate Danger</option>
+                <option value="Critical">Critical — Immediate</option>
                 <option value="High">High — Injuries / Hazard</option>
-                <option value="Medium">Medium — Assistance Needed</option>
-                <option value="Low">Low — Minor Incident</option>
+                <option value="Medium">Medium — Assistance</option>
+                <option value="Low">Low — Minor</option>
               </select>
             </div>
           </div>
@@ -1012,10 +1098,8 @@ export const ReportAccidentPage: React.FC = () => {
           {/* Personal Contact Number Text Input (Strictly text only, ZERO tel: links) */}
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-bold text-[#670626]">
-              Personal Contact Number{' '}
-              <span className="text-[#A83B4D] font-normal">
-                (Optional — stored as text reference for responders)
-              </span>
+              Contact Number{' '}
+              <span className="text-[#A83B4D] font-normal">(Optional — text reference only)</span>
             </label>
             <input
               type="text"
@@ -1026,7 +1110,6 @@ export const ReportAccidentPage: React.FC = () => {
             />
           </div>
 
-          {/* Observations */}
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-bold text-[#670626]">
               Notes <span className="text-[#A83B4D] font-normal">(Optional)</span>
@@ -1051,7 +1134,11 @@ export const ReportAccidentPage: React.FC = () => {
             className="w-full !py-4 font-black uppercase tracking-wider text-base rounded-xl"
             icon={<Zap className="w-5 h-5" />}
           >
-            Submit Report
+            {isLoading
+              ? 'AI Verifying & Submitting Report...'
+              : isAnalyzingAi
+              ? 'AI Analyzing Photo...'
+              : 'Submit Report'}
           </CivilianButton>
         </div>
       </form>
@@ -1070,16 +1157,20 @@ export const ReportAccidentPage: React.FC = () => {
               <span className="text-[#670626] font-bold truncate max-w-[240px]">{title}</span>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[#A83B4D]">Initial Status</span>
-              <span className="px-2.5 py-0.5 rounded-full bg-[#F7F1EA] border border-[#A83B4D]/45 text-[#670626] font-bold text-xs">
-                Submitted / Pending Verification
+              <span className="text-[#A83B4D]">Verification</span>
+              <span
+                className={`px-2.5 py-0.5 rounded-full border font-bold text-xs ${
+                  isAutoApproveEligible
+                    ? 'bg-emerald-100 border-emerald-400 text-emerald-900'
+                    : 'bg-[#F7F1EA] border-[#A83B4D]/45 text-[#670626]'
+                }`}
+              >
+                {isAutoApproveEligible ? 'AI Auto-Approve Eligible' : 'Submitted — Pending Review'}
               </span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[#A83B4D]">Routing</span>
-              <span className="text-[#670626] font-bold">
-                {routingInfo.agencies.join(', ')}
-              </span>
+              <span className="text-[#670626] font-bold">{routingInfo.agencies.join(', ')}</span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[#A83B4D]">Severity</span>
@@ -1095,9 +1186,7 @@ export const ReportAccidentPage: React.FC = () => {
             {reporterContactNumber.trim() && (
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[#A83B4D]">Contact</span>
-                <span className="text-[#670626] font-bold">
-                  {reporterContactNumber.trim()}
-                </span>
+                <span className="text-[#670626] font-bold">{reporterContactNumber.trim()}</span>
               </div>
             )}
             <div className="flex items-center justify-between gap-2">
@@ -1126,7 +1215,7 @@ export const ReportAccidentPage: React.FC = () => {
               onClick={handleFinalSubmit}
               className="flex-1 !py-3.5 font-black uppercase tracking-wider text-sm"
             >
-              Submit Report
+              {isLoading ? 'AI Verifying & Submitting Report...' : 'Submit Report'}
             </CivilianButton>
             <CivilianButton
               variant="outline"
@@ -1144,7 +1233,7 @@ export const ReportAccidentPage: React.FC = () => {
         isOpen={isCameraOpen}
         onClose={() => setIsCameraOpen(false)}
         onCapture={handleCaptureComplete}
-        title="Emergency Incident Scene Verification"
+        title="Incident Scene Camera"
       />
     </div>
   );

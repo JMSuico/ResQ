@@ -8,6 +8,7 @@ import {
   fetchSessionWithClientHeaders,
   logoutSessionWithClientHeaders
 } from '@/Endpoints/authEndpoints';
+import { clearStalePortTokens } from '@/Endpoints/apiClient';
 
 export interface UserSession {
   userId: string;
@@ -137,7 +138,8 @@ export const useSession = () => {
       } else {
         if (res.status === 403) {
           setError('Account suspended by administration or port restriction.');
-        } else if (res.status === 401 && !token) {
+        } else if (res.status === 401) {
+          clearStalePortTokens();
           setSession(null);
         }
       }

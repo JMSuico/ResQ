@@ -499,8 +499,8 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
             <div className={`${CLAY_WELL} md:col-span-2 p-3.5 text-xs flex items-start gap-2.5`}>
               <Radio className="w-4 h-4 text-[#670626] mt-0.5 flex-shrink-0" />
               <div>
-                <strong className="font-mono">Katipunan Geographic Allocation: </strong>
-                Barangay coordinates anchor live GPS responder routing and evacuation notifications to the LDRRMO Command Console.
+                <strong className="font-mono">Katipunan Sector: </strong>
+                Barangay anchors GPS routing and local alerts.
               </div>
             </div>
           </div>
@@ -648,6 +648,16 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                     <label className={labelClass}>Ambulance Call Sign</label>
                     <input type="text" value={formData.ambulanceCallSign} onChange={(e) => handleChange('ambulanceCallSign', e.target.value)} className={CLAY_INPUT} />
                   </div>
+                  <div className="md:col-span-2">
+                    <label className={labelClass}>Medical Certifications</label>
+                    <input
+                      type="text"
+                      value={formData.medicalCertifications}
+                      onChange={(e) => handleChange('medicalCertifications', e.target.value)}
+                      placeholder="e.g. BLS, ACLS, EMT-B"
+                      className={CLAY_INPUT}
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -686,6 +696,16 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                   <div>
                     <label className={labelClass}>Apparatus Call Sign</label>
                     <input type="text" value={formData.apparatusCallSign} onChange={(e) => handleChange('apparatusCallSign', e.target.value)} className={CLAY_INPUT} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className={labelClass}>Fire Specialization</label>
+                    <input
+                      type="text"
+                      value={formData.fireSpecialization}
+                      onChange={(e) => handleChange('fireSpecialization', e.target.value)}
+                      placeholder="e.g. Structural Firefighting, Hazmat"
+                      className={CLAY_INPUT}
+                    />
                   </div>
                 </div>
               </div>
@@ -726,6 +746,16 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                     <label className={labelClass}>Assignment / Sector</label>
                     <input type="text" value={formData.policeAssignment} onChange={(e) => handleChange('policeAssignment', e.target.value)} className={CLAY_INPUT} />
                   </div>
+                  <div className="md:col-span-2">
+                    <label className={labelClass}>Sidearm Serial</label>
+                    <input
+                      type="text"
+                      value={formData.sidearmSerial}
+                      onChange={(e) => handleChange('sidearmSerial', e.target.value)}
+                      placeholder="Issued sidearm serial number (optional)"
+                      className={CLAY_INPUT}
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -744,6 +774,14 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                   <div>
                     <label className={labelClass}>Executive Designation</label>
                     <input type="text" value={formData.executiveDesignation} onChange={(e) => handleChange('executiveDesignation', e.target.value)} className={CLAY_INPUT} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className={labelClass}>Clearance Level</label>
+                    <select value={formData.clearanceLevel} onChange={(e) => handleChange('clearanceLevel', e.target.value)} className={CLAY_SELECT}>
+                      <option value="Level 1 - Tactical Support">Level 1 - Tactical Support</option>
+                      <option value="Level 2 - Tactical Operations">Level 2 - Tactical Operations</option>
+                      <option value="Level 3 - Executive Command">Level 3 - Executive Command</option>
+                    </select>
                   </div>
                 </div>
               </div>
@@ -783,7 +821,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                 Security Governance Protocol:
               </div>
               <div className="text-[#A83B4D]">
-                Minimum {MIN_PASSWORD_LENGTH} characters with mixed case, digits, and symbols.
+                Min {MIN_PASSWORD_LENGTH} characters (mixed case, digits &amp; symbols).
               </div>
             </div>
           </div>

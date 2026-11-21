@@ -28,12 +28,16 @@ import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { useDistressBeacon } from '@/Hooks/useDistressBeacon';
-import { BASELINE_INCIDENT_FIXTURES } from '@/Libs/Assets/baselineFixtures';
 import { CivilianButton } from './Shared/CivilianButton';
 
 const REFRESH_INTERVAL_MS = 8000;
 const SUCCESS_TOAST_TIMEOUT_MS = 9000;
 const CONTACT_STORAGE_KEY = 'resqtrack_reporter_contact_number';
+
+type ExtendedReportItem = ReportItem & {
+  aiAutoApproved?: boolean;
+  aiVerificationStatus?: string | null;
+};
 
 interface CivilianCreateReportPayload extends CreateReportPayload {
   reporterContactNumber?: string;
@@ -47,7 +51,7 @@ const getStoredContactNumber = (): string => {
   }
 };
 
-const formatDashboardStatus = (report: ReportItem): { label: string; pillClass: string } => {
+const formatDashboardStatus = (report: ExtendedReportItem): { label: string; pillClass: string } => {
   const raw = (report.status || 'Reported').toUpperCase();
   if (raw === 'REJECTED') {
     return {
@@ -67,14 +71,14 @@ const formatDashboardStatus = (report: ReportItem): { label: string; pillClass: 
       pillClass: 'bg-[#A83B4D] text-[#F7F1EA] border-[#A83B4D]'
     };
   }
-  if (raw === 'VERIFIED' || report.verifiedAt) {
+  if (raw === 'VERIFIED' || report.verifiedAt || report.aiAutoApproved) {
     return {
-      label: 'Verified',
-      pillClass: 'bg-[#670626]/15 text-[#670626] border-[#670626]/30'
+      label: report.aiAutoApproved ? 'AI Auto-Approved' : 'Verified',
+      pillClass: 'bg-emerald-100 text-emerald-900 border-emerald-300'
     };
   }
   return {
-    label: 'Submitted / Pending Verification',
+    label: 'Submitted — Pending Review',
     pillClass: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/45'
   };
 };
@@ -85,7 +89,7 @@ export const CivilianDashboard: React.FC = () => {
   const { coords, isHardwareGeolocated, refreshGps } = useGpsLocation();
 
   const [fixtures, setFixtures] = useState<IncidentFixture[]>([]);
-  const [myReports, setMyReports] = useState<ReportItem[]>([]);
+  const [myReports, setMyReports] = useState<ExtendedReportItem[]>([]);
   const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false);
   const [reportSuccess, setReportSuccess] = useState<string | null>(null);
   const [gpsWarning, setGpsWarning] = useState<string | null>(null);
@@ -102,9 +106,9 @@ export const CivilianDashboard: React.FC = () => {
         getMyReports().catch(() => [])
       ]);
 
-      setFixtures(Array.isArray(f) && f.length > 0 ? f : BASELINE_INCIDENT_FIXTURES);
+      setFixtures(Array.isArray(f) ? f : []);
 
-      const safeMine = Array.isArray(myRepList) ? myRepList : [];
+      const safeMine = Array.isArray(myRepList) ? (myRepList as ExtendedReportItem[]) : [];
       const filteredMine = safeMine.filter((r) => {
         if (!r || !r.id) return false;
         if (session?.userId && r.reporterId) {
@@ -120,7 +124,7 @@ export const CivilianDashboard: React.FC = () => {
       setMyReports(filteredMine);
     } catch (err) {
       console.error('Error refreshing civilian dashboard feeds:', err);
-      setFixtures((prev) => (prev.length > 0 ? prev : BASELINE_INCIDENT_FIXTURES));
+      setFixtures([]);
     }
   }, [session?.userId]);
 
@@ -175,9 +179,7 @@ export const CivilianDashboard: React.FC = () => {
   const handleQuickSosTrigger = () => {
     if (!isHardwareGeolocated && coords.isFallback) {
       refreshGps();
-      setGpsWarning(
-        'Active GPS / WiFi location is required before activating the emergency camera.'
-      );
+      setGpsWarning('Enable device GPS/location before opening camera.');
       return;
     }
     setGpsWarning(null);
@@ -187,42 +189,62 @@ export const CivilianDashboard: React.FC = () => {
   const handleQuickReport = async (dataUrl: string, meta?: CameraCaptureMetadata) => {
     try {
       const trimmedContact = includeContactCheck ? reporterContactNumber.trim() : '';
+      const aiPreview = meta?.aiPreview;
       const payload: CivilianCreateReportPayload = {
-        title: 'Emergency Reported via Citizen Dashboard',
-        note: `Submitted via One-Tap SOS Camera. Sensor Accuracy: +/-${Math.round(coords.accuracy)}m.`,
-        category: 'VehicularAccident',
-        severity: 'Critical',
+        title: 'Emergency Reported via One-Tap SOS',
+        note: `One-Tap SOS Camera. GPS ±${Math.round(coords.accuracy)}m.`,
+        category:
+          aiPreview?.isGenuineIncident !== false && aiPreview?.detectedCategory
+            ? aiPreview.detectedCategory
+            : 'VehicularAccident',
+        severity:
+          aiPreview?.isGenuineIncident !== false && aiPreview?.recommendedSeverity
+            ? aiPreview.recommendedSeverity
+            : 'Critical',
         latitude: coords.latitude,
         longitude: coords.longitude,
         gpsAccuracyMeters: coords.accuracy,
         isHardwareGeolocated,
         isBlurry: meta?.isBlurry ?? false,
         requiresManualVerification: meta?.requiresManualVerification ?? false,
-        locationLabel: 'Citizen Current GPS Location (Live Geotag)',
+        locationLabel: 'Citizen Current GPS Location',
         imageDataUrl: dataUrl,
-        reporterContactNumber: trimmedContact || undefined
+        reporterContactNumber: trimmedContact || undefined,
+        roboflowModelId: aiPreview?.roboflowModelId ?? null,
+        roboflowPrediction: aiPreview?.roboflowPrediction ?? null,
+        roboflowConfidence:
+          typeof aiPreview?.roboflowConfidence === 'number' ? aiPreview.roboflowConfidence : null,
+        roboflowNeedsReview: aiPreview?.roboflowNeedsReview ?? false,
+        claudeModelUsed: aiPreview?.claudeModelUsed ?? null,
+        claudeIncidentCategory: aiPreview?.detectedCategory ?? null,
+        claudeSituationSummary: aiPreview?.situationDescription ?? null,
+        claudeVisibleHazards: aiPreview?.visibleHazards ?? null,
+        claudeUncertaintyNotes: aiPreview?.uncertaintyNotes ?? null,
+        pointerIconType: aiPreview?.pointerIconType ?? null
       };
 
       const res = await createReport(payload);
-      dispatchReportEvent(res.report);
+      const reportItem = res.report as ExtendedReportItem;
+      dispatchReportEvent(reportItem);
 
       try {
         const existing = JSON.parse(localStorage.getItem('resqtrack_submitted_report_ids') || '[]') as string[];
-        if (!existing.includes(res.report.id)) {
-          existing.unshift(res.report.id);
+        if (!existing.includes(reportItem.id)) {
+          existing.unshift(reportItem.id);
         }
         localStorage.setItem('resqtrack_submitted_report_ids', JSON.stringify(existing));
-        localStorage.setItem('resqtrack_active_distress_incident_id', res.report.id);
-        if (res.report.reporterId) {
-          localStorage.setItem('resqtrack_reporter_id', res.report.reporterId);
+        localStorage.setItem('resqtrack_active_distress_incident_id', reportItem.id);
+        if (reportItem.reporterId) {
+          localStorage.setItem('resqtrack_reporter_id', reportItem.reporterId);
         }
       } catch {
         // Storage access safeguard
       }
 
-      setMyReports((prev) => [res.report, ...prev]);
+      setMyReports((prev) => [reportItem, ...prev]);
+      const isVerified = reportItem.status === 'Verified' || Boolean(reportItem.aiAutoApproved);
       setReportSuccess(
-        `Report #${res.report.referenceCode} logged. Status: Submitted / Pending Verification.`
+        `Report #${reportItem.referenceCode} logged (${isVerified ? 'AI Auto-Approved' : 'Pending Review'}).`
       );
       setTimeout(() => setReportSuccess(null), SUCCESS_TOAST_TIMEOUT_MS);
     } catch (err: unknown) {
@@ -271,7 +293,7 @@ export const CivilianDashboard: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-[#F7F1EA]/20 pb-4">
         <div>
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#E9D9D0]">
-            Katipunan Municipal Resident Portal
+            Katipunan Resident Portal
           </span>
           <h1 className="text-2xl sm:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
             Civilian Safety Command
@@ -283,9 +305,7 @@ export const CivilianDashboard: React.FC = () => {
               isHardwareGeolocated ? 'bg-emerald-400 animate-pulse' : 'bg-[#A83B4D]'
             }`}
           />
-          <span>
-            {isHardwareGeolocated ? 'GPS Telemetry Active' : 'Locating Device Sensor'}
-          </span>
+          <span>{isHardwareGeolocated ? 'GPS Active' : 'Locating GPS'}</span>
         </div>
       </div>
 
@@ -305,19 +325,18 @@ export const CivilianDashboard: React.FC = () => {
             to="/civilian/my-reports"
             className="text-xs font-mono font-bold text-[#670626] underline whitespace-nowrap"
           >
-            View My Reports
+            My Reports
           </Link>
         </div>
       )}
 
-      {/* 2-Column Tactical Hero Grid (FIX #3: LEFT = Evacuation Safe Zones Map, RIGHT = Report Emergency) */}
+      {/* 2-Column Tactical Hero Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         {/* LEFT COLUMN: EVACUATION SAFE ZONES MAP */}
         <section
           aria-label="Evacuation Safe Zones Map"
           className="lg:col-span-7 clay-surface p-5 sm:p-6 rounded-2xl bg-[#F7F1EA] text-[#670626] border border-[#670626]/15 shadow-[0_16px_38px_rgba(74,4,26,0.28),inset_0_1px_0_rgba(255,255,255,0.85)] flex flex-col justify-between gap-4"
         >
-          {/* Map Card Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#670626]/15 pb-3.5">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 flex items-center justify-center flex-shrink-0">
@@ -328,7 +347,7 @@ export const CivilianDashboard: React.FC = () => {
                   Evacuation Safe Zones
                 </h2>
                 <p className="text-xs font-mono text-[#A83B4D] mt-0.5">
-                  {fixtures.length} Designated Safe Zones in Katipunan
+                  {fixtures.length} Safe Zones in Katipunan
                 </p>
               </div>
             </div>
@@ -354,7 +373,7 @@ export const CivilianDashboard: React.FC = () => {
             <span className="text-[#670626]/40">|</span>
             <span className="inline-flex items-center gap-1.5 font-bold">
               <span className="w-2.5 h-2.5 rounded-full bg-sky-600 border border-white" />
-              <span>Safe Zones & Shelters ({fixtures.length})</span>
+              <span>Safe Zones ({fixtures.length})</span>
             </span>
             <span className="text-[#670626]/40">|</span>
             <span className="inline-flex items-center gap-1.5 font-bold">
@@ -381,10 +400,9 @@ export const CivilianDashboard: React.FC = () => {
           className="lg:col-span-5 clay-surface p-5 sm:p-6 rounded-2xl bg-[#F7F1EA] text-[#670626] border border-[#670626]/15 shadow-[0_16px_38px_rgba(74,4,26,0.28),inset_0_1px_0_rgba(255,255,255,0.85)] flex flex-col justify-between gap-5"
         >
           <div className="flex flex-col gap-4">
-            {/* Header */}
             <div className="border-b border-[#670626]/15 pb-3.5">
               <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#A83B4D]">
-                Immediate Incident Dispatch
+                Emergency Dispatch
               </span>
               <h2 className="text-2xl font-black text-[#670626] tracking-tight mt-0.5">
                 Report Emergency
@@ -432,7 +450,7 @@ export const CivilianDashboard: React.FC = () => {
                   onChange={(e) => setIncludeContactCheck(e.target.checked)}
                   className="w-4 h-4 rounded accent-[#670626] cursor-pointer"
                 />
-                <span>Include Personal Contact Number (Optional)</span>
+                <span>Contact Number (Optional)</span>
               </label>
 
               {includeContactCheck && (
@@ -440,7 +458,7 @@ export const CivilianDashboard: React.FC = () => {
                   type="text"
                   value={reporterContactNumber}
                   onChange={(e) => handleContactChange(e.target.value)}
-                  placeholder="e.g. 0917 123 4567 (text reference only)"
+                  placeholder="e.g. 0917 123 4567"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#F7F1EA] border border-[#670626]/25 text-sm font-mono text-[#670626] placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                 />
               )}
@@ -461,7 +479,7 @@ export const CivilianDashboard: React.FC = () => {
                   One-Tap SOS
                 </span>
                 <span className="text-xs font-mono text-[#E9D9D0] mt-1">
-                  Live camera & GPS geotag
+                  Live camera &amp; GPS
                 </span>
               </div>
             </button>
@@ -482,7 +500,7 @@ export const CivilianDashboard: React.FC = () => {
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#670626] flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-[#A83B4D]" />
-                <span>Report Status Tracking</span>
+                <span>Report Status</span>
               </span>
               <Link
                 to="/civilian/my-reports"
@@ -515,7 +533,7 @@ export const CivilianDashboard: React.FC = () => {
             ) : (
               <div className="p-3 rounded-xl bg-[#F7F1EA] border border-[#670626]/15 flex items-center gap-2.5 text-xs text-[#A83B4D]">
                 <ShieldCheck className="w-4 h-4 text-[#670626] flex-shrink-0" />
-                <span>No reports submitted from this account yet.</span>
+                <span>No reports submitted yet.</span>
               </div>
             )}
           </div>
@@ -528,7 +546,7 @@ export const CivilianDashboard: React.FC = () => {
         onClose={() => setIsCameraOpen(false)}
         onCapture={handleQuickReport}
         title="One-Tap SOS Camera"
-        instructionText="Take a live photo of the emergency scene."
+        instructionText="Take a live photo of the scene."
       />
     </div>
   );

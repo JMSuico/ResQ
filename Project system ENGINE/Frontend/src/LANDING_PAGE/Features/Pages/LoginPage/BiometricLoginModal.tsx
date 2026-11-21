@@ -21,6 +21,7 @@ import {
   biometricLoginUser,
   getBiometricTrainingStatus,
   BiometricLoginPayload,
+  BiometricValidationLayerTelemetry as BackendBiometricLayerTelemetry,
   LoginResponse
 } from '@/Endpoints/authApi';
 import { trackSkinFace } from '@/Libs/Vision/idScanner/face/skinFaceTracker';
@@ -330,56 +331,68 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     onClose();
   };
 
-  const markPipelineSuccess = useCallback((recognizedName: string, modeLabel: string) => {
-    setValidationVerdict('SUCCESS_LOGIN');
-    setPipelineLayers([
-      {
-        layerNumber: 1,
-        layerCode: 'OPTICAL_LIVENESS_GATE',
-        layerName: 'Layer 1: Optical Liveness & Oval Reticle Gate',
-        status: 'PASSED',
-        passed: true,
-        score: 0.98,
-        detail: 'Live optical reticle & liveness gate verified (98.0% >= 70.0%)'
-      },
-      {
-        layerNumber: 2,
-        layerCode: 'CLAUDE_AI_BIOMETRIC_STRATEGY',
-        layerName: 'Layer 2: Claude AI Vision & Geometry Descriptor Strategy',
-        status: 'PASSED',
-        passed: true,
-        score: 0.96,
-        detail: '128-D normalized vector & anthropometric geometry signature extracted'
-      },
-      {
-        layerNumber: 3,
-        layerCode: 'DATABASE_TRAINED_KNOWLEDGE_LOOKUP',
-        layerName: 'Layer 3: Database Trained Knowledge Lookup',
-        status: 'PASSED',
-        passed: true,
-        score: 1.0,
-        detail: `SQL Server trained biometric template located (${modeLabel})`
-      },
-      {
-        layerNumber: 4,
-        layerCode: 'MULTI_FACTOR_VERIFICATION_ENGINE',
-        layerName: 'Layer 4: 128-D Cosine & Geometric Pattern Verification',
-        status: 'PASSED',
-        passed: true,
-        score: 0.99,
-        detail: '128-D Cosine similarity >= 0.82 security threshold verified'
-      },
-      {
-        layerNumber: 5,
-        layerCode: 'DETERMINISTIC_VALIDATION_VERDICT',
-        layerName: 'Layer 5: Validation Verdict (SUCCESS_LOGIN / INVALID)',
-        status: 'PASSED',
-        passed: true,
-        score: 1.0,
-        detail: `Verdict: SUCCESS_LOGIN // Authenticated as ${recognizedName}`
-      }
-    ]);
-  }, []);
+  const markPipelineSuccess = useCallback(
+    (
+      recognizedName: string,
+      modeLabel: string,
+      backendLayers?: BackendBiometricLayerTelemetry[] | null,
+      liveLayers?: BiometricLoginLayerTelemetry[]
+    ) => {
+      setValidationVerdict('SUCCESS_LOGIN');
+      const baseLayers = liveLayers && liveLayers.length > 0 ? liveLayers : createInitialFiveLayerPipeline();
+      const findBackendLayer = (
+        layerNum: number,
+        layerCode: BiometricValidationLayerCode
+      ): BackendBiometricLayerTelemetry | undefined =>
+        backendLayers?.find(
+          (b) =>
+            b.layerNumber === layerNum ||
+            b.layer === layerNum ||
+            b.layerCode === layerCode ||
+            b.name === layerCode
+        );
+
+      const resolveScore = (
+        backendLayer: BackendBiometricLayerTelemetry | undefined,
+        fallbackScore: number
+      ): number => {
+        if (typeof backendLayer?.score === 'number' && Number.isFinite(backendLayer.score)) {
+          return backendLayer.score;
+        }
+        if (
+          typeof backendLayer?.cosineSimilarity === 'number' &&
+          Number.isFinite(backendLayer.cosineSimilarity)
+        ) {
+          return backendLayer.cosineSimilarity;
+        }
+        return fallbackScore;
+      };
+
+      setPipelineLayers(
+        baseLayers.map((liveLayer) => {
+          const matched = findBackendLayer(liveLayer.layerNumber, liveLayer.layerCode);
+          const resolvedScore = resolveScore(matched, liveLayer.score);
+          const defaultDetail =
+            liveLayer.layerNumber === 3
+              ? `PostgreSQL biometric template located (${modeLabel})`
+              : liveLayer.layerNumber === 5
+              ? `Verdict: ${matched?.verdict || 'SUCCESS_LOGIN'} // Authenticated as ${recognizedName}`
+              : liveLayer.detail;
+
+          return {
+            layerNumber: liveLayer.layerNumber,
+            layerCode: liveLayer.layerCode,
+            layerName: matched?.layerName || liveLayer.layerName,
+            status: 'PASSED',
+            passed: matched?.passed ?? true,
+            score: resolvedScore,
+            detail: matched?.detail || defaultDetail
+          };
+        })
+      );
+    },
+    []
+  );
 
   const markPipelineFailure = useCallback((errorDetail: string) => {
     setValidationVerdict('INVALID');
@@ -388,9 +401,8 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
         if (layer.layerNumber <= 2) {
           return {
             ...layer,
-            status: 'PASSED',
-            passed: true,
-            score: layer.score > 0 ? layer.score : 0.95
+            status: layer.passed ? 'PASSED' : 'FAILED',
+            score: layer.score
           };
         }
         if (layer.layerNumber === 3) {
@@ -401,8 +413,8 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
             ...layer,
             status: isLookupFailure ? 'FAILED' : 'PASSED',
             passed: !isLookupFailure,
-            score: isLookupFailure ? 0 : 1.0,
-            detail: isLookupFailure ? errorDetail : 'SQL Server trained template retrieved for comparison'
+            score: isLookupFailure ? 0 : layer.score,
+            detail: isLookupFailure ? errorDetail : 'PostgreSQL biometric template retrieved for comparison'
           };
         }
         if (layer.layerNumber === 4) {
@@ -410,7 +422,7 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
             ...layer,
             status: 'FAILED',
             passed: false,
-            score: 0.12,
+            score: 0,
             detail: errorDetail
           };
         }
@@ -495,7 +507,16 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
         }
 
         const recognizedName = response.session?.fullName || 'Verified User';
-        markPipelineSuccess(recognizedName, resolvedOneToOne ? `1:1 ${trimmedEmail}` : '1:N Optical Identification');
+        const sessionWithLayers = response.session as
+          | { validationLayers?: BackendBiometricLayerTelemetry[] }
+          | undefined;
+        const backendLayers = response.validationLayers ?? sessionWithLayers?.validationLayers ?? null;
+        markPipelineSuccess(
+          recognizedName,
+          resolvedOneToOne ? `1:1 ${trimmedEmail}` : '1:N Optical Identification',
+          backendLayers,
+          liveEvaluation.layers
+        );
 
         setStatusMessage(`Identity verified (${recognizedName}) — Redirecting…`);
         setStatusTone('ok');
@@ -825,10 +846,10 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
         idx === 0
           ? {
               ...layer,
-              status: 'PASSED',
-              passed: true,
-              score: 0.96,
-              detail: 'Live camera activated & optical oval reticle locked'
+              status: 'RUNNING',
+              passed: false,
+              score: 0,
+              detail: 'Live camera active — awaiting oval reticle alignment'
             }
           : layer
       )
@@ -942,11 +963,23 @@ export const BiometricLoginModal: FC<BiometricLoginModalProps> = ({
     }
 
     const burstFrames = dataUrl ? await captureLiveBurstFrames(video, canvas, dataUrl) : [];
-    const deterministicVec = generateDeterministicBiometricVector(
-      email.trim() || 'resident.juan@resqtrack.gov.ph'
-    );
-    // Never fall back silently to deterministic email vector when real webcam frames are present.
-    const primaryVec = dataUrl && liveExtractedVec ? liveExtractedVec : deterministicVec;
+    const trimmedEmail = email.trim();
+    if (!dataUrl || !liveExtractedVec) {
+      if (!trimmedEmail) {
+        hasDispatchedRef.current = false;
+        autoScanPausedRef.current = false;
+        setScanProgress(0);
+        scanProgressRef.current = 0;
+        setStage('CAMERA_SCAN');
+        setStatusMessage('Enter your account email or enable live camera before running Test Scan.');
+        setStatusTone('bad');
+        return;
+      }
+    }
+    const primaryVec =
+      dataUrl && liveExtractedVec
+        ? liveExtractedVec
+        : generateDeterministicBiometricVector(trimmedEmail);
 
     await executeBiometricLogin(primaryVec, dataUrl, undefined, burstFrames);
   };

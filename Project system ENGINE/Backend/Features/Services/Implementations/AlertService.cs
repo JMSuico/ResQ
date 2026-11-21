@@ -15,7 +15,8 @@ public class AlertService(
     IAlertRepository alertRepo,
     IReportRepository reportRepo,
     IAuditLogRepository auditRepo,
-    IUserRepository userRepo) : IAlertService
+    IUserRepository userRepo,
+    IWebHostEnvironment? env = null) : IAlertService
 {
     public async Task<List<AlertResponse>> GetAlertsAsync(Guid userId, CancellationToken ct = default) =>
         await LoadAlertsInternalAsync(userId, ct);
@@ -25,6 +26,11 @@ public class AlertService(
 
     public async Task MarkReadAsync(Guid userId, string reportId, CancellationToken ct = default) =>
         await ExecuteMarkReadInternalAsync(userId, reportId, ct);
+
+    public async Task<int> MarkAllReadAsync(Guid userId, CancellationToken ct = default) =>
+        userId == Guid.Empty
+            ? 0
+            : await alertRepo.MarkAllAsReadAsync(userId, (await reportRepo.GetAllAsync(ct)).Select(r => r.Id), ct);
 
     private async Task<List<AlertResponse>> LoadAlertsInternalAsync(Guid userId, CancellationToken ct) =>
         await reportRepo.GetAllAsync(ct) is var reports
@@ -55,6 +61,10 @@ public class AlertService(
         }
 
         var reportId = Guid.NewGuid();
+        string reportsDir = Path.Combine(env?.ContentRootPath ?? Directory.GetCurrentDirectory(), "server-data", "uploads", "reports");
+        string? imagePath = !string.IsNullOrWhiteSpace(request.ImageDataUrl)
+            ? await CaptureStorageHelper.SaveCaptureDataUrlAsync(request.ImageDataUrl, reportsDir, "BROADCAST", ct)
+            : null;
         var sev = Enum.TryParse<IncidentSeverity>(request.Severity, true, out var parsedSev) ? parsedSev : IncidentSeverity.High;
         var report = new Report
         {
@@ -63,14 +73,15 @@ public class AlertService(
             ReporterId = adminId,
             ReporterName = adminUser?.FullName ?? "LDRRMO Command Center",
             ReporterRole = UserRole.LDRRMO_Admin,
-            Title = request.Title.Trim(),
-            Note = (request.Message + (!string.IsNullOrWhiteSpace(request.ExternalLink) ? $" (External: {request.ExternalLink})" : "")).Trim(),
+            Title = InputSanitizer.Sanitize(request.Title.Trim()),
+            Note = InputSanitizer.Sanitize((request.Message + (!string.IsNullOrWhiteSpace(request.ExternalLink) ? $" (External: {request.ExternalLink})" : "")).Trim()),
             Category = IncidentCategory.NaturalDisaster,
             Severity = sev,
             Status = ReportStatus.Verified,
             Latitude = 8.5147,
             Longitude = 123.2842,
             LocationLabel = "Katipunan Municipal Command Broadcast (7109)",
+            ImageCapturePath = imagePath,
             CreatedAt = DateTime.UtcNow,
             VerifiedAt = DateTime.UtcNow
         };

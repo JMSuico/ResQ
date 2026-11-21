@@ -782,19 +782,195 @@
 }
 
 /* --------------------------------------------------------------------------
-   8. REDUCED MOTION ACCESSIBILITY (WCAG 2.3.3)
+   8. LEAFLET TACTICAL MAP POINTER PULSE WAVES & HEARTBEAT CADENCE
    -------------------------------------------------------------------------- */
+.leaflet-marker-icon.resqtrack-tactical-pointer {
+  overflow: visible !important;
+}
+
+@keyframes resqtrackPulseRing {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(1.75);
+    opacity: 0;
+  }
+}
+
+@keyframes resqtrackWavePulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.92;
+  }
+  55% {
+    opacity: 0.36;
+  }
+  100% {
+    transform: scale(2.45);
+    opacity: 0;
+  }
+}
+
+@keyframes resqtrackBeatPulse {
+  0% {
+    transform: scale(0.96);
+    opacity: 0.95;
+  }
+  18% {
+    transform: scale(1.44);
+    opacity: 0.68;
+  }
+  35% {
+    transform: scale(1.08);
+    opacity: 0.85;
+  }
+  52% {
+    transform: scale(1.82);
+    opacity: 0.42;
+  }
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+@keyframes resqtrackCoreBeat {
+  0%, 100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  18% {
+    transform: scale(1.1);
+    filter: brightness(1.14);
+  }
+  35% {
+    transform: scale(1.02);
+    filter: brightness(1.04);
+  }
+  52% {
+    transform: scale(1.08);
+    filter: brightness(1.12);
+  }
+}
+
+@keyframes resqtrackRadarBreathe {
+  0%, 100% {
+    opacity: 0.88;
+    stroke-opacity: 0.88;
+    stroke-width: 1.8px;
+    transform: scale(0.985);
+  }
+  50% {
+    opacity: 0.42;
+    stroke-opacity: 0.42;
+    stroke-width: 2.6px;
+    transform: scale(1.025);
+  }
+}
+
+.resqtrack-wave-ring {
+  position: absolute;
+  top: 0;
+  left: 3px;
+  width: 38px;
+  height: 38px;
+  border-radius: 9999px;
+  pointer-events: none;
+  transform-origin: center center;
+  animation: resqtrackWavePulse 1.8s cubic-bezier(0.2, 0.7, 0.2, 1) infinite;
+  z-index: 0;
+}
+
+.resqtrack-wave-ring--fast {
+  animation-duration: 1.35s;
+}
+
+.resqtrack-beat-ring {
+  position: absolute;
+  top: 0;
+  left: 3px;
+  width: 38px;
+  height: 38px;
+  border-radius: 9999px;
+  pointer-events: none;
+  transform-origin: center center;
+  animation: resqtrackBeatPulse 1.8s ease-out 0.45s infinite;
+  z-index: 0;
+}
+
+.resqtrack-beat-ring--fast {
+  animation: resqtrackBeatPulse 1.35s ease-out 0.35s infinite;
+}
+
+.resqtrack-core-beat {
+  transform-origin: center center;
+  animation: resqtrackCoreBeat 1.35s ease-in-out infinite;
+}
+
+.resqtrack-new-badge {
+  position: absolute;
+  top: -9px;
+  right: -8px;
+  padding: 1px 5px;
+  border-radius: 9999px;
+  background: #dc2626;
+  color: #ffffff;
+  border: 1.5px solid #f7f1ea;
+  font-family: var(--font-mono, monospace);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.55);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.resqtrack-dispatch-halo {
+  position: absolute;
+  top: -4px;
+  left: -1px;
+  width: 46px;
+  height: 46px;
+  border-radius: 9999px;
+  border: 2.5px dashed #f7f1ea;
+  pointer-events: none;
+  transform-origin: center center;
+  animation: resqtrackPulseRing 1.8s ease-out infinite;
+  z-index: 1;
+}
+
+.resqtrack-radar-concentric-ring {
+  transform-box: fill-box;
+  transform-origin: center center;
+  animation: resqtrackRadarBreathe 4s ease-in-out infinite;
+  pointer-events: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   9. REDUCED MOTION ACCESSIBILITY (WCAG 2.3.3)
+   -------------------------------------------------------------------------- */
+/* Note: Emergency map beacon waves (.resqtrack-*) remain active for life-safety visibility */
 @media (prefers-reduced-motion: reduce) {
   .animate-radar-sweep::before,
   .hud-radar-sweep::before,
-  .animate-emergency-pulse,
-  .hud-emergency-pulse,
-  .animate-beacon-ping::after,
-  .hud-beacon-ping::after,
   .hud-scanner-bar {
     animation: none !important;
   }
-  
+
+  .animate-emergency-pulse,
+  .hud-emergency-pulse,
+  .animate-beacon-ping::after,
+  .hud-beacon-ping::after {
+    animation-duration: 3.2s !important;
+  }
+
   .hud-tactile-btn,
   .hud-btn {
     transition: none !important;

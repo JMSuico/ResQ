@@ -791,3 +791,120 @@ export const formatDateTimeWithSecondsAmPm = (dateInput?: string | number | Date
 
   return `${year}-${month}-${day} ${hh}:${mm}:${ss} ${ampm}`;
 };
+
+export const NEW_INCIDENT_PULSE_WINDOW_MINUTES = 10;
+
+export const parseIncidentTimestampMs = (
+  dateInput?: string | number | Date | null
+): number | null => {
+  if (dateInput === null || dateInput === undefined || dateInput === '') {
+    return null;
+  }
+  if (typeof dateInput === 'number') {
+    return Number.isFinite(dateInput) ? dateInput : null;
+  }
+  if (dateInput instanceof Date) {
+    const ms = dateInput.getTime();
+    return Number.isNaN(ms) ? null : ms;
+  }
+
+  const trimmed = dateInput.trim();
+  if (!trimmed) return null;
+
+  const directMs = Date.parse(trimmed);
+  if (!Number.isNaN(directMs)) {
+    return directMs;
+  }
+
+  // Fallback for "YYYY-MM-DD HH:MM:SS AM/PM" local format
+  const ampmMatch = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i
+  );
+  if (ampmMatch) {
+    const year = Number(ampmMatch[1]);
+    const month = Number(ampmMatch[2]) - 1;
+    const day = Number(ampmMatch[3]);
+    let hour = Number(ampmMatch[4]);
+    const minute = Number(ampmMatch[5]);
+    const second = Number(ampmMatch[6] || '0');
+    const meridiem = ampmMatch[7].toUpperCase();
+    if (meridiem === 'PM' && hour < 12) hour += 12;
+    if (meridiem === 'AM' && hour === 12) hour = 0;
+    const parsed = new Date(year, month, day, hour, minute, second).getTime();
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  return null;
+};
+
+export const isRecentlyReportedIncident = (
+  reportedAt?: string | number | Date | null,
+  windowMinutes: number = NEW_INCIDENT_PULSE_WINDOW_MINUTES,
+  nowMs: number = Date.now()
+): boolean => {
+  const parsedMs = parseIncidentTimestampMs(reportedAt);
+  if (parsedMs === null) return false;
+  const ageMs = nowMs - parsedMs;
+  // Allow up to 2 minutes of client/server clock skew on freshly uploaded reports
+  return ageMs >= -120000 && ageMs <= windowMinutes * 60 * 1000;
+};
+
+export interface IncidentPulseState {
+  shouldPulse: boolean;
+  isNewUpload: boolean;
+  isRecentTimestamp: boolean;
+}
+
+export const shouldPulseIncidentBeacon = (
+  params: {
+    status?: string | null;
+    verifiedAt?: string | number | null;
+    reportedAt?: string | number | Date | null;
+    isResponded?: boolean;
+    isFixture?: boolean;
+  },
+  nowMs: number = Date.now()
+): IncidentPulseState => {
+  if (params.isFixture) {
+    return {
+      shouldPulse: false,
+      isNewUpload: false,
+      isRecentTimestamp: false
+    };
+  }
+
+  const statusLower = (params.status || '').trim().toLowerCase();
+  const isAlreadyHandled =
+    Boolean(params.isResponded) ||
+    statusLower === 'responded' ||
+    statusLower === 'resolved' ||
+    statusLower === 'closed' ||
+    statusLower === 'rejected';
+
+  if (isAlreadyHandled) {
+    return {
+      shouldPulse: false,
+      isNewUpload: false,
+      isRecentTimestamp: false
+    };
+  }
+
+  const isRecentTimestamp = isRecentlyReportedIncident(
+    params.reportedAt,
+    NEW_INCIDENT_PULSE_WINDOW_MINUTES,
+    nowMs
+  );
+
+  const isInitialOrUrgentStatus =
+    !params.verifiedAt ||
+    statusLower === 'reported' ||
+    statusLower === 'submitted' ||
+    statusLower === 'active' ||
+    statusLower === 'critical';
+
+  return {
+    shouldPulse: true,
+    isNewUpload: isRecentTimestamp || isInitialOrUrgentStatus,
+    isRecentTimestamp
+  };
+};

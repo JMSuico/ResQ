@@ -32,7 +32,6 @@ import {
   ImageLightboxModal
 } from '@/Shared';
 import { usePagination, useTableDraggable, useDebounce, useValueRefreshAuto } from '@/Hooks';
-import { BASELINE_ALERTS } from '@/Libs/Assets/baselineFixtures';
 import { AdminButton } from './Shared/AdminButton';
 import { AdminModalCard } from './Shared/AdminModalCard';
 import { CLAY_SURFACE, CLAY_WELL, CLAY_INPUT } from './Shared/adminCommandHelpers';
@@ -50,6 +49,14 @@ const PERCENTAGE_MAX = 100;
 const DECIMAL_PLACES_ONE = 1;
 const DECIMAL_PLACES_TWO = 2;
 const FIRST_PAGE_INDEX = 1;
+
+const readFileAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(new Error('Failed to read attached image file.'));
+    reader.readAsDataURL(file);
+  });
 
 export interface ExtendedAlertItem extends AlertItem {
   message?: string;
@@ -90,10 +97,10 @@ export const AlertsCenter: FC = () => {
       const data = await getAlerts();
       const elapsed = Math.max(MIN_ROUNDTRIP_MS, Math.round(performance.now() - startTime));
       setTelemetryLatencyMs(elapsed);
-      setAlerts(Array.isArray(data) && data.length > 0 ? (data as ExtendedAlertItem[]) : (BASELINE_ALERTS as ExtendedAlertItem[]));
+      setAlerts(Array.isArray(data) ? (data as ExtendedAlertItem[]) : []);
     } catch (err: unknown) {
       console.error('[AlertsCenter] Telemetry sync error:', err);
-      setAlerts((prev) => (prev.length > 0 ? prev : (BASELINE_ALERTS as ExtendedAlertItem[])));
+      setAlerts([]);
     }
   }, []);
 
@@ -111,11 +118,9 @@ export const AlertsCenter: FC = () => {
         prev.map((a) => (a.reportId === reportId ? { ...a, isRead: true } : a))
       );
       showToast('Emergency advisory acknowledged and synchronized across Notification Bell.');
-    } catch {
-      setAlerts((prev) =>
-        prev.map((a) => (a.reportId === reportId ? { ...a, isRead: true } : a))
-      );
-      showToast('Advisory marked read locally.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to acknowledge advisory.';
+      showToast(msg);
     }
   };
 
@@ -149,14 +154,17 @@ export const AlertsCenter: FC = () => {
     }
 
     try {
-      await sendEmergencyBroadcast({
+      const imageDataUrl = broadcastImage ? await readFileAsDataUrl(broadcastImage) : undefined;
+      const payload = {
         title: broadcastTitle.trim(),
         message: broadcastMessage.trim(),
         severity: broadcastSeverity,
         externalLink: broadcastExternalLink.trim(),
         hasImage: !!broadcastImage,
-        hasVideo: !!broadcastVideo
-      });
+        hasVideo: !!broadcastVideo,
+        ...(imageDataUrl ? { imageDataUrl } : {})
+      };
+      await sendEmergencyBroadcast(payload);
 
       showToast(`Official Advisory "${broadcastTitle}" delivered via the system Notification Bell.`);
       setIsBroadcastModalOpen(false);
@@ -167,29 +175,9 @@ export const AlertsCenter: FC = () => {
       setBroadcastExternalLink('');
       setFormError('');
       await loadAlerts();
-    } catch {
-      const newAlert: ExtendedAlertItem = {
-        reportId: `ALT-${Date.now()}`,
-        referenceCode: `BRD-${Math.floor(1000 + Math.random() * 9000)}`,
-        title: broadcastTitle.trim(),
-        message: broadcastMessage.trim(),
-        severity: broadcastSeverity,
-        timestamp: new Date().toISOString(),
-        status: 'Broadcasted',
-        category: 'Emergency Notice',
-        externalLink: broadcastExternalLink.trim(),
-        hasImage: !!broadcastImage,
-        imageUrl: broadcastImage ? URL.createObjectURL(broadcastImage) : undefined,
-        isRead: false
-      };
-      setAlerts((prev) => [newAlert, ...prev]);
-      showToast('Official Advisory dispatched via the system Notification Bell.');
-      setIsBroadcastModalOpen(false);
-      setBroadcastTitle('');
-      setBroadcastMessage('');
-      setBroadcastImage(null);
-      setBroadcastVideo(null);
-      setBroadcastExternalLink('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to dispatch emergency broadcast.';
+      setFormError(msg);
     }
   };
 
@@ -240,14 +228,14 @@ export const AlertsCenter: FC = () => {
   );
 
   const citizenReachRate = useMemo(() => {
-    if (alerts.length === EMPTY_COUNT) return '100.0%';
+    if (alerts.length === EMPTY_COUNT) return '0.0%';
     const readCount = alerts.filter((a) => a.isRead).length;
     const rate = ((readCount / alerts.length) * PERCENTAGE_MAX).toFixed(DECIMAL_PLACES_ONE);
     return `${rate}%`;
   }, [alerts]);
 
   const deliveryLatency = useMemo(
-    () => (telemetryLatencyMs > EMPTY_COUNT ? `${telemetryLatencyMs}ms Push` : '< 2ms Push'),
+    () => (telemetryLatencyMs > EMPTY_COUNT ? `${telemetryLatencyMs}ms Push` : '0ms Push'),
     [telemetryLatencyMs]
   );
 
@@ -268,8 +256,8 @@ export const AlertsCenter: FC = () => {
         shortLabels.add(CATEGORY_SHORT_LABELS[a.category] || a.category);
       }
     });
-    const count = shortLabels.size > EMPTY_COUNT ? shortLabels.size : 1;
-    const summary = Array.from(shortLabels).slice(0, 3).join(' · ') || 'RHU · Fire · PNP';
+    const count = shortLabels.size;
+    const summary = Array.from(shortLabels).slice(0, 3).join(' · ') || 'No active advisories';
     return {
       dispatchedUnitsCount: `${count} ${count === 1 ? 'Unit' : 'Units'}`,
       dispatchedUnitsSummary: summary
@@ -289,21 +277,21 @@ export const AlertsCenter: FC = () => {
       <div className={`${CLAY_SURFACE} p-5 flex flex-wrap items-center justify-between gap-4`}>
         <div>
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#A83B4D]">
-            LDRRMO Official Emergency Advisories & Safety Notifications
+            LDRRMO Advisories
           </span>
           <h1 className="text-2xl sm:text-3xl font-black text-[#670626] tracking-tight mt-0.5 flex items-center gap-2.5">
             <Bell className="w-6 h-6 text-[#A83B4D] animate-pulse" />
             Emergency Broadcasts
           </h1>
           <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
-            Broadcast Warnings are LDRRMO Official Emergency Advisories & Safety Notifications delivered via the system Notification Bell
+            Official advisories via Notification Bell
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <div className={`${CLAY_WELL} flex items-center gap-1.5 px-3.5 py-2 text-xs font-mono font-bold text-emerald-800`}>
             <Radio className="w-3.5 h-3.5 text-emerald-700 animate-pulse" />
-            <span>{isRefreshing ? 'Updating…' : 'Notification Bell Synced'}</span>
+            <span>{isRefreshing ? 'Updating…' : 'Bell Synced'}</span>
           </div>
 
           <AdminButton
@@ -315,16 +303,6 @@ export const AlertsCenter: FC = () => {
             + New Broadcast
           </AdminButton>
         </div>
-      </div>
-
-      {/* Instructor #6 Notification Bell Delivery Clarification */}
-      <div className={`${CLAY_WELL} px-4 py-3 flex items-center gap-3 text-xs sm:text-sm text-[#670626]`}>
-        <Bell className="w-4 h-4 text-[#A83B4D] flex-shrink-0" />
-        <span>
-          <strong>Notification Bell Channel:</strong> Broadcast Warnings represent{' '}
-          <strong>LDRRMO Official Emergency Advisories & Safety Notifications delivered via the system Notification Bell</strong>{' '}
-          across all Resident, Responder, and Command portals.
-        </span>
       </div>
 
       {/* 5 KPI Status Cards */}
@@ -530,7 +508,7 @@ export const AlertsCenter: FC = () => {
                 {paginatedItems.length === EMPTY_COUNT && (
                   <tr>
                     <td colSpan={7} className="text-center py-8 text-sm text-[#A83B4D] font-mono">
-                      No matching broadcast advisories found.
+                      No matching advisories.
                     </td>
                   </tr>
                 )}
@@ -596,6 +574,11 @@ export const AlertsCenter: FC = () => {
               </div>
             </div>
           ))}
+          {paginatedItems.length === EMPTY_COUNT && (
+            <div className={`col-span-full ${CLAY_SURFACE} p-8 text-center text-sm text-[#A83B4D] font-mono`}>
+              No matching advisories.
+            </div>
+          )}
         </div>
       )}
 
@@ -648,8 +631,8 @@ export const AlertsCenter: FC = () => {
         <AdminModalCard
           isOpen={isBroadcastModalOpen}
           onClose={() => setIsBroadcastModalOpen(false)}
-          title="New Official Emergency Advisory"
-          subtitle="Delivered via the system Notification Bell to residents and responders"
+          title="New Emergency Advisory"
+          subtitle="Sent via Notification Bell to all portals"
           className="max-w-2xl"
         >
           <form onSubmit={handleSendBroadcast} className="space-y-4">

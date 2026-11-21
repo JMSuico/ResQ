@@ -25,20 +25,11 @@ import {
   ViewMode
 } from '@/Shared';
 import { usePagination, useTableDraggable, useDebounce, useValueRefreshAuto } from '@/Hooks';
-import { BASELINE_DUTY_ROSTER } from '@/Libs/Assets/baselineFixtures';
 import { AdminButton } from './Shared/AdminButton';
 import { AdminModalCard } from './Shared/AdminModalCard';
 import { CLAY_SURFACE, CLAY_WELL } from './Shared/adminCommandHelpers';
 
-export interface ExtendedDutyUnit extends DutyUnit {
-  badgeNumber?: string;
-  name?: string;
-  assignedUnit?: string;
-  currentIncident?: string;
-  person?: string;
-  incident?: string;
-  callSign?: string;
-}
+export type ExtendedDutyUnit = DutyUnit;
 
 export const RespondersRosterPage: FC = () => {
   const [roster, setRoster] = useState<ExtendedDutyUnit[]>([]);
@@ -65,10 +56,10 @@ export const RespondersRosterPage: FC = () => {
       } catch {
         data = (await getDutyRoster()) as ExtendedDutyUnit[];
       }
-      setRoster(data && data.length > 0 ? data : (BASELINE_DUTY_ROSTER as ExtendedDutyUnit[]));
+      setRoster(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('[Responders] Error loading roster:', err);
-      setRoster((prev) => (prev.length > 0 ? prev : (BASELINE_DUTY_ROSTER as ExtendedDutyUnit[])));
+      setRoster([]);
     }
   };
 
@@ -104,10 +95,7 @@ export const RespondersRosterPage: FC = () => {
       showToast(`Unit duty status updated to ${newStatus}.`);
     } catch (err) {
       console.error('[Responders] Failed to update unit duty status:', err);
-      setRoster((prev) =>
-        prev.map((u) => (u.id === unitId ? { ...u, status: newStatus } : u))
-      );
-      showToast(`Duty status updated locally to ${newStatus}.`);
+      showToast('Failed to update unit duty status.');
     } finally {
       setUpdatingUnitId(null);
     }
@@ -122,7 +110,7 @@ export const RespondersRosterPage: FC = () => {
         return false;
       }
       if (!debouncedSearch) return true;
-      const target = `${unit.name || ''} ${unit.unitName || ''} ${unit.badgeNumber || ''} ${unit.unitCode || ''} ${unit.agency || ''} ${unit.commanderName || ''} ${unit.currentIncident || ''}`.toLowerCase();
+      const target = `${unit.unitName || ''} ${unit.unitCode || ''} ${unit.agency || ''} ${unit.commanderName || ''}`.toLowerCase();
       return target.includes(debouncedSearch.toLowerCase());
     });
   }, [roster, statusFilter, agencyFilter, debouncedSearch]);
@@ -188,7 +176,7 @@ export const RespondersRosterPage: FC = () => {
             Responders
           </h1>
           <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
-            Katipunan multi-agency unit readiness and live GPS status
+            Unit readiness &amp; live GPS
           </p>
         </div>
 
@@ -322,16 +310,16 @@ export const RespondersRosterPage: FC = () => {
                   <tr key={u.id || i} className="hover:bg-[#F7F1EA]/70 transition-colors">
                     <td className="py-3.5 px-4">
                       <span className="font-mono text-sm font-black text-[#670626] block">
-                        {u.unitCode || u.badgeNumber || u.id || `UNIT-${i + 101}`}
+                        {u.unitCode || u.id}
                       </span>
                       <span className="text-xs text-[#A83B4D] font-mono block mt-0.5">
-                        {u.unitName || u.name || 'Katipunan Tactical Team'}
+                        {u.unitName || 'Katipunan Tactical Team'}
                       </span>
                     </td>
 
                     <td className="py-3.5 px-4">
                       <span className="font-bold text-sm text-[#670626] block">
-                        {u.commanderName || u.name || u.person || 'Field Commander'}
+                        {u.commanderName || 'Field Commander'}
                       </span>
                       <span className="text-xs text-[#A83B4D] font-mono mt-0.5 block">
                         Katipunan Municipal Sector
@@ -413,7 +401,7 @@ export const RespondersRosterPage: FC = () => {
                 {paginatedItems.length === 0 && (
                   <tr>
                     <td colSpan={6} className="text-center py-8 text-sm text-[#A83B4D] font-mono">
-                      No matching responders detected.
+                      No matching units.
                     </td>
                   </tr>
                 )}
@@ -431,9 +419,9 @@ export const RespondersRosterPage: FC = () => {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <span className="text-xs font-mono font-bold text-[#A83B4D]">
-                    {u.unitCode || u.badgeNumber || u.id || `UNIT-${i + 101}`}
+                    {u.unitCode || u.id}
                   </span>
-                  <h3 className="font-bold text-[#670626] text-base mt-0.5">{u.unitName || u.name || 'Officer'}</h3>
+                  <h3 className="font-bold text-[#670626] text-base mt-0.5">{u.unitName || 'Officer'}</h3>
                 </div>
                 <select
                   value={u.status}
@@ -465,7 +453,7 @@ export const RespondersRosterPage: FC = () => {
                   <span>{u.agency || 'Emergency Agency'}</span>
                 </div>
                 <p className="text-[#A83B4D] font-mono text-xs">
-                  Commander: {u.commanderName || u.person || 'Field Officer'} · Personnel: {u.activePersonnelCount || 1}
+                  Commander: {u.commanderName || 'Field Officer'} · Personnel: {u.activePersonnelCount || 1}
                 </p>
                 <p className="text-[#670626] font-mono text-xs">
                   Shift: {u.shiftSchedule || '24h Standard'}
@@ -535,7 +523,7 @@ export const RespondersRosterPage: FC = () => {
           isOpen={isViewAllModalOpen}
           onClose={() => setIsViewAllModalOpen(false)}
           title={`Responders (${roster.length})`}
-          subtitle="All municipal units by agency and duty status"
+          subtitle="Units by agency & status"
           className="max-w-3xl max-h-[80vh] flex flex-col"
         >
           <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
@@ -555,9 +543,9 @@ export const RespondersRosterPage: FC = () => {
                     )}
                   </div>
                   <div>
-                    <h4 className="font-bold text-[#670626] text-sm">{u.unitName || u.name || 'Emergency Unit'}</h4>
+                    <h4 className="font-bold text-[#670626] text-sm">{u.unitName || 'Emergency Unit'}</h4>
                     <span className="text-xs font-mono text-[#A83B4D]">
-                      Code: {u.unitCode || u.badgeNumber || u.id} · {u.agency} · Cmdr: {u.commanderName || 'Officer'}
+                      Code: {u.unitCode || u.id} · {u.agency} · Cmdr: {u.commanderName || 'Officer'}
                     </span>
                   </div>
                 </div>

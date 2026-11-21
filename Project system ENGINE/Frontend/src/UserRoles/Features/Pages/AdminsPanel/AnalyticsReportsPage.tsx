@@ -33,18 +33,11 @@ import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
 import { LinearCurveyChart, BarGraphChart, PieGraphChart, HeatmapChart } from '@/Shared/Charts';
 import { Dropdown } from '@/Shared';
 import { useValueRefreshAuto } from '@/Hooks';
-import {
-  BASELINE_ANALYTICS_SUMMARY,
-  BASELINE_INCIDENT_REPORTS
-} from '@/Libs/Assets/baselineFixtures';
 import { AdminButton } from './Shared/AdminButton';
 import { AdminModalCard } from './Shared/AdminModalCard';
 import { CLAY_SURFACE, CLAY_WELL } from './Shared/adminCommandHelpers';
 
 export interface ExtendedReportItem extends ReportItem {
-  deviceIp?: string;
-  ipAddress?: string;
-  mediaUrl?: string;
   timestamp?: string;
   location?: string;
 }
@@ -84,49 +77,17 @@ export const AnalyticsReportsPage: FC = () => {
         getAllReports().catch(() => [] as ExtendedReportItem[])
       ]);
 
-      const effectiveSummary = sum && sum.totalIncidents > 0 ? sum : BASELINE_ANALYTICS_SUMMARY;
-      const effectiveReports = reps && reps.length > 0 ? (reps as ExtendedReportItem[]) : (BASELINE_INCIDENT_REPORTS as ExtendedReportItem[]);
-
-      const effectiveVolume = vol && vol.length > 0 && vol.some((p) => p.value > 0)
-        ? vol
-        : [
-            { label: '00:00', value: 1 },
-            { label: '04:00', value: 0 },
-            { label: '08:00', value: 3 },
-            { label: '12:00', value: 5 },
-            { label: '16:00', value: 4 },
-            { label: '20:00', value: 2 }
-          ];
-
-      const effectiveSeverity = sev && sev.length > 0 && sev.some((s) => s.value > 0)
-        ? sev
-        : [
-            { label: 'Low', value: 1, color: '#10b981' },
-            { label: 'Medium', value: 2, color: '#f59e0b' },
-            { label: 'High', value: 2, color: '#ea580c' },
-            { label: 'Critical', value: 1, color: '#670626' }
-          ];
-
-      const effectiveAgency = age && age.length > 0 && age.some((a) => a.value > 0)
-        ? age
-        : [
-            { label: 'RHU Medical', value: 3, color: '#670626' },
-            { label: 'BFP Fire Rescue', value: 1, color: '#A83B4D' },
-            { label: 'PNP Police Force', value: 2, color: '#0284c7' }
-          ];
+      const effectiveSummary = sum || DEFAULT_SUMMARY;
+      const effectiveReports = Array.isArray(reps) ? (reps as ExtendedReportItem[]) : [];
 
       setSummary(effectiveSummary);
-      setVolumeData(effectiveVolume);
-      setSeverityData(effectiveSeverity);
-      setAgencyData(effectiveAgency);
-      if (heat?.matrix && heat.matrix.length > 0) {
-        setHeatmapMatrix(heat.matrix);
-      }
+      setVolumeData(Array.isArray(vol) ? vol : []);
+      setSeverityData(Array.isArray(sev) ? sev : []);
+      setAgencyData(Array.isArray(age) ? age : []);
+      setHeatmapMatrix(heat?.matrix && heat.matrix.length > 0 ? heat.matrix : []);
       setReports(effectiveReports);
     } catch (err) {
       console.error('[AnalyticsReportsPage] Error syncing analytics:', err);
-      setSummary((prev) => (prev.totalIncidents > 0 ? prev : BASELINE_ANALYTICS_SUMMARY));
-      setReports((prev) => (prev.length > 0 ? prev : (BASELINE_INCIDENT_REPORTS as ExtendedReportItem[])));
     } finally {
       setIsRefreshing(false);
     }
@@ -158,8 +119,7 @@ export const AnalyticsReportsPage: FC = () => {
 
   const validReports = useMemo(() => {
     const all = Array.isArray(reports) ? reports.filter(Boolean) : [];
-    const filtered = filterReportsByHorizon(all, selectedHorizon);
-    return filtered.length > 0 ? filtered : all;
+    return filterReportsByHorizon(all, selectedHorizon);
   }, [reports, selectedHorizon]);
 
   const computedVolumeData = useMemo(() => {
@@ -254,16 +214,15 @@ export const AnalyticsReportsPage: FC = () => {
   }, [validReports]);
 
   const sharpnessPercent = useMemo(() => {
-    if (validReports.length === 0) return '100.0%';
+    if (validReports.length === 0) return '0.0%';
     const sharpCount = validReports.filter((r) => r && !r.isBlurry).length;
     return `${((sharpCount / validReports.length) * 100).toFixed(1)}%`;
   }, [validReports]);
 
-  const avgLaplacianVar = useMemo(() => {
-    if (validReports.length === 0) return '98.5';
-    const sharpCount = validReports.filter((r) => r && !r.isBlurry).length;
-    return (70.0 + (sharpCount / validReports.length) * 28.5).toFixed(1);
-  }, [validReports]);
+  const blurryReportsCount = useMemo(
+    () => validReports.filter((r) => r && r.isBlurry).length,
+    [validReports]
+  );
 
   const dispatchRatioPercent = useMemo(() => {
     const total = summary?.totalResponders ?? 0;
@@ -281,12 +240,15 @@ export const AnalyticsReportsPage: FC = () => {
       {
         title: 'Triage Ingestion Velocity',
         status: `${summary?.totalIncidents ?? 0} reports · ${summary?.criticalIncidents ?? 0} SOS · Index ${tivaVelocity}`,
-        description: 'Weighted report density across active Katipunan municipal sectors.'
+        description: 'Weighted report density across Katipunan sectors.'
       },
       {
         title: 'Capture Sharpness Verification',
-        status: `${sharpnessPercent} sharp · Avg ${avgLaplacianVar}`,
-        description: 'Rejects blurred or spoofed frames before triage.'
+        status:
+          validReports.length > 0
+            ? `${sharpnessPercent} sharp · ${blurryReportsCount} blurry`
+            : '0.0% sharp · 0 reports',
+        description: 'Filters blurred or spoofed frames.'
       },
       {
         title: 'Dispatch Allocation Ratio',
@@ -294,27 +256,56 @@ export const AnalyticsReportsPage: FC = () => {
           (summary?.totalResponders ?? 0) > 0
             ? `${dispatchRatioPercent} (${summary?.activeDispatches ?? 0}/${summary?.totalResponders ?? 0} units)`
             : '0.0% allocated',
-        description: 'Active dispatches relative to total available responders.'
+        description: 'Active dispatches vs available units.'
       }
     ],
-    [summary, tivaVelocity, sharpnessPercent, avgLaplacianVar, dispatchRatioPercent]
+    [summary, tivaVelocity, sharpnessPercent, blurryReportsCount, validReports.length, dispatchRatioPercent]
   );
 
   const progressItems = useMemo(() => {
-    const gpsRate =
-      validReports.length > 0
-        ? Math.min(100, Math.round((validReports.filter((r) => r && r.isHardwareGeolocated).length / validReports.length) * 100))
-        : 100;
+    const totalReports = validReports.length;
+    const gpsCount = validReports.filter((r) => r && r.isHardwareGeolocated).length;
+    const gpsRate = totalReports > 0 ? Math.min(100, Math.round((gpsCount / totalReports) * 100)) : 0;
+
+    const verifiedCount = validReports.filter(
+      (r) =>
+        r &&
+        (Boolean(r.verifiedAt) ||
+          (r.status || '').toLowerCase() === 'verified' ||
+          (r.status || '').toLowerCase() === 'resolved')
+    ).length;
+    const verificationRate = totalReports > 0 ? Math.min(100, Math.round((verifiedCount / totalReports) * 100)) : 0;
+
+    const aiScreenedCount = validReports.filter(
+      (r) => r && Boolean(r.roboflowPrediction || r.claudeSituationSummary || r.aiVerificationStatus)
+    ).length;
+    const aiCoverageRate = totalReports > 0 ? Math.min(100, Math.round((aiScreenedCount / totalReports) * 100)) : 0;
+
     const totalIncs = summary?.totalIncidents ?? 0;
-    const critIncs = summary?.criticalIncidents ?? 0;
-    const triageAutoRate =
-      totalIncs > 0 ? Math.min(100, Math.round(((totalIncs - critIncs) / totalIncs) * 100)) : 100;
+    const resolvedIncs = summary?.resolvedCount ?? 0;
+    const resolutionRate = totalIncs > 0 ? Math.min(100, Math.round((resolvedIncs / totalIncs) * 100)) : 0;
 
     return [
-      { milestone: 'GPS Telemetry Coverage', progress: gpsRate, date: 'Active' },
-      { milestone: 'Multi-Port Access Isolation', progress: 100, date: 'Active' },
-      { milestone: 'Automated Triage Routing', progress: triageAutoRate, date: 'In Production' },
-      { milestone: 'CSV & PDF Report Export', progress: 100, date: 'Active' }
+      {
+        milestone: 'GPS Telemetry Coverage',
+        progress: gpsRate,
+        date: totalReports > 0 ? `${gpsCount}/${totalReports} geolocated` : '0 reports'
+      },
+      {
+        milestone: 'Incident Verification Rate',
+        progress: verificationRate,
+        date: totalReports > 0 ? `${verifiedCount}/${totalReports} verified` : '0 reports'
+      },
+      {
+        milestone: 'AI Vision Triage Coverage',
+        progress: aiCoverageRate,
+        date: totalReports > 0 ? `${aiScreenedCount}/${totalReports} screened` : '0 reports'
+      },
+      {
+        milestone: 'Case Resolution Progress',
+        progress: resolutionRate,
+        date: totalIncs > 0 ? `${resolvedIncs}/${totalIncs} resolved` : '0 incidents'
+      }
     ];
   }, [validReports, summary]);
 
@@ -362,7 +353,7 @@ export const AnalyticsReportsPage: FC = () => {
             Analytics & Reports
           </h1>
           <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
-            Response curves and operational metrics for Katipunan, Zamboanga del Norte
+            Metrics &amp; response curves · Katipunan, ZN
           </p>
         </div>
 
@@ -488,7 +479,7 @@ export const AnalyticsReportsPage: FC = () => {
       <div className={`tactical-card ${CLAY_SURFACE} p-5`}>
         <HeatmapChart
           matrix={heatmapMatrix}
-          title="Geospatial Weekly Incident Density Matrix (Katipunan Barangay Heat Distribution)"
+          title="Weekly Incident Density (Katipunan)"
         />
       </div>
 
@@ -547,14 +538,14 @@ export const AnalyticsReportsPage: FC = () => {
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           title="Operational Details"
-          subtitle="Live telemetry and capture quality summary"
+          subtitle="Telemetry & capture quality"
           className="max-w-3xl"
         >
           <div className="space-y-4 text-sm text-[#670626]">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
               <div className={`${CLAY_WELL} p-3.5 text-center`}>
-                <p className="text-xs text-[#A83B4D] uppercase font-mono">Sharpness Avg</p>
-                <h4 className="text-xl font-black text-[#670626] mt-1">{avgLaplacianVar}</h4>
+                <p className="text-xs text-[#A83B4D] uppercase font-mono">Sharp Captures</p>
+                <h4 className="text-xl font-black text-[#670626] mt-1">{sharpnessPercent}</h4>
               </div>
               <div className={`${CLAY_WELL} p-3.5 text-center`}>
                 <p className="text-xs text-[#A83B4D] uppercase font-mono">Active Reports</p>

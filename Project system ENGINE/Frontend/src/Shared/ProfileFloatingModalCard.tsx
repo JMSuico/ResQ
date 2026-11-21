@@ -39,6 +39,7 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
   avatarUrl
 }) => {
   const { session } = useSession();
+  const { isMobile } = useFluidResposiveness();
   const navigate = useNavigate();
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -66,16 +67,8 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
   const roleRaw = (user?.role || session?.role || 'Responder');
   const roleLower = roleRaw.toLowerCase();
   const unit = (user?.unit && user.unit !== 'None') ? user.unit : (session?.unit && session.unit !== 'None' ? session.unit : null);
-  const employeeOrResidentId = user?.id || session?.employeeOrResidentId || session?.employeeId || 'OP-773-567-009';
-  
-  const email =
-    user?.email ||
-    session?.email ||
-    (roleLower.includes('admin')
-      ? 'ldrrmo.admin@resqtrack.gov.ph'
-      : roleLower.includes('responder')
-      ? 'responder.field@resqtrack.gov.ph'
-      : 'citizen@katipunan.gov.ph');
+  const employeeOrResidentId = user?.id || session?.employeeOrResidentId || session?.employeeId || '-';
+  const email = user?.email || session?.email || 'Unavailable';
 
   const isVerified = user?.faceVerified ?? session?.faceVerified ?? true;
 
@@ -101,8 +94,6 @@ export const ProfileFloatingModalCard: FC<ProfileFloatingModalCardProps> = ({
     onClose();
     navigate(settingsRoute);
   };
-
-  const { isMobile } = useFluidResposiveness();
 
   const content = (
     <>

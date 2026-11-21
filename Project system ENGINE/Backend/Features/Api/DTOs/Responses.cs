@@ -156,7 +156,30 @@ public record ReportResponse(
     string? ClaudeSituationSummary = null,
     string? ClaudeVisibleHazards = null,
     string? ClaudeUncertaintyNotes = null,
-    string? PointerIconType = null
+    string? PointerIconType = null,
+    bool AiAutoApproved = false,
+    string AiVerificationStatus = "PENDING_REVIEW",
+    int? FeedbackRating = null,
+    string? FeedbackComment = null
+);
+
+public record ReportEvidenceResponse(
+    Guid Id,
+    Guid ReportId,
+    string Url,
+    string MediaType,
+    string Caption,
+    string UploadedByName,
+    DateTime CreatedAtUtc
+);
+
+public record ReportFeedbackResponse(
+    Guid Id,
+    Guid ReportId,
+    Guid UserId,
+    int Rating,
+    string Comment,
+    DateTime CreatedAtUtc
 );
 
 public sealed record IncidentImageAiAnalysisResponseDto(
@@ -174,7 +197,19 @@ public sealed record IncidentImageAiAnalysisResponseDto(
     string VisibleHazards,
     string UncertaintyNotes,
     string VerificationStatus,
-    string RecommendedAgencyUnit
+    string RecommendedAgencyUnit,
+    bool AutoApproveEligible = false,
+    string AiVerificationStatus = "PENDING_REVIEW",
+    bool ClaudeRanOnline = false
+);
+
+public sealed record AiAutoApproveReportResult(
+    bool AutoApproved,
+    ReportStatus Status,
+    string AiVerificationStatus,
+    string Message,
+    ReportResponse? Report = null,
+    bool NotFound = false
 );
 
 public record DutyUnitResponse(

@@ -14,8 +14,9 @@ public interface IUserGovernanceService
     Task<UserDetailResponse?> GetUserDetailAsync(Guid id, CancellationToken ct = default);
     Task<(bool Success, string? Error, UserResponse? User)> CreateUserAsync(CreateUserRequest request, Guid adminId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateUserAsync(Guid id, UpdateUserRequest request, Guid adminId, CancellationToken ct = default);
-    Task<(bool Success, string? Error)> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default, string? capturesRootPath = null);
     Task<(bool Success, string? Error)> DeleteUserAsync(Guid id, Guid adminId, string adminEmail, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateUserStatusAsync(Guid targetUserId, Guid adminId, AccountStatus status, CancellationToken ct = default);
     Task<string?> GetUserCapturePathAsync(Guid userId, CaptureKind kind, CancellationToken ct = default);
+    Task<string?> GetUserAvatarCapturePathAsync(Guid userId, CancellationToken ct = default);
 }
