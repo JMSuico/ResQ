@@ -24,6 +24,10 @@ RuntimePortabilityHelper.LoadOptionalDotEnv(
     AppContext.BaseDirectory);
 
 var builder = WebApplication.CreateBuilder(args);
+if (args.Length > 0 && CliCommandRunner.IsCliCommand(args))
+{
+    builder.Logging.ClearProviders();
+}
 string[] localConfigPaths =
 [
     "appsettings.Local.json",
@@ -227,25 +231,7 @@ if (args.Length > 0 && CliCommandRunner.IsCliCommand(args))
         {
             try
             {
-                await StartupSchemaReconciler.ReconcileAsync(db, ddlLogger);
-
-                if (db.Database.GetMigrations().Any())
-                {
-                    try
-                    {
-                        await db.Database.MigrateAsync();
-                    }
-                    catch (Exception migrateEx)
-                    {
-                        ddlLogger.LogWarning(migrateEx, "EF Core MigrateAsync encountered pre-existing schema; falling back to EnsureCreatedAsync + StartupSchemaReconciler.");
-                        await db.Database.EnsureCreatedAsync();
-                    }
-                }
-                else
-                {
-                    await db.Database.EnsureCreatedAsync();
-                }
-
+                await db.Database.EnsureCreatedAsync();
                 await StartupSchemaReconciler.ReconcileAsync(db, ddlLogger);
             }
             catch (Exception ex)

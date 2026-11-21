@@ -13,8 +13,8 @@ Complete command reference for running the **4-Port Docker Ecosystem** (`:1996` 
 git clone <YOUR_GITHUB_REPO_URL> "INCIDENT AI SYSTEM DETECTION"
 cd "INCIDENT AI SYSTEM DETECTION"
 
-# 2. (Only if upgrading an older Windows clone) Remove stray empty directories left by older mounts
-Remove-Item -Path "Project system ENGINE/Frontend/postcss.config.js", "Project system ENGINE/Frontend/tailwind.config.js", "Project system ENGINE/Backend/appsettings.Local.json" -Recurse -Force -ErrorAction SilentlyContinue
+# 2. (Only if upgrading an older Windows/OneDrive clone) Remove stray directories left by older mounts or Python cache
+Remove-Item -Path "Project system ENGINE/Frontend/postcss.config.js", "Project system ENGINE/Frontend/tailwind.config.js", "Project system ENGINE/Backend/appsettings.Local.json", "Project system ENGINE/Backend/Scripts" -Recurse -Force -ErrorAction SilentlyContinue
 
 # 3. Stop any local non-Docker dev servers occupying ports 1996-1999
 .\start.ps1 stop
@@ -70,48 +70,23 @@ docker compose run --rm resqtrack-backend listcliusers
 
 ---
 
-## 3. Superadmin / Custom Admin Commands (Create, Edit, Delete & Functions)
+## 3. Superadmin Commands (Create, Edit, Delete & Functions)
 
 > Password minimum length enforced by `ScryptPasswordHelper`: **12 characters**.
-> CLI commands accept `unit` aliases (`LDRRMO`, `MEDIC` / `RHU`, `FIRE` / `BFP`, `PNP` / `POLICE`) and `adduser` accepts full custom role + unit + ID arguments.
+> Inputs required: **Input Email** and **Input Password** ONLY.
 
-### Create Default & Custom Admin (`createsuperadmin`, `createcustomsuperadmin`, `adduser`)
+### Create Superadmin (`customcreatesuperadmin` / `createsuperadmin`)
 ```powershell
-# 1. Default Superadmin (Role=LDRRMO_Admin, Unit=LDRRMO)
-# Usage: createsuperadmin <email> <password> [fullName] [unit]
-docker compose exec resqtrack-backend dotnet Backend.dll createsuperadmin "ldrrmo.admin2@resqtrack.gov.ph" "AdminCommand@2026!" "Director Juan Reyes" "LDRRMO"
+# Interactive Mode in Docker (Prompts ONLY "Input Email:" and "Input Password:")
+docker compose exec -it resqtrack-backend dotnet Backend.dll customcreatesuperadmin
+# Input Email: ldrrmo.admin2@resqtrack.gov.ph
+# Input Password: AdminCommand@2026!
 
-# 2. Custom Admin / Unit Officer
-# Usage: createcustomsuperadmin <email> <password> [unit] [fullName]
-# Note: unit=LDRRMO provisions Role=LDRRMO_Admin; RHU/MEDIC/FIRE/PNP provisions Responder unit officer
-docker compose exec resqtrack-backend dotnet Backend.dll createcustomsuperadmin "ldrrmo.ops@resqtrack.gov.ph" "AdminOpsPass@2026!" "LDRRMO" "Operations Chief Rivera"
-docker compose exec resqtrack-backend dotnet Backend.dll createcustomsuperadmin "rhu.lead@resqtrack.gov.ph" "RhuChief@2026!!" "MEDIC" "Dr. Elena Cruz"
+# Direct One-Line Mode in Docker (Email & Password ONLY)
+docker compose exec resqtrack-backend dotnet Backend.dll customcreatesuperadmin "ldrrmo.admin2@resqtrack.gov.ph" "AdminCommand@2026!"
 
-# 3. Generic Custom Admin with Explicit Employee ID via adduser
-# Usage: adduser <email> <password> <fullName> <role> [unit] [employeeOrResidentId]
-docker compose exec resqtrack-backend dotnet Backend.dll adduser "ldrrmo.custom@resqtrack.gov.ph" "LdrrmoCustom@2026!" "Deputy Director Santos" "LDRRMO_Admin" "LDRRMO" "LDRRMO-EXEC-009"
-```
-
-### Custom Admin via Authenticated REST API (`POST /api/users`)
-```powershell
-# Authenticate as LDRRMO Admin first, then provision full profile fields (PlantillaNumber, ExecutiveDesignation, ClearanceLevel)
-$adminLogin = Invoke-RestMethod -Uri "http://127.0.0.1:1999/api/auth/login" -Method POST -ContentType "application/json" -Body '{"email":"ldrrmo.admin@resqtrack.gov.ph","password":"LdrrmoCommand@2026!"}'
-$headers = @{ Authorization = "Bearer $($adminLogin.token)"; "Content-Type" = "application/json" }
-$customAdminBody = @{
-  email = "ldrrmo.exec2@resqtrack.gov.ph"
-  password = "ExecCommand@2026!"
-  firstName = "Clarissa"
-  surname = "Reyes"
-  role = 1
-  unit = 1
-  employeeOrResidentId = "LDRRMO-EXEC-202"
-  departmentOrBarangay = "Command & Operations Center"
-  rankOrTitle = "Operations Officer IV"
-  plantillaNumber = "PLANTILLA-LDRRMO-019"
-  executiveDesignation = "Incident Command Officer"
-  clearanceLevel = "Level 4 - Command Authority"
-} | ConvertTo-Json
-Invoke-RestMethod -Uri "http://127.0.0.1:1999/api/users" -Method POST -Headers $headers -Body $customAdminBody
+# Standard alias (Email & Password ONLY)
+docker compose exec resqtrack-backend dotnet Backend.dll createsuperadmin "ldrrmo.admin2@resqtrack.gov.ph" "AdminCommand@2026!"
 ```
 
 **LDRRMO Admin Functions (`http://localhost:1996`)**:
@@ -140,64 +115,42 @@ docker compose exec resqtrack-backend dotnet Backend.dll edituser "ldrrmo.chief@
 docker compose exec resqtrack-backend dotnet Backend.dll deletesuperadmin "ldrrmo.director@resqtrack.gov.ph"
 
 # Alternative generic delete command
-docker compose exec resqtrack-backend dotnet Backend.dll deletecliuser "rhu.lead@resqtrack.gov.ph"
+docker compose exec resqtrack-backend dotnet Backend.dll deletecliuser "ldrrmo.director@resqtrack.gov.ph"
 ```
 
 ---
 
-## 4. Custom Responder Commands - MEDIC (RHU), PNP & FIRE (Create, Edit, Delete & Functions)
+## 4. Responder Commands - 1. RHU/MEDIC, 2. FIRE/BFP, 3. PNP/POLICE (Create, Edit, Delete & Functions)
 
-> Unit aliases supported by `CliCommandRunner.ParseUnit`: `MEDIC` / `RHU` (`2`), `FIRE` / `BFP` (`3`), `PNP` / `POLICE` (`4`).
+> **First Phase**: Select Responder Enum (`1` = `RHU/MEDIC`, `2` = `FIRE/BFP`, `3` = `PNP/POLICE`)
+> **Second Phase**: **Input Email** and **Input Password** ONLY.
 
-### Create Standard or Custom Responder (`createresponder`, `createcustomresponder`, `adduser`)
+### Create Responder (`customcreateresponderuser` / `createresponder`)
 ```powershell
-# Quick Create per unit: createresponder <email> <password> <MEDIC|RHU|FIRE|PNP> [fullName]
-docker compose exec resqtrack-backend dotnet Backend.dll createresponder "medic.unit2@resqtrack.gov.ph" "MedicPass@2026!!" "MEDIC" "Nurse Marco Santos"
-docker compose exec resqtrack-backend dotnet Backend.dll createresponder "fire.unit2@resqtrack.gov.ph" "BfpFirePass@2026!" "FIRE" "FO2 Carlo Villanueva"
-docker compose exec resqtrack-backend dotnet Backend.dll createresponder "pnp.unit2@resqtrack.gov.ph" "PnpPatrol@2026!" "PNP" "Pat. Mateo Navarro"
+# Interactive 2-Phase Mode in Docker:
+#   Phase 1 -> First Phase select Responders (1. RHU/MEDIC, 2. FIRE/BFP, 3. PNP/POLICE)
+#   Phase 2 -> Input Email: / Input Password: ONLY
+docker compose exec -it resqtrack-backend dotnet Backend.dll customcreateresponderuser
+# First Phase select Responders (1. RHU/MEDIC, 2. FIRE/BFP, 3. PNP/POLICE)
+# Select Responder (1-3): 1
+# Input Email: medic.unit2@resqtrack.gov.ph
+# Input Password: MedicPass@2026!!
 
-# Custom Responder with explicit Employee ID & Rank/Title:
-# Usage: createcustomresponder <email> <password> [unit] [fullName] [employeeId] [rankOrTitle]
-docker compose exec resqtrack-backend dotnet Backend.dll createcustomresponder "medic.custom@resqtrack.gov.ph" "MedicCustom@2026!" "MEDIC" "Dr. Paolo Aquino" "RHU-MED-301" "Emergency Medical Officer II"
-docker compose exec resqtrack-backend dotnet Backend.dll createcustomresponder "pnp.custom@resqtrack.gov.ph" "PnpCustom@2026!!" "PNP" "Sgt. Rafael Torres" "PNP-PATROL-402" "Police Staff Sergeant"
-docker compose exec resqtrack-backend dotnet Backend.dll createcustomresponder "fire.custom@resqtrack.gov.ph" "BfpCaptain@2026!" "FIRE" "Capt. Luis Garcia" "BFP-ENG2-204" "Fire Inspector"
+# Direct One-Line Mode by Enum Number (1 = RHU/MEDIC, 2 = FIRE/BFP, 3 = PNP/POLICE) + Email & Password ONLY:
+docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser 1 "medic.unit2@resqtrack.gov.ph" "MedicPass@2026!!"
+docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser 2 "fire.unit2@resqtrack.gov.ph" "BfpFirePass@2026!"
+docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser 3 "pnp.unit2@resqtrack.gov.ph" "PnpPatrol@2026!"
 
-# Alternative via generic adduser:
-docker compose exec resqtrack-backend dotnet Backend.dll adduser "medic.amb3@resqtrack.gov.ph" "MedicAmb3@2026!" "EMT Carla Reyes" "Responder" "MEDIC" "RHU-EMT-303"
-```
-
-### Custom MEDIC / PNP / FIRE via REST API (`POST /api/users` with Agency Fields)
-```powershell
-# Reuse $headers from LDRRMO Admin login above
-# Custom MEDIC (role=2, unit=2 -> RHU)
-$customMedic = @{
-  email = "medic.trauma@resqtrack.gov.ph"; password = "MedicTrauma@2026!"; firstName = "Paolo"; surname = "Aquino"
-  role = 2; unit = 2; employeeOrResidentId = "RHU-MED-305"; rankOrTitle = "Trauma Officer II"
-  medicalLicenseNumber = "PRC-MED-992104"; medicalCadre = "Emergency Physician"; stationHealthCenter = "Katipunan RHU Main"; ambulanceCallSign = "MEDIC-AMB-03"
-} | ConvertTo-Json
-Invoke-RestMethod -Uri "http://127.0.0.1:1999/api/users" -Method POST -Headers $headers -Body $customMedic
-
-# Custom PNP (role=2, unit=4 -> PNP)
-$customPnp = @{
-  email = "pnp.traffic@resqtrack.gov.ph"; password = "PnpTraffic@2026!"; firstName = "Rafael"; surname = "Torres"
-  role = 2; unit = 4; employeeOrResidentId = "PNP-TRF-405"; rankOrTitle = "Police Staff Sergeant"
-  policeRank = "PSSg"; pnpBadgeNumber = "PNP-REG9-90412"; precinctOrStation = "Katipunan MPS Sector 2"; policeAssignment = "Traffic & Perimeter Patrol"
-} | ConvertTo-Json
-Invoke-RestMethod -Uri "http://127.0.0.1:1999/api/users" -Method POST -Headers $headers -Body $customPnp
-
-# Custom FIRE (role=2, unit=3 -> FIRE)
-$customFire = @{
-  email = "fire.rescue2@resqtrack.gov.ph"; password = "FireRescue@2026!"; firstName = "Luis"; surname = "Garcia"
-  role = 2; unit = 3; employeeOrResidentId = "BFP-RES-205"; rankOrTitle = "Senior Fire Officer I"
-  firefighterRank = "SFO1"; bfpBadgeNumber = "BFP-REG9-77120"; fireStation = "Katipunan Central Fire Station"; apparatusCallSign = "BFP-TANKER-02"
-} | ConvertTo-Json
-Invoke-RestMethod -Uri "http://127.0.0.1:1999/api/users" -Method POST -Headers $headers -Body $customFire
+# Or by Enum Name (RHU/MEDIC, FIRE/BFP, PNP/POLICE) + Email & Password ONLY:
+docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser MEDIC "medic.unit2@resqtrack.gov.ph" "MedicPass@2026!!"
+docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser FIRE "fire.unit2@resqtrack.gov.ph" "BfpFirePass@2026!"
+docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser PNP "pnp.unit2@resqtrack.gov.ph" "PnpPatrol@2026!"
 ```
 
 **Responder Unit Functions (`http://localhost:1997`)**:
-- **MEDIC (RHU)**: Scoped medical/vehicular incident feed, Patient Care Record (PCR) logging (`POST/GET /api/responder-ops/pcr`), GPS ping & duty readiness (`PUT /api/responder-ops/duty-status`), backup deploy requests (`/responder/request-deploy`).
-- **PNP (Police)**: Scoped crime/security/traffic feed, Police Blotter filing (`POST/GET /api/responder-ops/blotter`), incident status & GPS readiness updates, backup dispatch requests.
-- **FIRE (BFP)**: Scoped structural fire/hazmat feed, Hydrant map lookup (`GET /api/responder-ops/hydrants`), apparatus readiness (`On Duty`, `En Route`, `On Scene`, `Returning`), backup dispatch coordination.
+- **1. RHU / MEDIC**: Scoped medical/vehicular incident feed, Patient Care Record (PCR) logging (`POST/GET /api/responder-ops/pcr`), GPS ping & duty readiness (`PUT /api/responder-ops/duty-status`), backup deploy requests (`/responder/request-deploy`).
+- **2. FIRE / BFP**: Scoped structural fire/hazmat feed, Hydrant map lookup (`GET /api/responder-ops/hydrants`), apparatus readiness (`On Duty`, `En Route`, `On Scene`, `Returning`), backup dispatch coordination.
+- **3. PNP / POLICE**: Scoped crime/security/traffic feed, Police Blotter filing (`POST/GET /api/responder-ops/blotter`), incident status & GPS readiness updates, backup dispatch requests.
 
 ### Edit Responder (`edituser` & `resetpassword`)
 ```powershell
@@ -220,38 +173,29 @@ docker compose exec resqtrack-backend dotnet Backend.dll deletecliuser "pnp.sect
 
 ---
 
-## 5. Custom Civilian Commands (Create, Edit, Delete & Functions)
+## 5. Civilian Commands (Create, Edit, Delete & Functions)
 
-### Create Default or Custom Civilian (`createcivilian`, `createcustomcivilian`, `adduser`)
+> Inputs required: **Input Email** and **Input Password** ONLY.
+
+### Create Civilian (`customercreatecivilianuser` / `customcreatecivilianuser` / `createcivilian`)
 ```powershell
-# 1. Standard Civilian account (Role=Civilian, Unit=None, Verified)
-# Usage: createcivilian <email> <password> [fullName]
-docker compose exec resqtrack-backend dotnet Backend.dll createcivilian "citizen.ana@resqtrack.gov.ph" "CivilianPass@2026!" "Ana Marie Bautista"
+# Interactive Mode in Docker (Prompts ONLY "Input Email:" and "Input Password:")
+docker compose exec -it resqtrack-backend dotnet Backend.dll customercreatecivilianuser
+# Input Email: citizen.ana@resqtrack.gov.ph
+# Input Password: CivilianPass@2026!
 
-# 2. Custom Civilian with explicit Resident ID & Barangay
-# Usage: createcustomcivilian <email> <password> [fullName] [residentId] [barangay]
-docker compose exec resqtrack-backend dotnet Backend.dll createcustomcivilian "citizen.pedro@resqtrack.gov.ph" "CivilianPedro@2026!" "Pedro Penduko" "UG-RES-2026-44" "Barangay Uno"
+# Direct One-Line Mode in Docker (Email & Password ONLY)
+docker compose exec resqtrack-backend dotnet Backend.dll customercreatecivilianuser "citizen.ana@resqtrack.gov.ph" "CivilianPass@2026!"
 
-# 3. Alternative via generic adduser
-docker compose exec resqtrack-backend dotnet Backend.dll adduser "citizen.rosa@resqtrack.gov.ph" "CivilianRosa@2026!" "Rosa Mendoza" "Civilian" "None" "UG-RES-2026-88"
-```
-
-### Custom Civilian via REST API (`POST /api/users` with Residency Fields)
-```powershell
-# Reuse $headers from LDRRMO Admin login above (role=3 Civilian, unit=0 None)
-$customCivilian = @{
-  email = "citizen.elena@resqtrack.gov.ph"; password = "CivilianElena@2026!"; firstName = "Elena"; surname = "Magno"
-  role = 3; unit = 0; employeeOrResidentId = "UG-RES-2026-105"; barangay = "Barangay San Antonio"
-  phoneNumber = "0917 555 0199"; emergencyContactName = "Mario Magno"; emergencyContactPhone = "0917 555 0100"
-  governmentIdType = "PhilSys National ID"; residencyCategory = "Permanent Resident"; vulnerabilityFlags = "None"
-} | ConvertTo-Json
-Invoke-RestMethod -Uri "http://127.0.0.1:1999/api/users" -Method POST -Headers $headers -Body $customCivilian
+# Standard aliases (Email & Password ONLY)
+docker compose exec resqtrack-backend dotnet Backend.dll customcreatecivilianuser "citizen.ana@resqtrack.gov.ph" "CivilianPass@2026!"
+docker compose exec resqtrack-backend dotnet Backend.dll createcivilian "citizen.ana@resqtrack.gov.ph" "CivilianPass@2026!"
 ```
 
 **Civilian Functions (`http://localhost:1998`)**:
 - Live Camera / Photo Incident SOS Reporting (`POST /api/reports/analyze-image`, `POST /api/reports` with Roboflow + Claude Haiku 4.5 AI verification & auto-approve eligibility)
 - Live 1-BPM Distress GPS Beacon Telemetry (`POST /api/reports/{id}/beacon`)
-- Live Sector & Evacuation Safe Zones Map (`/civilian/live-map`), Personal Report History (`/civilian/my-reports`), Community Advisories (`/civilian/alerts`), Profile & Contact Updates (`PUT /api/profile`)
+- Live Sector & Evacuation Safe Zones Map (`/civilian/live-map`), Personal Report History & Response Feedback (`/civilian/my-reports`), Profile & Medical/Contact Updates (`GET/PUT /api/profile`)
 
 ### Edit Civilian (`edituser` & `resetpassword`)
 ```powershell
@@ -314,9 +258,6 @@ docker compose exec resqtrack-backend dotnet Backend.dll updatedatabase
 ## 7. Roboflow + Claude Haiku 4.5 Vision Testing Inside Docker
 
 ```powershell
-# Test standalone Python inference-sdk inside the Backend Docker container
-docker compose exec -e ROBOFLOW_API_KEY="YOUR_ROBOFLOW_KEY" resqtrack-backend python3 /app/Scripts/roboflow_accident_infer.py --image /app/server-data/uploads/reports/sample_accident.png
-
 # Verify C# Dual-Stage /api/reports/analyze-image endpoint in Docker
 $b64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes("Testing/Frontend/fixtures/assets/elena_headshot_280.png"))
 $body = @{ imageDataUrl = "data:image/png;base64,$b64"; titleHint = ""; noteHint = "" } | ConvertTo-Json -Compress
@@ -328,10 +269,10 @@ Invoke-RestMethod -Uri "http://127.0.0.1:1999/api/reports/analyze-image" -Method
 ## 8. Interactive Shortcuts via `.\start.ps1`
 
 ```powershell
-.\start.ps1 docker-up              # Runs: docker compose up -d --build
-.\start.ps1 docker-rebuild         # Runs: docker compose down -> build --no-cache -> up -d
-.\start.ps1 docker-updatedatabase  # Runs: docker compose exec/run updatedatabase
-.\start.ps1 docker-createsuperadmin <email> <password> [fullName] [unit]
-.\start.ps1 docker-createresponder <email> <password> <RHU|FIRE|PNP> [fullName]
-.\start.ps1 docker-createcivilian <email> <password> [fullName]
+.\start.ps1 docker-up                        # Runs: docker compose up -d --build
+.\start.ps1 docker-rebuild                   # Runs: docker compose down -> build --no-cache -> up -d
+.\start.ps1 docker-updatedatabase            # Runs: docker compose exec/run updatedatabase
+.\start.ps1 customcreatesuperadmin           # Prompts: Input Email & Input Password ONLY
+.\start.ps1 customcreateresponderuser        # Prompts: 1. RHU/MEDIC, 2. FIRE/BFP, 3. PNP/POLICE -> Input Email & Input Password ONLY
+.\start.ps1 customercreatecivilianuser       # Prompts: Input Email & Input Password ONLY
 ```
