@@ -55,9 +55,9 @@ public static class CliCommandRunner
     public static bool IsCliCommand(string[] rawArgs) =>
         NormalizeCommandName(rawArgs) switch
         {
-            "createsuperadmin" or "createcustomsuperadmin" or
-            "createresponder" or "createcustomresponder" or
-            "createcivilian" or "createcustomcivilian" or
+            "createsuperadmin" or "customcreatesuperadmin" or "createcustomsuperadmin" or
+            "createresponder" or "createresponders" or "customcreateresponderuser" or "createcustomresponderuser" or "customcreateresponder" or "createcustomresponder" or
+            "createcivilian" or "createcivilians" or "customercreatecivilianuser" or "customcreatecivilianuser" or "createcustomcivilianuser" or "createcustomcivilian" or "customcreatecivilian" or
             "adduser" or "edituser" or "resetpassword" or
             "listcliusers" or "deletecliuser" or "deletesuperadmin" or
             "deleteallcliusers" or "updatedatabase" or "addmigration" => true,
@@ -80,27 +80,28 @@ public static class CliCommandRunner
             switch (command)
             {
                 case "createsuperadmin":
+                case "customcreatesuperadmin":
+                case "createcustomsuperadmin":
                     await HandleCreateSuperAdminAsync(args, db);
                     break;
 
-                case "createcustomsuperadmin":
-                    await HandleCreateCustomSuperAdminAsync(args, db);
-                    break;
-
                 case "createresponder":
+                case "createresponders":
+                case "customcreateresponderuser":
+                case "createcustomresponderuser":
+                case "customcreateresponder":
+                case "createcustomresponder":
                     await HandleCreateResponderAsync(args, db);
                     break;
 
-                case "createcustomresponder":
-                    await HandleCreateCustomResponderAsync(args, db);
-                    break;
-
                 case "createcivilian":
-                    await HandleCreateCivilianAsync(args, db);
-                    break;
-
+                case "createcivilians":
+                case "customercreatecivilianuser":
+                case "customcreatecivilianuser":
+                case "createcustomcivilianuser":
                 case "createcustomcivilian":
-                    await HandleCreateCustomCivilianAsync(args, db);
+                case "customcreatecivilian":
+                    await HandleCreateCivilianAsync(args, db);
                     break;
 
                 case "adduser":
@@ -157,16 +158,49 @@ public static class CliCommandRunner
         }
     }
 
+    private static string PromptRequiredInput(string promptLabel)
+    {
+        Console.Write($"{promptLabel}: ");
+        return (Console.ReadLine() ?? string.Empty).Trim();
+    }
+
+    private static ResponderUnitType? TryParseResponderPhaseOption(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return null;
+        }
+
+        return input.Trim().ToLowerInvariant() switch
+        {
+            "1" or "rhu" or "medic" or "medical" or "rhu/medic" => ResponderUnitType.RHU,
+            "2" or "fire" or "bfp" or "fire/bfp" => ResponderUnitType.FIRE,
+            "3" or "pnp" or "police" or "pnp/police" => ResponderUnitType.PNP,
+            _ => null
+        };
+    }
+
     private static async Task HandleCreateSuperAdminAsync(string[] args, AppDbContext db)
     {
-        if (args.Length < 3)
+        string email = args.Length > 1 ? args[1].Trim() : string.Empty;
+        string password = args.Length > 2 ? args[2] : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(email))
         {
-            Console.WriteLine("[CLI_ERROR] Usage: createsuperadmin <email> <password> [fullName] [unit]");
+            email = PromptRequiredInput("Input Email");
+        }
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            password = PromptRequiredInput("Input Password");
+        }
+
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+        {
+            Console.WriteLine("[CLI_ERROR] Usage: customcreatesuperadmin <email> <password>");
             return;
         }
 
-        string email = args[1].Trim();
-        string password = args[2];
         string fullName = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3].Trim() : "LDRRMO Executive Admin";
         ResponderUnitType unit = args.Length > 4 ? ParseUnit(args[4], UserRole.LDRRMO_Admin) : ResponderUnitType.LDRRMO;
 
@@ -185,51 +219,91 @@ public static class CliCommandRunner
             label: "Super Admin");
     }
 
-    private static async Task HandleCreateCustomSuperAdminAsync(string[] args, AppDbContext db)
-    {
-        if (args.Length < 3)
-        {
-            Console.WriteLine("[CLI_ERROR] Usage: createcustomsuperadmin <email> <password> [unit] [fullName]");
-            return;
-        }
-
-        string email = args[1].Trim();
-        string password = args[2];
-        ResponderUnitType unit = args.Length > 3 ? ParseUnit(args[3], UserRole.Responder) : ResponderUnitType.RHU;
-        string fullName = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? args[4].Trim() : $"{unit} Unit Administrator";
-        UserRole role = unit == ResponderUnitType.LDRRMO ? UserRole.LDRRMO_Admin : UserRole.Responder;
-
-        await UpsertCliUserAsync(
-            db: db,
-            email: email,
-            password: password,
-            fullName: fullName,
-            role: role,
-            unit: unit,
-            employeeOrResidentId: $"{unit}-ADMIN-" + Guid.NewGuid().ToString("N")[..6].ToUpper(),
-            overrideEmployeeIdOnUpdate: false,
-            departmentOrBarangay: $"{unit} Unit Command",
-            rankOrTitle: "Unit Officer / Administrator",
-            barangay: null,
-            label: $"Custom Admin (Role: {role}, Unit: {unit})");
-    }
-
     private static async Task HandleCreateResponderAsync(string[] args, AppDbContext db)
     {
-        if (args.Length < 4)
+        ResponderUnitType? selectedUnit = null;
+        string email = string.Empty;
+        string password = string.Empty;
+        string? explicitFullName = null;
+
+        if (args.Length >= 4)
         {
-            Console.WriteLine("[CLI_ERROR] Usage: createresponder <email> <password> <unit> [fullName]");
+            // Support either:
+            //   1) customcreateresponderuser <1|2|3|RHU|FIRE|PNP> <email> <password>
+            //   2) createresponder <email> <password> <1|2|3|RHU|FIRE|PNP> [fullName]
+            var firstAsUnit = TryParseResponderPhaseOption(args[1]);
+            if (firstAsUnit.HasValue && args[2].Contains('@'))
+            {
+                selectedUnit = firstAsUnit.Value;
+                email = args[2].Trim();
+                password = args[3];
+                if (args.Length > 4) explicitFullName = args[4];
+            }
+            else
+            {
+                email = args[1].Trim();
+                password = args[2];
+                selectedUnit = TryParseResponderPhaseOption(args[3]) ?? ParseUnit(args[3], UserRole.Responder);
+                if (args.Length > 4) explicitFullName = args[4];
+            }
+        }
+        else if (args.Length == 3)
+        {
+            var firstAsUnit = TryParseResponderPhaseOption(args[1]);
+            if (firstAsUnit.HasValue)
+            {
+                selectedUnit = firstAsUnit.Value;
+                email = args[2].Trim();
+            }
+            else
+            {
+                email = args[1].Trim();
+                password = args[2];
+            }
+        }
+        else if (args.Length == 2)
+        {
+            var firstAsUnit = TryParseResponderPhaseOption(args[1]);
+            if (firstAsUnit.HasValue)
+            {
+                selectedUnit = firstAsUnit.Value;
+            }
+            else
+            {
+                email = args[1].Trim();
+            }
+        }
+
+        if (!selectedUnit.HasValue || selectedUnit.Value == ResponderUnitType.None || selectedUnit.Value == ResponderUnitType.LDRRMO)
+        {
+            Console.WriteLine("First Phase select Responders (1. RHU/MEDIC, 2. FIRE/BFP, 3. PNP/POLICE)");
+            string phaseChoice = PromptRequiredInput("Select Responder (1-3)");
+            selectedUnit = TryParseResponderPhaseOption(phaseChoice);
+            if (!selectedUnit.HasValue)
+            {
+                Console.WriteLine("[CLI_ERROR] Invalid responder selection. Choose 1 (RHU/MEDIC), 2 (FIRE/BFP), or 3 (PNP/POLICE).");
+                return;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            email = PromptRequiredInput("Input Email");
+        }
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            password = PromptRequiredInput("Input Password");
+        }
+
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+        {
+            Console.WriteLine("[CLI_ERROR] Usage: customcreateresponderuser <1|2|3|RHU|FIRE|PNP> <email> <password>");
             return;
         }
 
-        string email = args[1].Trim();
-        string password = args[2];
-        ResponderUnitType unit = ParseUnit(args[3], UserRole.Responder);
-        if (unit == ResponderUnitType.None || unit == ResponderUnitType.LDRRMO)
-        {
-            unit = ResponderUnitType.RHU;
-        }
-        string fullName = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? args[4].Trim() : $"{unit} Duty Responder";
+        ResponderUnitType unit = selectedUnit.Value;
+        string fullName = !string.IsNullOrWhiteSpace(explicitFullName) ? explicitFullName.Trim() : $"{unit} Duty Responder";
 
         await UpsertCliUserAsync(
             db: db,
@@ -246,51 +320,27 @@ public static class CliCommandRunner
             label: $"Responder ({unit})");
     }
 
-    private static async Task HandleCreateCustomResponderAsync(string[] args, AppDbContext db)
-    {
-        if (args.Length < 3)
-        {
-            Console.WriteLine("[CLI_ERROR] Usage: createcustomresponder <email> <password> [unit] [fullName] [employeeId] [rankOrTitle]");
-            return;
-        }
-
-        string email = args[1].Trim();
-        string password = args[2];
-        ResponderUnitType unit = args.Length > 3 ? ParseUnit(args[3], UserRole.Responder) : ResponderUnitType.RHU;
-        if (unit == ResponderUnitType.None || unit == ResponderUnitType.LDRRMO)
-        {
-            unit = ResponderUnitType.RHU;
-        }
-        string fullName = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? args[4].Trim() : $"{unit} Custom Responder";
-        bool hasCustomId = args.Length > 5 && !string.IsNullOrWhiteSpace(args[5]);
-        string employeeId = hasCustomId ? args[5].Trim() : $"{unit}-CUST-" + Guid.NewGuid().ToString("N")[..6].ToUpper();
-        string rankOrTitle = args.Length > 6 && !string.IsNullOrWhiteSpace(args[6]) ? args[6].Trim() : $"{unit} Field Officer";
-
-        await UpsertCliUserAsync(
-            db: db,
-            email: email,
-            password: password,
-            fullName: fullName,
-            role: UserRole.Responder,
-            unit: unit,
-            employeeOrResidentId: employeeId,
-            overrideEmployeeIdOnUpdate: hasCustomId,
-            departmentOrBarangay: $"{unit} Operations Branch",
-            rankOrTitle: rankOrTitle,
-            barangay: null,
-            label: $"Custom Responder ({unit})");
-    }
-
     private static async Task HandleCreateCivilianAsync(string[] args, AppDbContext db)
     {
-        if (args.Length < 3)
+        string email = args.Length > 1 ? args[1].Trim() : string.Empty;
+        string password = args.Length > 2 ? args[2] : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(email))
         {
-            Console.WriteLine("[CLI_ERROR] Usage: createcivilian <email> <password> [fullName]");
+            email = PromptRequiredInput("Input Email");
+        }
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            password = PromptRequiredInput("Input Password");
+        }
+
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+        {
+            Console.WriteLine("[CLI_ERROR] Usage: customercreatecivilianuser <email> <password>");
             return;
         }
 
-        string email = args[1].Trim();
-        string password = args[2];
         string fullName = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3].Trim() : "Resident Citizen";
 
         await UpsertCliUserAsync(
@@ -306,36 +356,6 @@ public static class CliCommandRunner
             rankOrTitle: "Resident Citizen",
             barangay: null,
             label: "Civilian");
-    }
-
-    private static async Task HandleCreateCustomCivilianAsync(string[] args, AppDbContext db)
-    {
-        if (args.Length < 3)
-        {
-            Console.WriteLine("[CLI_ERROR] Usage: createcustomcivilian <email> <password> [fullName] [residentId] [barangay]");
-            return;
-        }
-
-        string email = args[1].Trim();
-        string password = args[2];
-        string fullName = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3].Trim() : "Resident Citizen";
-        bool hasCustomId = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]);
-        string residentId = hasCustomId ? args[4].Trim() : "CIV-CUST-" + Guid.NewGuid().ToString("N")[..6].ToUpper();
-        string barangay = args.Length > 5 && !string.IsNullOrWhiteSpace(args[5]) ? args[5].Trim() : "Katipunan Municipality";
-
-        await UpsertCliUserAsync(
-            db: db,
-            email: email,
-            password: password,
-            fullName: fullName,
-            role: UserRole.Civilian,
-            unit: ResponderUnitType.None,
-            employeeOrResidentId: residentId,
-            overrideEmployeeIdOnUpdate: hasCustomId,
-            departmentOrBarangay: barangay,
-            rankOrTitle: "Resident Citizen",
-            barangay: barangay,
-            label: "Custom Civilian");
     }
 
     private static async Task HandleEditUserAsync(string[] args, AppDbContext db)
@@ -796,13 +816,12 @@ public static class CliCommandRunner
     private static void PrintUsage()
     {
         Console.WriteLine("ResQTrack Backend CLI Management Commands:");
-        Console.WriteLine("  createsuperadmin <email> <password> [fullName] [unit]");
-        Console.WriteLine("  createcustomsuperadmin <email> <password> [unit] [fullName]");
-        Console.WriteLine("  createresponder <email> <password> <RHU|FIRE|PNP> [fullName]");
-        Console.WriteLine("  createcustomresponder <email> <password> [unit] [fullName] [employeeId] [rankOrTitle]");
-        Console.WriteLine("  createcivilian <email> <password> [fullName]");
-        Console.WriteLine("  createcustomcivilian <email> <password> [fullName] [residentId] [barangay]");
-        Console.WriteLine("  adduser <email> <password> <fullName> <role> [unit] [employeeOrResidentId]");
+        Console.WriteLine("  customcreatesuperadmin [email] [password]              (Prompts Input Email & Input Password only)");
+        Console.WriteLine("  createsuperadmin <email> <password>                    (Alias for customcreatesuperadmin)");
+        Console.WriteLine("  customcreateresponderuser [1|2|3] [email] [password]   (Phase 1: 1. RHU/MEDIC, 2. FIRE/BFP, 3. PNP/POLICE -> Input Email & Input Password only)");
+        Console.WriteLine("  createresponder <1|2|3|RHU|FIRE|PNP> <email> <password>");
+        Console.WriteLine("  customercreatecivilianuser [email] [password]          (Prompts Input Email & Input Password only)");
+        Console.WriteLine("  createcivilian <email> <password>                      (Alias for customercreatecivilianuser)");
         Console.WriteLine("  edituser <email> [newPassword] [newEmail]");
         Console.WriteLine("  resetpassword <email> <newPassword>");
         Console.WriteLine("  listcliusers");
