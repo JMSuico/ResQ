@@ -13,10 +13,10 @@ export const ResponderAlerts: React.FC = () => (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#F7F1EA]/20 pb-4">
       <div>
         <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#E9D9D0]">
-          Katipunan Responder Operations
+          Responder Operations
         </span>
         <h1 className="text-2xl md:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
-          Consolidated Dispatch Alerts
+          Dispatch Alerts
         </h1>
       </div>
     </div>
@@ -28,10 +28,10 @@ export const ResponderAlerts: React.FC = () => (
         </div>
         <div>
           <h2 className="text-lg font-black text-[#670626]">
-            Alerts Consolidated in Dashboard &amp; Notification Bell
+            Alerts Moved to Dashboard
           </h2>
           <p className="text-sm text-[#A83B4D] font-medium mt-0.5">
-            Live incident dispatches, verification notices, and backup signals are delivered via the Responder Dashboard and top-bar Notification Bell.
+            Dispatches, verifications, and backup signals appear on the Dashboard and Notification Bell.
           </p>
         </div>
       </div>
@@ -40,7 +40,7 @@ export const ResponderAlerts: React.FC = () => (
         <div className="flex items-start gap-2.5">
           <ShieldCheck className="w-5 h-5 text-[#670626] flex-shrink-0 mt-0.5" />
           <p className="leading-relaxed">
-            Open the <strong className="text-[#670626]">Notification Bell</strong> in the top header bar at any time to acknowledge incoming dispatch alerts, or return to <strong className="text-[#670626]">Responder Dashboard</strong> for live map telemetry.
+            Use the <strong className="text-[#670626]">Notification Bell</strong> to acknowledge alerts or open the <strong className="text-[#670626]">Dashboard</strong> for live radar.
           </p>
         </div>
       </div>
@@ -54,7 +54,7 @@ export const ResponderAlerts: React.FC = () => (
             icon={<ArrowRight className="w-4 h-4" />}
             iconPosition="right"
           >
-            Go to Responder Dashboard
+            Open Dashboard
           </Button>
         </Link>
         <Link to="/responder/incidents">
@@ -64,7 +64,7 @@ export const ResponderAlerts: React.FC = () => (
             size="md"
             icon={<Radio className="w-4 h-4" />}
           >
-            View Unit Dispatches
+            Unit Dispatches
           </Button>
         </Link>
       </div>

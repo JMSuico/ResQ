@@ -1,5 +1,5 @@
 // [Layer: Backend/Services/Interfaces]
-// Responsibility: Defines responder fleet operations, status updates, PCR submissions, blotters, and alarm telemetry contracts.
+// Responsibility: Defines responder fleet operations, status updates, PCR submissions, and blotter telemetry contracts.
 // Universal lambda expressions (=>). Zero emojis.
 
 using Backend.Features.Api.DTOs;
@@ -17,7 +17,5 @@ public interface IResponderOpsService
     Task<List<PcrResponse>> GetPcrRecordsAsync(Guid? reportId = null, CancellationToken ct = default);
     Task<(bool Success, string? Error, BlotterResponse? Blotter)> FileBlotterAsync(CreateBlotterRequest request, Guid? userId = null, CancellationToken ct = default);
     Task<List<BlotterResponse>> GetBlotterEntriesAsync(Guid? reportId = null, CancellationToken ct = default);
-    Task<(bool Success, string? Error, AlarmLevelResponse? Alarm)> SetAlarmLevelAsync(SetAlarmLevelRequest request, Guid? userId = null, CancellationToken ct = default);
-    Task<List<AlarmLevelResponse>> GetAlarmStatusesAsync(Guid? reportId = null, CancellationToken ct = default);
     Task<List<HydrantResponse>> GetHydrantsAsync(CancellationToken ct = default);
 }

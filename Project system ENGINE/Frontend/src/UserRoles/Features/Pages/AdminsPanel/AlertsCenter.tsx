@@ -289,21 +289,21 @@ export const AlertsCenter: FC = () => {
       <div className={`${CLAY_SURFACE} p-5 flex flex-wrap items-center justify-between gap-4`}>
         <div>
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#A83B4D]">
-            LDRRMO Official Emergency Advisories & Safety Notifications
+            LDRRMO Advisories
           </span>
           <h1 className="text-2xl sm:text-3xl font-black text-[#670626] tracking-tight mt-0.5 flex items-center gap-2.5">
             <Bell className="w-6 h-6 text-[#A83B4D] animate-pulse" />
             Emergency Broadcasts
           </h1>
           <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
-            Broadcast Warnings are LDRRMO Official Emergency Advisories & Safety Notifications delivered via the system Notification Bell
+            Official advisories via Notification Bell
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <div className={`${CLAY_WELL} flex items-center gap-1.5 px-3.5 py-2 text-xs font-mono font-bold text-emerald-800`}>
             <Radio className="w-3.5 h-3.5 text-emerald-700 animate-pulse" />
-            <span>{isRefreshing ? 'Updating…' : 'Notification Bell Synced'}</span>
+            <span>{isRefreshing ? 'Updating…' : 'Bell Synced'}</span>
           </div>
 
           <AdminButton
@@ -315,16 +315,6 @@ export const AlertsCenter: FC = () => {
             + New Broadcast
           </AdminButton>
         </div>
-      </div>
-
-      {/* Instructor #6 Notification Bell Delivery Clarification */}
-      <div className={`${CLAY_WELL} px-4 py-3 flex items-center gap-3 text-xs sm:text-sm text-[#670626]`}>
-        <Bell className="w-4 h-4 text-[#A83B4D] flex-shrink-0" />
-        <span>
-          <strong>Notification Bell Channel:</strong> Broadcast Warnings represent{' '}
-          <strong>LDRRMO Official Emergency Advisories & Safety Notifications delivered via the system Notification Bell</strong>{' '}
-          across all Resident, Responder, and Command portals.
-        </span>
       </div>
 
       {/* 5 KPI Status Cards */}
@@ -530,7 +520,7 @@ export const AlertsCenter: FC = () => {
                 {paginatedItems.length === EMPTY_COUNT && (
                   <tr>
                     <td colSpan={7} className="text-center py-8 text-sm text-[#A83B4D] font-mono">
-                      No matching broadcast advisories found.
+                      No matching advisories.
                     </td>
                   </tr>
                 )}
@@ -648,8 +638,8 @@ export const AlertsCenter: FC = () => {
         <AdminModalCard
           isOpen={isBroadcastModalOpen}
           onClose={() => setIsBroadcastModalOpen(false)}
-          title="New Official Emergency Advisory"
-          subtitle="Delivered via the system Notification Bell to residents and responders"
+          title="New Emergency Advisory"
+          subtitle="Sent via Notification Bell to all portals"
           className="max-w-2xl"
         >
           <form onSubmit={handleSendBroadcast} className="space-y-4">

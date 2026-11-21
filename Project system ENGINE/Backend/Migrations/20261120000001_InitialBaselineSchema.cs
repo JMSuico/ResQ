@@ -55,26 +55,6 @@ namespace Backend.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "FireAlarmStatuses",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(nullable: false),
-                    ReportId = table.Column<Guid>(nullable: true),
-                    AlarmLevel = table.Column<string>(maxLength: 80, nullable: false),
-                    BuildingType = table.Column<string>(maxLength: 100, nullable: false),
-                    TrappedOccupantsCount = table.Column<int>(nullable: false),
-                    CommanderName = table.Column<string>(maxLength: 120, nullable: false),
-                    ReportingUnit = table.Column<string>(maxLength: 50, nullable: false),
-                    Remarks = table.Column<string>(maxLength: 500, nullable: false),
-                    WaterSupplyGallons = table.Column<int>(nullable: false),
-                    UpdatedAt = table.Column<DateTime>(nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_FireAlarmStatuses", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "IncidentFixtures",
                 columns: table => new
                 {
@@ -227,7 +207,7 @@ namespace Backend.Migrations
                     Sex = table.Column<string>(maxLength: 20, nullable: true),
                     BloodType = table.Column<string>(maxLength: 10, nullable: true),
                     Province = table.Column<string>(maxLength: 100, nullable: false, defaultValue: "Zamboanga del Norte"),
-                    CityOrMunicipality = table.Column<string>(maxLength: 100, nullable: false, defaultValue: "Dipolog City"),
+                    CityOrMunicipality = table.Column<string>(maxLength: 100, nullable: false, defaultValue: "Katipunan"),
                     Barangay = table.Column<string>(maxLength: 100, nullable: false),
                     StreetOrPurok = table.Column<string>(maxLength: 150, nullable: false),
                     EmergencyContactName = table.Column<string>(maxLength: 150, nullable: true),
@@ -313,7 +293,7 @@ namespace Backend.Migrations
                     EnrolledAtUtc = table.Column<DateTime>(nullable: false),
                     RevokedAtUtc = table.Column<DateTime>(nullable: true),
                     RevokedBy = table.Column<string>(maxLength: 180, nullable: true),
-                    TrainingStatus = table.Column<string>(maxLength: 40, nullable: false, defaultValue: "READY"),
+                    TrainingStatus = table.Column<string>(maxLength: 32, nullable: false, defaultValue: "READY"),
                     TrainingStartedAtUtc = table.Column<DateTime>(nullable: true),
                     TrainingReadyTargetUtc = table.Column<DateTime>(nullable: true),
                     TrainingCompletedAtUtc = table.Column<DateTime>(nullable: true),
@@ -404,7 +384,18 @@ namespace Backend.Migrations
                     VerifiedAt = table.Column<DateTime>(nullable: true),
                     ResolvedAt = table.Column<DateTime>(nullable: true),
                     SubmittedIpAddress = table.Column<string>(maxLength: 64, nullable: true),
-                    ReporterContactNumber = table.Column<string>(maxLength: 40, nullable: true)
+                    ReporterContactNumber = table.Column<string>(maxLength: 40, nullable: true),
+                    RoboflowModelId = table.Column<string>(maxLength: 120, nullable: true),
+                    RoboflowPrediction = table.Column<string>(maxLength: 64, nullable: true),
+                    RoboflowConfidence = table.Column<double>(nullable: true),
+                    RoboflowNeedsReview = table.Column<bool>(nullable: false, defaultValue: true),
+                    ClaudeModelUsed = table.Column<string>(maxLength: 64, nullable: true),
+                    ClaudeIncidentCategory = table.Column<string>(maxLength: 64, nullable: true),
+                    ClaudeSituationSummary = table.Column<string>(maxLength: 1000, nullable: true),
+                    ClaudeVisibleHazards = table.Column<string>(maxLength: 600, nullable: true),
+                    ClaudeUncertaintyNotes = table.Column<string>(maxLength: 600, nullable: true),
+                    PointerIconType = table.Column<string>(maxLength: 40, nullable: true),
+                    AiAnalysisJson = table.Column<string>(nullable: true)
                 },
                 constraints: table =>
                 {
@@ -539,16 +530,6 @@ namespace Backend.Migrations
                 table: "DutyUnits",
                 column: "UnitCode",
                 unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_FireAlarmStatuses_ReportId",
-                table: "FireAlarmStatuses",
-                column: "ReportId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_FireAlarmStatuses_UpdatedAt",
-                table: "FireAlarmStatuses",
-                column: "UpdatedAt");
 
             migrationBuilder.CreateIndex(
                 name: "IX_IdentityVerificationRecords_GovernmentIdNumber",
@@ -747,7 +728,6 @@ namespace Backend.Migrations
             migrationBuilder.DropTable(name: "AlertReadStates");
             migrationBuilder.DropTable(name: "AuditLogs");
             migrationBuilder.DropTable(name: "BiometricEnrollments");
-            migrationBuilder.DropTable(name: "FireAlarmStatuses");
             migrationBuilder.DropTable(name: "IdentityVerificationRecords");
             migrationBuilder.DropTable(name: "IncidentFixtures");
             migrationBuilder.DropTable(name: "LoginAttempts");

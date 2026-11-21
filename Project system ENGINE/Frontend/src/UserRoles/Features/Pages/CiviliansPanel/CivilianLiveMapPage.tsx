@@ -156,15 +156,16 @@ export const CivilianLiveMapPage: React.FC = () => {
       myReports.forEach((r) => {
         list.push({
           id: `my-report-${r.id}`,
-          lat: Number(r.latitude),
-          lng: Number(r.longitude),
-          title: `Your Report: ${r.title}`,
+          lat: Number(r.currentLatitude ?? r.latitude),
+          lng: Number(r.currentLongitude ?? r.longitude),
+          title: r.title,
           status: r.status || 'Reported',
           type: 'incident' as const,
           category: r.category,
           severity: r.severity,
           agency: r.recommendedAgencyUnit || undefined,
           evidenceUrl: r.hasImage ? (r.imageUrl || `/api/reports/${r.id}/image`) : undefined,
+          reportedAt: r.createdAt || r.submittedAt || undefined,
           verifiedAt: r.verifiedAt,
           requiresManualVerification: r.requiresManualVerification,
           gpsAccuracyMeters: r.gpsAccuracyMeters ?? undefined,
@@ -177,27 +178,31 @@ export const CivilianLiveMapPage: React.FC = () => {
 
     if (activeLayer === 'ALL') {
       allReports
-        .filter(
-          (r) =>
-            !myReports.some((m) => m.id === r.id) &&
-            (r.status === 'Verified' ||
-              r.status === 'Allocated' ||
-              r.status === 'EnRoute' ||
-              r.status === 'OnScene' ||
-              Boolean(r.verifiedAt))
-        )
+        .filter((r) => {
+          if (myReports.some((m) => m.id === r.id)) return false;
+          const statusUpper = (r.status || '').toUpperCase();
+          return (
+            statusUpper === 'VERIFIED' ||
+            statusUpper === 'ALLOCATED' ||
+            statusUpper === 'DISPATCHED' ||
+            statusUpper === 'ENROUTE' ||
+            statusUpper === 'ONSCENE' ||
+            Boolean(r.verifiedAt)
+          );
+        })
         .forEach((r) => {
           list.push({
             id: `community-report-${r.id}`,
-            lat: Number(r.latitude),
-            lng: Number(r.longitude),
-            title: `Verified Incident: ${r.title}`,
+            lat: Number(r.currentLatitude ?? r.latitude),
+            lng: Number(r.currentLongitude ?? r.longitude),
+            title: r.title,
             status: r.status || 'Verified',
             type: 'incident' as const,
             category: r.category,
             severity: r.severity,
             agency: r.recommendedAgencyUnit || undefined,
             evidenceUrl: r.hasImage ? (r.imageUrl || `/api/reports/${r.id}/image`) : undefined,
+            reportedAt: r.createdAt || r.submittedAt || undefined,
             verifiedAt: r.verifiedAt,
             requiresManualVerification: r.requiresManualVerification,
             gpsAccuracyMeters: r.gpsAccuracyMeters ?? undefined,
@@ -217,7 +222,7 @@ export const CivilianLiveMapPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#F7F1EA]/20 pb-4">
         <div>
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#E9D9D0]">
-            Katipunan Municipal Map
+            Katipunan Sector
           </span>
           <h1 className="text-2xl md:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
             Live Map
@@ -293,10 +298,10 @@ export const CivilianLiveMapPage: React.FC = () => {
         <div className="flex items-center justify-between text-sm font-mono px-1">
           <span className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#670626]" />
-            <strong className="text-[#670626]">Live Incident & Safe Zones Map</strong>
+            <strong className="text-[#670626]">Live Sector Map</strong>
           </span>
           <span className="text-xs font-bold text-[#A83B4D] bg-[#E9D9D0] px-2.5 py-1 rounded-lg border border-[#670626]/15">
-            {markers.length} Active Pins
+            {markers.length} Pins
           </span>
         </div>
 
@@ -324,7 +329,7 @@ export const CivilianLiveMapPage: React.FC = () => {
             to="/civilian/my-reports"
             className="text-sm font-mono font-bold text-[#670626] hover:text-[#4A041A] underline flex items-center gap-1"
           >
-            <span>Open Full History</span>
+            <span>View All</span>
             <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
@@ -333,11 +338,11 @@ export const CivilianLiveMapPage: React.FC = () => {
           <div className="p-8 text-center flex flex-col items-center justify-center gap-2.5 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
             <Radio className="w-8 h-8 text-[#A83B4D] mb-1" />
             <span className="text-sm font-bold text-[#670626]">
-              No reports submitted from your account
+              No reports yet
             </span>
             <Link to="/civilian/report" className="mt-2">
               <CivilianButton variant="danger" size="sm" className="text-sm">
-                + File Report
+                + Report Incident
               </CivilianButton>
             </Link>
           </div>
@@ -370,7 +375,7 @@ export const CivilianLiveMapPage: React.FC = () => {
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-[#A83B4D]">
                     <span className="inline-flex items-center gap-1 truncate max-w-[65%]">
                       <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-                      <span className="truncate">{r.locationLabel || 'Katipunan Sector'}</span>
+                      <span className="truncate">{r.locationLabel || 'Katipunan'}</span>
                     </span>
                     <span className="inline-flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" />
@@ -381,7 +386,7 @@ export const CivilianLiveMapPage: React.FC = () => {
                   {r.allocatedUnitCode && (
                     <div className="text-xs font-mono text-[#670626] font-bold flex items-center gap-1 pt-1 border-t border-[#670626]/10">
                       <CheckCircle2 className="w-3.5 h-3.5 text-[#670626]" />
-                      <span>Dispatched Unit: {r.allocatedUnitCode}</span>
+                      <span>Unit: {r.allocatedUnitCode}</span>
                     </div>
                   )}
                 </button>

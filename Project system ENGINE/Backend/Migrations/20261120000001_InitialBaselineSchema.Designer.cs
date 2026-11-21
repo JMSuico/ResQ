@@ -70,7 +70,7 @@ namespace Backend.Migrations
                     b.Property<string>("TrainingNotes").HasMaxLength(500);
                     b.Property<DateTime?>("TrainingReadyTargetUtc");
                     b.Property<DateTime?>("TrainingStartedAtUtc");
-                    b.Property<string>("TrainingStatus").IsRequired().HasMaxLength(40).HasDefaultValue("READY");
+                    b.Property<string>("TrainingStatus").IsRequired().HasMaxLength(32);
                     b.Property<Guid>("UserId");
 
                     b.HasKey("Id");
@@ -99,25 +99,6 @@ namespace Backend.Migrations
                     b.HasIndex("Status");
                     b.HasIndex("UnitCode").IsUnique();
                     b.ToTable("DutyUnits");
-                });
-
-            modelBuilder.Entity("Backend.Features.Data.Models.FireAlarmStatusRecord", b =>
-                {
-                    b.Property<Guid>("Id").ValueGeneratedOnAdd();
-                    b.Property<string>("AlarmLevel").IsRequired().HasMaxLength(80);
-                    b.Property<string>("BuildingType").IsRequired().HasMaxLength(100);
-                    b.Property<string>("CommanderName").IsRequired().HasMaxLength(120);
-                    b.Property<string>("Remarks").IsRequired().HasMaxLength(500);
-                    b.Property<Guid?>("ReportId");
-                    b.Property<string>("ReportingUnit").IsRequired().HasMaxLength(50);
-                    b.Property<int>("TrappedOccupantsCount");
-                    b.Property<DateTime>("UpdatedAt");
-                    b.Property<int>("WaterSupplyGallons");
-
-                    b.HasKey("Id");
-                    b.HasIndex("ReportId");
-                    b.HasIndex("UpdatedAt");
-                    b.ToTable("FireAlarmStatuses");
                 });
 
             modelBuilder.Entity("Backend.Features.Data.Models.IdentityVerificationRecord", b =>
@@ -254,10 +235,16 @@ namespace Backend.Migrations
             modelBuilder.Entity("Backend.Features.Data.Models.Report", b =>
                 {
                     b.Property<Guid>("Id").ValueGeneratedOnAdd();
+                    b.Property<string>("AiAnalysisJson");
                     b.Property<string>("AllocatedUnitCode").HasMaxLength(50);
                     b.Property<Guid?>("AllocatedUnitId");
                     b.Property<int>("BeaconCount");
                     b.Property<int>("Category");
+                    b.Property<string>("ClaudeIncidentCategory").HasMaxLength(64);
+                    b.Property<string>("ClaudeModelUsed").HasMaxLength(64);
+                    b.Property<string>("ClaudeSituationSummary").HasMaxLength(1000);
+                    b.Property<string>("ClaudeUncertaintyNotes").HasMaxLength(600);
+                    b.Property<string>("ClaudeVisibleHazards").HasMaxLength(600);
                     b.Property<DateTime>("CreatedAt");
                     b.Property<double?>("CurrentLatitude");
                     b.Property<double?>("CurrentLongitude");
@@ -270,6 +257,7 @@ namespace Backend.Migrations
                     b.Property<string>("LocationLabel").IsRequired().HasMaxLength(255);
                     b.Property<double>("Longitude");
                     b.Property<string>("Note").IsRequired().HasMaxLength(2000);
+                    b.Property<string>("PointerIconType").HasMaxLength(40);
                     b.Property<string>("RecommendedAgencyUnit").HasMaxLength(50);
                     b.Property<string>("ReferenceCode").IsRequired().HasMaxLength(32);
                     b.Property<string>("ReporterContactNumber").HasMaxLength(40);
@@ -278,6 +266,10 @@ namespace Backend.Migrations
                     b.Property<int>("ReporterRole");
                     b.Property<bool>("RequiresManualVerification");
                     b.Property<DateTime?>("ResolvedAt");
+                    b.Property<double?>("RoboflowConfidence");
+                    b.Property<string>("RoboflowModelId").HasMaxLength(120);
+                    b.Property<bool>("RoboflowNeedsReview");
+                    b.Property<string>("RoboflowPrediction").HasMaxLength(64);
                     b.Property<int>("Severity");
                     b.Property<int>("Status");
                     b.Property<string>("SubmittedIpAddress").HasMaxLength(64);
@@ -340,7 +332,7 @@ namespace Backend.Migrations
                     b.Property<string>("Barangay").IsRequired().HasMaxLength(100);
                     b.Property<string>("BfpBadgeNumber").HasMaxLength(80);
                     b.Property<string>("BloodType").HasMaxLength(10);
-                    b.Property<string>("CityOrMunicipality").IsRequired().HasMaxLength(100).HasDefaultValue("Dipolog City");
+                    b.Property<string>("CityOrMunicipality").IsRequired().HasMaxLength(100).HasDefaultValue("Katipunan");
                     b.Property<string>("ClearanceLevel").HasMaxLength(50);
                     b.Property<DateTime>("CreatedAt");
                     b.Property<DateTime?>("DateOfBirth");

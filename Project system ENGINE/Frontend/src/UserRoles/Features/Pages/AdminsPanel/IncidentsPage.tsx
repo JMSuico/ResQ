@@ -612,7 +612,7 @@ export const IncidentsPage: FC = () => {
             Dispatch Manager
           </h1>
           <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
-            Incident verification, triage, and Haversine unit auto-dispatch
+            Triage, verification &amp; unit dispatch
           </p>
         </div>
 
@@ -712,7 +712,7 @@ export const IncidentsPage: FC = () => {
               Nearby Available Units
             </h2>
             <p className="text-xs font-mono text-[#A83B4D] mt-0.5">
-              {autoDispatchOutput?.providerUsed || 'ClaudeAutoDispatchResponderStrategy'} · Ranked by distance (km) from selected incident
+              {autoDispatchOutput?.providerUsed || 'AI Dispatch'} · Distance (km)
             </p>
           </div>
 
@@ -1066,7 +1066,7 @@ export const IncidentsPage: FC = () => {
                 {paginatedItems.length === 0 && (
                   <tr>
                     <td colSpan={7} className="text-center py-8 text-sm text-[#A83B4D] font-mono">
-                      No matching incident records found.
+                      No matching incidents.
                     </td>
                   </tr>
                 )}
@@ -1276,7 +1276,7 @@ export const IncidentsPage: FC = () => {
           isOpen={!!activeDispatchIncident}
           onClose={() => setActiveDispatchIncident(null)}
           title="Dispatch Responders"
-          subtitle={`${activeDispatchIncident.title || 'Incident'} · Ranked by Haversine Distance (km)`}
+          subtitle={`${activeDispatchIncident.title || 'Incident'} · Nearest first (km)`}
           className="max-w-2xl"
         >
           <div className="space-y-4">
@@ -1447,7 +1447,7 @@ export const IncidentsPage: FC = () => {
 
             {filteredDispatchRequests.length === 0 ? (
               <div className={`${CLAY_WELL} p-8 text-center text-[#A83B4D] font-mono text-sm`}>
-                No dispatch requests match your search or filter.
+                No matching dispatch requests.
               </div>
             ) : (
               <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
@@ -1517,7 +1517,7 @@ export const IncidentsPage: FC = () => {
 
                       <div className="flex items-center justify-between pt-2.5 border-t border-[#670626]/15">
                         <span className="text-xs font-mono text-[#A83B4D]">
-                          {isPending ? 'Approval will update responder status to DEPLOY' : 'Request already actioned'}
+                          {isPending ? 'Approving sets status to DEPLOY' : 'Actioned'}
                         </span>
 
                         <div className="flex items-center gap-2">

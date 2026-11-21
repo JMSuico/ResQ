@@ -27,7 +27,6 @@ import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
 import { getIncidentFixtures, allocateReportUnit, IncidentFixture } from '@/Endpoints/adminGovernanceApi';
 import { getDutyRoster, DutyUnit } from '@/Endpoints/responderOpsApi';
 import { getAnalyticsSummary, AnalyticsSummaryDto } from '@/Endpoints/analyticsApi';
-import { requestJson } from '@/Endpoints/apiClient';
 import { SatelliteCommandMap, MapMarker } from '@/Shared/SatelliteCommandMap';
 import { LinearCurveyChart, BarGraphChart, PieGraphChart } from '@/Shared/Charts';
 import { Dropdown } from '@/Shared';
@@ -353,8 +352,7 @@ export const AdminDashboard: FC = () => {
       const [r, f, u, s] = await Promise.all([
         getAllReports().catch(() => [] as ReportItem[]),
         getIncidentFixtures().catch(() => [] as IncidentFixture[]),
-        requestJson<DutyUnit[]>('/api/responder-ops/roster', { method: 'GET' })
-          .catch(() => getDutyRoster().catch(() => [] as DutyUnit[])),
+        getDutyRoster().catch(() => [] as DutyUnit[]),
         getAnalyticsSummary().catch(() => null as AnalyticsSummaryDto | null)
       ]);
       setReports(r && r.length > 0 ? r : BASELINE_INCIDENT_REPORTS);
@@ -616,7 +614,7 @@ export const AdminDashboard: FC = () => {
       <div className={`${CLAY_SURFACE} p-5 flex flex-wrap items-center justify-between gap-4`}>
         <div>
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#A83B4D]">
-            LDRRMO Command / Katipunan, Zamboanga del Norte (7109)
+            LDRRMO · Katipunan (7109)
           </span>
           <h1 className="text-2xl sm:text-3xl font-black text-[#670626] tracking-tight mt-0.5 flex items-center gap-2.5">
             <Radio className="w-6 h-6 text-[#A83B4D] animate-pulse" />
@@ -761,7 +759,7 @@ export const AdminDashboard: FC = () => {
                 Nearby Available Units
               </h3>
               <p className="text-xs font-mono text-[#A83B4D] mt-0.5">
-                {autoDispatchOutput?.providerUsed || 'ClaudeAutoDispatchResponderStrategy'} · Ranked by distance (km)
+                {autoDispatchOutput?.providerUsed || 'AI Dispatch'} · Distance (km)
               </p>
             </div>
             {focusedIncident && !focusedIncident.allocatedUnitCode && (
@@ -1026,7 +1024,7 @@ export const AdminDashboard: FC = () => {
               {topTenIncidents.length === 0 && (
                 <tr>
                   <td colSpan={8} className="text-center py-6 text-sm text-[#A83B4D] font-mono">
-                    No active incident records detected in database telemetry.
+                    No incident records found.
                   </td>
                 </tr>
               )}
@@ -1041,7 +1039,7 @@ export const AdminDashboard: FC = () => {
           isOpen={isViewAllModalOpen}
           onClose={() => setIsViewAllModalOpen(false)}
           title={`All Incidents (${reports.length})`}
-          subtitle="Complete Katipunan municipal incident feed"
+          subtitle="Katipunan incident feed"
           className="max-w-4xl max-h-[85vh] flex flex-col"
         >
           <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">

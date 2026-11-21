@@ -255,22 +255,6 @@ public static class DatabaseSeeder
                     );
                 END
 
-                IF OBJECT_ID(N'dbo.FireAlarmStatuses', N'U') IS NULL
-                BEGIN
-                    CREATE TABLE [FireAlarmStatuses] (
-                        [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
-                        [ReportId] UNIQUEIDENTIFIER NULL,
-                        [AlarmLevel] NVARCHAR(80) NOT NULL,
-                        [BuildingType] NVARCHAR(100) NOT NULL,
-                        [TrappedOccupantsCount] INT NOT NULL,
-                        [CommanderName] NVARCHAR(120) NOT NULL,
-                        [ReportingUnit] NVARCHAR(50) NOT NULL,
-                        [Remarks] NVARCHAR(500) NOT NULL,
-                        [WaterSupplyGallons] INT NOT NULL,
-                        [UpdatedAt] DATETIME2 NOT NULL
-                    );
-                END
-
                 IF OBJECT_ID(N'dbo.IdentityVerificationRecords', N'U') IS NULL
                 BEGIN
                     CREATE TABLE [IdentityVerificationRecords] (

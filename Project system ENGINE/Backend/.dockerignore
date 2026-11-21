@@ -7,5 +7,4 @@ server-data/uploads/
 .idea/
 *.user
 *.suo
-*.Local.json
 .env

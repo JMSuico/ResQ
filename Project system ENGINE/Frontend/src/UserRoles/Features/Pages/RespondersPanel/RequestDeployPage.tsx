@@ -739,7 +739,7 @@ export const RequestDeployPage: FC = () => {
             Request &amp; Deploy
           </h1>
           <p className="text-sm text-[#5B2A35] font-medium">
-            Unit-scoped dispatch ledger strictly filtered for {agencyMeta.shortUnit}
+            {agencyMeta.shortUnit} dispatch queue
           </p>
         </div>
 
@@ -766,7 +766,7 @@ export const RequestDeployPage: FC = () => {
             icon={<Send className="w-4 h-4" />}
             onClick={() => setIsCreateModalOpen(true)}
           >
-            REQUEST TO DISPATCH OR DEPLOY
+            Request Deploy
           </ResponderButton>
         </div>
       </div>
@@ -864,7 +864,7 @@ export const RequestDeployPage: FC = () => {
             <SearchBar
               value={searchQuery}
               onChange={setSearchQuery}
-              placeholder="Search by Incident Code, Title, Location, GPS Coordinates, IP Address, or Status..."
+              placeholder="Search code, title, location, GPS, IP, status..."
             />
           </div>
 
@@ -877,10 +877,10 @@ export const RequestDeployPage: FC = () => {
               value={sortBy}
               onChange={(val) => setSortBy(val as SortOptionKey)}
               items={[
-                { label: 'Newest Updated', value: 'NEWEST' },
-                { label: 'Oldest First', value: 'OLDEST' },
-                { label: 'Highest Severity', value: 'SEVERITY_HIGH' },
-                { label: 'Status State', value: 'STATUS' }
+                { label: 'Newest', value: 'NEWEST' },
+                { label: 'Oldest', value: 'OLDEST' },
+                { label: 'Severity', value: 'SEVERITY_HIGH' },
+                { label: 'Status', value: 'STATUS' }
               ]}
             />
           </div>
@@ -906,7 +906,7 @@ export const RequestDeployPage: FC = () => {
                 {paginatedItems.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-12 text-center text-[#5B2A35]">
-                      No {activeAgency} dispatch requests or deployment orders match your current filter.
+                      No matching {activeAgency} dispatches.
                     </td>
                   </tr>
                 ) : (
@@ -1008,9 +1008,9 @@ export const RequestDeployPage: FC = () => {
                                 size="xs"
                                 icon={<Sparkles className="w-3.5 h-3.5" />}
                                 onClick={() => void handleSimulateAdminApprove(item)}
-                                title="Approve request to transition PENDING -> DEPLOY"
+                                title="Approve deployment"
                               >
-                                Approve &rarr; DEPLOY
+                                Approve
                               </ResponderButton>
                             )}
 
@@ -1037,7 +1037,7 @@ export const RequestDeployPage: FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {paginatedItems.length === 0 ? (
             <div className="col-span-full clay-surface bg-[#F7F1EA] text-[#5B2A35] border border-[#670626]/15 rounded-2xl p-12 text-center text-sm">
-              No {activeAgency} dispatch requests or deployment orders match your current filter.
+              No matching {activeAgency} dispatches.
             </div>
           ) : (
             paginatedItems.map((item) => {
@@ -1141,7 +1141,7 @@ export const RequestDeployPage: FC = () => {
                           icon={<Sparkles className="w-3.5 h-3.5" />}
                           onClick={() => void handleSimulateAdminApprove(item)}
                         >
-                          Approve &rarr; DEPLOY
+                          Approve
                         </ResponderButton>
                         <ResponderButton
                           variant="outline"
@@ -1179,10 +1179,9 @@ export const RequestDeployPage: FC = () => {
       <div className="clay-surface flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 rounded-2xl px-4 py-3.5 text-sm">
         <div className="flex items-center gap-3 text-[#5B2A35] font-mono">
           <span>
-            Showing{' '}
-            <strong className="text-[#670626]">{totalItems === 0 ? 0 : startIndex + 1}</strong> to{' '}
+            <strong className="text-[#670626]">{totalItems === 0 ? 0 : startIndex + 1}</strong>–
             <strong className="text-[#670626]">{endIndex}</strong> of{' '}
-            <strong className="text-[#670626]">{totalItems}</strong> {activeAgency} dispatch records
+            <strong className="text-[#670626]">{totalItems}</strong>
           </span>
           <select
             value={pageSize}
@@ -1262,7 +1261,7 @@ export const RequestDeployPage: FC = () => {
                     icon={<Sparkles className="w-4 h-4" />}
                     onClick={() => void handleSimulateAdminApprove(selectedRecord)}
                   >
-                    APPROVE REQUEST &rarr; DEPLOY
+                    Approve Deploy
                   </ResponderButton>
                 )}
                 {selectedRecord.status === 'TO BE DEPLOYED' && (
@@ -1273,7 +1272,7 @@ export const RequestDeployPage: FC = () => {
                       icon={<Check className="w-4 h-4" />}
                       onClick={() => void handleAdminOrderDecision(selectedRecord, 'ACCEPT')}
                     >
-                      ACCEPT DEPLOYMENT
+                      Accept
                     </ResponderButton>
                     <ResponderButton
                       variant="danger"
@@ -1281,7 +1280,7 @@ export const RequestDeployPage: FC = () => {
                       icon={<X className="w-4 h-4" />}
                       onClick={() => void handleAdminOrderDecision(selectedRecord, 'DECLINE')}
                     >
-                      DECLINE ORDER
+                      Decline
                     </ResponderButton>
                   </>
                 )}
@@ -1291,7 +1290,7 @@ export const RequestDeployPage: FC = () => {
                 size="sm"
                 onClick={() => setSelectedRecord(null)}
               >
-                Close Window
+                Close
               </ResponderButton>
             </div>
           ) : undefined
@@ -1323,7 +1322,7 @@ export const RequestDeployPage: FC = () => {
               </div>
               <div className="absolute bottom-3 left-3 right-3 text-[#F7F1EA]">
                 <p className="font-mono text-xs text-[#FFD9DD]">
-                  OPTICAL EVIDENCE FEED • VERIFIED TELEMETRY
+                  Verified Evidence
                 </p>
                 <p className="text-base font-bold">{selectedRecord.incidentTitle}</p>
               </div>
@@ -1332,14 +1331,14 @@ export const RequestDeployPage: FC = () => {
             <div className="clay-well grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-[#E9D9D0] border border-[#670626]/15 rounded-xl p-4">
               <div className="space-y-1">
                 <span className="text-xs font-mono uppercase text-[#A83B4D] font-bold flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5" /> Physical Address
+                  <MapPin className="w-3.5 h-3.5" /> Address
                 </span>
                 <p className="font-semibold text-[#2B010E]">{selectedRecord.location}</p>
               </div>
 
               <div className="space-y-1">
                 <span className="text-xs font-mono uppercase text-[#A83B4D] font-bold flex items-center gap-1.5">
-                  <Crosshair className="w-3.5 h-3.5" /> Hardware GPS Coordinates
+                  <Crosshair className="w-3.5 h-3.5" /> GPS Coordinates
                 </span>
                 <p className="font-mono font-bold text-[#670626]">
                   {selectedRecord.coordinates}
@@ -1348,7 +1347,7 @@ export const RequestDeployPage: FC = () => {
 
               <div className="space-y-1">
                 <span className="text-xs font-mono uppercase text-[#A83B4D] font-bold flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5" /> Reporter / Device IP Address
+                  <Globe className="w-3.5 h-3.5" /> Device IP
                 </span>
                 <p className="font-mono text-[#2B010E]">{selectedRecord.ipAddress}</p>
               </div>
@@ -1416,8 +1415,8 @@ export const RequestDeployPage: FC = () => {
       <ResponderModalCard
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        title={`REQUEST TO DISPATCH OR DEPLOY (${agencyMeta.label})`}
-        subtitle="Submits a unit-scoped dispatch request with state PENDING until LDRRMO Admin approves for DEPLOY."
+        title={`Request Deploy (${agencyMeta.label})`}
+        subtitle="Submits a pending request for LDRRMO Admin approval."
         size="xl"
       >
         <form onSubmit={handleCreateUnitRequest} className="space-y-4 text-sm text-[#2B010E]">
@@ -1433,14 +1432,14 @@ export const RequestDeployPage: FC = () => {
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setFormTitle(e.target.value)
                 }
-                placeholder={`e.g., ${agencyMeta.defaultCategory} — Brgy. Uno, Katipunan`}
+                placeholder={`e.g., ${agencyMeta.defaultCategory}`}
                 className="w-full bg-[#E9D9D0] border border-[#670626]/20 rounded-xl px-3.5 py-2.5 text-[#2B010E] placeholder-[#A83B4D]/75 focus:outline-none focus:border-[#670626]"
               />
             </div>
 
             <div>
               <label className="block text-xs font-mono font-bold uppercase text-[#670626] mb-1.5">
-                Incident Reference Code
+                Reference Code
               </label>
               <input
                 type="text"
@@ -1448,7 +1447,7 @@ export const RequestDeployPage: FC = () => {
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setFormIncidentCode(e.target.value)
                 }
-                placeholder={`Auto-generated if blank (e.g. ${agencyMeta.codePrefix}-2026-9102)`}
+                placeholder="Auto-generated if blank"
                 className="w-full bg-[#E9D9D0] border border-[#670626]/20 rounded-xl px-3.5 py-2.5 text-[#2B010E] font-mono placeholder-[#A83B4D]/75 focus:outline-none focus:border-[#670626]"
               />
             </div>
@@ -1457,7 +1456,7 @@ export const RequestDeployPage: FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
               <label className="block text-xs font-mono font-bold uppercase text-[#670626] mb-1.5">
-                Physical Address / Barangay *
+                Address / Barangay *
               </label>
               <input
                 type="text"
@@ -1466,14 +1465,14 @@ export const RequestDeployPage: FC = () => {
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setFormLocation(e.target.value)
                 }
-                placeholder="e.g., National Highway, Barangay Dos, Katipunan, ZN"
+                placeholder="e.g., National Highway, Brgy. Dos, Katipunan"
                 className="w-full bg-[#E9D9D0] border border-[#670626]/20 rounded-xl px-3.5 py-2.5 text-[#2B010E] placeholder-[#A83B4D]/75 focus:outline-none focus:border-[#670626]"
               />
             </div>
 
             <div>
               <label className="block text-xs font-mono font-bold uppercase text-[#670626] mb-1.5">
-                Priority Severity
+                Severity
               </label>
               <select
                 value={formSeverity}
@@ -1482,10 +1481,10 @@ export const RequestDeployPage: FC = () => {
                 }
                 className="w-full bg-[#E9D9D0] border border-[#670626]/20 rounded-xl px-3.5 py-2.5 text-[#2B010E] font-semibold focus:outline-none focus:border-[#670626]"
               >
-                <option value="Critical">Critical (Immediate Response)</option>
-                <option value="High">High (Urgent Deployment)</option>
-                <option value="Moderate">Moderate (Standard Support)</option>
-                <option value="Low">Low (Routine Advisory)</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Moderate">Moderate</option>
+                <option value="Low">Low</option>
               </select>
             </div>
           </div>
@@ -1507,7 +1506,7 @@ export const RequestDeployPage: FC = () => {
 
             <div>
               <label className="block text-xs font-mono font-bold uppercase text-[#670626] mb-1.5">
-                Source IP Telemetry
+                Source IP
               </label>
               <input
                 type="text"
@@ -1522,7 +1521,7 @@ export const RequestDeployPage: FC = () => {
 
           <div>
             <label className="block text-xs font-mono font-bold uppercase text-[#670626] mb-1.5">
-              Evidence Image URL (Optional — Katipunan SVG Telemetry Used If Blank)
+              Evidence URL (Optional)
             </label>
             <input
               type="url"
@@ -1530,14 +1529,14 @@ export const RequestDeployPage: FC = () => {
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 setFormEvidenceUrl(e.target.value)
               }
-              placeholder="Optional uploaded capture URL..."
+              placeholder="Optional image URL..."
               className="w-full bg-[#E9D9D0] border border-[#670626]/20 rounded-xl px-3.5 py-2.5 text-[#2B010E] font-mono placeholder-[#A83B4D]/75 focus:outline-none focus:border-[#670626]"
             />
           </div>
 
           <div>
             <label className="block text-xs font-mono font-bold uppercase text-[#670626] mb-1.5">
-              Field Assessment &amp; Resource Notes
+              Field Notes
             </label>
             <textarea
               rows={3}
@@ -1545,7 +1544,7 @@ export const RequestDeployPage: FC = () => {
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                 setFormNotes(e.target.value)
               }
-              placeholder="Describe scene status, casualties or hazards, and required unit equipment..."
+              placeholder="Scene status, hazards, and required gear..."
               className="w-full bg-[#E9D9D0] border border-[#670626]/20 rounded-xl px-3.5 py-2.5 text-[#2B010E] placeholder-[#A83B4D]/75 focus:outline-none focus:border-[#670626]"
             />
           </div>
@@ -1566,7 +1565,7 @@ export const RequestDeployPage: FC = () => {
               isLoading={isSubmitting}
               icon={<Send className="w-4 h-4" />}
             >
-              REQUEST TO DISPATCH OR DEPLOY
+              Submit Request
             </ResponderButton>
           </div>
         </form>

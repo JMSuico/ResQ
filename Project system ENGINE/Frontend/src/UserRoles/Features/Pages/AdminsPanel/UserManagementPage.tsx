@@ -314,7 +314,7 @@ export const UserManagementPage: React.FC = () => {
               User Management
             </h1>
             <p className="text-sm text-[#A83B4D] font-mono">
-              Identity accounts, Katipunan residency registry, and access control
+              Accounts, residency &amp; access control
             </p>
           </div>
 
@@ -487,9 +487,9 @@ export const UserManagementPage: React.FC = () => {
                 <tr>
                   <td colSpan={TABLE_COLUMNS_COUNT} className="py-16 text-center text-[#A83B4D]">
                     <Search className="w-10 h-10 mx-auto mb-3 opacity-60" />
-                    <div className="font-bold text-[#670626] text-base">No Matching Personnel Found</div>
+                    <div className="font-bold text-[#670626] text-base">No Matching Accounts</div>
                     <p className="text-sm mt-1 max-w-md mx-auto">
-                      Adjust your search filters or enroll a new official into the registry.
+                      Adjust filters or add a new user.
                     </p>
                   </td>
                 </tr>

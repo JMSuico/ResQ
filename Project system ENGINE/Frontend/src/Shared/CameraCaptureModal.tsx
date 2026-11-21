@@ -1,13 +1,15 @@
 // [Layer: Shared]
 // Responsibility: WebRTC live camera modal with anti-spoofing single-snap, zero-retake enforcement,
-// zero file gallery upload bypass, burnt-in GPS HUD watermark, and dynamically adjusting Laplacian blurriness detection.
-// Universal lambda expressions (=>).
+// clean un-watermarked AI analysis frame capture, slim translucent telemetry badge, Laplacian clarity check,
+// and real-time Roboflow + Claude Haiku 4.5 incident pre-verification indicator.
+// Universal lambda expressions (=>). ZERO 'any', ZERO emojis.
 
 import React, { FC, useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, AlertTriangle, CheckCircle2, Check } from 'lucide-react';
+import { Camera, AlertTriangle, CheckCircle2, Check, RefreshCw, Sparkles } from 'lucide-react';
 import { DefaultFloatingModalCard } from './DefaultFloatingModalCard';
 import { Button } from './Button';
 import { useGpsLocation } from '../Hooks/useGpsLocation';
+import { analyzeIncidentImage, IncidentImageAiAnalysisResponse } from '@/Endpoints/reportsApi';
 import {
   computeLaplacianVariance,
   calculateDynamicClarityThreshold,
@@ -15,6 +17,11 @@ import {
   CANVAS_WIDTH,
   CANVAS_HEIGHT
 } from '@/Libs/Vision/cameraClarityHelper';
+
+export type CameraCaptureAiPreview = IncidentImageAiAnalysisResponse & {
+  autoApproveEligible?: boolean;
+  aiVerificationStatus?: string | null;
+};
 
 export interface CameraCaptureMetadata {
   isBlurry: boolean;
@@ -26,6 +33,8 @@ export interface CameraCaptureMetadata {
   longitude: number;
   accuracyMeters: number;
   isHardwareGeolocated: boolean;
+  analysisImageDataUrl?: string;
+  aiPreview?: CameraCaptureAiPreview;
 }
 
 export interface CameraCaptureModalProps {
@@ -45,29 +54,36 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isMountedOpenRef = useRef<boolean>(false);
 
   const { coords, isHardwareGeolocated, signalQuality } = useGpsLocation();
 
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
+  const [cleanAnalysisUrl, setCleanAnalysisUrl] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isUsingFallback, setIsUsingFallback] = useState<boolean>(false);
   const [blurrinessScore, setBlurrinessScore] = useState<number | null>(null);
   const [activeThreshold, setActiveThreshold] = useState<number>(DEFAULT_CLARITY_THRESHOLD);
   const [thresholdReasoning, setThresholdReasoning] = useState<string>(`Default: ${DEFAULT_CLARITY_THRESHOLD}`);
   const [isBlurry, setIsBlurry] = useState<boolean>(false);
+  const [isAnalyzingAi, setIsAnalyzingAi] = useState<boolean>(false);
+  const [aiPreview, setAiPreview] = useState<CameraCaptureAiPreview | null>(null);
 
-  // Initialize WebRTC Camera Stream
   useEffect(() => {
+    isMountedOpenRef.current = isOpen;
     if (!isOpen) {
       if (stream) {
         stream.getTracks().forEach((track) => track.stop());
         setStream(null);
       }
       setCapturedUrl(null);
+      setCleanAnalysisUrl(null);
       setCameraError(null);
       setBlurrinessScore(null);
       setIsBlurry(false);
+      setIsAnalyzingAi(false);
+      setAiPreview(null);
       setActiveThreshold(DEFAULT_CLARITY_THRESHOLD);
       return;
     }
@@ -75,14 +91,14 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
     const startCamera = async () => {
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error('WebRTC live camera not supported on this browser.');
+          throw new Error('Live camera unavailable on this browser.');
         }
 
         const mediaStream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: CANVAS_WIDTH },
             height: { ideal: CANVAS_HEIGHT },
-            facingMode: 'environment' // Back camera for incident capturing
+            facingMode: 'environment'
           },
           audio: false
         });
@@ -94,7 +110,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
         }
         setIsUsingFallback(false);
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Camera inaccessible. Synthetic sensor frame active.';
+        const msg = err instanceof Error ? err.message : 'Camera unavailable — synthetic frame active.';
         setCameraError(msg);
         setIsUsingFallback(true);
       }
@@ -109,7 +125,27 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
     };
   }, [isOpen]);
 
-  // Single-Snap Capture with Burn-in Watermark and Dynamic Laplacian Check
+  const runLiveAiPreCheck = useCallback(async (cleanDataUrl: string) => {
+    setIsAnalyzingAi(true);
+    setAiPreview(null);
+    try {
+      const res = (await analyzeIncidentImage({
+        imageDataUrl: cleanDataUrl
+      })) as CameraCaptureAiPreview;
+      if (isMountedOpenRef.current) {
+        setAiPreview(res);
+      }
+    } catch {
+      if (isMountedOpenRef.current) {
+        setAiPreview(null);
+      }
+    } finally {
+      if (isMountedOpenRef.current) {
+        setIsAnalyzingAi(false);
+      }
+    }
+  }, []);
+
   const handleCaptureFrame = useCallback(() => {
     const canvas = canvasRef.current || document.createElement('canvas');
     canvas.width = CANVAS_WIDTH;
@@ -129,12 +165,10 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
     if (videoRef.current && !isUsingFallback && stream) {
       ctx.drawImage(videoRef.current, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     } else {
-      // Synthetic tactical frame when running in headless/mock camera environments
-      ctx.fillStyle = '#071522';
+      ctx.fillStyle = '#2B010E';
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-      // Grid
-      ctx.strokeStyle = '#1e293b';
+      ctx.strokeStyle = '#670626';
       ctx.lineWidth = 1;
       for (let x = 0; x < CANVAS_WIDTH; x += 80) {
         ctx.beginPath();
@@ -149,22 +183,25 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
         ctx.stroke();
       }
 
-      // Tactical Reticle
-      ctx.strokeStyle = '#e8114c';
+      ctx.strokeStyle = '#E9D9D0';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 120, 0, Math.PI * 2);
+      ctx.arc(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 110, 0, Math.PI * 2);
       ctx.stroke();
 
-      ctx.fillStyle = '#f43f5e';
-      ctx.font = 'bold 24px monospace';
-      ctx.fillText('RESQTRACK SYNTHETIC SENSOR FRAME', CANVAS_WIDTH / 2 - 240, CANVAS_HEIGHT / 2 - 20);
-      ctx.font = '16px monospace';
-      ctx.fillStyle = '#94a3b8';
-      ctx.fillText('CAMERA ACCESS RESTRICTED / SYNTHETIC ACTIVE', CANVAS_WIDTH / 2 - 210, CANVAS_HEIGHT / 2 + 30);
+      ctx.fillStyle = '#F7F1EA';
+      ctx.font = 'bold 22px monospace';
+      ctx.fillText('RESQTRACK SYNTHETIC SENSOR', CANVAS_WIDTH / 2 - 180, CANVAS_HEIGHT / 2 - 12);
+      ctx.font = '15px monospace';
+      ctx.fillStyle = '#E9D9D0';
+      ctx.fillText('CAMERA STANDBY / SYNTHETIC FRAME', CANVAS_WIDTH / 2 - 165, CANVAS_HEIGHT / 2 + 24);
     }
 
-    // Run Laplacian blurriness variance test BEFORE watermark
+    // 1. Capture clean un-watermarked pixels for AI object detection BEFORE drawing any overlay
+    const cleanDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    setCleanAnalysisUrl(cleanDataUrl);
+
+    // 2. Run Laplacian blurriness variance test on clean pixels
     const { variance, meanLuminance } = computeLaplacianVariance(ctx, CANVAS_WIDTH, CANVAS_HEIGHT);
     const dynamicCheck = calculateDynamicClarityThreshold(CANVAS_WIDTH, CANVAS_HEIGHT, meanLuminance, trackSettings);
     const blurry = variance < dynamicCheck.threshold;
@@ -174,82 +211,83 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
     setThresholdReasoning(dynamicCheck.reasoning);
     setIsBlurry(blurry);
 
-    // Burn-in Tactical Telemetry Watermark directly onto canvas pixels
-    const nowIso = new Date().toISOString();
-    const latFormatted = `${coords.latitude.toFixed(6)}° N`;
-    const lngFormatted = `${coords.longitude.toFixed(6)}° E`;
-    const accuracyFormatted = `±${Math.round(coords.accuracy)}m`;
-    const gpsStatusText = isHardwareGeolocated
-      ? `GPS HARDWARE LOCK [ACC: ${accuracyFormatted} // QUALITY: ${signalQuality.toUpperCase()}]`
-      : `SECTOR MUNICIPAL BASE [NO SATELLITE LOCK]`;
+    // 3. Burn a compact, slim translucent 36px telemetry badge on the display copy
+    const nowTime = new Date().toISOString().slice(11, 19);
+    const gpsTag = isHardwareGeolocated ? `GPS ${signalQuality.toUpperCase()}` : 'SECTOR GPS';
+    const badgeHeight = 36;
 
-    // Bottom Watermark Ribbon
-    ctx.fillStyle = 'rgba(7, 21, 34, 0.88)';
-    ctx.fillRect(0, CANVAS_HEIGHT - 90, CANVAS_WIDTH, 90);
+    ctx.fillStyle = 'rgba(43, 1, 14, 0.72)';
+    ctx.fillRect(0, CANVAS_HEIGHT - badgeHeight, CANVAS_WIDTH, badgeHeight);
+    ctx.fillStyle = '#670626';
+    ctx.fillRect(0, CANVAS_HEIGHT - badgeHeight, CANVAS_WIDTH, 2);
 
-    ctx.fillStyle = '#e8114c';
-    ctx.fillRect(0, CANVAS_HEIGHT - 90, CANVAS_WIDTH, 3); // Red accent border
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 16px "Montserrat", sans-serif';
-    ctx.fillText('RESQTRACK EVIDENCE', 24, CANVAS_HEIGHT - 58);
-
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = '13px "JetBrains Mono", monospace';
-    ctx.fillText(`COORDS: ${latFormatted}, ${lngFormatted}  |  STATUS: ${gpsStatusText}`, 24, CANVAS_HEIGHT - 34);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '12px "JetBrains Mono", monospace';
+    ctx.fillStyle = '#F7F1EA';
+    ctx.font = 'bold 12px "JetBrains Mono", monospace';
     ctx.fillText(
-      `TIME: ${nowIso}  |  CLARITY: ${variance} (TARGET: ${dynamicCheck.threshold}) [${blurry ? 'BLURRY - REQUIRES MANUAL REVIEW' : 'CRISP'}]`,
-      24,
-      CANVAS_HEIGHT - 12
+      `RESQTRACK  |  ${coords.latitude.toFixed(5)}N, ${coords.longitude.toFixed(5)}E (±${Math.round(coords.accuracy)}m ${gpsTag})  |  CLARITY ${variance}/${dynamicCheck.threshold}  |  ${nowTime}Z`,
+      16,
+      CANVAS_HEIGHT - 13
     );
 
-    const dataUrl = canvas.toDataURL('image/png');
-    setCapturedUrl(dataUrl);
+    const displayDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    setCapturedUrl(displayDataUrl);
 
     // Stop video stream immediately upon single snapshot
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
       setStream(null);
     }
-  }, [coords, isHardwareGeolocated, signalQuality, isUsingFallback, stream]);
+
+    // 4. Immediately trigger live AI pre-check on the clean un-watermarked frame
+    void runLiveAiPreCheck(cleanDataUrl);
+  }, [coords, isHardwareGeolocated, signalQuality, isUsingFallback, stream, runLiveAiPreCheck]);
 
   const handleConfirmAndSend = () => {
     if (!capturedUrl) return;
 
+    const aiConfirmedGenuine =
+      Boolean(aiPreview?.isGenuineIncident) && !aiPreview?.roboflowNeedsReview;
+    const requiresManualVerification = aiPreview
+      ? isBlurry || !aiConfirmedGenuine
+      : isBlurry;
+
     onCapture(capturedUrl, {
       isBlurry,
-      requiresManualVerification: true, // Always enter as unverified Submitted/Pending for Responder/Admin review
+      requiresManualVerification,
       varianceScore: blurrinessScore || 100,
       dynamicThreshold: activeThreshold,
       thresholdReasoning,
       latitude: coords.latitude,
       longitude: coords.longitude,
       accuracyMeters: coords.accuracy,
-      isHardwareGeolocated
+      isHardwareGeolocated,
+      analysisImageDataUrl: cleanAnalysisUrl || capturedUrl,
+      aiPreview: aiPreview ?? undefined
     });
 
     onClose();
   };
 
   const handleDiscardAndClose = () => {
+    isMountedOpenRef.current = false;
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
       setStream(null);
     }
     setCapturedUrl(null);
+    setCleanAnalysisUrl(null);
+    setAiPreview(null);
+    setIsAnalyzingAi(false);
     onClose();
   };
 
   return (
     <DefaultFloatingModalCard isOpen={isOpen} onClose={handleDiscardAndClose} title={title} maxWidth="2xl">
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-[#5C313E] leading-relaxed">{instructionText}</p>
+        <p className="text-sm text-[#5C313E] leading-snug">{instructionText}</p>
 
         {/* Live Viewfinder / Single Snapshot Freeze */}
-        <div className="relative aspect-video bg-[#240812] rounded-2xl overflow-hidden border-2 border-[#E9D9D0] shadow-[inset_0_2px_6px_rgba(0,0,0,0.45)] flex items-center justify-center">
+        <div className="relative aspect-video bg-[#2B010E] rounded-2xl overflow-hidden border-2 border-[#E9D9D0] shadow-[inset_0_2px_6px_rgba(0,0,0,0.45)] flex items-center justify-center">
           {capturedUrl ? (
             <img src={capturedUrl} alt="Captured evidence" className="w-full h-full object-cover" />
           ) : !isUsingFallback ? (
@@ -260,7 +298,9 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
                 <Camera className="w-6 h-6" />
               </div>
               <p className="text-sm font-semibold text-[#F7F1EA]">Live Camera Standby</p>
-              <p className="text-xs text-[#E9D9D0]/80 max-w-xs">{cameraError || 'Hardware camera unavailable in this environment. Synthetic emergency capture active.'}</p>
+              <p className="text-xs text-[#E9D9D0]/80 max-w-xs">
+                {cameraError || 'Camera unavailable — synthetic frame active.'}
+              </p>
             </div>
           )}
 
@@ -269,41 +309,92 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
             <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping" />
             <span>GPS: {coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}</span>
           </div>
-        </div>
 
-        {/* Quality Assessment & Blurriness Banner */}
-        {capturedUrl && (
-          <div className={`p-3 rounded-xl border text-sm flex items-center justify-between ${
-            isBlurry
-              ? 'bg-amber-50 border-amber-300 text-amber-900'
-              : 'bg-emerald-50 border-emerald-300 text-emerald-900'
-          }`}>
-            <div className="flex items-center gap-2">
-              <span className="text-base">
-                {isBlurry ? (
-                  <AlertTriangle className="w-4 h-4 text-amber-700 inline-block" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-700 inline-block" />
-                )}
-              </span>
-              <div>
-                <p className="font-semibold">
-                  {isBlurry
-                    ? `Low Clarity (${blurrinessScore} / ${activeThreshold})`
-                    : `Clear Photo (${blurrinessScore} / ${activeThreshold})`}
-                </p>
-                <p className="text-xs opacity-90">
-                  {isBlurry
-                    ? 'Flagged for manual clarity review. Submitted pending Responder/Admin verification.'
-                    : 'Clarity checked. Submitted pending Responder/Admin verification.'}
-                </p>
+          {/* Live AI Processing Scan Overlay on Captured Preview */}
+          {capturedUrl && isAnalyzingAi && (
+            <div className="absolute inset-0 bg-[#2B010E]/55 backdrop-blur-[2px] flex flex-col items-center justify-center p-4 text-center gap-2.5">
+              <div className="w-full max-w-xs h-1.5 rounded-full bg-[#F7F1EA]/25 overflow-hidden">
+                <div className="h-full w-1/2 bg-[#F7F1EA] rounded-full animate-pulse" />
+              </div>
+              <div className="px-4 py-2.5 rounded-xl bg-[#F7F1EA] text-[#670626] border border-[#670626]/30 shadow-lg flex items-center gap-2.5">
+                <RefreshCw className="w-4 h-4 animate-spin text-[#670626] flex-shrink-0" />
+                <div className="text-left">
+                  <p className="text-xs font-mono font-black uppercase">AI Processing &amp; Verifying Incident...</p>
+                  <p className="text-[11px] font-mono text-[#A83B4D]">
+                    Checking Scene Clarity -&gt; Running Roboflow &amp; Claude Haiku 4.5 Verification...
+                  </p>
+                </div>
               </div>
             </div>
-            <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold uppercase ${
-              isBlurry ? 'bg-amber-200/80 text-amber-950' : 'bg-emerald-200/80 text-emerald-950'
-            }`}>
-              {isBlurry ? 'Manual Review' : 'Pending Verify'}
-            </span>
+          )}
+        </div>
+
+        {/* Quality Assessment & AI Pre-Check Banner */}
+        {capturedUrl && (
+          <div className="flex flex-col gap-2">
+            <div
+              className={`p-3 rounded-xl border text-sm flex items-center justify-between ${
+                isBlurry
+                  ? 'bg-amber-50 border-amber-300 text-amber-900'
+                  : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {isBlurry ? (
+                  <AlertTriangle className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 flex-shrink-0" />
+                )}
+                <div>
+                  <p className="font-semibold">
+                    {isBlurry
+                      ? `Low Clarity (${blurrinessScore} / ${activeThreshold})`
+                      : `Clear Photo (${blurrinessScore} / ${activeThreshold})`}
+                  </p>
+                  <p className="text-xs opacity-90">
+                    {isBlurry ? 'Low clarity — manual review required.' : 'Scene clarity verified.'}
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`px-2 py-0.5 rounded text-xs font-mono font-bold uppercase ${
+                  isBlurry ? 'bg-amber-200/80 text-amber-950' : 'bg-emerald-200/80 text-emerald-950'
+                }`}
+              >
+                {isBlurry ? 'Manual Review' : 'Clarity OK'}
+              </span>
+            </div>
+
+            {isAnalyzingAi && (
+              <div className="p-3 rounded-xl bg-[#E9D9D0] border border-[#670626]/25 text-[#670626] text-xs font-mono font-bold flex items-center gap-2.5">
+                <RefreshCw className="w-4 h-4 animate-spin flex-shrink-0" />
+                <span>AI Analyzing... Roboflow &amp; Claude Haiku 4.5 scene verification in progress.</span>
+              </div>
+            )}
+
+            {!isAnalyzingAi && aiPreview && (
+              <div
+                className={`p-3 rounded-xl border text-xs font-mono flex items-center justify-between gap-2 ${
+                  aiPreview.isGenuineIncident !== false
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                    : 'bg-amber-50 border-amber-300 text-amber-950'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 flex-shrink-0" />
+                  <span className="font-bold">
+                    {aiPreview.isGenuineIncident !== false
+                      ? `AI Verified Incident (${aiPreview.detectedCategory} / ${aiPreview.recommendedSeverity})`
+                      : 'No emergency detected in photo — manual review required'}
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-white/75 font-bold uppercase">
+                  {aiPreview.isGenuineIncident !== false && !aiPreview.roboflowNeedsReview && !isBlurry
+                    ? 'Auto-Approve Ready'
+                    : 'Review Flagged'}
+                </span>
+              </div>
+            )}
           </div>
         )}
 

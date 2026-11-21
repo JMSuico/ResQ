@@ -47,6 +47,17 @@ const LOCAL_STORAGE_READ_KEY = 'resqtrack.alerts.read';
 const FALLBACK_CATEGORY_LABEL = 'INCIDENT';
 const MAX_ALERT_ITEMS_DISPLAY = 25;
 
+type AlertFilterKey = 'ALL' | 'UNREAD' | 'CRITICAL' | 'VERIFIED';
+type AlertSortKey = 'newest' | 'oldest' | 'severity';
+
+const ALERT_SEVERITY_RANK: Record<string, number> = {
+  CRITICAL: 5,
+  SEVERE: 4,
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1
+};
+
 const normalizeUnitCode = (unit?: string): string => {
   const upper = (unit || '').toUpperCase().trim();
   if (upper === 'MEDIC') return 'RHU';
@@ -131,6 +142,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
   const { session } = useSession();
   const [alerts, setAlerts] = useState<AlertNotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [activeFilter, setActiveFilter] = useState<AlertFilterKey>('ALL');
+  const [sortOrder, setSortOrder] = useState<AlertSortKey>('newest');
   const [readIds, setReadIds] = useState<string[]>(() => {
     try {
       const raw = window.localStorage.getItem(LOCAL_STORAGE_READ_KEY);
@@ -271,16 +284,45 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
     return !item.isRead && !readIds.includes(key);
   }).length;
 
+  const filteredAlerts = useMemo(() => {
+    const filtered = scopedAlerts.filter((item) => {
+      const key = getAlertKey(item);
+      const isRead = Boolean(item.isRead || readIds.includes(key));
+      if (activeFilter === 'UNREAD') return !isRead;
+      if (activeFilter === 'CRITICAL') {
+        const sev = (item.severity || '').toUpperCase();
+        return sev === 'CRITICAL' || sev === 'SEVERE' || sev === 'HIGH';
+      }
+      if (activeFilter === 'VERIFIED') {
+        const st = (item.status || '').toUpperCase();
+        return st === 'VERIFIED' || st === 'RESOLVED' || st === 'CLOSED';
+      }
+      return true;
+    });
+
+    return [...filtered].sort((a, b) => {
+      const tsA = Date.parse(a.timestamp || a.createdAt || '') || 0;
+      const tsB = Date.parse(b.timestamp || b.createdAt || '') || 0;
+      if (sortOrder === 'oldest') return tsA - tsB;
+      if (sortOrder === 'severity') {
+        const sevA = ALERT_SEVERITY_RANK[(a.severity || '').toUpperCase()] ?? 1;
+        const sevB = ALERT_SEVERITY_RANK[(b.severity || '').toUpperCase()] ?? 1;
+        if (sevA !== sevB) return sevB - sevA;
+      }
+      return tsB - tsA;
+    });
+  }, [scopedAlerts, readIds, activeFilter, sortOrder, getAlertKey]);
+
   return (
     <section
-      className="alerts__panel clay-surface z-[100001] overflow-hidden"
+      className="alerts__panel clay-surface z-[100001] overflow-hidden rounded-2xl"
       id="alerts-panel"
       aria-label="Emergency Alerts and Notifications"
       role="region"
     >
-      <header className="alerts__head flex flex-col gap-1 px-4 py-3.5 bg-[#670626] text-[#F7F1EA] border-b border-[#FFD9DD]/20 select-none">
+      <header className="alerts__head flex flex-col gap-2 px-4 py-3.5 bg-[#670626] text-[#F7F1EA] border-b border-[#FFD9DD]/20 select-none">
         <div className="flex items-center justify-between w-full gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <Bell className="w-4 h-4 text-[#FFD9DD] flex-shrink-0" aria-hidden="true" />
             <h2 className="alerts__title text-sm font-extrabold font-sans tracking-wide text-[#F7F1EA]">
               Notifications
@@ -301,11 +343,11 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
               <button
                 type="button"
                 onClick={handleMarkAllRead}
-                className="flex items-center gap-1.5 text-xs font-mono font-semibold text-[#F7F1EA] hover:bg-[#4A041A] transition-colors px-2.5 py-1 rounded-lg border border-[#FFD9DD]/25"
+                className="relative z-10 pointer-events-auto cursor-pointer flex items-center gap-1.5 text-xs font-mono font-semibold text-[#F7F1EA] hover:bg-[#4A041A] transition-colors px-2.5 py-1 rounded-lg border border-[#FFD9DD]/25"
                 title="Mark all notifications as read"
               >
                 <CheckCheck className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
-                <span>Mark All Read</span>
+                <span>Mark Read</span>
               </button>
             )}
 
@@ -313,31 +355,81 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
               type="button"
               onClick={onClose}
               aria-label="Close alerts panel"
-              className="p-1.5 rounded-lg text-[#FFD9DD] hover:text-[#F7F1EA] hover:bg-[#4A041A] transition-colors"
+              className="relative z-10 pointer-events-auto cursor-pointer p-1.5 rounded-lg text-[#FFD9DD] hover:text-[#F7F1EA] hover:bg-[#4A041A] transition-colors"
             >
               <X className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
             </button>
           </div>
         </div>
+
         <p className="text-xs text-[#FFD9DD] font-medium leading-snug">
-          Emergency Advisories &amp; Warnings — Official LDRRMO safety notices &amp; dispatch alerts
+          Official dispatch &amp; hazard advisories
         </p>
+
+        <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-[#FFD9DD]/15">
+          <div className="flex flex-wrap items-center gap-1">
+            {(
+              [
+                { key: 'ALL', label: 'All' },
+                { key: 'UNREAD', label: 'Unread' },
+                { key: 'CRITICAL', label: 'Critical' },
+                { key: 'VERIFIED', label: 'Verified' }
+              ] as const
+            ).map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setActiveFilter(f.key)}
+                className={`relative z-10 pointer-events-auto cursor-pointer px-2 py-1 rounded-lg text-[11px] font-mono font-bold border transition-all ${
+                  activeFilter === f.key
+                    ? 'bg-[#F7F1EA] text-[#670626] border-[#F7F1EA]'
+                    : 'bg-[#400014] text-[#FFD9DD] border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1 ml-auto">
+            {(
+              [
+                { key: 'newest', label: 'Newest' },
+                { key: 'oldest', label: 'Oldest' },
+                { key: 'severity', label: 'Severity' }
+              ] as const
+            ).map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setSortOrder(s.key)}
+                className={`relative z-10 pointer-events-auto cursor-pointer px-2 py-1 rounded-lg text-[11px] font-mono font-bold border transition-all ${
+                  sortOrder === s.key
+                    ? 'bg-[#F7F1EA] text-[#670626] border-[#F7F1EA]'
+                    : 'bg-[#400014] text-[#FFD9DD] border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </header>
 
       <ul className="alerts__list divide-y divide-[#A83B4D]/15 max-h-[380px] overflow-y-auto bg-[#F7F1EA]" id="alerts-list">
-        {isLoading && scopedAlerts.length === 0 ? (
+        {isLoading && filteredAlerts.length === 0 ? (
           <li className="p-6 text-center text-sm text-[#670626] font-mono flex flex-col items-center gap-2">
             <Clock className="w-5 h-5 text-[#A83B4D] animate-spin" aria-hidden="true" />
             <span>Loading alerts...</span>
           </li>
-        ) : scopedAlerts.length === 0 ? (
+        ) : filteredAlerts.length === 0 ? (
           <li className="p-8 text-center text-[#2B010E] flex flex-col items-center justify-center">
             <Info className="w-8 h-8 text-[#A83B4D] mb-2 flex-shrink-0" aria-hidden="true" />
             <p className="text-sm font-bold text-[#670626]">All Clear</p>
-            <p className="text-xs text-[#A83B4D] font-mono mt-1">No pending emergency alerts for your unit.</p>
+            <p className="text-xs text-[#A83B4D] font-mono mt-1">No alerts match this filter.</p>
           </li>
         ) : (
-          scopedAlerts.map((report) => {
+          filteredAlerts.map((report) => {
             const key = getAlertKey(report);
             const isRead = Boolean(report.isRead || readIds.includes(key));
             const displayTitle = report.title || report.type || 'Incident Dispatch Alert';

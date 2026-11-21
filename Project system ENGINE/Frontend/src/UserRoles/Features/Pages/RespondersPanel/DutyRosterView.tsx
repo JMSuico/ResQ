@@ -1,7 +1,6 @@
 // [Layer: UserRoles/Features/Pages/RespondersPanel]
 // Responsibility: Unit-scoped Responders directory, agency chain of command,
-// OnDuty & Dispatched leaderboard ranked by response speed and mission succession rate,
-// and shift handover controls.
+// and OnDuty & Dispatched leaderboard ranked by response speed and mission succession rate.
 // Stitch Official Cherry (#670626) / Warm Ivory (#F7F1EA) / Soft Beige (#E9D9D0) / Muted Cherry (#A83B4D) Clay Design System.
 // Strictly 100% arrow lambdas (=>), ZERO 'any', ZERO emojis, ZERO hotline/tel links.
 
@@ -27,7 +26,6 @@ import {
   Ambulance,
   Flame,
   Shield,
-  ClipboardList,
   Users,
   MapPin,
   Navigation,
@@ -733,7 +731,7 @@ const AGENCY_THEME: Record<
 > = {
   RHU: {
     title: 'RHU Medical Responders',
-    subtitle: 'RHU Emergency Medical Services — Unit-Scoped Roster & Speed Leaderboard',
+    subtitle: 'Unit roster & response leaderboard',
     badgeLabel: 'RHU Ambulance Crew',
     personnelNoun: 'Medics',
     tiers: [
@@ -745,7 +743,7 @@ const AGENCY_THEME: Record<
   },
   FIRE: {
     title: 'BFP Fire Responders',
-    subtitle: 'Bureau of Fire Protection — Unit-Scoped Roster & Speed Leaderboard',
+    subtitle: 'Unit roster & response leaderboard',
     badgeLabel: 'BFP Fire Suppression',
     personnelNoun: 'Firefighters',
     tiers: [
@@ -757,7 +755,7 @@ const AGENCY_THEME: Record<
   },
   PNP: {
     title: 'PNP Police Responders',
-    subtitle: 'Philippine National Police — Unit-Scoped Roster & Speed Leaderboard',
+    subtitle: 'Unit roster & response leaderboard',
     badgeLabel: 'PNP Tactical Patrol',
     personnelNoun: 'Officers',
     tiers: [
@@ -791,13 +789,6 @@ export const DutyRosterView: React.FC = () => {
 
   const [statusFeedback, setStatusFeedback] = useState<string | null>(null);
   const [activeDispatchesCount, setActiveDispatchesCount] = useState<number>(0);
-  const [isHandoverOpen, setIsHandoverOpen] = useState<boolean>(false);
-  const [handoverEquipment, setHandoverEquipment] = useState({
-    fuelLevel: 'Full (100%)',
-    radioComm: 'Channel 1 Tested OK',
-    gearReadiness: 'Inspected & Sealed (Mission Ready)',
-    notes: 'All unit apparatus, telemetry beacons, and tactical kits operational.'
-  });
 
   const loadData = useCallback(async () => {
     try {
@@ -1118,8 +1109,8 @@ export const DutyRosterView: React.FC = () => {
 
   const sortOptions = useMemo(
     () => [
-      { value: 'LEADERBOARD' as ColleagueSortOption, label: 'Sort: Speed & Success Rate' },
-      { value: 'HIERARCHY' as ColleagueSortOption, label: 'Sort: Command Hierarchy' },
+      { value: 'LEADERBOARD' as ColleagueSortOption, label: 'Sort: Performance' },
+      { value: 'HIERARCHY' as ColleagueSortOption, label: 'Sort: Hierarchy' },
       { value: 'AVAILABILITY' as ColleagueSortOption, label: 'Sort: Availability' }
     ],
     []
@@ -1170,15 +1161,6 @@ export const DutyRosterView: React.FC = () => {
               {activeLeaderboard.length} Active {agencyMeta.personnelNoun}
             </span>
           </div>
-
-          <ResponderButton
-            variant="primary"
-            size="sm"
-            onClick={() => setIsHandoverOpen(true)}
-            icon={<ClipboardList className="w-4 h-4" />}
-          >
-            Shift Handover
-          </ResponderButton>
         </div>
       </div>
 
@@ -1233,7 +1215,7 @@ export const DutyRosterView: React.FC = () => {
               {formatGpsCoord(myUnit.baseLatitude, myUnit.baseLongitude)}
             </span>
             <span className="text-xs text-[#5B2A35] mt-0.5">
-              Scope Locked: {activeAgency} Unit Only
+              {activeAgency} Scope
             </span>
           </div>
         </div>
@@ -1241,7 +1223,7 @@ export const DutyRosterView: React.FC = () => {
         {/* Unit Duty Status Selector */}
         <div className="mt-5 pt-4 border-t border-[#670626]/15">
           <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#A83B4D] block mb-2.5">
-            Update Unit Duty Status
+            Unit Status
           </span>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1285,16 +1267,16 @@ export const DutyRosterView: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <Trophy className="w-4 h-4 text-[#670626]" />
               <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#A83B4D]">
-                {activeAgency} Active Leaderboard — On Duty &amp; Dispatched
+                {activeAgency} Leaderboard
               </span>
               {activeDispatchesCount > 0 && (
                 <span className="px-2.5 py-0.5 rounded-lg bg-[#670626] text-[#F7F1EA] font-mono text-xs font-bold">
-                  {activeDispatchesCount} Active Incidents
+                  {activeDispatchesCount} Active
                 </span>
               )}
             </div>
             <h2 className="text-lg md:text-xl font-black text-[#670626] tracking-tight mt-0.5">
-              Top Responders by Response Speed &amp; Mission Succession Rate
+              Top Responders
             </h2>
           </div>
 
@@ -1526,7 +1508,7 @@ export const DutyRosterView: React.FC = () => {
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#A83B4D] flex items-center gap-2">
               <Filter className="w-4 h-4 text-[#670626]" />
-              <span>Filter {activeAgency} Personnel by Duty Status</span>
+              <span>Filter by Status</span>
             </span>
             <span className="text-xs font-mono text-[#670626] font-bold">
               {processedColleagues.length} of {agencyScopedColleagues.length}
@@ -1576,7 +1558,7 @@ export const DutyRosterView: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <Users className="w-5 h-5 text-[#670626]" />
             <h2 className="text-lg font-black text-[#670626] tracking-tight">
-              {activeAgency} Personnel Directory
+              {activeAgency} Roster
             </h2>
             <span className="px-3 py-0.5 rounded-lg bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] font-mono text-sm font-bold">
               {processedColleagues.length}
@@ -2046,97 +2028,6 @@ export const DutyRosterView: React.FC = () => {
         </ResponderModalCard>
       )}
 
-      {/* Shift Handover Equipment Verification Modal */}
-      {isHandoverOpen && (
-        <ResponderModalCard
-          isOpen={isHandoverOpen}
-          onClose={() => setIsHandoverOpen(false)}
-          title={`${activeAgency} Shift Handover Log`}
-          maxWidth="max-w-xl"
-        >
-          <div className="flex flex-col gap-4 text-[#2B010E] text-sm font-mono">
-            <div className="grid grid-cols-2 gap-3.5">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[#670626] text-xs font-bold">Fuel Level</label>
-                <select
-                  value={handoverEquipment.fuelLevel}
-                  onChange={(e) =>
-                    setHandoverEquipment({ ...handoverEquipment, fuelLevel: e.target.value })
-                  }
-                  className="px-3.5 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#2B010E] focus:outline-none focus:border-[#670626]"
-                >
-                  <option value="Full (100%)">Full (100%)</option>
-                  <option value="3/4 Tank (75%)">3/4 Tank (75%)</option>
-                  <option value="Half Tank (50%)">Half Tank (50%)</option>
-                  <option value="Low (<25%)">Low (&lt;25%)</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[#670626] text-xs font-bold">Radio Comms</label>
-                <select
-                  value={handoverEquipment.radioComm}
-                  onChange={(e) =>
-                    setHandoverEquipment({ ...handoverEquipment, radioComm: e.target.value })
-                  }
-                  className="px-3.5 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#2B010E] focus:outline-none focus:border-[#670626]"
-                >
-                  <option value="Channel 1 Tested OK">Channel 1 OK</option>
-                  <option value="Channel 2 Primary Backup">Channel 2 Backup</option>
-                  <option value="Degraded Signal">Degraded</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[#670626] text-xs font-bold">Unit Equipment Readiness</label>
-              <input
-                type="text"
-                value={handoverEquipment.gearReadiness}
-                onChange={(e) =>
-                  setHandoverEquipment({ ...handoverEquipment, gearReadiness: e.target.value })
-                }
-                className="px-3.5 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#2B010E] focus:outline-none focus:border-[#670626]"
-                placeholder="Equipment status..."
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[#670626] text-xs font-bold">Handover Notes</label>
-              <textarea
-                value={handoverEquipment.notes}
-                onChange={(e) =>
-                  setHandoverEquipment({ ...handoverEquipment, notes: e.target.value })
-                }
-                rows={2}
-                className="px-3.5 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-[#2B010E] focus:outline-none focus:border-[#670626]"
-                placeholder="Shift notes..."
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#670626]/15">
-              <ResponderButton
-                variant="outline"
-                size="sm"
-                onClick={() => setIsHandoverOpen(false)}
-              >
-                Cancel
-              </ResponderButton>
-              <ResponderButton
-                variant="primary"
-                size="sm"
-                onClick={() => {
-                  showToast(`${activeAgency} shift handover logged`);
-                  setIsHandoverOpen(false);
-                }}
-                icon={<CheckCircle2 className="w-4 h-4" />}
-              >
-                Submit Handover
-              </ResponderButton>
-            </div>
-          </div>
-        </ResponderModalCard>
-      )}
     </div>
   );
 };

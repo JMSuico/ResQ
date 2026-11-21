@@ -175,7 +175,8 @@ public static class StartupSchemaReconciler
             BEGIN
                 UPDATE [dbo].[Users] SET [CityOrMunicipality] = N'Katipunan' WHERE [CityOrMunicipality] = N'Dipolog City';
             END;
-            """
+            """,
+            "IF OBJECT_ID(N'dbo.FireAlarmStatuses', N'U') IS NOT NULL DROP TABLE [dbo].[FireAlarmStatuses];"
         ];
 
         foreach (string sql in steps)
@@ -218,6 +219,93 @@ public static class StartupSchemaReconciler
             "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"FacialVerificationTokenId\" character varying(64);",
             "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"AutoApprovedByAi\" boolean NOT NULL DEFAULT false;",
             "ALTER TABLE IF EXISTS \"Users\" ADD COLUMN IF NOT EXISTS \"AutoApprovedAtUtc\" timestamp with time zone;",
+            """
+            CREATE TABLE IF NOT EXISTS "BiometricEnrollments" (
+                "Id" uuid PRIMARY KEY,
+                "UserId" uuid NOT NULL REFERENCES "Users"("Id") ON DELETE CASCADE,
+                "EncryptedTemplateData" bytea NOT NULL,
+                "GeometricSignatureJson" text NULL,
+                "PoseFramesJson" text NULL,
+                "TemplateFormat" character varying(50) NOT NULL,
+                "ModelIdentifier" character varying(80) NOT NULL,
+                "ModelVersion" character varying(30) NOT NULL,
+                "EnrollmentQualityScore" double precision NOT NULL,
+                "LivenessSummary" character varying(100) NOT NULL,
+                "EnrollmentStatus" character varying(50) NOT NULL,
+                "EnrolledAtUtc" timestamp with time zone NOT NULL,
+                "RevokedAtUtc" timestamp with time zone NULL,
+                "RevokedBy" character varying(180) NULL,
+                "TrainingStatus" character varying(32) NOT NULL DEFAULT 'READY',
+                "TrainingStartedAtUtc" timestamp with time zone NULL,
+                "TrainingReadyTargetUtc" timestamp with time zone NULL,
+                "TrainingCompletedAtUtc" timestamp with time zone NULL,
+                "TrainingNotes" text NULL,
+                "TrainedFrameCount" integer NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS "IX_BiometricEnrollments_UserId" ON "BiometricEnrollments"("UserId");
+            CREATE INDEX IF NOT EXISTS "IX_BiometricEnrollments_EnrollmentStatus" ON "BiometricEnrollments"("EnrollmentStatus");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "IdentityVerificationRecords" (
+                "Id" uuid PRIMARY KEY,
+                "UserId" uuid NOT NULL REFERENCES "Users"("Id") ON DELETE CASCADE,
+                "GovernmentIdType" character varying(60) NOT NULL,
+                "GovernmentIdNumber" character varying(80) NULL,
+                "Issuer" character varying(80) NULL,
+                "IdSpecVersion" character varying(30) NULL,
+                "ExtractionEngine" character varying(60) NOT NULL,
+                "ExtractionEngineVersion" character varying(30) NOT NULL,
+                "ConfidenceScore" double precision NOT NULL,
+                "NormalizedFieldsJson" text NOT NULL,
+                "UserCorrectedFieldsJson" text NOT NULL,
+                "DocumentCheckStatus" character varying(50) NOT NULL,
+                "FaceMatchStatus" character varying(50) NOT NULL,
+                "LivenessStatus" character varying(50) NOT NULL,
+                "OverallVerificationStatus" character varying(50) NOT NULL,
+                "FrontIdEncryptedPath" character varying(500) NULL,
+                "BackIdEncryptedPath" character varying(500) NULL,
+                "VerifiedAtUtc" timestamp with time zone NOT NULL,
+                "CreatedAtUtc" timestamp with time zone NOT NULL,
+                "VerificationTokenId" character varying(64) NULL,
+                "AuthenticityVerdict" character varying(40) NULL,
+                "FaceToIdMatchScore" numeric(5,4) NULL,
+                "AutoApproved" boolean NOT NULL DEFAULT false
+            );
+            CREATE INDEX IF NOT EXISTS "IX_IdentityVerificationRecords_UserId" ON "IdentityVerificationRecords"("UserId");
+            CREATE INDEX IF NOT EXISTS "IX_IdentityVerificationRecords_GovernmentIdType" ON "IdentityVerificationRecords"("GovernmentIdType");
+            CREATE INDEX IF NOT EXISTS "IX_IdentityVerificationRecords_GovernmentIdNumber" ON "IdentityVerificationRecords"("GovernmentIdNumber");
+            CREATE INDEX IF NOT EXISTS "IX_IdentityVerificationRecords_OverallVerificationStatus" ON "IdentityVerificationRecords"("OverallVerificationStatus");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "LoginAttempts" (
+                "Id" uuid PRIMARY KEY,
+                "AccountIdentifier" character varying(180) NOT NULL,
+                "AttemptType" character varying(30) NOT NULL,
+                "Success" boolean NOT NULL,
+                "FailureReason" character varying(100) NULL,
+                "IpAddress" character varying(60) NOT NULL,
+                "UserAgent" character varying(300) NULL,
+                "AttemptedAtUtc" timestamp with time zone NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_LoginAttempts_AccountIdentifier" ON "LoginAttempts"("AccountIdentifier");
+            CREATE INDEX IF NOT EXISTS "IX_LoginAttempts_AttemptedAtUtc" ON "LoginAttempts"("AttemptedAtUtc");
+            CREATE INDEX IF NOT EXISTS "IX_LoginAttempts_AccountIdentifier_AttemptedAtUtc_Success" ON "LoginAttempts"("AccountIdentifier", "AttemptedAtUtc", "Success");
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS "UserConsents" (
+                "Id" uuid PRIMARY KEY,
+                "UserId" uuid NOT NULL REFERENCES "Users"("Id") ON DELETE CASCADE,
+                "NoticeVersion" character varying(30) NOT NULL,
+                "PurposeCategory" character varying(100) NOT NULL,
+                "UserAction" character varying(50) NOT NULL,
+                "LegalBasis" character varying(80) NOT NULL,
+                "ClientIpAddress" character varying(60) NOT NULL,
+                "ConsentedAtUtc" timestamp with time zone NOT NULL,
+                "WithdrawnAtUtc" timestamp with time zone NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_UserConsents_UserId" ON "UserConsents"("UserId");
+            CREATE INDEX IF NOT EXISTS "IX_UserConsents_NoticeVersion" ON "UserConsents"("NoticeVersion");
+            """,
             "ALTER TABLE IF EXISTS \"BiometricEnrollments\" ADD COLUMN IF NOT EXISTS \"GeometricSignatureJson\" text;",
             "ALTER TABLE IF EXISTS \"BiometricEnrollments\" ADD COLUMN IF NOT EXISTS \"PoseFramesJson\" text;",
             "ALTER TABLE IF EXISTS \"BiometricEnrollments\" ADD COLUMN IF NOT EXISTS \"TrainingStatus\" character varying(32) NOT NULL DEFAULT 'READY';",
@@ -274,7 +362,8 @@ public static class StartupSchemaReconciler
             "UPDATE \"DutyUnits\" SET \"BaseLatitude\" = 8.5160, \"BaseLongitude\" = 123.2835, \"ContactHotline\" = '' WHERE \"UnitCode\" = 'PNP-SECTOR-01' AND (\"BaseLatitude\" > 13.0 OR \"ContactHotline\" <> '');",
             "UPDATE \"DutyUnits\" SET \"ContactHotline\" = '' WHERE \"ContactHotline\" <> '';",
             "UPDATE \"IncidentFixtures\" SET \"Latitude\" = 8.5145, \"Longitude\" = 123.2850 WHERE \"Latitude\" > 13.0;",
-            "UPDATE \"Users\" SET \"CityOrMunicipality\" = 'Katipunan' WHERE \"CityOrMunicipality\" = 'Dipolog City';"
+            "UPDATE \"Users\" SET \"CityOrMunicipality\" = 'Katipunan' WHERE \"CityOrMunicipality\" = 'Dipolog City';",
+            "DROP TABLE IF EXISTS \"FireAlarmStatuses\";"
         ];
 
         foreach (string sql in steps)

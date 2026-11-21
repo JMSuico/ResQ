@@ -313,7 +313,7 @@ export const SettingsPage: FC = () => {
             System Settings
           </h1>
           <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
-            Configuration, profile governance, and cryptographic audit log
+            Profile, platform &amp; audit log
           </p>
         </div>
 
@@ -460,7 +460,7 @@ export const SettingsPage: FC = () => {
                   {broadcastRadius}
                 </span>
               </div>
-              <p className="text-xs text-[#A83B4D]">Filters advisory pushes sent to resident Notification Bells.</p>
+              <p className="text-xs text-[#A83B4D]">Filters resident bell pushes.</p>
               <select
                 value={broadcastRadius}
                 onChange={(e) => setBroadcastRadius(e.target.value)}
@@ -483,7 +483,7 @@ export const SettingsPage: FC = () => {
                   {laplacianThreshold}.0 Min
                 </span>
               </div>
-              <p className="text-xs text-[#A83B4D]">Minimum sharpness required for live camera photo uploads.</p>
+              <p className="text-xs text-[#A83B4D]">Min sharpness for photo uploads.</p>
               <input
                 type="range"
                 min={MIN_LAPLACIAN_THRESHOLD}
@@ -507,7 +507,7 @@ export const SettingsPage: FC = () => {
                   Auto-Dispatch Mode
                 </h4>
                 <p className="text-xs text-[#A83B4D] mt-1">
-                  Assigns the nearest available unit upon report verification.
+                  Auto-assigns nearest unit on verify.
                 </p>
               </div>
               <button
@@ -532,7 +532,7 @@ export const SettingsPage: FC = () => {
                   Alert Audio Chime
                 </h4>
                 <p className="text-xs text-[#A83B4D] mt-1">
-                  Plays an audio alert when critical dispatches arrive.
+                  Sound alert for critical dispatches.
                 </p>
               </div>
               <button
@@ -560,7 +560,7 @@ export const SettingsPage: FC = () => {
                   {refreshIntervalSec} Seconds
                 </span>
               </div>
-              <p className="text-xs text-[#A83B4D]">Refresh interval for background telemetry updates.</p>
+              <p className="text-xs text-[#A83B4D]">Telemetry refresh interval.</p>
               <select
                 value={refreshIntervalSec}
                 onChange={(e) => setRefreshIntervalSec(Number(e.target.value))}
@@ -579,7 +579,7 @@ export const SettingsPage: FC = () => {
                   High-Contrast HUD
                 </h4>
                 <p className="text-xs text-[#A83B4D] mt-1">
-                  Increases border and text contrast for field visibility.
+                  Boosts field border &amp; text contrast.
                 </p>
               </div>
               <button

@@ -17,7 +17,8 @@ public class ReportService(
     IReportRepository reportRepo,
     IUserRepository userRepo,
     IAuditLogRepository auditRepo,
-    IIncidentSceneAiAnalysisStrategy? incidentVisionStrategy = null) : IReportService
+    IIncidentSceneAiAnalysisStrategy? incidentVisionStrategy = null,
+    IIncidentAutoApprovalStrategy? incidentAutoApprovalStrategy = null) : IReportService
 {
     private readonly IIncidentSceneAiAnalysisStrategy _incidentVisionStrategy =
         incidentVisionStrategy ?? new DualStageIncidentSceneAiStrategy();
@@ -41,7 +42,8 @@ public class ReportService(
             !string.IsNullOrWhiteSpace(request.ClaudeSituationSummary) ||
             !string.IsNullOrWhiteSpace(request.PointerIconType);
 
-        if (!string.IsNullOrWhiteSpace(request.ImageDataUrl) && !hasPreAnalyzedFields)
+        if (!string.IsNullOrWhiteSpace(request.ImageDataUrl) &&
+            (!hasPreAnalyzedFields || incidentAutoApprovalStrategy is not null))
         {
             aiAnalysis = await _incidentVisionStrategy.AnalyzeAsync(
                 new AnalyzeIncidentImageRequest(
@@ -52,24 +54,74 @@ public class ReportService(
                 ct);
         }
 
+        bool preferServerAnalysis = incidentAutoApprovalStrategy is not null && aiAnalysis is not null;
+
         string roboflowModelId = aiAnalysis?.RoboflowModelId ?? RoboflowServerlessAccidentDetectionStrategy.DefaultModelId;
-        string? roboflowPrediction = SanitizeOptionalField(request.RoboflowPrediction ?? aiAnalysis?.RoboflowPrediction, 64);
-        double? roboflowConfidence = request.RoboflowConfidence ?? aiAnalysis?.RoboflowConfidence;
-        bool roboflowNeedsReview = request.RoboflowNeedsReview ?? aiAnalysis?.RoboflowNeedsReview ?? true;
-        string? claudeModelUsed = SanitizeOptionalField(request.ClaudeModelUsed ?? aiAnalysis?.ClaudeModelUsed, 64);
-        string? claudeIncidentCategory = SanitizeOptionalField(request.ClaudeIncidentCategory ?? aiAnalysis?.DetectedCategory ?? safeCategory.ToString(), 64);
-        string? claudeSituationSummary = SanitizeOptionalField(request.ClaudeSituationSummary ?? aiAnalysis?.SituationDescription, 1000);
-        string? claudeVisibleHazards = SanitizeOptionalField(request.ClaudeVisibleHazards ?? aiAnalysis?.VisibleHazards, 600);
-        string? claudeUncertaintyNotes = SanitizeOptionalField(request.ClaudeUncertaintyNotes ?? aiAnalysis?.UncertaintyNotes, 600);
+        string? roboflowPrediction = SanitizeOptionalField(
+            preferServerAnalysis
+                ? aiAnalysis!.RoboflowPrediction
+                : (request.RoboflowPrediction ?? aiAnalysis?.RoboflowPrediction),
+            64);
+        double? roboflowConfidence = preferServerAnalysis
+            ? aiAnalysis!.RoboflowConfidence
+            : (request.RoboflowConfidence ?? aiAnalysis?.RoboflowConfidence);
+        bool roboflowNeedsReview = preferServerAnalysis
+            ? aiAnalysis!.RoboflowNeedsReview
+            : (request.RoboflowNeedsReview ?? aiAnalysis?.RoboflowNeedsReview ?? true);
+        string? claudeModelUsed = SanitizeOptionalField(
+            preferServerAnalysis
+                ? aiAnalysis!.ClaudeModelUsed
+                : (request.ClaudeModelUsed ?? aiAnalysis?.ClaudeModelUsed),
+            64);
+        string? claudeIncidentCategory = SanitizeOptionalField(
+            preferServerAnalysis
+                ? aiAnalysis!.DetectedCategory
+                : (request.ClaudeIncidentCategory ?? aiAnalysis?.DetectedCategory ?? safeCategory.ToString()),
+            64);
+        string? claudeSituationSummary = SanitizeOptionalField(
+            preferServerAnalysis
+                ? aiAnalysis!.SituationDescription
+                : (request.ClaudeSituationSummary ?? aiAnalysis?.SituationDescription),
+            1000);
+        string? claudeVisibleHazards = SanitizeOptionalField(
+            preferServerAnalysis
+                ? aiAnalysis!.VisibleHazards
+                : (request.ClaudeVisibleHazards ?? aiAnalysis?.VisibleHazards),
+            600);
+        string? claudeUncertaintyNotes = SanitizeOptionalField(
+            preferServerAnalysis
+                ? aiAnalysis!.UncertaintyNotes
+                : (request.ClaudeUncertaintyNotes ?? aiAnalysis?.UncertaintyNotes),
+            600);
         string pointerIconType = SanitizeOptionalField(
-            request.PointerIconType
-            ?? aiAnalysis?.PointerIconType
-            ?? ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon(claudeIncidentCategory ?? safeCategory.ToString()),
+            preferServerAnalysis
+                ? aiAnalysis!.PointerIconType
+                : (request.PointerIconType
+                   ?? aiAnalysis?.PointerIconType
+                   ?? ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon(claudeIncidentCategory ?? safeCategory.ToString())),
             40) ?? ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon(safeCategory.ToString());
 
-        string? aiAnalysisJson = (aiAnalysis is not null || hasPreAnalyzedFields)
-            ? JsonSerializer.Serialize(new
-            {
+        IncidentAutoApprovalDecision? autoDecision = incidentAutoApprovalStrategy is not null && !string.IsNullOrWhiteSpace(imagePath)
+            ? incidentAutoApprovalStrategy.Evaluate(new IncidentAutoApprovalContext(
+                HasImage: true,
+                IsBlurry: request.IsBlurry ?? false,
+                IsGenuineIncident: aiAnalysis?.IsGenuineIncident ?? false,
+                DetectedCategory: claudeIncidentCategory,
+                RoboflowAuthTransport: aiAnalysis?.RoboflowAuthTransport,
+                RoboflowPrediction: roboflowPrediction,
+                RoboflowConfidence: roboflowConfidence,
+                RoboflowNeedsReview: roboflowNeedsReview,
+                ClaudeRanOnline: aiAnalysis?.ClaudeRanOnline ?? false,
+                ClaudeModelUsed: claudeModelUsed,
+                ClaudeSituationSummary: claudeSituationSummary,
+                ClaudeUncertaintyNotes: claudeUncertaintyNotes))
+            : null;
+
+        bool aiAutoApproved = autoDecision?.AutoApproved ?? false;
+        string aiVerificationStatus = autoDecision?.AiVerificationStatus ?? "PENDING_REVIEW";
+
+        string? aiAnalysisJson = (aiAnalysis is not null || hasPreAnalyzedFields || autoDecision is not null)
+            ? SerializeAiAnalysisJson(
                 roboflowModelId,
                 roboflowPrediction,
                 roboflowConfidence,
@@ -80,8 +132,8 @@ public class ReportService(
                 claudeVisibleHazards,
                 claudeUncertaintyNotes,
                 pointerIconType,
-                verificationStatus = "PENDING_REVIEW"
-            })
+                aiVerificationStatus,
+                aiAutoApproved)
             : null;
 
         string refCode = $"RESQ-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid():N}"[..18].ToUpperInvariant();
@@ -90,6 +142,7 @@ public class ReportService(
         string? sanitizedIp = SanitizeOptionalField(submittedIpAddress, 64);
         string? sanitizedContact = SanitizeOptionalField(request.ReporterContactNumber, 40);
 
+        DateTime createdUtc = DateTime.UtcNow;
         var report = new Report
         {
             ReferenceCode = refCode,
@@ -102,18 +155,18 @@ public class ReportService(
             Note = InputSanitizer.Sanitize(request.Note),
             Category = safeCategory,
             Severity = safeSeverity,
-            Status = ReportStatus.Reported,
+            Status = aiAutoApproved ? ReportStatus.Verified : ReportStatus.Reported,
             Latitude = request.Latitude,
             Longitude = request.Longitude,
             GpsAccuracyMeters = request.GpsAccuracyMeters,
             IsHardwareGeolocated = request.IsHardwareGeolocated ?? false,
             IsBlurry = request.IsBlurry ?? false,
-            RequiresManualVerification = true,
+            RequiresManualVerification = !aiAutoApproved,
             RecommendedAgencyUnit = recommendedAgency,
             LocationLabel = InputSanitizer.Sanitize(request.LocationLabel),
             ImageCapturePath = imagePath,
-            CreatedAt = DateTime.UtcNow,
-            VerifiedAt = null,
+            CreatedAt = createdUtc,
+            VerifiedAt = aiAutoApproved ? createdUtc : null,
             RoboflowModelId = roboflowModelId,
             RoboflowPrediction = roboflowPrediction,
             RoboflowConfidence = roboflowConfidence,
@@ -129,25 +182,150 @@ public class ReportService(
 
         await reportRepo.AddAsync(report, ct);
 
-        // Audit Log
-        string prevHash = await auditRepo.GetLatestHashAsync(ct);
-        DateTime now = DateTime.UtcNow;
-        const string action = "REPORT_CREATED";
-        string payload = $"Report: {refCode}, Cat: {report.Category}, Sev: {report.Severity}, Loc: {report.Latitude:F4},{report.Longitude:F4}, Blurry: {report.IsBlurry}, RecAgency: {recommendedAgency}, IP: {sanitizedIp ?? "unknown"}";
-        string newHash = AuditHelper.ComputeChainedHash(prevHash, now, reporterId, action, payload);
+        await AppendAuditLogAsync(
+            reporterId,
+            "REPORT_CREATED",
+            $"Report: {refCode}, Cat: {report.Category}, Sev: {report.Severity}, Loc: {report.Latitude:F4},{report.Longitude:F4}, Blurry: {report.IsBlurry}, RecAgency: {recommendedAgency}, IP: {sanitizedIp ?? "unknown"}",
+            ct);
 
-        await auditRepo.AddAsync(new AuditLog
+        if (aiAutoApproved)
         {
-            ActorUserId = reporterId,
-            Action = action,
-            TargetEntity = nameof(Report),
-            Payload = payload,
-            PreviousHash = prevHash,
-            CurrentHash = newHash,
-            Timestamp = now
-        }, ct);
+            await AppendAuditLogAsync(
+                reporterId,
+                "REPORT_AI_AUTO_APPROVED",
+                $"Report: {refCode}, Status: Verified, Category: {claudeIncidentCategory}, Reason: {autoDecision!.Reason}",
+                ct);
+        }
 
         return MapToResponse(report);
+    }
+
+    public async Task<AiAutoApproveReportResult> AutoApprovePendingReportWithAiAsync(
+        Guid reportId,
+        Guid actorUserId,
+        CancellationToken ct = default)
+    {
+        var report = await reportRepo.GetByIdAsync(reportId, ct);
+        if (report is null)
+        {
+            return new AiAutoApproveReportResult(
+                AutoApproved: false,
+                Status: ReportStatus.Reported,
+                AiVerificationStatus: "NOT_FOUND",
+                Message: "Report not found.",
+                Report: null,
+                NotFound: true);
+        }
+
+        if (report.Status != ReportStatus.Reported)
+        {
+            var (existingApproved, existingStatus) = ExtractAiApprovalMetadata(report);
+            return new AiAutoApproveReportResult(
+                AutoApproved: existingApproved || report.Status == ReportStatus.Verified,
+                Status: report.Status,
+                AiVerificationStatus: existingStatus,
+                Message: $"Report {report.ReferenceCode} is already in {report.Status} status.",
+                Report: MapToResponse(report));
+        }
+
+        if (string.IsNullOrWhiteSpace(report.ImageCapturePath) ||
+            !CaptureStorageHelper.IsPathWithinAllowedRoots(report.ImageCapturePath) ||
+            !File.Exists(report.ImageCapturePath))
+        {
+            return new AiAutoApproveReportResult(
+                AutoApproved: false,
+                Status: report.Status,
+                AiVerificationStatus: ClaudeIncidentAutoApprovalStrategy.StatusPendingManualReview,
+                Message: "Stored incident image capture is unavailable; manual verification required.",
+                Report: MapToResponse(report));
+        }
+
+        var (bytes, contentType) = await CaptureStorageHelper.ReadCaptureFileAsync(report.ImageCapturePath, ct);
+        if (bytes.Length == 0)
+        {
+            return new AiAutoApproveReportResult(
+                AutoApproved: false,
+                Status: report.Status,
+                AiVerificationStatus: ClaudeIncidentAutoApprovalStrategy.StatusPendingManualReview,
+                Message: "Stored incident image capture could not be decoded; manual verification required.",
+                Report: MapToResponse(report));
+        }
+
+        string dataUrl = $"data:{contentType};base64,{Convert.ToBase64String(bytes)}";
+        IncidentImageAiAnalysisResponseDto analysis = await _incidentVisionStrategy.AnalyzeAsync(
+            new AnalyzeIncidentImageRequest(
+                ImageDataUrl: dataUrl,
+                TitleHint: report.Title,
+                NoteHint: report.Note,
+                CategoryHint: report.Category.ToString()),
+            ct);
+
+        var approvalStrategy = incidentAutoApprovalStrategy ?? new ClaudeIncidentAutoApprovalStrategy();
+        IncidentAutoApprovalDecision decision = approvalStrategy.Evaluate(new IncidentAutoApprovalContext(
+            HasImage: true,
+            IsBlurry: report.IsBlurry,
+            IsGenuineIncident: analysis.IsGenuineIncident,
+            DetectedCategory: analysis.DetectedCategory,
+            RoboflowAuthTransport: analysis.RoboflowAuthTransport,
+            RoboflowPrediction: analysis.RoboflowPrediction,
+            RoboflowConfidence: analysis.RoboflowConfidence,
+            RoboflowNeedsReview: analysis.RoboflowNeedsReview,
+            ClaudeRanOnline: analysis.ClaudeRanOnline,
+            ClaudeModelUsed: analysis.ClaudeModelUsed,
+            ClaudeSituationSummary: analysis.SituationDescription,
+            ClaudeUncertaintyNotes: analysis.UncertaintyNotes));
+
+        report.RoboflowModelId = analysis.RoboflowModelId;
+        report.RoboflowPrediction = SanitizeOptionalField(analysis.RoboflowPrediction, 64);
+        report.RoboflowConfidence = analysis.RoboflowConfidence;
+        report.RoboflowNeedsReview = analysis.RoboflowNeedsReview;
+        report.ClaudeModelUsed = SanitizeOptionalField(analysis.ClaudeModelUsed, 64);
+        report.ClaudeIncidentCategory = SanitizeOptionalField(analysis.DetectedCategory, 64);
+        report.ClaudeSituationSummary = SanitizeOptionalField(analysis.SituationDescription, 1000);
+        report.ClaudeVisibleHazards = SanitizeOptionalField(analysis.VisibleHazards, 600);
+        report.ClaudeUncertaintyNotes = SanitizeOptionalField(analysis.UncertaintyNotes, 600);
+        report.PointerIconType = SanitizeOptionalField(analysis.PointerIconType, 40)
+                                 ?? ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon(analysis.DetectedCategory);
+
+        if (decision.AutoApproved)
+        {
+            report.Status = ReportStatus.Verified;
+            report.VerifiedAt = DateTime.UtcNow;
+            report.RequiresManualVerification = false;
+        }
+        else
+        {
+            report.RequiresManualVerification = true;
+        }
+
+        report.AiAnalysisJson = SerializeAiAnalysisJson(
+            report.RoboflowModelId,
+            report.RoboflowPrediction,
+            report.RoboflowConfidence,
+            report.RoboflowNeedsReview,
+            report.ClaudeModelUsed,
+            report.ClaudeIncidentCategory,
+            report.ClaudeSituationSummary,
+            report.ClaudeVisibleHazards,
+            report.ClaudeUncertaintyNotes,
+            report.PointerIconType,
+            decision.AiVerificationStatus,
+            decision.AutoApproved);
+
+        await reportRepo.UpdateAsync(report, ct);
+
+        await AppendAuditLogAsync(
+            actorUserId,
+            decision.AutoApproved ? "REPORT_AI_AUTO_APPROVED" : "REPORT_AI_MANUAL_REVIEW_REQUIRED",
+            $"Report: {report.ReferenceCode}, AutoApproved: {decision.AutoApproved}, Status: {decision.AiVerificationStatus}, Reason: {decision.Reason}",
+            ct);
+
+        return new AiAutoApproveReportResult(
+            AutoApproved: decision.AutoApproved,
+            Status: report.Status,
+            AiVerificationStatus: decision.AiVerificationStatus,
+            Message: decision.Reason,
+            Report: MapToResponse(report));
     }
 
     public async Task<List<ReportResponse>> GetAllReportsAsync(CancellationToken ct = default) =>
@@ -214,8 +392,84 @@ public class ReportService(
             ? (sanitized.Length > maxLength ? sanitized[..maxLength] : sanitized)
             : null;
 
-    private static ReportResponse MapToResponse(Report r) =>
-        new(
+    private async Task AppendAuditLogAsync(Guid actorUserId, string action, string payload, CancellationToken ct)
+    {
+        string prevHash = await auditRepo.GetLatestHashAsync(ct);
+        DateTime now = DateTime.UtcNow;
+        string newHash = AuditHelper.ComputeChainedHash(prevHash, now, actorUserId, action, payload);
+
+        await auditRepo.AddAsync(new AuditLog
+        {
+            ActorUserId = actorUserId == Guid.Empty ? null : actorUserId,
+            Action = action,
+            TargetEntity = nameof(Report),
+            Payload = payload,
+            PreviousHash = prevHash,
+            CurrentHash = newHash,
+            Timestamp = now
+        }, ct);
+    }
+
+    private static string SerializeAiAnalysisJson(
+        string? roboflowModelId,
+        string? roboflowPrediction,
+        double? roboflowConfidence,
+        bool roboflowNeedsReview,
+        string? claudeModelUsed,
+        string? claudeIncidentCategory,
+        string? claudeSituationSummary,
+        string? claudeVisibleHazards,
+        string? claudeUncertaintyNotes,
+        string? pointerIconType,
+        string verificationStatus,
+        bool autoApprovedByAi) =>
+        JsonSerializer.Serialize(new
+        {
+            roboflowModelId,
+            roboflowPrediction,
+            roboflowConfidence,
+            roboflowNeedsReview,
+            claudeModelUsed,
+            claudeIncidentCategory,
+            claudeSituationSummary,
+            claudeVisibleHazards,
+            claudeUncertaintyNotes,
+            pointerIconType,
+            verificationStatus,
+            autoApprovedByAi
+        });
+
+    private static (bool AiAutoApproved, string AiVerificationStatus) ExtractAiApprovalMetadata(Report r)
+    {
+        if (!string.IsNullOrWhiteSpace(r.AiAnalysisJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(r.AiAnalysisJson);
+                JsonElement root = doc.RootElement;
+                bool approved = root.TryGetProperty("autoApprovedByAi", out JsonElement appProp) &&
+                                appProp.ValueKind is JsonValueKind.True or JsonValueKind.False &&
+                                appProp.GetBoolean();
+                string status = root.TryGetProperty("verificationStatus", out JsonElement statusProp) &&
+                                statusProp.ValueKind == JsonValueKind.String &&
+                                !string.IsNullOrWhiteSpace(statusProp.GetString())
+                    ? statusProp.GetString()!
+                    : (approved ? ClaudeIncidentAutoApprovalStrategy.StatusAutoApproved : "PENDING_REVIEW");
+                return (approved, status);
+            }
+            catch (JsonException)
+            {
+                // Ignore malformed historical JSON and fall back cleanly
+            }
+        }
+
+        return (false, "PENDING_REVIEW");
+    }
+
+    private static ReportResponse MapToResponse(Report r)
+    {
+        var (aiAutoApproved, aiVerificationStatus) = ExtractAiApprovalMetadata(r);
+        return new(
             r.Id,
             r.ReferenceCode,
             r.ReporterId,
@@ -257,6 +511,9 @@ public class ReportService(
             r.ClaudeVisibleHazards,
             r.ClaudeUncertaintyNotes,
             r.PointerIconType ?? ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon(
-                (Enum.IsDefined(r.Category) ? r.Category : IncidentCategory.VehicularAccident).ToString())
+                (Enum.IsDefined(r.Category) ? r.Category : IncidentCategory.VehicularAccident).ToString()),
+            aiAutoApproved,
+            aiVerificationStatus
         );
+    }
 }

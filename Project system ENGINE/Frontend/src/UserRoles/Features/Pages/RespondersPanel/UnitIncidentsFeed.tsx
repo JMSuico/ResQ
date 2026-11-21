@@ -32,7 +32,6 @@ import {
   useTableCardView,
   DefaultFloatingModalCard,
   Dropdown,
-  FireAlarmEscalationModal,
   PoliceBlotterModal
 } from '@/Shared';
 import { formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
@@ -316,7 +315,6 @@ export const UnitIncidentsFeed: React.FC = () => {
     }
   });
 
-  const [activeAlarmIncident, setActiveAlarmIncident] = useState<ReportItem | null>(null);
   const [activeBlotterIncident, setActiveBlotterIncident] = useState<ReportItem | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -1408,7 +1406,7 @@ export const UnitIncidentsFeed: React.FC = () => {
             <SearchBar
               value={searchQuery}
               onChange={setSearchQuery}
-              placeholder="Search ref, location, reporter..."
+              placeholder="Search ref, location..."
               className="w-full sm:w-60"
             />
 
@@ -1833,18 +1831,6 @@ export const UnitIncidentsFeed: React.FC = () => {
                     </button>
                   )}
 
-                  {activeAgencyUnit === 'FIRE' && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveAlarmIncident(inc)}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-700/30 text-xs font-mono font-bold active:scale-95 transition-all cursor-pointer"
-                      title="Update Fire Alarm Level"
-                    >
-                      <Flame className="w-4 h-4 text-amber-700" />
-                      <span>Fire Alarm</span>
-                    </button>
-                  )}
-
                   {activeAgencyUnit === 'PNP' && (
                     <button
                       type="button"
@@ -2031,15 +2017,6 @@ export const UnitIncidentsFeed: React.FC = () => {
                             className="px-2.5 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-900 border border-rose-700/25 font-bold text-xs cursor-pointer"
                           >
                             PCR
-                          </button>
-                        )}
-                        {activeAgencyUnit === 'FIRE' && (
-                          <button
-                            type="button"
-                            onClick={() => setActiveAlarmIncident(inc)}
-                            className="px-2.5 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-700/25 font-bold text-xs cursor-pointer"
-                          >
-                            Alarm
                           </button>
                         )}
                         {activeAgencyUnit === 'PNP' && (
@@ -2401,7 +2378,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15">
                 <label className="text-xs font-mono font-bold text-[#670626] flex items-center gap-1.5 mb-1">
                   <Radio className="w-3.5 h-3.5 text-[#A83B4D]" />
-                  <span>Radio / Digital Dispatch Channel</span>
+                  <span>Dispatch Channel</span>
                 </label>
                 <input
                   type="text"
@@ -2496,7 +2473,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                   disabled={currentModalEvidences.length >= MAX_EVIDENCE_SLOTS}
                   icon={<Camera className="w-4 h-4" />}
                 >
-                  Capture Frame (+1)
+                  Capture (+1)
                 </Button>
               </div>
             </div>
@@ -2572,7 +2549,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               </div>
             ) : (
               <div className="p-8 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 text-center font-mono text-sm text-[#5C313E]">
-                No evidence recorded. Upload or capture a frame below.
+                No evidence yet. Upload or capture below.
               </div>
             )}
 
@@ -2946,19 +2923,7 @@ export const UnitIncidentsFeed: React.FC = () => {
         </DefaultFloatingModalCard>
       )}
 
-      {/* Fire & Police Compatibility Modals */}
-      {activeAlarmIncident && (
-        <FireAlarmEscalationModal
-          isOpen={activeAlarmIncident !== null}
-          onClose={() => setActiveAlarmIncident(null)}
-          reportId={activeAlarmIncident.id}
-          onSuccess={(alarm) => {
-            showToast(`Alarm level: ${alarm.alarmLevel}`);
-            loadIncidents();
-          }}
-        />
-      )}
-
+      {/* Police Compatibility Modal */}
       {activeBlotterIncident && (
         <PoliceBlotterModal
           isOpen={activeBlotterIncident !== null}

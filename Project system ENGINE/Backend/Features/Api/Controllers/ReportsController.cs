@@ -64,8 +64,32 @@ public class ReportsController(IReportService reportService, IWebHostEnvironment
             ? Ok(new { message = "Distress beacon recorded (1 BPM).", reportId = id, latitude = beacon.Latitude, longitude = beacon.Longitude })
             : NotFound();
 
+    [HttpPost("{id:guid}/ai-auto-approve")]
+    public async Task<IActionResult> AiAutoApproveReportAsync(Guid id, CancellationToken ct) =>
+        !IsAuthorizedResponderOrAdmin()
+            ? StatusCode(StatusCodes.Status403Forbidden, new { message = "Only LDRRMO Administrators and Responders may trigger AI auto-approval." })
+            : await reportService.AutoApprovePendingReportWithAiAsync(id, CurrentUserId, ct) switch
+            {
+                { NotFound: true } => NotFound(new { message = "Report not found." }),
+                var result => Ok(new
+                {
+                    autoApproved = result.AutoApproved,
+                    status = result.Status,
+                    aiVerificationStatus = result.AiVerificationStatus,
+                    message = result.Message,
+                    report = result.Report
+                })
+            };
+
     private bool IsAuthorizedAgencyOrAdmin(ResponderUnitType agency) =>
-        HttpContext.Items["UserRole"] is UserRole role
+        HttpContext?.Items["UserRole"] is UserRole role
         && (role == UserRole.LDRRMO_Admin
             || (role == UserRole.Responder && HttpContext.Items["UserUnit"] is ResponderUnitType unit && (unit == agency || agency == ResponderUnitType.None)));
+
+    private bool IsAuthorizedResponderOrAdmin() =>
+        HttpContext?.Items["UserRole"] is UserRole role
+        && (role == UserRole.LDRRMO_Admin || role == UserRole.Responder);
+
+    private Guid CurrentUserId =>
+        HttpContext?.Items["UserId"] is Guid uid ? uid : Guid.Empty;
 }

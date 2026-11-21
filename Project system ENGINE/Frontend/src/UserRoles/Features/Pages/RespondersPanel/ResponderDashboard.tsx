@@ -27,7 +27,6 @@ import {
   TableCardToggle,
   useTableCardView,
   PatientCareRecordModal,
-  FireAlarmEscalationModal,
   PoliceBlotterModal,
   Dropdown
 } from '@/Shared';
@@ -559,7 +558,6 @@ export const ResponderDashboard: React.FC = () => {
   const [incidentModalSecondsLeft, setIncidentModalSecondsLeft] = useState<number>(300);
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [isPcrModalOpen, setIsPcrModalOpen] = useState<boolean>(false);
-  const [isAlarmModalOpen, setIsAlarmModalOpen] = useState<boolean>(false);
   const [isBlotterModalOpen, setIsBlotterModalOpen] = useState<boolean>(false);
   const { viewMode, setViewMode } = useTableCardView('card');
 
@@ -1294,7 +1292,7 @@ export const ResponderDashboard: React.FC = () => {
               disabled={isLocating}
               icon={<Radio className={`w-4 h-4 ${isLocating ? 'animate-spin' : ''}`} />}
             >
-              {isLocating ? 'LOCKING GPS...' : 'BROADCAST PING'}
+              {isLocating ? 'Locating...' : 'Ping GPS'}
             </ResponderButton>
 
             {isRhuMedic && (
@@ -1304,18 +1302,7 @@ export const ResponderDashboard: React.FC = () => {
                 onClick={() => setIsPcrModalOpen(true)}
                 icon={<HeartPulse className="w-4 h-4" />}
               >
-                LOG PCR VITALS
-              </ResponderButton>
-            )}
-
-            {activeUnit === 'FIRE' && (
-              <ResponderButton
-                variant="warning"
-                size="sm"
-                onClick={() => setIsAlarmModalOpen(true)}
-                icon={<Flame className="w-4 h-4" />}
-              >
-                FIRE ALARM
+                Log PCR
               </ResponderButton>
             )}
 
@@ -1326,7 +1313,7 @@ export const ResponderDashboard: React.FC = () => {
                 onClick={() => setIsBlotterModalOpen(true)}
                 icon={<Shield className="w-4 h-4" />}
               >
-                POLICE BLOTTER
+                Blotter
               </ResponderButton>
             )}
           </div>
@@ -1439,7 +1426,7 @@ export const ResponderDashboard: React.FC = () => {
         <div className="clay-surface p-5 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 rounded-2xl hover:-translate-y-0.5 transition-all duration-200">
           <div className="flex items-center justify-between">
             <span className="text-xs font-mono font-bold uppercase text-[#A83B4D] tracking-wider">
-              Critical &amp; High Alerts
+              Priority Alerts
             </span>
             <AlertTriangle className="w-5 h-5 text-[#670626]" />
           </div>
@@ -1474,7 +1461,7 @@ export const ResponderDashboard: React.FC = () => {
         <div className="p-4 bg-[#E9D9D0] border-b border-[#670626]/15 flex flex-wrap items-center justify-between gap-3">
           <span className="flex items-center gap-2 font-mono text-sm font-bold text-[#670626]">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping" />
-            <span>Katipunan Satellite Radar HUD</span>
+            <span>Satellite Radar</span>
           </span>
 
           <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
@@ -1648,7 +1635,7 @@ export const ResponderDashboard: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2.5">
               <h2 className="text-lg md:text-xl font-black font-sans text-[#670626] tracking-tight flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-[#A83B4D]" />
-                <span>{activeUnit} Dispatch &amp; Verification Queue</span>
+                <span>{activeUnit} Dispatch Queue</span>
               </h2>
               <span className="px-3 py-0.5 rounded-full bg-[#670626] text-[#F7F1EA] font-mono text-xs font-bold">
                 {activeDispatchesCount} Active
@@ -1669,11 +1656,11 @@ export const ResponderDashboard: React.FC = () => {
               value={severityFilter}
               onChange={(val) => setSeverityFilter(val)}
               options={[
-                { value: 'ALL', label: 'All Priorities' },
-                { value: 'CRITICAL', label: 'Critical Only' },
-                { value: 'HIGH', label: 'High Priority' },
-                { value: 'MEDIUM', label: 'Medium Priority' },
-                { value: 'LOW', label: 'Low Priority' }
+                { value: 'ALL', label: 'All' },
+                { value: 'CRITICAL', label: 'Critical' },
+                { value: 'HIGH', label: 'High' },
+                { value: 'MEDIUM', label: 'Medium' },
+                { value: 'LOW', label: 'Low' }
               ]}
             />
 
@@ -1739,7 +1726,7 @@ export const ResponderDashboard: React.FC = () => {
                       {item.title}
                     </h3>
                     <p className="text-sm text-[#5B2A35] mt-1 line-clamp-2">
-                      {item.note || 'No immediate field notes provided.'}
+                      {item.note || 'No field notes.'}
                     </p>
                     {(item.roboflowPrediction || item.claudeSituationSummary || item.claudeVisibleHazards) && (
                       <div className="mt-2 p-2.5 rounded-xl bg-[#F7F1EA] border border-[#670626]/20 text-xs font-mono text-[#670626] flex flex-col gap-1">
@@ -1955,9 +1942,9 @@ export const ResponderDashboard: React.FC = () => {
         <div className="mt-4 pt-3.5 border-t border-[#670626]/15 flex flex-wrap items-center justify-between gap-3 text-sm font-mono text-[#5B2A35]">
           <div className="flex items-center gap-2.5">
             <span>
-              SHOWING <strong className="text-[#670626]">{totalItems === 0 ? 0 : startIndex + 1}</strong>
-              –<strong className="text-[#670626]">{endIndex}</strong> OF{' '}
-              <strong className="text-[#670626]">{totalItems}</strong> INCIDENTS
+              <strong className="text-[#670626]">{totalItems === 0 ? 0 : startIndex + 1}</strong>
+              –<strong className="text-[#670626]">{endIndex}</strong> of{' '}
+              <strong className="text-[#670626]">{totalItems}</strong>
             </span>
             <Dropdown
               variant="pagination"
@@ -2012,7 +1999,7 @@ export const ResponderDashboard: React.FC = () => {
             <div className="p-4 rounded-xl bg-amber-100 border border-amber-700/30 flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-800 flex-shrink-0" />
               <p className="text-sm font-mono text-amber-900 font-semibold">
-                Update broadcasts immediately to LDRRMO command dispatch.
+                Broadcasts immediately to command dispatch.
               </p>
             </div>
 
@@ -2060,7 +2047,7 @@ export const ResponderDashboard: React.FC = () => {
             <div className="clay-well px-4 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex items-center justify-between font-mono text-sm">
               <span className="text-[#670626] font-bold flex items-center gap-1.5">
                 <Clock className="w-4 h-4 text-[#A83B4D]" />
-                <span>AUTO-CLOSE WINDOW TIMER</span>
+                <span>Auto-Close Timer</span>
               </span>
               <span className="text-[#670626] font-black">
                 {formatCountdownTimer(incidentModalSecondsLeft)}
@@ -2125,7 +2112,7 @@ export const ResponderDashboard: React.FC = () => {
               </div>
               <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10 sm:col-span-3">
                 <span className="text-[#A83B4D] block text-xs font-bold">
-                  GPS COORDINATES &amp; PHYSICAL STREET ADDRESS
+                  GPS &amp; Address
                 </span>
                 <span className="text-emerald-800 font-bold">
                   {formatGpsCoord(selectedIncident.latitude, selectedIncident.longitude)}
@@ -2138,10 +2125,10 @@ export const ResponderDashboard: React.FC = () => {
 
             <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10 text-sm">
               <span className="text-[#A83B4D] block font-mono text-xs font-bold mb-1">
-                FIELD OBSERVATIONS
+                Field Notes
               </span>
               <p className="text-[#2B010E] leading-relaxed">
-                {selectedIncident.note || 'No notes provided by reporter.'}
+                {selectedIncident.note || 'No notes.'}
               </p>
             </div>
 
@@ -2202,7 +2189,7 @@ export const ResponderDashboard: React.FC = () => {
                 size="sm"
                 onClick={() => setSelectedIncident(null)}
               >
-                EXIT
+                Close
               </ResponderButton>
 
               {isSubmittedOrPendingStatus(selectedIncident.status) && (
@@ -2248,17 +2235,7 @@ export const ResponderDashboard: React.FC = () => {
                   onClick={() => setIsPcrModalOpen(true)}
                   icon={<HeartPulse className="w-4 h-4" />}
                 >
-                  Record PCR Vitals
-                </ResponderButton>
-              )}
-              {activeUnit === 'FIRE' && (
-                <ResponderButton
-                  variant="warning"
-                  size="sm"
-                  onClick={() => setIsAlarmModalOpen(true)}
-                  icon={<Flame className="w-4 h-4" />}
-                >
-                  Update Fire Alarm
+                  Log PCR
                 </ResponderButton>
               )}
               {activeUnit === 'PNP' && (
@@ -2268,7 +2245,7 @@ export const ResponderDashboard: React.FC = () => {
                   onClick={() => setIsBlotterModalOpen(true)}
                   icon={<Shield className="w-4 h-4" />}
                 >
-                  File Police Blotter
+                  File Blotter
                 </ResponderButton>
               )}
               <ResponderButton
@@ -2280,7 +2257,7 @@ export const ResponderDashboard: React.FC = () => {
                   handleQuickNavigate(inc.latitude, inc.longitude, inc.id);
                 }}
               >
-                Focus Radar Map
+                Focus Map
               </ResponderButton>
               <ResponderButton
                 variant="primary"
@@ -2293,7 +2270,7 @@ export const ResponderDashboard: React.FC = () => {
                 }
                 icon={<Send className="w-4 h-4" />}
               >
-                REQUEST TO DISPATCH OR DEPLOY
+                Request Deploy
               </ResponderButton>
             </div>
           </div>
@@ -2308,18 +2285,6 @@ export const ResponderDashboard: React.FC = () => {
           reportId={selectedIncident?.id}
           onSuccess={(pcr) => {
             showStatusFeedback(`Patient care record ${pcr.pcrReference} saved`);
-            void loadData();
-          }}
-        />
-      )}
-
-      {isAlarmModalOpen && (
-        <FireAlarmEscalationModal
-          isOpen={isAlarmModalOpen}
-          onClose={() => setIsAlarmModalOpen(false)}
-          reportId={selectedIncident?.id}
-          onSuccess={(alarm) => {
-            showStatusFeedback(`Fire alarm level updated to ${alarm.alarmLevel}`);
             void loadData();
           }}
         />

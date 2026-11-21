@@ -1,5 +1,5 @@
 // [Layer: Backend/Api/Controllers]
-// Responsibility: Exposes responder duty roster, tactical status telemetry, PCR vitals, police blotter, and alarm escalations.
+// Responsibility: Exposes responder duty roster, tactical status telemetry, PCR vitals, and police blotter.
 // DO NOT permit unauthorized agencies to mutate other agencies' duty status.
 
 using Microsoft.AspNetCore.Mvc;
@@ -58,18 +58,6 @@ public class RespondersController(IResponderOpsService responderOpsService) : Co
     [HttpGet("blotter")]
     public async Task<IActionResult> GetBlotterEntriesAsync([FromQuery] Guid? reportId, CancellationToken ct) =>
         Ok(await responderOpsService.GetBlotterEntriesAsync(reportId, ct));
-
-    [HttpPost("alarm-level")]
-    public async Task<IActionResult> SetAlarmLevelAsync([FromBody] SetAlarmLevelRequest request, CancellationToken ct) =>
-        IsAuthorizedAgencyOrAdmin(ResponderUnitType.FIRE)
-            ? await responderOpsService.SetAlarmLevelAsync(request, GetCurrentUserId(), ct) is { Success: true, Alarm: { } alarm }
-                ? Ok(new { message = "Fire alarm status updated.", data = alarm })
-                : BadRequest(new { message = "Failed to update fire alarm level." })
-            : StatusCode(StatusCodes.Status403Forbidden, new { message = "Only BFP Fire responders or LDRRMO Administrators may set fire alarm levels." });
-
-    [HttpGet("alarm-level")]
-    public async Task<IActionResult> GetAlarmStatusesAsync([FromQuery] Guid? reportId, CancellationToken ct) =>
-        Ok(await responderOpsService.GetAlarmStatusesAsync(reportId, ct));
 
     [HttpGet("hydrants")]
     public async Task<IActionResult> GetHydrantsAsync(CancellationToken ct) =>

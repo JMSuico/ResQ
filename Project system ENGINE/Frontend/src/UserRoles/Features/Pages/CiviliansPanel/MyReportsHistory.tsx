@@ -1,6 +1,6 @@
 // [Layer: UserRoles/Features/Pages/CiviliansPanel]
 // Responsibility: Displays real-time status progression of the authenticated resident's own filed reports
-// via GET /api/reports/mine, sorted newest-to-oldest, with all Instructor #4 status pills
+// via GET /api/reports/mine, sorted newest-to-oldest, with all status pills
 // (Submitted / Reported, Pending, Verified, Dispatched, Resolved, Rejected).
 // Strictly 100% arrow functions (=>), ZERO 'any', ZERO emojis, and ZERO Active & Dispatched counters.
 
@@ -31,6 +31,11 @@ import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { useDistressBeacon } from '@/Hooks/useDistressBeacon';
 import { CivilianButton } from './Shared/CivilianButton';
 import { CivilianModalCard } from './Shared/CivilianModalCard';
+
+type ExtendedReportItem = ReportItem & {
+  aiAutoApproved?: boolean;
+  aiVerificationStatus?: string | null;
+};
 
 type StatusFilter =
   | 'all'
@@ -73,11 +78,11 @@ const renderPointerIconBadge = (pointerIconType?: string | null): React.ReactNod
   }
 };
 
-const enrichReportWithAiCache = (r: ReportItem): ReportItem => {
+const enrichReportWithAiCache = (r: ExtendedReportItem): ExtendedReportItem => {
   try {
     const raw = localStorage.getItem('resqtrack_ai_vision_by_report');
     if (!raw) return r;
-    const map = JSON.parse(raw) as Record<string, Partial<ReportItem>>;
+    const map = JSON.parse(raw) as Record<string, Partial<ExtendedReportItem>>;
     const cached = map[r.id] || (r.referenceCode ? map[r.referenceCode] : undefined);
     if (!cached) return r;
     return {
@@ -99,7 +104,7 @@ const enrichReportWithAiCache = (r: ReportItem): ReportItem => {
 };
 
 const getDeterministicStatus = (
-  r: ReportItem
+  r: ExtendedReportItem
 ): {
   normalizedStatus: NormalizedStatus;
   pillLabel: string;
@@ -141,12 +146,12 @@ const getDeterministicStatus = (
     };
   }
 
-  if (raw === 'VERIFIED' || Boolean(r.verifiedAt)) {
+  if (raw === 'VERIFIED' || Boolean(r.verifiedAt) || Boolean(r.aiAutoApproved)) {
     return {
       normalizedStatus: 'Verified',
-      pillLabel: 'Verified',
+      pillLabel: r.aiAutoApproved ? 'AI Auto-Approved' : 'Verified',
       currentStage: 1,
-      badgeClass: 'bg-[#670626]/15 text-[#670626] border-[#670626]/35'
+      badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300'
     };
   }
 
@@ -169,11 +174,11 @@ const getDeterministicStatus = (
 
 export const MyReportsHistory: React.FC = () => {
   const { session } = useSession();
-  const [reports, setReports] = useState<ReportItem[]>([]);
+  const [reports, setReports] = useState<ExtendedReportItem[]>([]);
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedFeedbackReport, setSelectedFeedbackReport] = useState<ReportItem | null>(null);
+  const [selectedFeedbackReport, setSelectedFeedbackReport] = useState<ExtendedReportItem | null>(null);
   const [feedbackRating, setFeedbackRating] = useState<number>(5);
   const [feedbackComment, setFeedbackComment] = useState<string>('');
   const [feedbackSuccessToast, setFeedbackSuccessToast] = useState<string | null>(null);
@@ -202,7 +207,7 @@ export const MyReportsHistory: React.FC = () => {
   const loadReports = useCallback(async () => {
     try {
       const data = await getMyReports();
-      const safeList = Array.isArray(data) ? data : [];
+      const safeList = Array.isArray(data) ? (data as ExtendedReportItem[]) : [];
       const ownReports = safeList
         .filter((r) => {
           if (!r || !r.id) return false;
@@ -269,7 +274,7 @@ export const MyReportsHistory: React.FC = () => {
   const handleSubmitFeedback = () => {
     if (!selectedFeedbackReport) return;
     setFeedbackSuccessToast(
-      `Thank you. Response rating submitted for #${selectedFeedbackReport.referenceCode}.`
+      `Rating saved for #${selectedFeedbackReport.referenceCode}.`
     );
     setSelectedFeedbackReport(null);
     setFeedbackComment('');
@@ -282,7 +287,7 @@ export const MyReportsHistory: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#F7F1EA]/20 pb-4">
         <div>
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#E9D9D0]">
-            Personal Incident Ledger
+            Incident Ledger
           </span>
           <h1 className="text-2xl md:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
             My Reports
@@ -336,7 +341,7 @@ export const MyReportsHistory: React.FC = () => {
           <SearchBar
             value={searchQuery}
             onChange={setSearchQuery}
-            placeholder="Search code, title, address..."
+            placeholder="Search code, title, sector..."
             className="w-full sm:w-56 !bg-[#E9D9D0] !text-[#670626] !border-[#670626]/20"
           />
           <TableCardToggle viewMode={viewMode} onChange={setViewMode} />
@@ -351,9 +356,7 @@ export const MyReportsHistory: React.FC = () => {
           </div>
           <h3 className="text-lg font-black text-[#670626]">No Reports Found</h3>
           <p className="text-sm text-[#A83B4D] max-w-sm">
-            {searchQuery
-              ? `No reports matching "${searchQuery}".`
-              : 'You have not submitted any reports from this resident account yet.'}
+            {searchQuery ? `No reports matching "${searchQuery}".` : 'No reports submitted yet.'}
           </p>
           <Link to="/civilian/report" className="mt-2">
             <CivilianButton variant="danger" size="sm" className="text-sm">
@@ -384,17 +387,17 @@ export const MyReportsHistory: React.FC = () => {
                       <span
                         className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold uppercase border ${sevClass}`}
                       >
-                        {r.severity} Severity
+                        {r.severity}
                       </span>
                       <span className="text-xs font-mono text-[#A83B4D] font-semibold">
-                        {r.category || 'Road Collision'}
+                        {r.category || 'VehicularAccident'}
                       </span>
                     </div>
 
                     <h2 className="text-lg font-black text-[#670626] mt-1">{r.title}</h2>
                     <span className="text-xs text-[#A83B4D] flex items-center gap-1.5 font-medium">
                       <MapPin className="w-4 h-4 text-[#670626] flex-shrink-0" />
-                      <span>{r.locationLabel || 'Katipunan Municipal Road Sector'}</span>
+                      <span>{r.locationLabel || 'Katipunan Sector'}</span>
                       <span className="text-[#670626]/40">/</span>
                       <span className="font-mono text-xs text-[#670626]">
                         {formatGpsCoord(r.latitude, r.longitude)}
@@ -438,13 +441,13 @@ export const MyReportsHistory: React.FC = () => {
                 {/* Stepped Progression Bar */}
                 {normalizedStatus === 'Rejected' ? (
                   <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/25 text-xs font-mono font-bold text-[#670626]">
-                    Status: Rejected during dispatch verification.
+                    Rejected during verification.
                   </div>
                 ) : (
                   <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-2.5">
                     <div className="flex items-center justify-between text-xs font-mono font-bold">
                       <span className={currentStage >= 0 ? 'text-[#670626]' : 'text-[#A83B4D]/60'}>
-                        Submitted / Pending
+                        Submitted
                       </span>
                       <span className={currentStage >= 1 ? 'text-[#670626]' : 'text-[#A83B4D]/60'}>
                         Verified
@@ -480,8 +483,7 @@ export const MyReportsHistory: React.FC = () => {
                       <span className="inline-flex items-center gap-1.5 font-black text-[#670626] uppercase">
                         <Sparkles className="w-3.5 h-3.5 text-[#670626]" />
                         <span>
-                          Roboflow ({r.roboflowModelId || 'accident-and-non-accident-label-image-dataset/14'}):{' '}
-                          {r.roboflowPrediction || 'incident'}
+                          Roboflow: {r.roboflowPrediction || 'incident'}
                           {typeof r.roboflowConfidence === 'number'
                             ? ` (${Math.round(r.roboflowConfidence * 100)}%)`
                             : ''}
@@ -562,12 +564,12 @@ export const MyReportsHistory: React.FC = () => {
             <table className="w-full text-left font-mono text-sm">
               <thead className="bg-[#E9D9D0] border-b border-[#670626]/15 text-[#670626] uppercase text-xs tracking-wider">
                 <tr>
-                  <th className="p-4">Ref Code</th>
-                  <th className="p-4">Headline & Sector</th>
+                  <th className="p-4">Ref</th>
+                  <th className="p-4">Title &amp; Location</th>
                   <th className="p-4">Category</th>
                   <th className="p-4">Severity</th>
                   <th className="p-4">Status</th>
-                  <th className="p-4">Dispatched Unit</th>
+                  <th className="p-4">Unit</th>
                   <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -649,7 +651,7 @@ export const MyReportsHistory: React.FC = () => {
       <CivilianModalCard
         isOpen={Boolean(selectedFeedbackReport)}
         onClose={() => setSelectedFeedbackReport(null)}
-        title="Emergency Response Quality Survey"
+        title="Rate Response"
         size="sm"
       >
         {selectedFeedbackReport && (
@@ -660,12 +662,12 @@ export const MyReportsHistory: React.FC = () => {
                 #{selectedFeedbackReport.referenceCode} - {selectedFeedbackReport.title}
               </span>
               <span className="text-[#A83B4D] text-xs block mt-1">
-                Unit: {selectedFeedbackReport.allocatedUnitCode || 'Municipal Response Unit'}
+                Unit: {selectedFeedbackReport.allocatedUnitCode || 'Municipal Unit'}
               </span>
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-bold text-[#670626]">Rate Response</label>
+              <label className="text-sm font-bold text-[#670626]">Rating</label>
               <div className="flex items-center gap-2">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
@@ -685,24 +687,20 @@ export const MyReportsHistory: React.FC = () => {
                   </button>
                 ))}
                 <span className="ml-2 font-mono text-sm font-bold text-[#670626]">
-                  {feedbackRating === 5 && 'Outstanding (5/5)'}
-                  {feedbackRating === 4 && 'Good (4/5)'}
-                  {feedbackRating === 3 && 'Acceptable (3/5)'}
-                  {feedbackRating <= 2 && 'Needs Improvement'}
+                  {feedbackRating}/5
                 </span>
               </div>
             </div>
 
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-bold text-[#670626]">
-                Feedback for LDRRMO Administration{' '}
-                <span className="text-[#A83B4D] font-normal">(Optional)</span>
+                Comments <span className="text-[#A83B4D] font-normal">(Optional)</span>
               </label>
               <textarea
                 value={feedbackComment}
                 onChange={(e) => setFeedbackComment(e.target.value)}
                 rows={3}
-                placeholder="Share your experience regarding arrival time and responder coordination..."
+                placeholder="Arrival time and responder notes..."
                 className="px-3.5 py-2.5 bg-[#E9D9D0] border border-[#670626]/20 rounded-xl text-sm text-[#670626] placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626] leading-relaxed"
               />
             </div>
@@ -714,7 +712,7 @@ export const MyReportsHistory: React.FC = () => {
                 onClick={handleSubmitFeedback}
                 className="flex-1 text-sm"
               >
-                Submit Citizen Feedback
+                Submit Feedback
               </CivilianButton>
               <CivilianButton
                 variant="outline"
@@ -733,7 +731,7 @@ export const MyReportsHistory: React.FC = () => {
         isOpen={Boolean(lightboxImageUrl)}
         imageUrl={lightboxImageUrl}
         onClose={() => setLightboxImageUrl(null)}
-        title="Field Incident Evidence Inspection"
+        title="Incident Evidence"
       />
     </div>
   );

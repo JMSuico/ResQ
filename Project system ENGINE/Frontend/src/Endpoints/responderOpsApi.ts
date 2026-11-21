@@ -1,5 +1,5 @@
 // [Layer: Endpoints]
-// Responsibility: Tactical responder operations, duty roster, PCR, police blotter, and fire alarm API stubs using arrow lambdas (=>).
+// Responsibility: Tactical responder operations, duty roster, PCR, and police blotter API stubs using arrow lambdas (=>).
 // Katipuneros Architecture: Strictly typed request/response contracts with ZERO 'any' usage.
 
 import { requestJson } from './apiClient';
@@ -105,30 +105,6 @@ export interface PoliceBlotterEntry {
   createdAt: string;
 }
 
-export interface SetAlarmLevelPayload {
-  reportId?: string;
-  alarmLevel: string;
-  buildingType?: string;
-  trappedOccupantsCount: number;
-  commanderName?: string;
-  reportingUnit?: string;
-  remarks?: string;
-  waterSupplyGallons: number;
-}
-
-export interface FireAlarmStatusRecord {
-  id: string;
-  reportId?: string | null;
-  alarmLevel: string;
-  buildingType: string;
-  trappedOccupantsCount: number;
-  commanderName: string;
-  reportingUnit: string;
-  remarks: string;
-  waterSupplyGallons: number;
-  updatedAt: string;
-}
-
 export interface HydrantFixture {
   id: string;
   fixtureCode: string;
@@ -180,15 +156,6 @@ export const filePoliceBlotter = (payload: CreateBlotterPayload): Promise<{ mess
 
 export const getPoliceBlotters = (reportId?: string): Promise<PoliceBlotterEntry[]> =>
   requestJson<PoliceBlotterEntry[]>(`/api/responder-ops/blotter${reportId ? `?reportId=${reportId}` : ''}`, { method: 'GET' });
-
-export const setFireAlarmLevel = (payload: SetAlarmLevelPayload): Promise<{ message: string; data: FireAlarmStatusRecord }> =>
-  requestJson<{ message: string; data: FireAlarmStatusRecord }>('/api/responder-ops/alarm-level', {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  });
-
-export const getFireAlarmStatuses = (reportId?: string): Promise<FireAlarmStatusRecord[]> =>
-  requestJson<FireAlarmStatusRecord[]>(`/api/responder-ops/alarm-level${reportId ? `?reportId=${reportId}` : ''}`, { method: 'GET' });
 
 export const getNearbyHydrants = (): Promise<HydrantFixture[]> =>
   requestJson<HydrantFixture[]>('/api/responder-ops/hydrants', { method: 'GET' });
@@ -380,14 +347,41 @@ const syncLedgerFromBackend = async (): Promise<DispatchRequestRecord[] | null> 
   return null;
 };
 
+const isCurrentSessionAdmin = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const candidates = [
+      sessionStorage.getItem('resqtrack_session'),
+      sessionStorage.getItem('resqtrack_user'),
+      localStorage.getItem('resqtrack_session_1996'),
+      localStorage.getItem('resqtrack_session')
+    ];
+    for (const raw of candidates) {
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as { role?: string };
+      const role = (parsed?.role || '').toLowerCase();
+      if (role.includes('admin') || role.includes('ldrrmo') || role === '1') {
+        return true;
+      }
+      if (role !== '') return false;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+};
+
 const syncLedgerToBackend = async (records: DispatchRequestRecord[]): Promise<void> => {
+  if (!isCurrentSessionAdmin()) {
+    return;
+  }
   try {
     await requestJson<{ message: string }>(`/api/settings/${SETTING_LEDGER_KEY}`, {
       method: 'PUT',
       body: JSON.stringify({ value: JSON.stringify(records) })
     });
   } catch {
-    // If backend rejects (e.g., non-admin or key unseeded), local state is still persisted in localStorage
+    // If backend rejects (e.g., key unseeded), local state is still persisted in localStorage
   }
 };
 

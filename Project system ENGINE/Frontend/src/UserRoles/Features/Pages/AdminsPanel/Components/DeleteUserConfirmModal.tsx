@@ -70,7 +70,7 @@ export const DeleteUserConfirmModal: React.FC<DeleteUserConfirmModalProps> = ({
               Access Revocation
             </h4>
             <p className="text-[#A83B4D] text-xs leading-relaxed">
-              This revokes active sessions. Incident logs and audit trails are preserved.
+              Revokes active sessions; logs &amp; audit trails remain.
             </p>
           </div>
         </div>

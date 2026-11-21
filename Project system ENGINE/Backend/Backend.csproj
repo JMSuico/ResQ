@@ -25,4 +25,8 @@
     <PackageReference Include="Scalar.AspNetCore" Version="2.17.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Scripts\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

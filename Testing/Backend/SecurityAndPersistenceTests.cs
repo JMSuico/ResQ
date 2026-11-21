@@ -1025,6 +1025,110 @@ public class SecurityAndPersistenceTests
         Assert.Equal("crime", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("CrimeOrSecurity"));
         Assert.Equal("flood", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("NaturalDisaster"));
         Assert.Equal("hazard", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("HazardFixture"));
+        Assert.Equal("hazard", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("NonIncident"));
+    }
+
+    [Fact]
+    public async Task DualStageIncidentSceneAiStrategy_FallbackWithoutApiKey_NeverFabricatesAccident_AndHonorsNonIncidentVerdict()
+    {
+        var emptyConfig = new ConfigurationBuilder().Build();
+        var originalKey = Environment.GetEnvironmentVariable("ROBOFLOW_API_KEY");
+        Environment.SetEnvironmentVariable("ROBOFLOW_API_KEY", null);
+        try
+        {
+            var roboflowStrategy = new RoboflowServerlessAccidentDetectionStrategy(configuration: emptyConfig);
+            string tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC";
+
+            var stage1 = await roboflowStrategy.DetectAccidentAsync(new RoboflowAccidentDetectionInput(
+                ImageDataUrl: tinyPng,
+                TitleHint: "",
+                NoteHint: "",
+                CategoryHint: ""));
+
+            Assert.Equal("LOCAL_FALLBACK_NO_API_KEY", stage1.AuthTransport);
+            Assert.NotEqual("Accident", stage1.Prediction);
+            Assert.True(stage1.Confidence < 0.70);
+            Assert.True(stage1.NeedsReview);
+
+            var claudeClientStub = new CapturingClaudeMessagesClient(
+                modelUsed: "claude-haiku-4-5-20251001",
+                rawResponseJson: """
+                    {"isGenuineIncident":false,"detectedCategory":"NonIncident","recommendedSeverity":"Low","pointerIconType":"hazard","situationDescription":"Blank test image or portrait with no visible emergency.","visibleHazards":"none detected","uncertaintyNotes":"Image does not depict an emergency."}
+                    """);
+
+            var claudeStrategy = new ClaudeHaikuIncidentVisionStrategy(claudeClientStub);
+            var dualStrategy = new DualStageIncidentSceneAiStrategy(roboflowStrategy, claudeStrategy);
+            var analysis = await dualStrategy.AnalyzeAsync(new AnalyzeIncidentImageRequest(
+                ImageDataUrl: tinyPng,
+                TitleHint: "",
+                NoteHint: "",
+                CategoryHint: ""));
+
+            Assert.Contains("LOCAL_FALLBACK_NO_API_KEY", claudeClientStub.LastSerializedPayload ?? string.Empty);
+            Assert.False(analysis.IsGenuineIncident);
+            Assert.Equal("NonIncident", analysis.DetectedCategory);
+            Assert.Equal("Low", analysis.RecommendedSeverity);
+            Assert.Equal("hazard", analysis.PointerIconType);
+            Assert.Equal("LDRRMO Triage (Non-Incident)", analysis.RecommendedAgencyUnit);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ROBOFLOW_API_KEY", originalKey);
+        }
+    }
+
+    [Fact]
+    public async Task RoboflowServerlessAccidentDetectionStrategy_RetriesWithJsonBase64Payload_WhenFormUrlEncodedReturns400()
+    {
+        int callCount = 0;
+        var handler = new DelegatingCallbackHandler(req =>
+        {
+            callCount++;
+            Assert.Equal("Bearer", req.Headers.Authorization?.Scheme);
+            Assert.Equal("rf_json_fallback_key", req.Headers.Authorization?.Parameter);
+
+            if (callCount == 1)
+            {
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.BadRequest)
+                {
+                    Content = new System.Net.Http.StringContent("{\"error\":\"Expected JSON payload\"}")
+                };
+            }
+
+            Assert.Equal("application/json", req.Content?.Headers.ContentType?.MediaType);
+            const string jsonOk = """
+                {
+                  "predictions": [
+                    { "class": "Non-Accident", "confidence": 0.89 }
+                  ]
+                }
+                """;
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new System.Net.Http.StringContent(jsonOk, System.Text.Encoding.UTF8, "application/json")
+            };
+        });
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Roboflow:ApiKey"] = "rf_json_fallback_key"
+            })
+            .Build();
+
+        var strategy = new RoboflowServerlessAccidentDetectionStrategy(
+            new System.Net.Http.HttpClient(handler),
+            config);
+
+        string tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC";
+        var result = await strategy.DetectAccidentAsync(new RoboflowAccidentDetectionInput(
+            ImageDataUrl: tinyPng));
+
+        Assert.Equal(2, callCount);
+        Assert.Equal("Non-Accident", result.Prediction);
+        Assert.Equal(0.89, result.Confidence);
+        Assert.True(result.NeedsReview);
+        Assert.Equal("Authorization: Bearer (header)", result.AuthTransport);
     }
 
     [Fact]

@@ -17,4 +17,5 @@ public interface IReportService
     Task<string?> GetReportImagePathAsync(Guid reportId, CancellationToken ct = default);
     Task<Guid> ResolveReporterIdAsync(Guid? currentUserId, CancellationToken ct = default);
     Task<bool> RecordDistressBeaconAsync(Guid reportId, DistressBeaconRequest beacon, CancellationToken ct = default);
+    Task<AiAutoApproveReportResult> AutoApprovePendingReportWithAiAsync(Guid reportId, Guid actorUserId, CancellationToken ct = default);
 }

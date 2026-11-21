@@ -333,7 +333,7 @@ const runLiveMultiRoleSuite = async (baseUrl: string): Promise<void> => {
   }
 
   // 6. Agency-Level RBAC Protection
-  console.log(`\n${BOLD}--- 6. Agency-Level RBAC Protection (PCR, Fire Alarm, Blotter, Reports) ---${RESET}`);
+  console.log(`\n${BOLD}--- 6. Agency-Level RBAC Protection (PCR, Blotter, Reports, Fire Alarm Retired) ---${RESET}`);
   const medicToken = activeTokens.find((t) => t.roleKey === 'RHU Medic Responder')?.token;
   const fireToken = activeTokens.find((t) => t.roleKey === 'BFP Fire Responder')?.token;
   const pnpToken = activeTokens.find((t) => t.roleKey === 'PNP Police Responder')?.token;
@@ -378,30 +378,14 @@ const runLiveMultiRoleSuite = async (baseUrl: string): Promise<void> => {
     assertEqual(medicPcrResp.status, 200, 'RHU Medic responder submitting PCR');
     logPass('RHU Medic responder successfully submitted Patient Care Record.');
 
-    // 6b. Fire Alarm: Only FIRE or Admin allowed
-    logInfo('Testing POST /api/responder-ops/alarm-level agency authorization...');
-    const alarmPayload = JSON.stringify({
-      alarmLevel: 'SecondAlarm',
-      waterSupplyStatus: 'Adequate',
-      hazmatPresent: false,
-      windSpeedKph: 15
+    // 6b. Fire Roster & Retired Fire Alarm Check
+    logInfo('Verifying FIRE unit roster access and retired Fire Alarm escalation...');
+    const fireRosterResp = await fetch(`${baseUrl}/api/responder-ops/roster?agency=FIRE`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${fireToken}` }
     });
-
-    const medicAlarmResp = await fetch(`${baseUrl}/api/responder-ops/alarm-level`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${medicToken}` },
-      body: alarmPayload
-    });
-    assertEqual(medicAlarmResp.status, 403, 'Medic responder escalating fire alarm');
-    logPass('Medic responder strictly forbidden (403) from escalating fire alarm levels.');
-
-    const fireAlarmResp = await fetch(`${baseUrl}/api/responder-ops/alarm-level`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${fireToken}` },
-      body: alarmPayload
-    });
-    assertEqual(fireAlarmResp.status, 200, 'Fire responder escalating fire alarm');
-    logPass('BFP Fire responder successfully escalated fire alarm level.');
+    assertEqual(fireRosterResp.status, 200, 'Fire responder accessing FIRE duty roster');
+    logPass('BFP Fire responder accessed FIRE duty roster cleanly (Fire Alarm escalation UI retired).');
 
     // 6c. Blotter: Only PNP or Admin allowed
     logInfo('Testing POST /api/responder-ops/blotter agency authorization...');
@@ -619,11 +603,11 @@ const runDeterministicMultiRoleSuite = async (): Promise<void> => {
   assertEqual(evaluateAgencyOperation('Responder', 'PNP', 'RHU').status, 403, 'PNP Police submitting PCR');
   logPass('PNP Police strictly blocked (403) from Patient Care Records.');
 
-  // 6b. Fire Alarm: FIRE only
-  assertEqual(evaluateAgencyOperation('Responder', 'FIRE', 'FIRE').status, 200, 'BFP Fire escalating fire alarm');
-  logPass('BFP Fire authorized for Fire Alarm escalation.');
-  assertEqual(evaluateAgencyOperation('Responder', 'RHU', 'FIRE').status, 403, 'RHU Medic escalating fire alarm');
-  logPass('RHU Medic strictly blocked (403) from Fire Alarm escalation.');
+  // 6b. Fire Unit Scope: FIRE only (Fire Alarm escalation UI removed)
+  assertEqual(evaluateAgencyOperation('Responder', 'FIRE', 'FIRE').status, 200, 'BFP Fire accessing FIRE unit ops');
+  logPass('BFP Fire authorized for FIRE unit operations (Fire Alarm UI removed).');
+  assertEqual(evaluateAgencyOperation('Responder', 'RHU', 'FIRE').status, 403, 'RHU Medic accessing FIRE unit ops');
+  logPass('RHU Medic strictly blocked (403) from FIRE unit operations.');
 
   // 6c. Police Blotter: PNP only
   assertEqual(evaluateAgencyOperation('Responder', 'PNP', 'PNP').status, 200, 'PNP Police filing blotter');

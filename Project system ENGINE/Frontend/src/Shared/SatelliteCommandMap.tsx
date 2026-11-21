@@ -40,6 +40,8 @@ import {
   getRemainingCloseSeconds,
   formatCountdownMmSs,
   formatDateTimeWithSecondsAmPm,
+  parseIncidentTimestampMs,
+  shouldPulseIncidentBeacon,
   RESPONDED_GREEN_COLOR,
   DEFAULT_VERIFICATION_CLOSE_SECONDS
 } from './radarPointerCategories';
@@ -76,6 +78,8 @@ export interface IncidentPinData {
   description?: string;
   allocatedUnitId?: string | null;
   allocatedUnitCode?: string | null;
+  isFixture?: boolean;
+  rawReportedAt?: string | number | null;
 }
 
 export interface MapMarker {
@@ -92,6 +96,7 @@ export interface MapMarker {
   status?: string;
   ipAddress?: string;
   evidenceUrl?: string;
+  reportedAt?: string | number | null;
   verifiedAt?: string | number | null;
   requiresManualVerification?: boolean;
   gpsAccuracyMeters?: number;
@@ -416,13 +421,15 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             severity: m.severity,
             ipAddress: m.ipAddress,
             evidenceUrl: m.evidenceUrl,
+            reportedAt: m.reportedAt ? String(m.reportedAt) : undefined,
             verifiedAt: m.verifiedAt,
             requiresManualVerification: m.requiresManualVerification,
             recommendedAgency: m.agency,
             gpsAccuracyMeters: m.gpsAccuracyMeters,
             description: m.description,
             allocatedUnitId: m.allocatedUnitId,
-            allocatedUnitCode: m.allocatedUnitCode
+            allocatedUnitCode: m.allocatedUnitCode,
+            isFixture: m.type === 'fixture'
           });
         }
       });
@@ -445,6 +452,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           ...inc,
           ipAddress: inc.ipAddress,
           evidenceUrl: inc.evidenceUrl,
+          rawReportedAt: inc.rawReportedAt ?? inc.reportedAt ?? null,
           reportedAt: inc.reportedAt || formatDateTimeWithSecondsAmPm(new Date(Date.now() - index * 95000)),
           categoryMeta: explicitMatch
         };
@@ -717,17 +725,61 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         ? 'opacity: 0.38; filter: grayscale(82%);'
         : 'opacity: 1;';
 
+      const statusLower = (inc.status || '').trim().toLowerCase();
+      const pulseState = shouldPulseIncidentBeacon({
+        status: inc.status,
+        verifiedAt: inc.verifiedAt,
+        reportedAt: inc.rawReportedAt,
+        isResponded,
+        isFixture: inc.isFixture
+      });
+
+      const shouldPulse = pulseState.shouldPulse && !isPaleNonMedic;
+      const isNewUpload = shouldPulse && pulseState.isNewUpload;
+      const showNewPill =
+        shouldPulse &&
+        (pulseState.isRecentTimestamp ||
+          !inc.verifiedAt ||
+          statusLower === 'reported' ||
+          statusLower === 'submitted');
+
+      const wavePulseHtml = shouldPulse
+        ? `
+          <div class="resqtrack-wave-ring ${isNewUpload ? 'resqtrack-wave-ring--fast' : ''}" style="border:2px solid ${pointerBgColor};box-shadow:0 0 14px ${pointerBgColor};background:${pointerBgColor}1F;"></div>
+          <div class="resqtrack-beat-ring ${isNewUpload ? 'resqtrack-beat-ring--fast' : ''}" style="border:2px solid ${beacon.ringColor};box-shadow:0 0 10px ${pointerBgColor};"></div>
+        `
+        : '';
+
+      const newBadgeHtml = showNewPill
+        ? '<span class="resqtrack-new-badge">NEW</span>'
+        : '';
+
       const isTargetDispatch = selectedIncidentId === inc.id || activePointer?.id === inc.id;
       const dispatchHaloHtml = isTargetDispatch
-        ? `<div style="position:absolute;inset:-4px;border-radius:9999px;border:2.5px dashed #F7F1EA;box-shadow:0 0 18px ${pointerBgColor};animation:resqtrackPulseRing 1.8s ease-out infinite;pointer-events:none;"></div>`
+        ? `<div class="resqtrack-dispatch-halo" style="box-shadow:0 0 18px ${pointerBgColor};"></div>`
         : '';
+
+      const coreBadgeClass = isNewUpload ? 'resqtrack-core-beat' : '';
+      const coreBoxShadow = isNewUpload
+        ? `0 0 18px ${pointerBgColor}, 0 6px 16px rgba(20,4,10,0.55), 0 0 0 3px ${beacon.ringColor}88`
+        : `0 6px 16px rgba(20,4,10,0.55), 0 0 0 2px ${pointerBgColor}55`;
+
+      const markerZIndexOffset = isTargetDispatch
+        ? 900
+        : isNewUpload
+        ? 600
+        : shouldPulse
+        ? 250
+        : 0;
 
       const pinIcon = L.divIcon({
         className: 'resqtrack-tactical-pointer',
         html: `
-          <div style="position:relative;width:44px;height:48px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;${paleStyle};transition:all 200ms ease;cursor:pointer;">
+          <div style="position:relative;width:44px;height:48px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow:visible;${paleStyle};transition:all 200ms ease;cursor:pointer;">
+            ${wavePulseHtml}
             ${dispatchHaloHtml}
-            <div style="position:relative;width:38px;height:38px;border-radius:9999px;background:${pointerBgColor};border:2.5px solid #F7F1EA;box-shadow:0 6px 16px rgba(20,4,10,0.55), 0 0 0 2px ${pointerBgColor}55;display:flex;align-items:center;justify-content:center;color:#FFFFFF;z-index:2;">
+            ${newBadgeHtml}
+            <div class="${coreBadgeClass}" style="position:relative;width:38px;height:38px;border-radius:9999px;background:${pointerBgColor};border:2.5px solid #F7F1EA;box-shadow:${coreBoxShadow};display:flex;align-items:center;justify-content:center;color:#FFFFFF;z-index:2;">
               <svg role="img" aria-label="${beacon.ariaLabel}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));">
                 ${beacon.svgMarkup}
               </svg>
@@ -753,6 +805,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             setActivePointer(inc);
           }
         }
+        existing.marker.setZIndexOffset(markerZIndexOffset);
         existing.marker.off('click');
         existing.marker.on('click', (e) => {
           if (e && e.originalEvent) {
@@ -771,6 +824,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
       const marker = L.marker([lat, lng], {
         icon: pinIcon,
+        zIndexOffset: markerZIndexOffset,
         title: `${meta.label} — ${inc.id}`
       });
 
@@ -859,40 +913,101 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     });
   }, [allResponderUnits]);
 
-  // Render high-tech concentric radar sonar rings matching Katipunan Poblacion cluster
+  // Render high-tech concentric radar sonar rings centered on active/newest incident or Katipunan cluster
   useEffect(() => {
     const radarLayer = radarRingsLayerRef.current;
     if (!radarLayer) return;
 
     radarLayer.clearLayers();
 
-    // Draw tactical radar rings centered on active pointer or default Katipunan Poblacion cluster
-    const rings: Array<{ center: [number, number]; radius: number; weight: number; opacity: number }> =
+    const selectedTarget =
       activePointer && typeof activePointer.lat === 'number' && typeof activePointer.lng === 'number'
+        ? activePointer
+        : selectedIncidentId
+        ? visibleIncidents.find((i) => i.id === selectedIncidentId) || null
+        : null;
+
+    const newestActiveIncident =
+      selectedTarget ||
+      visibleIncidents
+        .filter((inc) => {
+          const lat = Number(inc.lat);
+          const lng = Number(inc.lng);
+          if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return false;
+          const isResponded = Boolean(respondedIds[inc.id]);
+          return shouldPulseIncidentBeacon({
+            status: inc.status,
+            verifiedAt: inc.verifiedAt,
+            reportedAt: inc.rawReportedAt,
+            isResponded,
+            isFixture: inc.isFixture
+          }).shouldPulse;
+        })
+        .sort((a, b) => {
+          const tsA = parseIncidentTimestampMs(a.rawReportedAt) ?? 0;
+          const tsB = parseIncidentTimestampMs(b.rawReportedAt) ?? 0;
+          return tsB - tsA;
+        })[0] ||
+      null;
+
+    const focusIsResponded = newestActiveIncident
+      ? Boolean(respondedIds[newestActiveIncident.id]) ||
+        ['responded', 'resolved', 'closed'].includes((newestActiveIncident.status || '').toLowerCase())
+      : false;
+
+    const focusRingColor = newestActiveIncident
+      ? focusIsResponded
+        ? '#10b981'
+        : '#f43f5e'
+      : '#10b981';
+
+    const rings: Array<{ center: [number, number]; radius: number; weight: number; opacity: number; color: string }> =
+      newestActiveIncident &&
+      typeof newestActiveIncident.lat === 'number' &&
+      typeof newestActiveIncident.lng === 'number'
         ? [
-            { center: [activePointer.lat, activePointer.lng], radius: 120, weight: 2.0, opacity: 0.9 },
-            { center: [activePointer.lat, activePointer.lng], radius: 240, weight: 1.8, opacity: 0.75 },
-            { center: [activePointer.lat, activePointer.lng], radius: 380, weight: 1.6, opacity: 0.6 }
+            {
+              center: [newestActiveIncident.lat, newestActiveIncident.lng],
+              radius: 115,
+              weight: 2.1,
+              opacity: 0.92,
+              color: focusRingColor
+            },
+            {
+              center: [newestActiveIncident.lat, newestActiveIncident.lng],
+              radius: 230,
+              weight: 1.8,
+              opacity: 0.76,
+              color: focusRingColor
+            },
+            {
+              center: [newestActiveIncident.lat, newestActiveIncident.lng],
+              radius: 360,
+              weight: 1.5,
+              opacity: 0.58,
+              color: focusRingColor
+            }
           ]
         : [
-            { center: [8.51015, 123.28505], radius: 120, weight: 1.8, opacity: 0.85 }, // RHU Trauma Facility
-            { center: [8.51022, 123.28663], radius: 110, weight: 1.8, opacity: 0.85 }, // Doctor Stethoscope Station
-            { center: [8.51018, 123.28584], radius: 260, weight: 1.8, opacity: 0.70 }  // Enclosing Poblacion Cluster
+            { center: [8.51015, 123.28505], radius: 120, weight: 1.8, opacity: 0.85, color: '#10b981' },
+            { center: [8.51022, 123.28663], radius: 110, weight: 1.8, opacity: 0.85, color: '#10b981' },
+            { center: [8.51018, 123.28584], radius: 260, weight: 1.8, opacity: 0.7, color: '#10b981' }
           ];
 
     rings.forEach((r, idx) => {
       const circle = L.circle(r.center, {
         radius: r.radius,
-        color: '#10b981', // Crisp emerald green matching reference picture
+        color: r.color,
         weight: r.weight,
         opacity: r.opacity,
-        fillColor: '#10b981',
+        fillColor: r.color,
         fillOpacity: 0.04,
+        interactive: false,
         className: `resqtrack-radar-concentric-ring resqtrack-ring-${idx}`
       });
       radarLayer.addLayer(circle);
     });
-  }, [activePointer]);
+  }, [activePointer, selectedIncidentId, visibleIncidents, respondedIds]);
 
   // When a report is clicked, dynamically center map and draw proximity circles or lines to closest on-duty units
   useEffect(() => {
@@ -1116,22 +1231,114 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     >
       {/* Global CSS for pulsing beacon animations & Stitch Claymorphism tooltips */}
       <style>{`
+        .leaflet-marker-icon.resqtrack-tactical-pointer {
+          overflow: visible !important;
+        }
         @keyframes resqtrackPulseRing {
           0% { transform: scale(0.95); opacity: 0.95; }
           50% { transform: scale(1.35); opacity: 0.4; }
           100% { transform: scale(1.75); opacity: 0; }
         }
+        @keyframes resqtrackWavePulse {
+          0% { transform: scale(0.95); opacity: 0.92; }
+          55% { opacity: 0.36; }
+          100% { transform: scale(2.45); opacity: 0; }
+        }
+        @keyframes resqtrackBeatPulse {
+          0% { transform: scale(0.96); opacity: 0.95; }
+          18% { transform: scale(1.44); opacity: 0.68; }
+          35% { transform: scale(1.08); opacity: 0.85; }
+          52% { transform: scale(1.82); opacity: 0.42; }
+          100% { transform: scale(2.1); opacity: 0; }
+        }
+        @keyframes resqtrackCoreBeat {
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          18% { transform: scale(1.1); filter: brightness(1.14); }
+          35% { transform: scale(1.02); filter: brightness(1.04); }
+          52% { transform: scale(1.08); filter: brightness(1.12); }
+        }
+        .resqtrack-wave-ring {
+          position: absolute;
+          top: 0;
+          left: 3px;
+          width: 38px;
+          height: 38px;
+          border-radius: 9999px;
+          pointer-events: none;
+          transform-origin: center center;
+          animation: resqtrackWavePulse 1.8s cubic-bezier(0.2, 0.7, 0.2, 1) infinite;
+          z-index: 0;
+        }
+        .resqtrack-wave-ring--fast {
+          animation-duration: 1.35s;
+        }
+        .resqtrack-beat-ring {
+          position: absolute;
+          top: 0;
+          left: 3px;
+          width: 38px;
+          height: 38px;
+          border-radius: 9999px;
+          pointer-events: none;
+          transform-origin: center center;
+          animation: resqtrackBeatPulse 1.8s ease-out 0.45s infinite;
+          z-index: 0;
+        }
+        .resqtrack-beat-ring--fast {
+          animation: resqtrackBeatPulse 1.35s ease-out 0.35s infinite;
+        }
+        .resqtrack-core-beat {
+          transform-origin: center center;
+          animation: resqtrackCoreBeat 1.35s ease-in-out infinite;
+        }
+        .resqtrack-new-badge {
+          position: absolute;
+          top: -9px;
+          right: -8px;
+          padding: 1px 5px;
+          border-radius: 9999px;
+          background: #DC2626;
+          color: #FFFFFF;
+          border: 1.5px solid #F7F1EA;
+          font-family: monospace;
+          font-size: 8px;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          line-height: 1.2;
+          box-shadow: 0 2px 8px rgba(220, 38, 38, 0.55);
+          pointer-events: none;
+          z-index: 4;
+        }
+        .resqtrack-dispatch-halo {
+          position: absolute;
+          top: -4px;
+          left: -1px;
+          width: 46px;
+          height: 46px;
+          border-radius: 9999px;
+          border: 2.5px dashed #F7F1EA;
+          pointer-events: none;
+          transform-origin: center center;
+          animation: resqtrackPulseRing 1.8s ease-out infinite;
+          z-index: 1;
+        }
         @keyframes resqtrackRadarBreathe {
           0%, 100% {
-            opacity: 0.85;
+            opacity: 0.88;
+            stroke-opacity: 0.88;
             stroke-width: 1.8px;
+            transform: scale(0.985);
           }
           50% {
-            opacity: 0.45;
-            stroke-width: 2.2px;
+            opacity: 0.42;
+            stroke-opacity: 0.42;
+            stroke-width: 2.6px;
+            transform: scale(1.025);
           }
         }
         .resqtrack-radar-concentric-ring {
+          transform-box: fill-box;
+          transform-origin: center center;
           animation: resqtrackRadarBreathe 4s ease-in-out infinite;
           pointer-events: none !important;
         }
@@ -1170,6 +1377,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         }
         .resqtrack-tactical-pointer,
         .leaflet-marker-icon {
+          overflow: visible !important;
           transition: transform 1.2s cubic-bezier(0.25, 1, 0.5, 1) !important;
         }
         .leaflet-zoom-anim .resqtrack-tactical-pointer,

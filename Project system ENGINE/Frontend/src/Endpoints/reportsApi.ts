@@ -21,6 +21,8 @@ export interface IncidentImageAiAnalysisResponse {
   roboflowAuthTransport: string;
   claudeModelUsed: string;
   isGenuineIncident: boolean;
+  autoApproveEligible?: boolean;
+  aiVerificationStatus?: string | null;
   detectedCategory: string;
   recommendedSeverity: string;
   pointerIconType: IncidentPointerIconType;
@@ -30,6 +32,8 @@ export interface IncidentImageAiAnalysisResponse {
   verificationStatus: string;
   recommendedAgencyUnit: string;
 }
+
+export type IncidentImageAiAnalysisResult = IncidentImageAiAnalysisResponse;
 
 export interface CreateReportPayload {
   title: string;
@@ -114,6 +118,16 @@ export interface ReportItem {
   claudeVisibleHazards?: string | null;
   claudeUncertaintyNotes?: string | null;
   pointerIconType?: string | null;
+  aiAutoApproved?: boolean;
+  aiVerificationStatus?: string | null;
+}
+
+export interface AiAutoApproveReportResponse {
+  autoApproved: boolean;
+  status: string;
+  aiVerificationStatus: string;
+  message: string;
+  report?: ReportItem;
 }
 
 export interface AlertItem {
@@ -207,6 +221,11 @@ export const verifyReport = (
       adminNote: note,
       severity
     })
+  });
+
+export const autoApproveReportWithAi = (id: string): Promise<AiAutoApproveReportResponse> =>
+  requestJson<AiAutoApproveReportResponse>(`/api/reports/${encodeURIComponent(id)}/ai-auto-approve`, {
+    method: 'POST'
   });
 
 export const updateReportSeverity = async (

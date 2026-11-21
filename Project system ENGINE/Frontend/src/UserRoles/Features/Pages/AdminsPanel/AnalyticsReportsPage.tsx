@@ -281,12 +281,12 @@ export const AnalyticsReportsPage: FC = () => {
       {
         title: 'Triage Ingestion Velocity',
         status: `${summary?.totalIncidents ?? 0} reports · ${summary?.criticalIncidents ?? 0} SOS · Index ${tivaVelocity}`,
-        description: 'Weighted report density across active Katipunan municipal sectors.'
+        description: 'Weighted report density across Katipunan sectors.'
       },
       {
         title: 'Capture Sharpness Verification',
         status: `${sharpnessPercent} sharp · Avg ${avgLaplacianVar}`,
-        description: 'Rejects blurred or spoofed frames before triage.'
+        description: 'Filters blurred or spoofed frames.'
       },
       {
         title: 'Dispatch Allocation Ratio',
@@ -294,7 +294,7 @@ export const AnalyticsReportsPage: FC = () => {
           (summary?.totalResponders ?? 0) > 0
             ? `${dispatchRatioPercent} (${summary?.activeDispatches ?? 0}/${summary?.totalResponders ?? 0} units)`
             : '0.0% allocated',
-        description: 'Active dispatches relative to total available responders.'
+        description: 'Active dispatches vs available units.'
       }
     ],
     [summary, tivaVelocity, sharpnessPercent, avgLaplacianVar, dispatchRatioPercent]
@@ -362,7 +362,7 @@ export const AnalyticsReportsPage: FC = () => {
             Analytics & Reports
           </h1>
           <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
-            Response curves and operational metrics for Katipunan, Zamboanga del Norte
+            Metrics &amp; response curves · Katipunan, ZN
           </p>
         </div>
 
@@ -488,7 +488,7 @@ export const AnalyticsReportsPage: FC = () => {
       <div className={`tactical-card ${CLAY_SURFACE} p-5`}>
         <HeatmapChart
           matrix={heatmapMatrix}
-          title="Geospatial Weekly Incident Density Matrix (Katipunan Barangay Heat Distribution)"
+          title="Weekly Incident Density (Katipunan)"
         />
       </div>
 
@@ -547,7 +547,7 @@ export const AnalyticsReportsPage: FC = () => {
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           title="Operational Details"
-          subtitle="Live telemetry and capture quality summary"
+          subtitle="Telemetry & capture quality"
           className="max-w-3xl"
         >
           <div className="space-y-4 text-sm text-[#670626]">

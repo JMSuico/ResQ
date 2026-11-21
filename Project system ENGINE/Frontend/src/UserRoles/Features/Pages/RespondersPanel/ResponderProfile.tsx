@@ -368,7 +368,7 @@ export const ResponderProfile: React.FC = () => {
                   onClick={handleResetAvatar}
                   className="text-xs font-mono text-[#A83B4D] hover:text-[#670626] underline transition-colors cursor-pointer"
                 >
-                  Reset to Default Photo
+                  Reset Photo
                 </button>
               )}
             </div>
@@ -450,7 +450,7 @@ export const ResponderProfile: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[#670626] text-xs font-bold">Operator Contact Number</label>
+              <label className="text-[#670626] text-xs font-bold">Contact Number</label>
               <input
                 type="text"
                 value={emergencyPhone}
@@ -480,7 +480,7 @@ export const ResponderProfile: React.FC = () => {
               </h2>
             </div>
             <p className="text-sm font-mono text-[#A83B4D] mt-1">
-              Control how non-medic pins render on the incident map.
+              Configure non-medic map pin display.
             </p>
           </div>
         </div>
@@ -505,7 +505,7 @@ export const ResponderProfile: React.FC = () => {
             </span>
           </div>
           <p className="text-xs font-mono text-[#5C313E]">
-            Desaturate non-medic pins so medical priorities stand out.
+            Dim non-medic pins to highlight medical calls.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
@@ -591,7 +591,7 @@ export const ResponderProfile: React.FC = () => {
             </span>
           </div>
           <p className="text-xs font-mono text-[#5C313E]">
-            Keep non-medic pins dimmed or hide them completely when sorted.
+            Show dimmed or hide non-medic pins when filtered.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">

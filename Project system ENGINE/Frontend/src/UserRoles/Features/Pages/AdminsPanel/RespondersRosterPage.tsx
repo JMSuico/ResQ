@@ -188,7 +188,7 @@ export const RespondersRosterPage: FC = () => {
             Responders
           </h1>
           <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
-            Katipunan multi-agency unit readiness and live GPS status
+            Unit readiness &amp; live GPS
           </p>
         </div>
 
@@ -413,7 +413,7 @@ export const RespondersRosterPage: FC = () => {
                 {paginatedItems.length === 0 && (
                   <tr>
                     <td colSpan={6} className="text-center py-8 text-sm text-[#A83B4D] font-mono">
-                      No matching responders detected.
+                      No matching units.
                     </td>
                   </tr>
                 )}
@@ -535,7 +535,7 @@ export const RespondersRosterPage: FC = () => {
           isOpen={isViewAllModalOpen}
           onClose={() => setIsViewAllModalOpen(false)}
           title={`Responders (${roster.length})`}
-          subtitle="All municipal units by agency and duty status"
+          subtitle="Units by agency & status"
           className="max-w-3xl max-h-[80vh] flex flex-col"
         >
           <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">

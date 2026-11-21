@@ -95,14 +95,23 @@ const MAX_DISPLAY_UNREAD_COUNT = 99;
 const LOCAL_STORAGE_READ_KEY = 'resqtrack.alerts.read';
 const RESPONDER_NOTIFICATIONS_STORAGE_PREFIX = 'resqtrack_responder_notifications';
 
-const NOTIFICATION_CATEGORIES: ResponderNotificationCategory[] = [
-  'REQUEST DISPATCH DEPLOY',
-  'ADMIN REQUEST YOU TO DEPLOY',
-  'INCIDENT HAPPENS ON',
-  'SUBMITTED INCIDENT LOGS',
-  'VERIFIED SUBMITTED INCIDENT LOGS',
-  'CLOSE CASE'
+const COMPACT_FILTER_CATEGORIES: ReadonlyArray<{
+  category: ResponderNotificationCategory;
+  label: string;
+}> = [
+  { category: 'REQUEST DISPATCH DEPLOY', label: 'Dispatch' },
+  { category: 'ADMIN REQUEST YOU TO DEPLOY', label: 'Admin Deploy' },
+  { category: 'INCIDENT HAPPENS ON', label: 'Incident' },
+  { category: 'VERIFIED SUBMITTED INCIDENT LOGS', label: 'Verified' }
 ];
+
+const SEVERITY_PRIORITY_RANK: Record<string, number> = {
+  CRITICAL: 4,
+  SEVERE: 4,
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1
+};
 
 const DEFAULT_SEED_NOTIFICATIONS: ResponderNotificationItem[] = [
   // RHU / MEDIC Scoped Seed Notifications
@@ -564,11 +573,13 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
   const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
   const [notifications, setNotifications] = useState<ResponderNotificationItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'UNREAD' | ResponderNotificationCategory>('ALL');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'unread'>('newest');
   const [sirenMuted, setSirenMuted] = useState<boolean>(false);
   const { isCollapsed } = useDrawerSidebar();
   const { isMobile } = useFluidResposiveness();
   const navigate = useNavigate();
   const bellWrapperRef = useRef<HTMLDivElement | null>(null);
+  const alertsPanelRef = useRef<HTMLElement | null>(null);
 
   const sessionScope = useMemo(() => resolveActiveSessionScope(user), [user]);
 
@@ -754,7 +765,11 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
   useEffect(() => {
     if (!isAlertsOpen) return;
     const handleOutsideClick = (e: MouseEvent) => {
-      if (bellWrapperRef.current && !bellWrapperRef.current.contains(e.target as Node)) {
+      const targetNode = e.target as Node | null;
+      if (!targetNode) return;
+      const inBell = bellWrapperRef.current?.contains(targetNode) ?? false;
+      const inPanel = alertsPanelRef.current?.contains(targetNode) ?? false;
+      if (!inBell && !inPanel) {
         setIsAlertsOpen(false);
       }
     };
@@ -776,12 +791,27 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
   );
 
   const filteredNotifications = useMemo(() => {
-    return unitScopedNotifications.filter((item) => {
+    const filtered = unitScopedNotifications.filter((item) => {
       if (activeFilter === 'ALL') return true;
       if (activeFilter === 'UNREAD') return !item.isRead;
       return item.category === activeFilter;
     });
-  }, [unitScopedNotifications, activeFilter]);
+
+    return [...filtered].sort((a, b) => {
+      const tsA = Date.parse(a.timestamp) || 0;
+      const tsB = Date.parse(b.timestamp) || 0;
+      if (sortOrder === 'oldest') {
+        return tsA - tsB;
+      }
+      if (sortOrder === 'unread') {
+        if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
+        const sevA = SEVERITY_PRIORITY_RANK[(a.severity || '').toUpperCase()] ?? 1;
+        const sevB = SEVERITY_PRIORITY_RANK[(b.severity || '').toUpperCase()] ?? 1;
+        if (sevA !== sevB) return sevB - sevA;
+      }
+      return tsB - tsA;
+    });
+  }, [unitScopedNotifications, activeFilter, sortOrder]);
 
   const countByCategory = useCallback(
     (cat: ResponderNotificationCategory): number =>
@@ -1022,8 +1052,9 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                 aria-hidden="true"
               />
               <section
-                className={`alerts__panel clay-surface fixed top-14 right-2 sm:right-4 z-[999999] ${
-                  isMobile ? 'inset-x-2 w-auto' : 'w-[420px] sm:w-[500px] md:w-[560px]'
+                ref={alertsPanelRef}
+                className={`alerts__panel clay-surface fixed top-14 right-2 sm:right-4 z-[999999] rounded-2xl ${
+                  isMobile ? 'inset-x-2 w-auto' : 'w-[440px] sm:w-[520px] md:w-[580px]'
                 } max-w-[calc(100vw-1rem)] max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150`}
                 id="alerts-panel"
                 aria-label="Notifications"
@@ -1031,7 +1062,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                 onClick={(e: React.MouseEvent<HTMLElement>) => e.stopPropagation()}
               >
                 {/* Popover Header */}
-                <header className="flex flex-col gap-2.5 px-4 py-3.5 bg-[#670626] text-[#F7F1EA] border-b border-[#FFD9DD]/20">
+                <header className="alerts__head flex flex-col gap-2 px-4 py-3.5 bg-[#670626] text-[#F7F1EA] border-b border-[#FFD9DD]/20">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex flex-col gap-0.5 min-w-0">
                       <div className="flex items-center gap-2 min-w-0">
@@ -1056,7 +1087,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                         )}
                       </div>
                       <p className="text-xs text-[#FFD9DD] font-medium leading-snug">
-                        Emergency Advisories &amp; Warnings — Official LDRRMO safety notices &amp; dispatch alerts
+                        Official dispatch &amp; hazard advisories
                       </p>
                     </div>
 
@@ -1064,66 +1095,87 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                       type="button"
                       onClick={() => setIsAlertsOpen(false)}
                       aria-label="Close notifications panel"
-                      className="p-1.5 rounded-lg text-[#FFD9DD] hover:text-[#F7F1EA] hover:bg-[#4A041A] transition-colors flex-shrink-0"
+                      className="relative z-10 pointer-events-auto cursor-pointer p-1.5 rounded-lg text-[#FFD9DD] hover:text-[#F7F1EA] hover:bg-[#4A041A] transition-colors flex-shrink-0"
                     >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
 
-                  {/* Action Controls Bar */}
+                  {/* Row 1: Action Controls + Right-Aligned Sorters */}
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#FFD9DD]/15">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => setSirenMuted((prev) => !prev)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border inline-flex items-center gap-1.5 transition-all ${
+                        className={`relative z-10 pointer-events-auto cursor-pointer px-2 py-1 rounded-lg text-[11px] font-mono font-bold border inline-flex items-center gap-1 transition-all ${
                           sirenMuted
                             ? 'bg-[#400014] text-[#FFD9DD] border-[#FFD9DD]/20'
                             : 'bg-[#F7F1EA] text-[#670626] border-[#F7F1EA]'
                         }`}
                       >
-                        {sirenMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                        <span>{sirenMuted ? 'Siren Muted' : 'Siren Active'}</span>
+                        {sirenMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                        <span>{sirenMuted ? 'Muted' : 'Active'}</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={handleRadarClick}
-                        className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-[#400014] text-[#F7F1EA] border border-[#FFD9DD]/25 hover:bg-[#4A041A] transition-colors"
+                        className="relative z-10 pointer-events-auto cursor-pointer px-2 py-1 rounded-lg text-[11px] font-mono font-bold bg-[#400014] text-[#F7F1EA] border border-[#FFD9DD]/25 hover:bg-[#4A041A] transition-colors"
                       >
                         Radar
                       </button>
-                    </div>
 
-                    <div className="flex items-center gap-1.5">
                       <button
                         type="button"
                         onClick={handleMarkAllRead}
-                        className="flex items-center gap-1 text-xs font-mono font-bold text-[#F7F1EA] hover:bg-[#4A041A] px-2.5 py-1 rounded-lg bg-[#400014] border border-[#FFD9DD]/25 transition-colors"
+                        className="relative z-10 pointer-events-auto cursor-pointer flex items-center gap-1 text-[11px] font-mono font-bold text-[#F7F1EA] hover:bg-[#4A041A] px-2 py-1 rounded-lg bg-[#400014] border border-[#FFD9DD]/25 transition-colors"
                         title="Mark all notifications as read"
                       >
-                        <CheckCheck className="w-3.5 h-3.5" />
-                        <span>Mark All Read</span>
+                        <CheckCheck className="w-3 h-3" />
+                        <span>Mark Read</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={handleClearReadNotifications}
-                        className="flex items-center gap-1 text-xs font-mono font-bold text-[#FFD9DD] hover:text-[#F7F1EA] px-2.5 py-1 rounded-lg bg-[#400014] border border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45 transition-colors"
+                        className="relative z-10 pointer-events-auto cursor-pointer flex items-center gap-1 text-[11px] font-mono font-bold text-[#FFD9DD] hover:text-[#F7F1EA] px-2 py-1 rounded-lg bg-[#400014] border border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45 transition-colors"
                         title="Clear read notifications"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3 h-3" />
                         <span>Clear Read</span>
                       </button>
                     </div>
+
+                    <div className="flex items-center gap-1 ml-auto" role="group" aria-label="Sort notifications">
+                      {(
+                        [
+                          { value: 'newest', label: 'Newest' },
+                          { value: 'oldest', label: 'Oldest' },
+                          { value: 'unread', label: 'Priority' }
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setSortOrder(opt.value)}
+                          className={`relative z-10 pointer-events-auto cursor-pointer px-2 py-1 rounded-lg text-[11px] font-mono font-bold border transition-all ${
+                            sortOrder === opt.value
+                              ? 'bg-[#F7F1EA] text-[#670626] border-[#F7F1EA] shadow-sm'
+                              : 'bg-[#400014] text-[#FFD9DD] border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  {/* Category Filter Pills */}
+                  {/* Row 2: Compact Filter Pills */}
                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
                     <button
                       type="button"
                       onClick={() => setActiveFilter('ALL')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition-all ${
+                      className={`relative z-10 pointer-events-auto cursor-pointer px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold border transition-all ${
                         activeFilter === 'ALL'
                           ? 'bg-[#F7F1EA] text-[#670626] border-[#F7F1EA]'
                           : 'bg-[#400014] text-[#FFD9DD] border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45'
@@ -1135,7 +1187,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                     <button
                       type="button"
                       onClick={() => setActiveFilter('UNREAD')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition-all ${
+                      className={`relative z-10 pointer-events-auto cursor-pointer px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold border transition-all ${
                         activeFilter === 'UNREAD'
                           ? 'bg-[#F7F1EA] text-[#670626] border-[#F7F1EA]'
                           : 'bg-[#400014] text-[#FFD9DD] border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45'
@@ -1144,7 +1196,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                       Unread ({unreadCount})
                     </button>
 
-                    {NOTIFICATION_CATEGORIES.map((category) => {
+                    {COMPACT_FILTER_CATEGORIES.map(({ category, label }) => {
                       const count = countByCategory(category);
                       const isSelected = activeFilter === category;
                       return (
@@ -1152,13 +1204,13 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                           key={category}
                           type="button"
                           onClick={() => setActiveFilter(category)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold border transition-all ${
+                          className={`relative z-10 pointer-events-auto cursor-pointer px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold border transition-all ${
                             isSelected
                               ? 'bg-[#F7F1EA] text-[#670626] border-[#F7F1EA] shadow-sm'
                               : 'bg-[#400014] text-[#FFD9DD] border-[#FFD9DD]/20 hover:border-[#FFD9DD]/45'
                           }`}
                         >
-                          {category} ({count})
+                          {label} ({count})
                         </button>
                       );
                     })}

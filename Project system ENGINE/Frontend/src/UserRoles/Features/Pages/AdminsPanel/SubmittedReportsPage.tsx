@@ -20,9 +20,11 @@ import {
   RefreshCw,
   Activity,
   Camera,
-  XCircle
+  XCircle,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
-import { getAllReports, verifyReport, ReportItem } from '@/Endpoints/reportsApi';
+import { getAllReports, verifyReport, autoApproveReportWithAi, ReportItem } from '@/Endpoints/reportsApi';
 import {
   SearchBar,
   Dropdown,
@@ -104,6 +106,8 @@ export interface RawIncidentLog {
   claudeSituationSummary?: string | null;
   claudeVisibleHazards?: string | null;
   pointerIconType?: string | null;
+  aiAutoApproved?: boolean;
+  aiVerificationStatus?: string | null;
 }
 
 const normalizeEvidence = (item: RawIncidentLog): Array<{ url: string; timestamp?: string; caption?: string }> => {
@@ -180,6 +184,8 @@ export interface SubmittedReportRecord {
   claudeSituationSummary?: string | null;
   claudeVisibleHazards?: string | null;
   pointerIconType?: string | null;
+  aiAutoApproved?: boolean;
+  aiVerificationStatus?: string | null;
 }
 
 const STORAGE_INCIDENT_LOGS_KEY = 'resqtrack_incident_logs';
@@ -199,6 +205,7 @@ export const SubmittedReportsPage: FC = () => {
   const [lightboxIndex, setLightboxIndex] = useState<number>(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [aiProcessingId, setAiProcessingId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
   useEffect(() => {
@@ -270,7 +277,9 @@ export const SubmittedReportsPage: FC = () => {
             claudeModelUsed: item.claudeModelUsed ?? cached?.claudeModelUsed,
             claudeSituationSummary: item.claudeSituationSummary ?? cached?.claudeSituationSummary,
             claudeVisibleHazards: item.claudeVisibleHazards ?? cached?.claudeVisibleHazards,
-            pointerIconType: item.pointerIconType ?? cached?.pointerIconType
+            pointerIconType: item.pointerIconType ?? cached?.pointerIconType,
+            aiAutoApproved: Boolean((item as RawIncidentLog & { aiAutoApproved?: boolean }).aiAutoApproved ?? cached?.aiAutoApproved),
+            aiVerificationStatus: (item as RawIncidentLog & { aiVerificationStatus?: string | null }).aiVerificationStatus ?? cached?.aiVerificationStatus ?? null
           });
         });
       }
@@ -321,7 +330,9 @@ export const SubmittedReportsPage: FC = () => {
             claudeModelUsed: rep.claudeModelUsed ?? cached?.claudeModelUsed,
             claudeSituationSummary: rep.claudeSituationSummary ?? cached?.claudeSituationSummary,
             claudeVisibleHazards: rep.claudeVisibleHazards ?? cached?.claudeVisibleHazards,
-            pointerIconType: rep.pointerIconType ?? cached?.pointerIconType
+            pointerIconType: rep.pointerIconType ?? cached?.pointerIconType,
+            aiAutoApproved: Boolean(rep.aiAutoApproved ?? cached?.aiAutoApproved),
+            aiVerificationStatus: rep.aiVerificationStatus ?? cached?.aiVerificationStatus ?? null
           });
         });
       }
@@ -541,6 +552,113 @@ export const SubmittedReportsPage: FC = () => {
     []
   );
 
+  const handleAiAutoApprove = useCallback(
+    async (reportId: string): Promise<void> => {
+      setAiProcessingId(reportId);
+      const actionTimestamp = new Date().toISOString();
+      try {
+        const res = await autoApproveReportWithAi(reportId);
+        const approved = Boolean(res.autoApproved || (res.status || '').toLowerCase() === 'verified');
+        const nextStatus = approved ? 'Verified' : (res.status || 'Pending');
+        const nextAiStatus = res.aiVerificationStatus || (approved ? 'AUTO_APPROVED' : 'MANUAL_REVIEW');
+
+        setReports((prev) =>
+          prev.map((r) => {
+            if (r.id !== reportId) return r;
+            return {
+              ...r,
+              isVerified: approved ? true : r.isVerified,
+              status: nextStatus,
+              verifiedAt: approved ? (res.report?.verifiedAt || actionTimestamp) : r.verifiedAt,
+              verifiedBy: approved ? 'AI Auto-Approve (Roboflow + Claude 4.5)' : r.verifiedBy,
+              aiAutoApproved: approved,
+              aiVerificationStatus: nextAiStatus,
+              roboflowPrediction: res.report?.roboflowPrediction ?? r.roboflowPrediction,
+              roboflowConfidence: res.report?.roboflowConfidence ?? r.roboflowConfidence,
+              claudeSituationSummary: res.report?.claudeSituationSummary ?? r.claudeSituationSummary,
+              claudeVisibleHazards: res.report?.claudeVisibleHazards ?? r.claudeVisibleHazards
+            };
+          })
+        );
+
+        try {
+          const raw = localStorage.getItem(STORAGE_INCIDENT_LOGS_KEY);
+          const localArr: RawIncidentLog[] = raw ? (JSON.parse(raw) as RawIncidentLog[]) : [];
+          const updatedLocal = localArr.map((item) =>
+            item.id === reportId
+              ? {
+                  ...item,
+                  isVerified: approved ? true : item.isVerified,
+                  status: nextStatus,
+                  verifiedAt: approved ? actionTimestamp : item.verifiedAt,
+                  verifiedBy: approved ? 'AI Auto-Approve' : item.verifiedBy,
+                  aiAutoApproved: approved,
+                  aiVerificationStatus: nextAiStatus
+                }
+              : item
+          );
+          localStorage.setItem(STORAGE_INCIDENT_LOGS_KEY, JSON.stringify(updatedLocal));
+        } catch {
+          // Ignore localStorage quota failure
+        }
+
+        window.dispatchEvent(
+          new CustomEvent('resqtrack:report', {
+            detail: { id: reportId, status: nextStatus, aiAutoApproved: approved, aiVerificationStatus: nextAiStatus }
+          })
+        );
+        setToastMessage(
+          res.message ||
+            (approved
+              ? 'AI Auto-Approved photo report. 5-Minute auto-close timer started.'
+              : 'AI flagged report for manual review.')
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'AI Auto-Approve request failed.';
+        setToastMessage(msg);
+      } finally {
+        setAiProcessingId(null);
+        setTimeout(() => setToastMessage(null), 4000);
+      }
+    },
+    []
+  );
+
+  const renderAiStatusPill = (r: SubmittedReportRecord) => {
+    if (aiProcessingId === r.id) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-[#670626] text-[#F7F1EA] animate-pulse">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          AI Processing...
+        </span>
+      );
+    }
+    if (r.aiAutoApproved || r.aiVerificationStatus === 'AUTO_APPROVED') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-emerald-100 text-emerald-900 border border-emerald-700/30">
+          <Sparkles className="w-3 h-3" />
+          AI Auto-Approved
+        </span>
+      );
+    }
+    if (r.aiVerificationStatus === 'MANUAL_REVIEW' || r.roboflowNeedsReview) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-700/30">
+          Manual Review
+        </span>
+      );
+    }
+    if (r.roboflowPrediction || r.claudeSituationSummary) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-[#E9D9D0] text-[#670626] border border-[#670626]/20">
+          <Sparkles className="w-3 h-3" />
+          AI Screened
+        </span>
+      );
+    }
+    return null;
+  };
+
   const filteredReports = useMemo(() => {
     let result = [...reports];
 
@@ -640,7 +758,7 @@ export const SubmittedReportsPage: FC = () => {
             Submitted Reports
           </h1>
           <p className="text-sm text-[#A83B4D] font-mono mt-0.5">
-            Upload verification, PCR dossiers, and incident closure
+            Upload verification &amp; PCR dossiers
           </p>
         </div>
 
@@ -753,9 +871,9 @@ export const SubmittedReportsPage: FC = () => {
       {paginatedItems.length === 0 ? (
         <div className={`${CLAY_SURFACE} p-12 text-center`}>
           <FileCheck className="w-10 h-10 text-[#A83B4D] mx-auto mb-3" />
-          <h3 className="text-base font-bold text-[#670626]">No Submitted Reports Found</h3>
+          <h3 className="text-base font-bold text-[#670626]">No Submitted Reports</h3>
           <p className="text-xs text-[#A83B4D] font-mono mt-1">
-            Submitted incident dossiers from civilians and field responders will populate here.
+            Submitted dossiers appear here.
           </p>
         </div>
       ) : viewMode === 'table' ? (
@@ -882,6 +1000,7 @@ export const SubmittedReportsPage: FC = () => {
                           <span className={`inline-block px-2.5 py-1 rounded font-bold text-xs ${statusBadge.pillClass}`}>
                             {statusBadge.label}
                           </span>
+                          <div>{renderAiStatusPill(r)}</div>
                           {statusBadge.label === 'Verified' && !r.isClosed && remSec > 0 && (
                             <div className="text-xs text-[#A83B4D] font-bold">
                               Closing in {mm}:{ss}
@@ -891,7 +1010,24 @@ export const SubmittedReportsPage: FC = () => {
                       </td>
 
                       <td className="py-4 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                          {canVerifyOrReject && r.evidencePhotos.length > 0 && (
+                            <AdminButton
+                              variant="primary"
+                              size="xs"
+                              disabled={aiProcessingId === r.id}
+                              onClick={() => void handleAiAutoApprove(r.id)}
+                              icon={
+                                aiProcessingId === r.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                )
+                              }
+                            >
+                              {aiProcessingId === r.id ? 'AI Processing Photo...' : 'AI Auto-Approve'}
+                            </AdminButton>
+                          )}
                           {canVerifyOrReject && (
                             <>
                               <AdminButton
@@ -964,17 +1100,20 @@ export const SubmittedReportsPage: FC = () => {
                 className={`tactical-card ${CLAY_SURFACE} p-5 flex flex-col justify-between gap-3.5 cursor-pointer hover:border-[#670626]/40 transition-all`}
               >
                 <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                     <span className="font-bold text-[#A83B4D] text-xs font-mono">{r.referenceCode}</span>
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs uppercase font-bold font-mono ${
-                        r.severity === 'Critical'
-                          ? 'bg-[#670626] text-[#F7F1EA]'
-                          : 'bg-[#A83B4D] text-[#F7F1EA]'
-                      }`}
-                    >
-                      {r.severity}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {renderAiStatusPill(r)}
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs uppercase font-bold font-mono ${
+                          r.severity === 'Critical'
+                            ? 'bg-[#670626] text-[#F7F1EA]'
+                            : 'bg-[#A83B4D] text-[#F7F1EA]'
+                        }`}
+                      >
+                        {r.severity}
+                      </span>
+                    </div>
                   </div>
 
                   <h3 className="text-base font-bold text-[#670626]">{r.title}</h3>
@@ -1043,7 +1182,24 @@ export const SubmittedReportsPage: FC = () => {
                     {statusBadge.label}
                   </span>
 
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {canVerifyOrReject && r.evidencePhotos.length > 0 && (
+                      <AdminButton
+                        variant="primary"
+                        size="xs"
+                        disabled={aiProcessingId === r.id}
+                        onClick={() => void handleAiAutoApprove(r.id)}
+                        icon={
+                          aiProcessingId === r.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-3 h-3" />
+                          )
+                        }
+                      >
+                        {aiProcessingId === r.id ? 'AI Processing Photo...' : 'AI Auto-Approve'}
+                      </AdminButton>
+                    )}
                     {canVerifyOrReject && (
                       <>
                         <AdminButton
@@ -1245,12 +1401,69 @@ export const SubmittedReportsPage: FC = () => {
               )}
             </div>
 
+            {aiProcessingId === selectedReport.id && (
+              <div className="p-3.5 rounded-xl bg-[#670626] text-[#F7F1EA] font-mono text-xs font-bold flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+                <span>AI Processing Photo... Evaluating Roboflow + Claude Haiku 4.5</span>
+              </div>
+            )}
+
+            {(selectedReport.roboflowPrediction ||
+              selectedReport.claudeSituationSummary ||
+              selectedReport.aiAutoApproved ||
+              selectedReport.aiVerificationStatus) && (
+              <div className={`${CLAY_WELL} p-4 space-y-2`}>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-xs font-mono font-black uppercase tracking-wider text-[#670626] flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-[#A83B4D]" />
+                    Roboflow + Claude Haiku 4.5 Triage
+                  </span>
+                  {renderAiStatusPill(selectedReport)}
+                </div>
+                {selectedReport.roboflowPrediction && (
+                  <p className="text-xs font-mono text-[#670626]">
+                    <strong>Roboflow:</strong> {selectedReport.roboflowPrediction}
+                    {typeof selectedReport.roboflowConfidence === 'number'
+                      ? ` (${Math.round(selectedReport.roboflowConfidence * 100)}%)`
+                      : ''}
+                    {selectedReport.pointerIconType ? ` · [${selectedReport.pointerIconType}]` : ''}
+                  </p>
+                )}
+                {(selectedReport.claudeVisibleHazards || selectedReport.claudeSituationSummary) && (
+                  <p className="text-xs text-[#670626]">
+                    <strong>Claude Haiku 4.5:</strong>{' '}
+                    {selectedReport.claudeVisibleHazards || selectedReport.claudeSituationSummary}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[#670626]/15">
               <span className="text-xs font-mono text-[#A83B4D]">
-                Action updates live radar pins and Notification Bell telemetry
+                Updates live map &amp; alert bell
               </span>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {!selectedReport.isVerified &&
+                  !selectedReport.isClosed &&
+                  !selectedReport.isRejected &&
+                  selectedReport.evidencePhotos.length > 0 && (
+                    <AdminButton
+                      variant="primary"
+                      size="sm"
+                      disabled={aiProcessingId === selectedReport.id}
+                      onClick={() => void handleAiAutoApprove(selectedReport.id)}
+                      icon={
+                        aiProcessingId === selectedReport.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-3.5 h-3.5" />
+                        )
+                      }
+                    >
+                      {aiProcessingId === selectedReport.id ? 'AI Processing Photo...' : 'AI Auto-Approve'}
+                    </AdminButton>
+                  )}
                 {!selectedReport.isVerified && !selectedReport.isClosed && !selectedReport.isRejected && (
                   <>
                     <AdminButton

@@ -19,7 +19,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<PatientCareRecord> PatientCareRecords => Set<PatientCareRecord>();
     public DbSet<PoliceBlotterEntry> PoliceBlotterEntries => Set<PoliceBlotterEntry>();
-    public DbSet<FireAlarmStatusRecord> FireAlarmStatuses => Set<FireAlarmStatusRecord>();
     public DbSet<IdentityVerificationRecord> IdentityVerificationRecords => Set<IdentityVerificationRecord>();
     public DbSet<BiometricEnrollment> BiometricEnrollments => Set<BiometricEnrollment>();
     public DbSet<UserConsent> UserConsents => Set<UserConsent>();
@@ -144,13 +143,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(b => b.BlotterNumber).IsUnique();
             entity.HasIndex(b => b.ReportId);
             entity.HasIndex(b => b.CreatedAt);
-        });
-
-        // FireAlarmStatusRecord index
-        modelBuilder.Entity<FireAlarmStatusRecord>(entity =>
-        {
-            entity.HasIndex(f => f.ReportId);
-            entity.HasIndex(f => f.UpdatedAt);
         });
 
         // IdentityVerificationRecord configuration

@@ -499,8 +499,8 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
             <div className={`${CLAY_WELL} md:col-span-2 p-3.5 text-xs flex items-start gap-2.5`}>
               <Radio className="w-4 h-4 text-[#670626] mt-0.5 flex-shrink-0" />
               <div>
-                <strong className="font-mono">Katipunan Geographic Allocation: </strong>
-                Barangay coordinates anchor live GPS responder routing and evacuation notifications to the LDRRMO Command Console.
+                <strong className="font-mono">Katipunan Sector: </strong>
+                Barangay anchors GPS routing and local alerts.
               </div>
             </div>
           </div>
@@ -783,7 +783,7 @@ export const AddUserModal: React.FC<AddUserModalProps> = ({
                 Security Governance Protocol:
               </div>
               <div className="text-[#A83B4D]">
-                Minimum {MIN_PASSWORD_LENGTH} characters with mixed case, digits, and symbols.
+                Min {MIN_PASSWORD_LENGTH} characters (mixed case, digits &amp; symbols).
               </div>
             </div>
           </div>

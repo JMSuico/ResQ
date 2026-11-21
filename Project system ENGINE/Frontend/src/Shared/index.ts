@@ -22,7 +22,6 @@ export * from './Charts';
 export * from './TableCardToggle';
 export * from './ToggleDrawerSidebarMenu';
 export * from './PatientCareRecordModal';
-export * from './FireAlarmEscalationModal';
 export * from './PoliceBlotterModal';
 export * from './StatusConfirmModal';
 export * from './BackupOptionsModal';

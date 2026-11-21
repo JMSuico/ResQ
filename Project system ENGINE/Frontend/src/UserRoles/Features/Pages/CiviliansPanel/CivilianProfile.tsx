@@ -128,7 +128,7 @@ export const CivilianProfile: React.FC = () => {
     if (!file) return;
 
     if (file.size > MAX_AVATAR_FILE_SIZE_BYTES) {
-      setSaveSuccessToast('Avatar image exceeds 2MB limit.');
+      setSaveSuccessToast('Image exceeds 2MB limit.');
       setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
       return;
     }
@@ -143,7 +143,7 @@ export const CivilianProfile: React.FC = () => {
         window.dispatchEvent(
           new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: dataUrl } })
         );
-        setSaveSuccessToast('Identity photo uploaded and synchronized across portals.');
+        setSaveSuccessToast('Photo updated.');
         setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
       } catch (err) {
         console.error('Failed to save civilian avatar', err);
@@ -160,7 +160,7 @@ export const CivilianProfile: React.FC = () => {
       window.dispatchEvent(
         new CustomEvent('resqtrack:avatar-updated', { detail: { avatar: null } })
       );
-      setSaveSuccessToast('Reverted to default resident photo avatar.');
+      setSaveSuccessToast('Photo reset.');
       setTimeout(() => setSaveSuccessToast(null), TOAST_NOTIFICATION_MS);
     } catch (err) {
       console.error('Failed to reset avatar', err);
@@ -223,11 +223,11 @@ export const CivilianProfile: React.FC = () => {
           refreshSession();
         }
       } catch (apiErr) {
-        console.warn('Backend PUT /api/profile sync notice (persisted to local vault):', apiErr);
+        console.warn('Backend PUT /api/profile sync notice (persisted locally):', apiErr);
       }
 
       setIsEditing(false);
-      setSaveSuccessToast('Profile, personal contact, and medical details saved.');
+      setSaveSuccessToast('Profile saved.');
       setTimeout(() => setSaveSuccessToast(null), SAVE_PROFILE_TOAST_MS);
     } catch (err) {
       console.error('Failed to save profile:', err);
@@ -238,7 +238,7 @@ export const CivilianProfile: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 w-full pb-12">
-      {/* 1. Page Header ("Profile") */}
+      {/* 1. Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#F7F1EA]/20 pb-4">
         <div>
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#E9D9D0]">
@@ -247,7 +247,6 @@ export const CivilianProfile: React.FC = () => {
           <h1 className="text-2xl md:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
             Profile
           </h1>
-          <p className="text-sm text-[#E9D9D0] mt-1">Identity, Contact & Medical Info</p>
         </div>
 
         <CivilianButton
@@ -353,7 +352,7 @@ export const CivilianProfile: React.FC = () => {
           </div>
         </div>
 
-        {/* Identity, Barangay & Personal Contact Telemetry */}
+        {/* Identity, Barangay & Personal Contact */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm font-mono">
           <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
             <span className="text-[#A83B4D] block text-xs font-bold">Status</span>
@@ -392,7 +391,7 @@ export const CivilianProfile: React.FC = () => {
 
           <div className="p-4 bg-[#E9D9D0] rounded-xl border border-[#670626]/15">
             <span className="text-[#A83B4D] block text-xs font-bold">
-              Personal Contact Number
+              Contact Number
             </span>
             {isEditing ? (
               <input
@@ -454,7 +453,7 @@ export const CivilianProfile: React.FC = () => {
                   type="text"
                   value={profile.allergies}
                   onChange={(e) => setProfile({ ...profile, allergies: e.target.value })}
-                  placeholder="e.g. Penicillin, Aspirin, Latex, None"
+                  placeholder="e.g. Penicillin, None"
                   className="px-3.5 py-2.5 bg-[#E9D9D0] border border-[#670626]/25 rounded-xl text-sm text-[#670626] placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                 />
               ) : (
@@ -475,7 +474,7 @@ export const CivilianProfile: React.FC = () => {
                   onChange={(e) =>
                     setProfile({ ...profile, medicalConditions: e.target.value })
                   }
-                  placeholder="e.g. Asthma, Diabetic, Pacemaker, None"
+                  placeholder="e.g. Asthma, None"
                   className="px-3.5 py-2.5 bg-[#E9D9D0] border border-[#670626]/25 rounded-xl text-sm text-[#670626] placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                 />
               ) : (
@@ -509,7 +508,7 @@ export const CivilianProfile: React.FC = () => {
                     onChange={(e) =>
                       setProfile({ ...profile, emergencyContactName: e.target.value })
                     }
-                    placeholder="Full Name (e.g. Maria Dela Cruz)"
+                    placeholder="Full Name"
                     className="px-3.5 py-2.5 bg-[#F7F1EA] border border-[#670626]/20 rounded-lg text-sm text-[#670626] placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                   />
                   <div className="grid grid-cols-2 gap-2.5">
@@ -534,7 +533,7 @@ export const CivilianProfile: React.FC = () => {
                       onChange={(e) =>
                         setProfile({ ...profile, emergencyContactPhone: e.target.value })
                       }
-                      placeholder="Contact Number (Text)"
+                      placeholder="Contact Number"
                       className="px-3.5 py-2.5 bg-[#F7F1EA] border border-[#670626]/20 rounded-lg text-sm text-[#670626] font-mono placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                     />
                   </div>
@@ -542,7 +541,7 @@ export const CivilianProfile: React.FC = () => {
               ) : (
                 <div className="flex flex-col gap-1.5">
                   <span className="text-base font-bold text-[#670626]">
-                    {profile.emergencyContactName || 'No primary contact registered'}
+                    {profile.emergencyContactName || 'Not set'}
                   </span>
                   <div className="flex flex-wrap items-center gap-2 text-sm font-mono text-[#A83B4D]">
                     <span>
@@ -581,14 +580,14 @@ export const CivilianProfile: React.FC = () => {
                     onChange={(e) =>
                       setProfile({ ...profile, secondaryContactPhone: e.target.value })
                     }
-                    placeholder="Contact Number (Text)"
+                    placeholder="Contact Number"
                     className="px-3.5 py-2.5 bg-[#F7F1EA] border border-[#670626]/20 rounded-lg text-sm text-[#670626] font-mono placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
                   />
                 </div>
               ) : (
                 <div className="flex flex-col gap-1.5">
                   <span className="text-base font-bold text-[#670626]">
-                    {profile.secondaryContactName || 'No secondary contact specified'}
+                    {profile.secondaryContactName || 'Not set'}
                   </span>
                   <span className="text-sm font-mono text-[#670626] font-bold">
                     {profile.secondaryContactPhone || 'N/A'}
@@ -622,9 +621,9 @@ export const CivilianProfile: React.FC = () => {
         </div>
       </form>
 
-      {/* 6. Citizen Safety Guarantee */}
-      <div className="clay-surface px-4 py-3.5 bg-[#F7F1EA] rounded-xl border border-[#670626]/15 text-sm text-[#670626] font-medium">
-        Identity, personal contact, and medical details are stored securely and shared only with authorized responders during an active emergency.
+      {/* 6. Privacy Note */}
+      <div className="clay-surface px-4 py-3 bg-[#F7F1EA] rounded-xl border border-[#670626]/15 text-xs font-mono text-[#670626]">
+        Stored securely and shared only with authorized responders during an active emergency.
       </div>
     </div>
   );

@@ -190,6 +190,10 @@
 .alerts__panel {
   position: fixed;
   z-index: 999999;
+  display: flex;
+  flex-direction: column;
+  border-radius: 1rem;
+  overflow: hidden;
   background: var(--resq-ivory, #F7F1EA);
   color: var(--resq-ink-on-ivory, #2B010E);
   border: 1px solid rgba(103, 6, 38, 0.22);
@@ -210,11 +214,12 @@
 .alerts__head {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 12px 14px 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px 14px;
   background: var(--resq-cherry, #670626);
   color: var(--resq-ivory, #F7F1EA);
   border-bottom: 1px solid rgba(255, 217, 221, 0.18);
@@ -1230,7 +1235,9 @@
     left: 12px;
     right: 12px;
     width: auto;
-    max-height: min(60vh, 420px);
+    max-width: calc(100vw - 24px);
+    max-height: min(72vh, 520px);
+    border-radius: 1rem;
   }
 
   .lightbox { padding: 16px; }

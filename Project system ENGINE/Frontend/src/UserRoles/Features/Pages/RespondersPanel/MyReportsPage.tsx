@@ -1272,7 +1272,7 @@ export const MyReportsPage: React.FC = () => {
             {agencyHeaderMeta.title}
           </h1>
           <p className="text-sm text-[#E9D9D0] font-mono mt-1">
-            Submitted reports, incident verification, and evidence records
+            Incident reports, verification, and evidence
           </p>
         </div>
 
@@ -1922,10 +1922,10 @@ export const MyReportsPage: React.FC = () => {
                 <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <span className="text-xs font-bold uppercase tracking-wider text-[#A83B4D] block">
-                      Responder Verification Control
+                      Verification
                     </span>
                     <span className="text-sm font-bold text-[#670626]">
-                      Verify, dispatch unit, or reject this report
+                      Verify, dispatch, or reject
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -2021,7 +2021,7 @@ export const MyReportsPage: React.FC = () => {
                   </div>
                 ) : (
                   <p className="text-[#5C313E] text-sm">
-                    Pending verification. Auto-closes at 00:00 once timer starts.
+                    Pending verification.
                   </p>
                 )}
               </div>
@@ -2350,7 +2350,7 @@ export const MyReportsPage: React.FC = () => {
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
                 rows={3}
-                placeholder="Stabilization and transport notes..."
+                placeholder="Field notes..."
                 className="px-3.5 py-2.5 rounded-xl bg-[#FFFBF7] border border-[#D8C1B5] text-[#2B010E] placeholder-[#9B727D] focus:outline-none focus:border-[#670626]"
               />
             </div>
