@@ -70,23 +70,56 @@ docker compose run --rm resqtrack-backend listcliusers
 
 ---
 
-## 3. Superadmin Commands (Create, Edit, Delete & Functions)
+## 3. Create Superadmin (`createsuperadmin` - Merged Default & Custom, No Statics, CLI-Protected in Frontend/UI)
 
 > Password minimum length enforced by `ScryptPasswordHelper`: **12 characters**.
-> Inputs required: **Input Email** and **Input Password** ONLY.
+> `createsuperadmin` merges both Default Superadmin (Option 1: Email and Password - No Statics) and Custom Superadmin (Option 2: Email, Password, and Confirm Password).
+> **CLI-Protected Superadmin Immutability Rule**: Every Superadmin (`Role == LDRRMO_Admin`) created via `createsuperadmin` is stamped with `IdentityVerificationProvider = "CliSuperAdminProvisioned"` (`IsCliProtectedSuperAdmin = true`).
+> - In the **Frontend/UI (`:1996/admin/users` & `:1996/admin/settings`)**, CLI-created Superadmins display a **`CLI Protected`** badge and **CANNOT be edited, suspended, restricted, or deleted** from the web UI or via HTTP (`PUT /api/users/{id}`, `DELETE /api/users/{id}`, `POST /api/users/{id}/status`, `PUT /api/profile`).
+> - CLI-created Superadmins can **ONLY** be edited or deleted via the Docker CLI (`useredit` and `userdelete`).
+> - By contrast, Admin accounts created inside the web UI (`+ Add User` -> `AdminProvisioned`), as well as Responders and Civilians, remain manageable from both the web UI and the Docker CLI.
 
-### Create Superadmin (`customcreatesuperadmin` / `createsuperadmin`)
+### Command (`createsuperadmin`)
 ```powershell
-# Interactive Mode in Docker (Prompts ONLY "Input Email:" and "Input Password:")
-docker compose exec -it resqtrack-backend dotnet Backend.dll customcreatesuperadmin
-# Input Email: ldrrmo.admin2@resqtrack.gov.ph
-# Input Password: AdminCommand@2026!
+docker compose exec -it resqtrack-backend dotnet Backend.dll createsuperadmin
+```
 
-# Direct One-Line Mode in Docker (Email & Password ONLY)
-docker compose exec resqtrack-backend dotnet Backend.dll customcreatesuperadmin "ldrrmo.admin2@resqtrack.gov.ph" "AdminCommand@2026!"
+**Interactive Display Flow (Option 1 - Default Superadmin, No Statics):**
+```text
+============================================================
+ CREATE SUPERADMIN
+============================================================
+CHOOSE TO CREATE:
+  [1] CREATE DEFAULT SUPERADMIN (EMAIL AND PASSWORD - NO STATICS)
+  [2] CREATE CUSTOM SUPERADMIN (EMAIL, PASSWORD AND CONFIRM PASSWORD)
+TYPE 1 OR 2: 1
+INPUT EMAIL: ldrrmo.admin2@resqtrack.gov.ph
+INPUT PASSWORD: AdminCommand@2026!
+[CLI] Super Admin user 'ldrrmo.admin2@resqtrack.gov.ph' created successfully.
+```
 
-# Standard alias (Email & Password ONLY)
-docker compose exec resqtrack-backend dotnet Backend.dll createsuperadmin "ldrrmo.admin2@resqtrack.gov.ph" "AdminCommand@2026!"
+**Interactive Display Flow (Option 2 - Custom Superadmin):**
+```text
+============================================================
+ CREATE SUPERADMIN
+============================================================
+CHOOSE TO CREATE:
+  [1] CREATE DEFAULT SUPERADMIN (EMAIL AND PASSWORD - NO STATICS)
+  [2] CREATE CUSTOM SUPERADMIN (EMAIL, PASSWORD AND CONFIRM PASSWORD)
+TYPE 1 OR 2: 2
+INPUT EMAIL: ldrrmo.custom@resqtrack.gov.ph
+INPUT PASSWORD: AdminCommand@2026!
+INPUT CONFIRM PASSWORD: AdminCommand@2026!
+[CLI] Super Admin user 'ldrrmo.custom@resqtrack.gov.ph' created successfully.
+```
+
+**Non-Interactive One-Line Equivalents:**
+```powershell
+# Option 1: Default Superadmin (EMAIL AND PASSWORD - NO STATICS)
+docker compose exec resqtrack-backend dotnet Backend.dll createsuperadmin 1 "ldrrmo.admin2@resqtrack.gov.ph" "AdminCommand@2026!"
+
+# Option 2: Custom Superadmin (EMAIL, PASSWORD AND CONFIRM PASSWORD)
+docker compose exec resqtrack-backend dotnet Backend.dll createsuperadmin 2 "ldrrmo.custom@resqtrack.gov.ph" "AdminCommand@2026!" "AdminCommand@2026!"
 ```
 
 **LDRRMO Admin Functions (`http://localhost:1996`)**:
@@ -95,101 +128,76 @@ docker compose exec resqtrack-backend dotnet Backend.dll createsuperadmin "ldrrm
 - Submitted Reports & AI Auto-Approve (`POST /api/reports/{id}/ai-auto-approve`)
 - Broadcast Alerts (`POST /api/alerts/broadcast`) & Full User Governance (`GET/POST/PUT/DELETE /api/users`)
 
-### Edit Superadmin (`edituser` & `resetpassword`)
-```powershell
-# Update password AND email (use "-" to keep current password or email)
-# Usage: edituser <currentEmail> [newPassword] [newEmail]
-docker compose exec resqtrack-backend dotnet Backend.dll edituser "ldrrmo.admin2@resqtrack.gov.ph" "NewAdminPass@2026!" "ldrrmo.chief@resqtrack.gov.ph"
-
-# Update password only (keep existing email)
-docker compose exec resqtrack-backend dotnet Backend.dll edituser "ldrrmo.chief@resqtrack.gov.ph" "UpdatedPass@2026!" "-"
-docker compose exec resqtrack-backend dotnet Backend.dll resetpassword "ldrrmo.chief@resqtrack.gov.ph" "ResetAdminPass@2026!"
-
-# Update email only (keep existing password)
-docker compose exec resqtrack-backend dotnet Backend.dll edituser "ldrrmo.chief@resqtrack.gov.ph" "-" "ldrrmo.director@resqtrack.gov.ph"
-```
-
-### Delete Superadmin (`deletesuperadmin` / `deletecliuser`)
-```powershell
-# Delete a specific Superadmin account by email
-docker compose exec resqtrack-backend dotnet Backend.dll deletesuperadmin "ldrrmo.director@resqtrack.gov.ph"
-
-# Alternative generic delete command
-docker compose exec resqtrack-backend dotnet Backend.dll deletecliuser "ldrrmo.director@resqtrack.gov.ph"
-```
-
 ---
 
-## 4. Responder Commands - 1. RHU/MEDIC, 2. FIRE/BFP, 3. PNP/POLICE (Create, Edit, Delete & Functions)
+## 4. Create Responders (`createresponders` - Custom Create Responders Only)
 
-> **First Phase**: Select Responder Enum (`1` = `RHU/MEDIC`, `2` = `FIRE/BFP`, `3` = `PNP/POLICE`)
-> **Second Phase**: **Input Email** and **Input Password** ONLY.
+> **CHOOSE OPTION RESPONDERS**: `1. RHU/MEDICS`, `2. BFP/FIRE`, `3. PNP/POLICE`
+> **Inputs required**: **INPUT EMAIL**, **INPUT PASSWORD**, and **INPUT CONFIRM PASSWORD**.
 
-### Create Responder (`customcreateresponderuser` / `createresponder`)
+### Command (`createresponders`)
 ```powershell
-# Interactive 2-Phase Mode in Docker:
-#   Phase 1 -> First Phase select Responders (1. RHU/MEDIC, 2. FIRE/BFP, 3. PNP/POLICE)
-#   Phase 2 -> Input Email: / Input Password: ONLY
-docker compose exec -it resqtrack-backend dotnet Backend.dll customcreateresponderuser
-# First Phase select Responders (1. RHU/MEDIC, 2. FIRE/BFP, 3. PNP/POLICE)
-# Select Responder (1-3): 1
-# Input Email: medic.unit2@resqtrack.gov.ph
-# Input Password: MedicPass@2026!!
+docker compose exec -it resqtrack-backend dotnet Backend.dll createresponders
+```
 
-# Direct One-Line Mode by Enum Number (1 = RHU/MEDIC, 2 = FIRE/BFP, 3 = PNP/POLICE) + Email & Password ONLY:
-docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser 1 "medic.unit2@resqtrack.gov.ph" "MedicPass@2026!!"
-docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser 2 "fire.unit2@resqtrack.gov.ph" "BfpFirePass@2026!"
-docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser 3 "pnp.unit2@resqtrack.gov.ph" "PnpPatrol@2026!"
+**Interactive Display Flow:**
+```text
+============================================================
+ CUSTOM CREATE RESPONDERS
+============================================================
+CHOOSE OPTION RESPONDERS:
+  1. RHU/MEDICS
+  2. BFP/FIRE
+  3. PNP/POLICE
+CHOOSE OPTION RESPONDERS (1-3): 1
+INPUT EMAIL: medic.unit2@resqtrack.gov.ph
+INPUT PASSWORD: MedicPass@2026!!
+INPUT CONFIRM PASSWORD: MedicPass@2026!!
+[CLI] Responder (RHU) user 'medic.unit2@resqtrack.gov.ph' created successfully.
+```
 
-# Or by Enum Name (RHU/MEDIC, FIRE/BFP, PNP/POLICE) + Email & Password ONLY:
-docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser MEDIC "medic.unit2@resqtrack.gov.ph" "MedicPass@2026!!"
-docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser FIRE "fire.unit2@resqtrack.gov.ph" "BfpFirePass@2026!"
-docker compose exec resqtrack-backend dotnet Backend.dll customcreateresponderuser PNP "pnp.unit2@resqtrack.gov.ph" "PnpPatrol@2026!"
+**Non-Interactive One-Line Equivalents (`<option 1-3> <email> <password> <confirmPassword>`):**
+```powershell
+# 1 = RHU/MEDICS
+docker compose exec resqtrack-backend dotnet Backend.dll createresponders 1 "medic.unit2@resqtrack.gov.ph" "MedicPass@2026!!" "MedicPass@2026!!"
+
+# 2 = BFP/FIRE
+docker compose exec resqtrack-backend dotnet Backend.dll createresponders 2 "fire.unit2@resqtrack.gov.ph" "BfpFirePass@2026!" "BfpFirePass@2026!"
+
+# 3 = PNP/POLICE
+docker compose exec resqtrack-backend dotnet Backend.dll createresponders 3 "pnp.unit2@resqtrack.gov.ph" "PnpPatrol@2026!" "PnpPatrol@2026!"
 ```
 
 **Responder Unit Functions (`http://localhost:1997`)**:
-- **1. RHU / MEDIC**: Scoped medical/vehicular incident feed, Patient Care Record (PCR) logging (`POST/GET /api/responder-ops/pcr`), GPS ping & duty readiness (`PUT /api/responder-ops/duty-status`), backup deploy requests (`/responder/request-deploy`).
-- **2. FIRE / BFP**: Scoped structural fire/hazmat feed, Hydrant map lookup (`GET /api/responder-ops/hydrants`), apparatus readiness (`On Duty`, `En Route`, `On Scene`, `Returning`), backup dispatch coordination.
-- **3. PNP / POLICE**: Scoped crime/security/traffic feed, Police Blotter filing (`POST/GET /api/responder-ops/blotter`), incident status & GPS readiness updates, backup dispatch requests.
-
-### Edit Responder (`edituser` & `resetpassword`)
-```powershell
-# Change password and email for a Responder
-docker compose exec resqtrack-backend dotnet Backend.dll edituser "medic.unit2@resqtrack.gov.ph" "NewMedicPass@2026!" "medic.alpha2@resqtrack.gov.ph"
-
-# Change password only (keep email)
-docker compose exec resqtrack-backend dotnet Backend.dll resetpassword "fire.unit2@resqtrack.gov.ph" "NewFirePass@2026!"
-
-# Change email only (keep password)
-docker compose exec resqtrack-backend dotnet Backend.dll edituser "pnp.unit2@resqtrack.gov.ph" "-" "pnp.sector2@resqtrack.gov.ph"
-```
-
-### Delete Responder (`deletecliuser`)
-```powershell
-docker compose exec resqtrack-backend dotnet Backend.dll deletecliuser "medic.alpha2@resqtrack.gov.ph"
-docker compose exec resqtrack-backend dotnet Backend.dll deletecliuser "fire.unit2@resqtrack.gov.ph"
-docker compose exec resqtrack-backend dotnet Backend.dll deletecliuser "pnp.sector2@resqtrack.gov.ph"
-```
+- **1. RHU/MEDICS**: Scoped medical/vehicular incident feed, Patient Care Record (PCR) logging (`POST/GET /api/responder-ops/pcr`), GPS ping & duty readiness (`PUT /api/responder-ops/duty-status`), backup deploy requests (`/responder/request-deploy`).
+- **2. BFP/FIRE**: Scoped structural fire/hazmat feed, Hydrant map lookup (`GET /api/responder-ops/hydrants`), apparatus readiness (`On Duty`, `En Route`, `On Scene`, `Returning`), backup dispatch coordination.
+- **3. PNP/POLICE**: Scoped crime/security/traffic feed, Police Blotter filing (`POST/GET /api/responder-ops/blotter`), incident status & GPS readiness updates, backup dispatch requests.
 
 ---
 
-## 5. Civilian Commands (Create, Edit, Delete & Functions)
+## 5. Create Civilians (`createcivilians` - Custom Create Civilians Only)
 
-> Inputs required: **Input Email** and **Input Password** ONLY.
+> **Inputs required**: **INPUT EMAIL**, **INPUT PASSWORD**, and **INPUT CONFIRM PASSWORD**.
 
-### Create Civilian (`customercreatecivilianuser` / `customcreatecivilianuser` / `createcivilian`)
+### Command (`createcivilians`)
 ```powershell
-# Interactive Mode in Docker (Prompts ONLY "Input Email:" and "Input Password:")
-docker compose exec -it resqtrack-backend dotnet Backend.dll customercreatecivilianuser
-# Input Email: citizen.ana@resqtrack.gov.ph
-# Input Password: CivilianPass@2026!
+docker compose exec -it resqtrack-backend dotnet Backend.dll createcivilians
+```
 
-# Direct One-Line Mode in Docker (Email & Password ONLY)
-docker compose exec resqtrack-backend dotnet Backend.dll customercreatecivilianuser "citizen.ana@resqtrack.gov.ph" "CivilianPass@2026!"
+**Interactive Display Flow:**
+```text
+============================================================
+ CUSTOM CREATE CIVILIANS
+============================================================
+INPUT EMAIL: citizen.ana@resqtrack.gov.ph
+INPUT PASSWORD: CivilianPass@2026!
+INPUT CONFIRM PASSWORD: CivilianPass@2026!
+[CLI] Civilian user 'citizen.ana@resqtrack.gov.ph' created successfully.
+```
 
-# Standard aliases (Email & Password ONLY)
-docker compose exec resqtrack-backend dotnet Backend.dll customcreatecivilianuser "citizen.ana@resqtrack.gov.ph" "CivilianPass@2026!"
-docker compose exec resqtrack-backend dotnet Backend.dll createcivilian "citizen.ana@resqtrack.gov.ph" "CivilianPass@2026!"
+**Non-Interactive One-Line Equivalent (`<email> <password> <confirmPassword>`):**
+```powershell
+docker compose exec resqtrack-backend dotnet Backend.dll createcivilians "citizen.ana@resqtrack.gov.ph" "CivilianPass@2026!" "CivilianPass@2026!"
 ```
 
 **Civilian Functions (`http://localhost:1998`)**:
@@ -197,30 +205,208 @@ docker compose exec resqtrack-backend dotnet Backend.dll createcivilian "citizen
 - Live 1-BPM Distress GPS Beacon Telemetry (`POST /api/reports/{id}/beacon`)
 - Live Sector & Evacuation Safe Zones Map (`/civilian/live-map`), Personal Report History & Response Feedback (`/civilian/my-reports`), Profile & Medical/Contact Updates (`GET/PUT /api/profile`)
 
-### Edit Civilian (`edituser` & `resetpassword`)
+---
+
+## 6. Merged User Edit Command (`useredit` - Admin, Responders & Civilians)
+
+> Single unified command to search, select, and edit any **Admin User**, **Responder** (`RHU/MEDICS`, `BFP/FIRE`, `PNP/POLICE`), or **Civilian** account with live search bar filtering, `FIRSTNAME`, `LASTNAME`, `EMAIL` editing, and optional direct password change (`Yes/No` -> `NEW PASSWORD` & `CONFIRM PASSWORD`).
+
+### Command (`useredit`)
 ```powershell
-# Update Civilian password and email
-docker compose exec resqtrack-backend dotnet Backend.dll edituser "citizen.ana@resqtrack.gov.ph" "UpdatedCivPass@2026!" "citizen.ana.new@resqtrack.gov.ph"
-
-# Update Civilian password only
-docker compose exec resqtrack-backend dotnet Backend.dll resetpassword "citizen.pedro@resqtrack.gov.ph" "NewPedroPass@2026!"
-
-# Update Civilian email only
-docker compose exec resqtrack-backend dotnet Backend.dll edituser "citizen.pedro@resqtrack.gov.ph" "-" "pedro.uno@resqtrack.gov.ph"
+docker compose exec -it resqtrack-backend dotnet Backend.dll useredit
 ```
 
-### Delete Civilian / Bulk Cleanup (`deletecliuser` & `deleteallcliusers`)
-```powershell
-# Delete a specific Civilian account
-docker compose exec resqtrack-backend dotnet Backend.dll deletecliuser "citizen.ana.new@resqtrack.gov.ph"
+### Flow 1: Edit `1. Admin User`
+```text
+============================================================
+ USER EDIT (MERGED ADMIN, RESPONDERS & CIVILIANS)
+============================================================
+CHOOSE USER TYPE TO EDIT:
+  1. Admin User
+  2. Responders
+  3. Civilians
+CHOOSE OPTION (1-3): 1
 
-# Delete ALL non-default CLI-created test users (preserves seeded demo accounts)
-docker compose exec resqtrack-backend dotnet Backend.dll deleteallcliusers
+------------------------------------------------------------
+ ADMIN USER LIST
+------------------------------------------------------------
+  [1] Firstname: LDRRMO | Lastname: Command | Email: ldrrmo.admin@resqtrack.gov.ph
+  [2] Firstname: Super  | Lastname: Admin   | Email: ldrrmo.admin2@resqtrack.gov.ph
+------------------------------------------------------------
+SEARCH BAR (Type number 1-2 to select, or type keyword to filter): 2
+SELECTED USER: [2] Super Admin <ldrrmo.admin2@resqtrack.gov.ph>
+
+INPUT FIRSTNAME (Current: Super, press Enter to keep): Chief
+INPUT LASTNAME (Current: Admin, press Enter to keep): Director
+INPUT EMAIL (Current: ldrrmo.admin2@resqtrack.gov.ph, press Enter to keep): ldrrmo.director@resqtrack.gov.ph
+Do you want to direct change password on this account? (Yes/No): Yes
+NEW PASSWORD: NewAdminDirector@2026!
+CONFIRM PASSWORD: NewAdminDirector@2026!
+PRESS ENTER TO SAVE...
+[CLI] SUCCESSFUL: Admin user 'ldrrmo.director@resqtrack.gov.ph' updated and saved.
+```
+
+### Flow 2: Edit `2. Responders` (`1. RHU/MEDICS`, `2. BFP/FIRE`, `3. PNP/POLICE`)
+```text
+============================================================
+ USER EDIT (MERGED ADMIN, RESPONDERS & CIVILIANS)
+============================================================
+CHOOSE USER TYPE TO EDIT:
+  1. Admin User
+  2. Responders
+  3. Civilians
+CHOOSE OPTION (1-3): 2
+
+CHOOSE OPTION RESPONDERS:
+  1. RHU/MEDICS
+  2. BFP/FIRE
+  3. PNP/POLICE
+CHOOSE OPTION RESPONDERS (1-3): 1
+
+------------------------------------------------------------
+ RESPONDERS LIST (RHU/MEDICS)
+------------------------------------------------------------
+  [1] Firstname: RHU   | Lastname: Medic   | Email: rhu.medic@resqtrack.gov.ph
+  [2] Firstname: Medic | Lastname: Unit2   | Email: medic.unit2@resqtrack.gov.ph
+------------------------------------------------------------
+SEARCH BAR (Type number 1-2 to select, or type keyword to filter): 2
+SELECTED USER: [2] Medic Unit2 <medic.unit2@resqtrack.gov.ph>
+
+INPUT FIRSTNAME (Current: Medic, press Enter to keep): Alpha
+INPUT LASTNAME (Current: Unit2, press Enter to keep): Medic
+INPUT EMAIL (Current: medic.unit2@resqtrack.gov.ph, press Enter to keep): medic.alpha@resqtrack.gov.ph
+Do you want to direct change password on this account? (Yes/No): No
+PRESS ENTER TO SAVE...
+[CLI] SUCCESSFUL: Responder (RHU) user 'medic.alpha@resqtrack.gov.ph' updated and saved.
+```
+
+### Flow 3: Edit `3. Civilians`
+```text
+============================================================
+ USER EDIT (MERGED ADMIN, RESPONDERS & CIVILIANS)
+============================================================
+CHOOSE USER TYPE TO EDIT:
+  1. Admin User
+  2. Responders
+  3. Civilians
+CHOOSE OPTION (1-3): 3
+
+------------------------------------------------------------
+ CIVILIANS LIST
+------------------------------------------------------------
+  [1] Firstname: Elena   | Lastname: Santos   | Email: citizen.elena@resqtrack.gov.ph
+  [2] Firstname: Ana     | Lastname: Citizen  | Email: citizen.ana@resqtrack.gov.ph
+------------------------------------------------------------
+SEARCH BAR (Type number 1-2 to select, or type keyword to filter): 2
+SELECTED USER: [2] Ana Citizen <citizen.ana@resqtrack.gov.ph>
+
+INPUT FIRSTNAME (Current: Ana, press Enter to keep): Ana Marie
+INPUT LASTNAME (Current: Citizen, press Enter to keep): Reyes
+INPUT EMAIL (Current: citizen.ana@resqtrack.gov.ph, press Enter to keep): citizen.anamarie@resqtrack.gov.ph
+Do you want to direct change password on this account? (Yes/No): Yes
+NEW PASSWORD: UpdatedCivPass@2026!
+CONFIRM PASSWORD: UpdatedCivPass@2026!
+PRESS ENTER TO SAVE...
+[CLI] SUCCESSFUL: Civilian user 'citizen.anamarie@resqtrack.gov.ph' updated and saved.
 ```
 
 ---
 
-## 6. Database Migrations (`updatedatabase` & `addmigration`)
+## 7. Merged User Delete Command (`userdelete` - Single Selection or Delete ALL with Admin Password Verification)
+
+> Single unified command to delete a specific user (`1..N` or search keyword) OR type `ALL` to delete all accounts in the selected category after confirming `DO YOU WANT TO DELETE ALL? (YES/NO):` and verifying `INPUT ADMIN PASSWORD:`.
+
+### Command (`userdelete`)
+```powershell
+docker compose exec -it resqtrack-backend dotnet Backend.dll userdelete
+```
+
+### Flow 1: Delete `1. Admin User` (Single or `ALL`)
+```text
+============================================================
+ USER DELETE (MERGED ADMIN, RESPONDERS & CIVILIANS)
+============================================================
+CHOOSE USER TYPE TO DELETE:
+  1. Admin User
+  2. Responders
+  3. Civilians
+CHOOSE OPTION (1-3): 1
+
+------------------------------------------------------------
+ ADMIN USER LIST
+------------------------------------------------------------
+  [1] Firstname: LDRRMO | Lastname: Command  | Email: ldrrmo.admin@resqtrack.gov.ph
+  [2] Firstname: Chief  | Lastname: Director | Email: ldrrmo.director@resqtrack.gov.ph
+------------------------------------------------------------
+SEARCH BAR (Type number 1..N, search keyword, or ALL to delete all listed): ALL
+DO YOU WANT TO DELETE ALL? (YES/NO): YES
+INPUT ADMIN PASSWORD: AdminCommand@2026!
+[CLI] SUCCESSFUL: Deleted all (2) users in selected category.
+```
+
+### Flow 2: Delete `2. Responders` (`1. RHU/MEDICS`, `2. BFP/FIRE`, `3. PNP/POLICE` - Single or `ALL`)
+```text
+============================================================
+ USER DELETE (MERGED ADMIN, RESPONDERS & CIVILIANS)
+============================================================
+CHOOSE USER TYPE TO DELETE:
+  1. Admin User
+  2. Responders
+  3. Civilians
+CHOOSE OPTION (1-3): 2
+
+CHOOSE OPTION RESPONDERS:
+  1. RHU/MEDICS
+  2. BFP/FIRE
+  3. PNP/POLICE
+CHOOSE OPTION RESPONDERS (1-3): 1
+
+------------------------------------------------------------
+ RESPONDERS LIST (RHU/MEDICS)
+------------------------------------------------------------
+  [1] Firstname: RHU   | Lastname: Medic | Email: rhu.medic@resqtrack.gov.ph
+  [2] Firstname: Alpha | Lastname: Medic | Email: medic.alpha@resqtrack.gov.ph
+------------------------------------------------------------
+SEARCH BAR (Type number 1..N, search keyword, or ALL to delete all listed): ALL
+DO YOU WANT TO DELETE ALL? (YES/NO): YES
+INPUT ADMIN PASSWORD: AdminCommand@2026!
+[CLI] SUCCESSFUL: Deleted all (2) users in selected category.
+```
+
+### Flow 3: Delete `3. Civilians` (Single or `ALL`)
+```text
+============================================================
+ USER DELETE (MERGED ADMIN, RESPONDERS & CIVILIANS)
+============================================================
+CHOOSE USER TYPE TO DELETE:
+  1. Admin User
+  2. Responders
+  3. Civilians
+CHOOSE OPTION (1-3): 3
+
+------------------------------------------------------------
+ CIVILIANS LIST
+------------------------------------------------------------
+  [1] Firstname: Elena     | Lastname: Santos | Email: citizen.elena@resqtrack.gov.ph
+  [2] Firstname: Ana Marie | Lastname: Reyes  | Email: citizen.anamarie@resqtrack.gov.ph
+------------------------------------------------------------
+SEARCH BAR (Type number 1..N, search keyword, or ALL to delete all listed): ALL
+DO YOU WANT TO DELETE ALL? (YES/NO): YES
+INPUT ADMIN PASSWORD: AdminCommand@2026!
+[CLI] SUCCESSFUL: Deleted all (2) users in selected category.
+```
+
+**Single User Delete Example (Selecting `1..N` instead of `ALL`):**
+```text
+SEARCH BAR (Type number 1..N, search keyword, or ALL to delete all listed): 2
+SELECTED USER: [2] Ana Marie Reyes <citizen.anamarie@resqtrack.gov.ph>
+DO YOU WANT TO DELETE THIS USER? (YES/NO): YES
+[CLI] SUCCESSFUL: Deleted user 'citizen.anamarie@resqtrack.gov.ph'.
+```
+
+---
+
+## 8. Database Migrations (`updatedatabase` & `addmigration`)
 
 ### Apply Migrations / Reconcile Schema Inside Docker PostgreSQL
 ```powershell
@@ -255,7 +441,7 @@ docker compose exec resqtrack-backend dotnet Backend.dll updatedatabase
 
 ---
 
-## 7. Roboflow + Claude Haiku 4.5 Vision Testing Inside Docker
+## 9. Roboflow + Claude Haiku 4.5 Vision Testing Inside Docker
 
 ```powershell
 # Verify C# Dual-Stage /api/reports/analyze-image endpoint in Docker
@@ -266,13 +452,15 @@ Invoke-RestMethod -Uri "http://127.0.0.1:1999/api/reports/analyze-image" -Method
 
 ---
 
-## 8. Interactive Shortcuts via `.\start.ps1`
+## 10. Interactive Shortcuts via `.\start.ps1`
 
 ```powershell
 .\start.ps1 docker-up                        # Runs: docker compose up -d --build
 .\start.ps1 docker-rebuild                   # Runs: docker compose down -> build --no-cache -> up -d
 .\start.ps1 docker-updatedatabase            # Runs: docker compose exec/run updatedatabase
-.\start.ps1 customcreatesuperadmin           # Prompts: Input Email & Input Password ONLY
-.\start.ps1 customcreateresponderuser        # Prompts: 1. RHU/MEDIC, 2. FIRE/BFP, 3. PNP/POLICE -> Input Email & Input Password ONLY
-.\start.ps1 customercreatecivilianuser       # Prompts: Input Email & Input Password ONLY
+.\start.ps1 createsuperadmin                 # Prompts: [1] DEFAULT (Email & Password - No Statics) or [2] CUSTOM (Email, Password & Confirm Password)
+.\start.ps1 createresponders                 # Prompts: 1. RHU/MEDICS, 2. BFP/FIRE, 3. PNP/POLICE -> Email, Password & Confirm Password
+.\start.ps1 createcivilians                  # Prompts: Email, Password & Confirm Password
+.\start.ps1 useredit                         # Merged Edit: 1. Admin User, 2. Responders (RHU/BFP/PNP), 3. Civilians -> Search Bar -> FirstName/LastName/Email + Optional Direct Password Change
+.\start.ps1 userdelete                       # Merged Delete: 1. Admin User, 2. Responders (RHU/BFP/PNP), 3. Civilians -> Search Bar -> Single User or ALL (with Admin Password Verification)
 ```

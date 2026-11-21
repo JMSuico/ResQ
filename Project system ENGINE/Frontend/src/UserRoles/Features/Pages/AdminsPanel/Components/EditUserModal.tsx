@@ -184,6 +184,10 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (user.isCliProtectedSuperAdmin) {
+      setErrorText('CLI-created Superadmin accounts cannot be edited from the Frontend/UI. Use Docker CLI (useredit).');
+      return;
+    }
     setErrorText(null);
 
     if (!formData.firstName.trim() || !formData.surname.trim()) {

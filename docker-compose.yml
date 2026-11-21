@@ -164,7 +164,6 @@ services:
       - "./Project system ENGINE/Frontend/tsconfig.app.json:/app/tsconfig.app.json"
       - "./Project system ENGINE/Frontend/tailwind.config.cjs:/app/tailwind.config.cjs"
       - "./Project system ENGINE/Frontend/postcss.config.cjs:/app/postcss.config.cjs"
-      - "resqtrack_admin_node_modules:/app/node_modules"
     depends_on:
       - resqtrack-backend
     networks:
@@ -195,7 +194,6 @@ services:
       - "./Project system ENGINE/Frontend/tsconfig.app.json:/app/tsconfig.app.json"
       - "./Project system ENGINE/Frontend/tailwind.config.cjs:/app/tailwind.config.cjs"
       - "./Project system ENGINE/Frontend/postcss.config.cjs:/app/postcss.config.cjs"
-      - "resqtrack_responders_node_modules:/app/node_modules"
     depends_on:
       - resqtrack-backend
     networks:
@@ -226,7 +224,6 @@ services:
       - "./Project system ENGINE/Frontend/tsconfig.app.json:/app/tsconfig.app.json"
       - "./Project system ENGINE/Frontend/tailwind.config.cjs:/app/tailwind.config.cjs"
       - "./Project system ENGINE/Frontend/postcss.config.cjs:/app/postcss.config.cjs"
-      - "resqtrack_civilian_node_modules:/app/node_modules"
     depends_on:
       - resqtrack-backend
     networks:
@@ -269,9 +266,3 @@ volumes:
     name: resqtrack_postgres_replica_data
   resqtrack_uploads_data:
     name: resqtrack_uploads_data
-  resqtrack_admin_node_modules:
-    name: resqtrack_admin_node_modules
-  resqtrack_responders_node_modules:
-    name: resqtrack_responders_node_modules
-  resqtrack_civilian_node_modules:
-    name: resqtrack_civilian_node_modules

@@ -29,8 +29,13 @@ Project system ENGINE/Backend/obj/
 Project system ENGINE/Backend/obj/**
 Project system ENGINE/Backend/publish/
 Project system ENGINE/Backend/publish/**
-Project system ENGINE/Backend/server-data/uploads/
-Project system ENGINE/Backend/server-data/uploads/**
+Project system ENGINE/Backend/server-data/uploads/*
+Project system ENGINE/Backend/server-data/uploads/captures/*
+Project system ENGINE/Backend/server-data/uploads/reports/*
+!Project system ENGINE/Backend/server-data/uploads/captures/
+!Project system ENGINE/Backend/server-data/uploads/captures/.gitkeep
+!Project system ENGINE/Backend/server-data/uploads/reports/
+!Project system ENGINE/Backend/server-data/uploads/reports/.gitkeep
 
 # -----------------------------------------------------------------------------
 # 2. Node.js, Frontend Libraries & Modules (React + Vite)

@@ -30,6 +30,10 @@ export const DeleteUserConfirmModal: React.FC<DeleteUserConfirmModalProps> = ({
 
   const handleDelete = async () => {
     if (!user) return;
+    if (user.isCliProtectedSuperAdmin) {
+      setErrorMessage('CLI-created Superadmin accounts cannot be deleted from the Frontend/UI. Use Docker CLI (userdelete).');
+      return;
+    }
     setIsDeleting(true);
     setErrorMessage(null);
     try {
