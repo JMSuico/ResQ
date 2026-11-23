@@ -4,7 +4,14 @@
 
 import { requestJson } from './apiClient';
 
-export type IncidentPointerIconType = 'car-crash' | 'fire' | 'medical' | 'crime' | 'flood' | 'hazard';
+export type IncidentPointerIconType = 'car-crash' | 'fire' | 'medical' | 'crime';
+
+export interface TaggedColleagueItem {
+  userId: string;
+  fullName: string;
+  unit: string;
+  rankOrTitle: string;
+}
 
 export interface IncidentImageAiAnalysisRequest {
   imageDataUrl: string;
@@ -59,6 +66,7 @@ export interface CreateReportPayload {
   claudeVisibleHazards?: string | null;
   claudeUncertaintyNotes?: string | null;
   pointerIconType?: string | null;
+  taggedColleagueIds?: string[];
 }
 
 export interface IncidentEvidenceItem {
@@ -81,6 +89,12 @@ export interface ReportEvidenceRecordDto {
   uploadedByName?: string;
   createdAtUtc?: string;
   createdAt?: string;
+  closureOutcome?: string;
+  aiVerdict?: string;
+  aiReasoning?: string;
+  taggedColleagues?: TaggedColleagueItem[];
+  approvedByUserId?: string | null;
+  approvedAtUtc?: string | null;
 }
 
 export interface ReportFeedbackRecordDto {
@@ -144,6 +158,37 @@ export interface ReportItem {
   pointerIconType?: string | null;
   aiAutoApproved?: boolean;
   aiVerificationStatus?: string | null;
+  closedAt?: string | null;
+  closureSummary?: string | null;
+  closureApprovalMode?: string | null;
+  taggedColleagues?: TaggedColleagueItem[];
+}
+
+export interface SubmitClosureEvidencePayload {
+  imageDataUrl: string;
+  notes?: string;
+  requestedOutcome?: 'InProgress' | 'Resolved' | 'Auto';
+  taggedColleagueIds?: string[];
+  triggerAiAutoApprove?: boolean;
+}
+
+export interface ClosureEvidenceSubmissionResult {
+  success: boolean;
+  message: string;
+  verdict: string;
+  autoApproved: boolean;
+  approvalMode: string;
+  reportStatus: string;
+  aiReasoning: string;
+  modelUsed: string;
+  report: ReportItem;
+  evidence: ReportEvidenceRecordDto;
+}
+
+export interface ApproveClosurePayload {
+  useAi?: boolean;
+  targetStatus?: 'Resolved' | 'Closed' | 'InProgress';
+  adminNote?: string;
 }
 
 export interface AiAutoApproveReportResponse {
@@ -222,6 +267,30 @@ export const uploadReportEvidence = (
         caption: caption || '',
         mediaType: 'image'
       })
+    }
+  );
+
+export const submitClosureEvidence = (
+  reportId: string,
+  payload: SubmitClosureEvidencePayload
+): Promise<ClosureEvidenceSubmissionResult> =>
+  requestJson<ClosureEvidenceSubmissionResult>(
+    `/api/reports/${encodeURIComponent(reportId)}/submit-closure-evidence`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }
+  );
+
+export const approveReportClosure = (
+  reportId: string,
+  payload: ApproveClosurePayload
+): Promise<ClosureEvidenceSubmissionResult> =>
+  requestJson<ClosureEvidenceSubmissionResult>(
+    `/api/reports/${encodeURIComponent(reportId)}/approve-closure`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload)
     }
   );
 

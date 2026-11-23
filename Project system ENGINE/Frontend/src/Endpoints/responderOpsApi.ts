@@ -160,6 +160,26 @@ export const getPoliceBlotters = (reportId?: string): Promise<PoliceBlotterEntry
 export const getNearbyHydrants = (): Promise<HydrantFixture[]> =>
   requestJson<HydrantFixture[]>('/api/responder-ops/hydrants', { method: 'GET' });
 
+export interface ColleagueResponderItem {
+  id: string;
+  fullName: string;
+  displayName: string;
+  email: string;
+  unit: string;
+  rankOrTitle: string;
+  employeeOrResidentId: string;
+}
+
+export const getUnitColleagues = (query?: string, agency?: string): Promise<ColleagueResponderItem[]> => {
+  const params = new URLSearchParams();
+  if (query && query.trim()) params.set('q', query.trim());
+  if (agency && agency.trim()) params.set('agency', agency.trim());
+  const qs = params.toString();
+  return requestJson<ColleagueResponderItem[]>(`/api/responder-ops/colleagues${qs ? `?${qs}` : ''}`, {
+    method: 'GET'
+  });
+};
+
 // ============================================================================
 // REQUEST & DEPLOY + RESPONDER NOTIFICATION SYNC API (PostgreSQL Backed)
 // ============================================================================

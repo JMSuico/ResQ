@@ -109,7 +109,22 @@ public record CreateReportRequest(
     string? ClaudeSituationSummary = null,
     string? ClaudeVisibleHazards = null,
     string? ClaudeUncertaintyNotes = null,
-    string? PointerIconType = null
+    string? PointerIconType = null,
+    List<Guid>? TaggedColleagueIds = null
+);
+
+public record SubmitClosureEvidenceRequest(
+    [Required] string ImageDataUrl,
+    string? Notes = null,
+    string? RequestedOutcome = null,
+    List<Guid>? TaggedColleagueIds = null,
+    bool TriggerAiAutoApprove = true
+);
+
+public record ApproveClosureRequest(
+    bool UseAi = false,
+    ReportStatus TargetStatus = ReportStatus.Resolved,
+    string? AdminNote = null
 );
 
 public record AnalyzeIncidentImageRequest(

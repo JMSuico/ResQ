@@ -679,9 +679,7 @@ public static class DatabaseSeeder
         {
             var fixtures = new List<IncidentFixture>
             {
-                new() { FixtureCode = "HYD-001", Title = "High-Pressure Fire Hydrant - Katipunan Main Ave", Category = IncidentCategory.HazardFixture, Severity = IncidentSeverity.Low, Latitude = 8.5145, Longitude = 123.2850, AssignedUnitType = ResponderUnitType.FIRE, IsActive = true, Description = "Inspected monthly. Flow rate: 1200 GPM." },
-                new() { FixtureCode = "EVAC-001", Title = "Katipunan Municipal Gymnasium Evacuation Center", Category = IncidentCategory.NaturalDisaster, Severity = IncidentSeverity.Low, Latitude = 8.5152, Longitude = 123.2858, AssignedUnitType = ResponderUnitType.LDRRMO, IsActive = true, Description = "Capacity: 1,500 families with backup solar power and clean water cistern." },
-                new() { FixtureCode = "FLOOD-ZONE-A", Title = "Dicayas-Katipunan River Flood Monitor Zone", Category = IncidentCategory.NaturalDisaster, Severity = IncidentSeverity.Medium, Latitude = 8.5130, Longitude = 123.2840, AssignedUnitType = ResponderUnitType.LDRRMO, IsActive = true, Description = "Critical flash-flood area during heavy monsoon rains." }
+                new() { FixtureCode = "HYD-001", Title = "High-Pressure Fire Hydrant - Katipunan Main Ave", Category = IncidentCategory.StructuralFire, Severity = IncidentSeverity.Low, Latitude = 8.5145, Longitude = 123.2850, AssignedUnitType = ResponderUnitType.FIRE, IsActive = true, Description = "Inspected monthly. Flow rate: 1200 GPM." }
             };
 
             await db.IncidentFixtures.AddRangeAsync(fixtures);

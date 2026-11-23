@@ -13,8 +13,16 @@ import {
   getAgencyReports,
   verifyReport,
   assignUnitToReport,
-  ReportItem
+  ReportItem,
+  TaggedColleagueItem,
+  ClosureEvidenceSubmissionResult
 } from '@/Endpoints/reportsApi';
+import {
+  getRoleAnalyticsDashboard,
+  toManilaParts,
+  RoleAnalyticsDashboardDto
+} from '@/Endpoints/analyticsApi';
+import { resolveStreetAddressSync } from '@/Libs/Map/addressResolver';
 import { getIncidentFixtures, IncidentFixture } from '@/Endpoints/adminGovernanceApi';
 import {
   getDutyRoster,
@@ -30,7 +38,11 @@ import {
   useTableCardView,
   PatientCareRecordModal,
   PoliceBlotterModal,
-  Dropdown
+  ResponderClosureEvidenceModal,
+  Dropdown,
+  LinearCurveyChart,
+  BarGraphChart,
+  HeatmapChart
 } from '@/Shared';
 import {
   useGpsLocation,
@@ -86,6 +98,13 @@ export interface TacticalRadarPointer {
   latitude: number;
   longitude: number;
   physicalAddress: string;
+  locationLabel: string;
+  resolvedAt?: string | null;
+  closedAt?: string | null;
+  aiVerificationStatus?: string | null;
+  closureSummary?: string | null;
+  closureApprovalMode?: string | null;
+  taggedColleagues?: TaggedColleagueItem[];
   ipAddress: string;
   imageUrl: string;
   note: string;
@@ -93,7 +112,7 @@ export interface TacticalRadarPointer {
   agency: 'RHU' | 'FIRE' | 'PNP' | 'MDRRMO';
 }
 
-const FIVE_MINUTES_MS = 5 * 60 * 1000;
+const TWO_MINUTES_MS = 2 * 60 * 1000;
 
 // 7 Medic-Allowed Categories
 export const MEDIC_ALLOWED_CATEGORIES: readonly string[] = [
@@ -146,13 +165,11 @@ const SEVERITY_PRIORITY_WEIGHT: Record<string, number> = {
   Low: 1
 };
 
-const isSubmittedOrPendingStatus = (status?: string | null): boolean => {
+const isSubmittedStatus = (status?: string | null): boolean => {
   const normalized = (status || 'Reported').trim().toLowerCase();
   return (
     normalized === 'reported' ||
     normalized === 'submitted' ||
-    normalized === 'pending' ||
-    normalized === 'pending dispatch' ||
     normalized === 'active triage' ||
     normalized === 'immediate response' ||
     normalized === 'active'
@@ -164,25 +181,30 @@ const isVerifiedStatus = (status?: string | null): boolean => {
   return normalized === 'verified' || normalized === 'responded';
 };
 
-const computeRemainingSecondsFromVerifiedAt = (
-  verifiedAt?: string | null,
+const computeTwoMinFadeSecondsLeft = (
   resolvedAt?: string | null,
+  closedAt?: string | null,
   status?: string | null,
   nowMs: number = Date.now()
 ): number | null => {
   const st = (status || '').trim().toLowerCase();
-  if (resolvedAt || st === 'resolved' || st === 'closed') return 0;
-  if (!verifiedAt) return null;
-  const verifiedMs = new Date(verifiedAt).getTime();
-  if (Number.isNaN(verifiedMs)) return null;
-  return Math.max(0, Math.floor((verifiedMs + FIVE_MINUTES_MS - nowMs) / 1000));
+  const isDone = st === 'resolved' || st === 'closed' || st === 'completed' || Boolean(resolvedAt || closedAt);
+  if (!isDone) return null;
+  const doneIso = closedAt || resolvedAt;
+  if (!doneIso) return 0;
+  const doneMs = new Date(doneIso).getTime();
+  if (Number.isNaN(doneMs)) return 0;
+  return Math.max(0, Math.floor((doneMs + TWO_MINUTES_MS - nowMs) / 1000));
 };
 
 const formatQueueStatusBadge = (
   status?: string | null,
   allocatedUnitCode?: string | null,
   verifiedAt?: string | null,
-  resolvedAt?: string | null
+  resolvedAt?: string | null,
+  closedAt?: string | null,
+  aiAutoApproved?: boolean,
+  aiVerificationStatus?: string | null
 ): { label: string; pillClass: string } => {
   const raw = (status || 'Reported').trim().toUpperCase();
 
@@ -192,10 +214,16 @@ const formatQueueStatusBadge = (
       pillClass: 'bg-[#670626] text-[#F7F1EA] border border-[#4A041A]'
     };
   }
-  if (raw === 'RESOLVED' || raw === 'CLOSED' || raw === 'COMPLETED' || Boolean(resolvedAt)) {
+  if (raw === 'RESOLVED' || raw === 'CLOSED' || raw === 'COMPLETED' || Boolean(resolvedAt || closedAt)) {
     return {
-      label: 'Resolved',
+      label: 'Done',
       pillClass: 'bg-emerald-100 text-emerald-900 border border-emerald-700/30'
+    };
+  }
+  if (raw === 'INPROGRESS' || raw === 'IN_PROGRESS' || raw === 'WORKING PROGRESS') {
+    return {
+      label: 'Working Progress',
+      pillClass: 'bg-amber-100 text-amber-900 border border-amber-700/35'
     };
   }
   if (
@@ -211,15 +239,12 @@ const formatQueueStatusBadge = (
     };
   }
   if (raw === 'VERIFIED' || raw === 'RESPONDED' || Boolean(verifiedAt)) {
+    const isAiApproved =
+      Boolean(aiAutoApproved) ||
+      String(aiVerificationStatus || '').trim().toLowerCase() === 'autoapproved';
     return {
-      label: 'Verified',
+      label: isAiApproved ? 'AI Auto-Approved' : 'Manual Approved',
       pillClass: 'bg-sky-100 text-sky-900 border border-sky-700/30'
-    };
-  }
-  if (raw === 'PENDING' || raw === 'PENDING DISPATCH') {
-    return {
-      label: 'Pending',
-      pillClass: 'bg-amber-100 text-amber-900 border border-amber-700/30'
     };
   }
   return {
@@ -260,6 +285,8 @@ export const ResponderDashboard: React.FC = () => {
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [isPcrModalOpen, setIsPcrModalOpen] = useState<boolean>(false);
   const [isBlotterModalOpen, setIsBlotterModalOpen] = useState<boolean>(false);
+  const [closureTargetIncident, setClosureTargetIncident] = useState<ReportItem | null>(null);
+  const [analyticsDashboard, setAnalyticsDashboard] = useState<RoleAnalyticsDashboardDto | null>(null);
   const { viewMode, setViewMode } = useTableCardView('card');
 
   const activeUnit: 'RHU' | 'FIRE' | 'PNP' = useMemo(() => {
@@ -274,11 +301,12 @@ export const ResponderDashboard: React.FC = () => {
   const loadData = useCallback(async () => {
     if (!session || session.unit === 'None') return;
     try {
-      const [allReps, agencyReps, fixs, rost] = await Promise.all([
+      const [allReps, agencyReps, fixs, rost, roleAnalytics] = await Promise.all([
         getAllReports().catch(() => [] as ReportItem[]),
         getAgencyReports(activeUnit).catch(() => [] as ReportItem[]),
         getIncidentFixtures().catch(() => [] as IncidentFixture[]),
-        getDutyRoster(activeUnit).catch(() => [] as DutyUnit[])
+        getDutyRoster(activeUnit).catch(() => [] as DutyUnit[]),
+        getRoleAnalyticsDashboard('30d').catch(() => null)
       ]);
       const safeAll = Array.isArray(allReps) ? allReps : [];
       const safeAgency = Array.isArray(agencyReps) ? agencyReps : [];
@@ -286,6 +314,7 @@ export const ResponderDashboard: React.FC = () => {
       setDispatches(safeAgency);
       setFixtures(Array.isArray(fixs) ? fixs : []);
       setRoster(Array.isArray(rost) ? rost : []);
+      setAnalyticsDashboard(roleAnalytics);
 
       const myUnit = (Array.isArray(rost) ? rost : []).find(
         (u) => (u.agency || '').toUpperCase() === activeUnit
@@ -328,6 +357,9 @@ export const ResponderDashboard: React.FC = () => {
             ? d.imageUrl
             : '';
 
+        const resolvedAddr =
+          d.locationLabel || resolveStreetAddressSync(d.latitude, d.longitude);
+
         return {
           id: d.id,
           referenceCode: refCode,
@@ -344,7 +376,14 @@ export const ResponderDashboard: React.FC = () => {
           status: d.status || 'Submitted',
           latitude: d.latitude,
           longitude: d.longitude,
-          physicalAddress: d.locationLabel || formatGpsCoord(d.latitude, d.longitude),
+          physicalAddress: resolvedAddr,
+          locationLabel: resolvedAddr,
+          resolvedAt: d.resolvedAt ?? null,
+          closedAt: d.closedAt ?? null,
+          aiVerificationStatus: d.aiVerificationStatus ?? null,
+          closureSummary: d.closureSummary ?? null,
+          closureApprovalMode: d.closureApprovalMode ?? null,
+          taggedColleagues: d.taggedColleagues,
           ipAddress: d.submittedIpAddress || 'Unavailable',
           imageUrl: cleanImage,
           note: d.note || 'No field notes.',
@@ -395,7 +434,7 @@ export const ResponderDashboard: React.FC = () => {
     }
   }, [location.search, allRadarPointers]);
 
-  // Real-time 1s clock for DB verifiedAt + 5m - now countdown
+  // Real-time 1s clock for 2-minute Done fade countdown notice
   useEffect(() => {
     if (!selectedIncident) return;
     setNowMs(Date.now());
@@ -405,11 +444,11 @@ export const ResponderDashboard: React.FC = () => {
     return () => window.clearInterval(interval);
   }, [selectedIncident]);
 
-  const selectedIncidentSecondsLeft = useMemo(() => {
+  const selectedIncidentFadeSecondsLeft = useMemo(() => {
     if (!selectedIncident) return null;
-    return computeRemainingSecondsFromVerifiedAt(
-      selectedIncident.verifiedAt,
+    return computeTwoMinFadeSecondsLeft(
       selectedIncident.resolvedAt,
+      selectedIncident.closedAt,
       selectedIncident.status,
       nowMs
     );
@@ -669,6 +708,61 @@ export const ResponderDashboard: React.FC = () => {
     [roster]
   );
 
+  const unitAnalytics = useMemo(() => {
+    const bucketKeys = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'];
+    const localBuckets: Record<string, number> = {
+      '00:00': 0,
+      '04:00': 0,
+      '08:00': 0,
+      '12:00': 0,
+      '16:00': 0,
+      '20:00': 0
+    };
+    const localMatrix: number[][] = Array.from({ length: 7 }, () => Array(6).fill(0));
+    let low = 0;
+    let med = 0;
+    let high = 0;
+    let crit = 0;
+
+    dispatches.forEach((r) => {
+      const sev = (r.severity || '').toLowerCase();
+      if (sev === 'low') low += 1;
+      else if (sev === 'medium' || sev === 'moderate') med += 1;
+      else if (sev === 'high') high += 1;
+      else if (sev === 'critical' || sev === 'severe') crit += 1;
+
+      const parts = toManilaParts(r.createdAt);
+      if (parts) {
+        const blockIdx = Math.min(5, Math.max(0, Math.floor(parts.hour / 4)));
+        localBuckets[bucketKeys[blockIdx]] += 1;
+        localMatrix[parts.dayIndex][blockIdx] += 1;
+      }
+    });
+
+    const volumeTrend =
+      analyticsDashboard?.volumeTrend && analyticsDashboard.volumeTrend.length > 0
+        ? analyticsDashboard.volumeTrend
+        : bucketKeys.map((label) => ({ label, value: localBuckets[label] }));
+
+    const severityBreakdown =
+      analyticsDashboard?.severityBreakdown && analyticsDashboard.severityBreakdown.length > 0
+        ? analyticsDashboard.severityBreakdown
+        : [
+            { label: 'Low', value: low, color: '#10b981' },
+            { label: 'Medium', value: med, color: '#f59e0b' },
+            { label: 'High', value: high, color: '#ea580c' },
+            { label: 'Critical', value: crit, color: '#ef4444' }
+          ];
+
+    const heatmapMatrix =
+      analyticsDashboard?.heatmapMatrix?.matrix &&
+      analyticsDashboard.heatmapMatrix.matrix.length === 7
+        ? analyticsDashboard.heatmapMatrix.matrix
+        : localMatrix;
+
+    return { volumeTrend, severityBreakdown, heatmapMatrix };
+  }, [analyticsDashboard, dispatches]);
+
   const markers: MapMarker[] = useMemo(() => {
     const list: MapMarker[] = [
       {
@@ -717,6 +811,13 @@ export const ResponderDashboard: React.FC = () => {
         agency: ptr.agency,
         status: ptr.status,
         evidenceUrl: ptr.imageUrl || undefined,
+        locationLabel: ptr.locationLabel,
+        resolvedAt: ptr.resolvedAt,
+        closedAt: ptr.closedAt,
+        aiVerificationStatus: ptr.aiVerificationStatus,
+        closureSummary: ptr.closureSummary,
+        closureApprovalMode: ptr.closureApprovalMode,
+        taggedColleagues: ptr.taggedColleagues,
         severity: inScope
           ? ptr.severity === 'Critical'
             ? 'critical'
@@ -1012,6 +1113,37 @@ export const ResponderDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* UNIT OPERATIONAL ANALYTICS (PHT UTC+8) */}
+      <div className="clay-surface p-5 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 rounded-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-[#670626]/15">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-[#670626]" />
+            <h2 className="text-base sm:text-lg font-black text-[#670626] tracking-tight">
+              {activeUnit} Operational Analytics
+            </h2>
+          </div>
+          <span className="px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#670626]/15 text-xs font-mono font-bold text-[#670626]">
+            PHT (UTC+8) · Live DB Telemetry
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+          <LinearCurveyChart
+            data={unitAnalytics.volumeTrend}
+            title="Unit 24h Response Activity"
+            color="#670626"
+          />
+          <BarGraphChart
+            data={unitAnalytics.severityBreakdown}
+            title="Unit Incident Severity Breakdown"
+          />
+          <HeatmapChart
+            matrix={unitAnalytics.heatmapMatrix}
+            title="Unit Weekly Activity Color Heatmap"
+          />
+        </div>
+      </div>
+
       {/* SATELLITE COMMAND RADAR HUD */}
       <div className="clay-surface bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 rounded-2xl overflow-hidden">
         <div className="p-4 bg-[#E9D9D0] border-b border-[#670626]/15 flex flex-wrap items-center justify-between gap-3">
@@ -1092,6 +1224,15 @@ export const ResponderDashboard: React.FC = () => {
                 onSelectIncident={(inc) => {
                   const ptr = allRadarPointers.find((p) => p.id === inc.id);
                   if (ptr) setSelectedPointer(ptr);
+                }}
+                onOpenClosureEvidence={(inc) => {
+                  const matched =
+                    allReports.find((r) => r.id === inc.id) ||
+                    dispatches.find((r) => r.id === inc.id) ||
+                    null;
+                  if (matched) {
+                    setClosureTargetIncident(matched);
+                  }
                 }}
                 isExpanded={isExpandMapOpen}
                 onToggleExpand={() => setIsExpandMapOpen((prev) => !prev)}
@@ -1240,11 +1381,31 @@ export const ResponderDashboard: React.FC = () => {
                 item.status,
                 item.allocatedUnitCode,
                 item.verifiedAt,
-                item.resolvedAt
+                item.resolvedAt,
+                item.closedAt,
+                item.aiAutoApproved,
+                item.aiVerificationStatus
               );
-              const canVerifyOrReject = isSubmittedOrPendingStatus(item.status);
+              const normSt = (item.status || '').trim().toLowerCase();
+              const isTerminalDone =
+                normSt === 'resolved' ||
+                normSt === 'closed' ||
+                normSt === 'completed' ||
+                normSt === 'rejected' ||
+                normSt === 'declined' ||
+                Boolean(item.resolvedAt || item.closedAt);
+              const canVerifyOrReject =
+                isSubmittedStatus(item.status) &&
+                !item.verifiedAt &&
+                !item.allocatedUnitCode &&
+                !isTerminalDone;
               const canDispatch =
-                canVerifyOrReject || isVerifiedStatus(item.status);
+                (canVerifyOrReject || isVerifiedStatus(item.status)) &&
+                !item.allocatedUnitCode &&
+                !isTerminalDone;
+              const canSubmitClosure = !isTerminalDone && !canVerifyOrReject;
+              const resolvedStreet =
+                item.locationLabel || resolveStreetAddressSync(item.latitude, item.longitude);
               const isBusy = actionBusyId === item.id;
 
               return (
@@ -1310,15 +1471,41 @@ export const ResponderDashboard: React.FC = () => {
                         )}
                       </div>
                     )}
+
+                    {(item.closureApprovalMode || item.closureSummary) && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-700/25 text-xs font-mono text-emerald-950 flex flex-col gap-1">
+                        {item.closureApprovalMode && (
+                          <span className="font-black uppercase text-emerald-800">
+                            Closure Mode: {item.closureApprovalMode}
+                          </span>
+                        )}
+                        {item.closureSummary && (
+                          <p className="font-sans text-xs text-emerald-900 line-clamp-2">
+                            {item.closureSummary}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {Array.isArray(item.taggedColleagues) && item.taggedColleagues.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {item.taggedColleagues.map((col) => (
+                          <span
+                            key={col.userId}
+                            className="px-2 py-0.5 rounded-md bg-[#F7F1EA] border border-[#670626]/20 text-xs font-mono font-bold text-[#670626]"
+                          >
+                            @{col.fullName} ({col.unit})
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-3.5 pt-3 border-t border-[#670626]/15 flex flex-col gap-2.5 font-mono text-xs text-[#5B2A35]">
                     <div className="flex items-center justify-between">
-                      <span className="truncate max-w-[180px] flex items-center gap-1.5">
+                      <span className="truncate max-w-[190px] flex items-center gap-1.5" title={resolvedStreet}>
                         <MapPin className="w-3.5 h-3.5 text-[#A83B4D] flex-shrink-0" />
-                        <span>
-                          {item.locationLabel || formatGpsCoord(item.latitude, item.longitude)}
-                        </span>
+                        <span>{resolvedStreet}</span>
                       </span>
                       <span className="text-xs text-[#670626] font-semibold">IP: {itemIp}</span>
                     </div>
@@ -1364,6 +1551,16 @@ export const ResponderDashboard: React.FC = () => {
                             Dispatch
                           </ResponderButton>
                         )}
+                        {canSubmitClosure && (
+                          <ResponderButton
+                            variant="action-green"
+                            size="xs"
+                            onClick={() => setClosureTargetIncident(item)}
+                            icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                          >
+                            Close / Evidence
+                          </ResponderButton>
+                        )}
                         <ResponderButton
                           variant="outline"
                           size="xs"
@@ -1401,10 +1598,31 @@ export const ResponderDashboard: React.FC = () => {
                     item.status,
                     item.allocatedUnitCode,
                     item.verifiedAt,
-                    item.resolvedAt
+                    item.resolvedAt,
+                    item.closedAt,
+                    item.aiAutoApproved,
+                    item.aiVerificationStatus
                   );
-                  const canVerifyOrReject = isSubmittedOrPendingStatus(item.status);
-                  const canDispatch = canVerifyOrReject || isVerifiedStatus(item.status);
+                  const normSt = (item.status || '').trim().toLowerCase();
+                  const isTerminalDone =
+                    normSt === 'resolved' ||
+                    normSt === 'closed' ||
+                    normSt === 'completed' ||
+                    normSt === 'rejected' ||
+                    normSt === 'declined' ||
+                    Boolean(item.resolvedAt || item.closedAt);
+                  const canVerifyOrReject =
+                    isSubmittedStatus(item.status) &&
+                    !item.verifiedAt &&
+                    !item.allocatedUnitCode &&
+                    !isTerminalDone;
+                  const canDispatch =
+                    (canVerifyOrReject || isVerifiedStatus(item.status)) &&
+                    !item.allocatedUnitCode &&
+                    !isTerminalDone;
+                  const canSubmitClosure = !isTerminalDone && !canVerifyOrReject;
+                  const resolvedStreet =
+                    item.locationLabel || resolveStreetAddressSync(item.latitude, item.longitude);
                   const isBusy = actionBusyId === item.id;
 
                   return (
@@ -1433,8 +1651,8 @@ export const ResponderDashboard: React.FC = () => {
                         {item.category}
                       </td>
                       <td className="p-3.5 text-[#2B010E] font-sans font-bold">{item.title}</td>
-                      <td className="p-3.5 text-[#5B2A35] truncate max-w-[220px] text-xs">
-                        {item.locationLabel || formatGpsCoord(item.latitude, item.longitude)}
+                      <td className="p-3.5 text-[#5B2A35] truncate max-w-[220px] text-xs" title={resolvedStreet}>
+                        {resolvedStreet}
                       </td>
                       <td className="p-3.5 whitespace-nowrap">
                         <span
@@ -1476,6 +1694,15 @@ export const ResponderDashboard: React.FC = () => {
                               onClick={() => void handleQuickDispatch(item)}
                             >
                               Dispatch
+                            </ResponderButton>
+                          )}
+                          {canSubmitClosure && (
+                            <ResponderButton
+                              variant="action-green"
+                              size="xs"
+                              onClick={() => setClosureTargetIncident(item)}
+                            >
+                              Close / Evidence
                             </ResponderButton>
                           )}
                           <ResponderButton
@@ -1591,7 +1818,38 @@ export const ResponderDashboard: React.FC = () => {
       )}
 
       {/* INCIDENT DISPATCH QUEUE DETAILS & VERIFICATION MODAL */}
-      {selectedIncident && (
+      {selectedIncident && (() => {
+        const selectedStatusBadge = formatQueueStatusBadge(
+          selectedIncident.status,
+          selectedIncident.allocatedUnitCode,
+          selectedIncident.verifiedAt,
+          selectedIncident.resolvedAt,
+          selectedIncident.closedAt,
+          selectedIncident.aiAutoApproved,
+          selectedIncident.aiVerificationStatus
+        );
+        const normSelectedSt = (selectedIncident.status || '').trim().toLowerCase();
+        const isSelectedTerminal =
+          normSelectedSt === 'resolved' ||
+          normSelectedSt === 'closed' ||
+          normSelectedSt === 'completed' ||
+          normSelectedSt === 'rejected' ||
+          normSelectedSt === 'declined' ||
+          Boolean(selectedIncident.resolvedAt || selectedIncident.closedAt);
+        const canSelectedVerifyOrReject =
+          isSubmittedStatus(selectedIncident.status) &&
+          !selectedIncident.verifiedAt &&
+          !selectedIncident.allocatedUnitCode &&
+          !isSelectedTerminal;
+        const canSelectedDispatch =
+          (canSelectedVerifyOrReject || isVerifiedStatus(selectedIncident.status)) &&
+          !selectedIncident.allocatedUnitCode &&
+          !isSelectedTerminal;
+        const selectedResolvedStreet =
+          selectedIncident.locationLabel ||
+          resolveStreetAddressSync(selectedIncident.latitude, selectedIncident.longitude);
+
+        return (
         <ResponderModalCard
           isOpen={selectedIncident !== null}
           onClose={() => setSelectedIncident(null)}
@@ -1600,17 +1858,19 @@ export const ResponderDashboard: React.FC = () => {
           maxWidth="max-w-2xl"
         >
           <div className="flex flex-col gap-4 text-[#2B010E]">
-            <div className="clay-well px-4 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex items-center justify-between font-mono text-sm">
+            <div className="clay-well px-4 py-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-wrap items-center justify-between gap-2 font-mono text-sm">
               <span className="text-[#670626] font-bold flex items-center gap-1.5">
                 <Clock className="w-4 h-4 text-[#A83B4D]" />
-                <span>Verification Auto-Close Timer</span>
+                <span>Case Closure Status</span>
               </span>
               <span className="text-[#670626] font-black">
-                {selectedIncidentSecondsLeft === null
-                  ? 'Pending Verification'
-                  : selectedIncidentSecondsLeft === 0
-                  ? '00:00 (Completed)'
-                  : formatCountdownTimer(selectedIncidentSecondsLeft)}
+                {selectedIncidentFadeSecondsLeft !== null
+                  ? selectedIncidentFadeSecondsLeft > 0
+                    ? `Done — fading map pointer in ${formatCountdownTimer(selectedIncidentFadeSecondsLeft)}`
+                    : 'Done — Case Closed'
+                  : normSelectedSt === 'inprogress'
+                  ? 'Working Progress (InProgress)'
+                  : selectedStatusBadge.label}
               </span>
             </div>
 
@@ -1634,23 +1894,9 @@ export const ResponderDashboard: React.FC = () => {
                   {selectedIncident.severity} SEVERITY
                 </span>
                 <span
-                  className={`px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold ${
-                    formatQueueStatusBadge(
-                      selectedIncident.status,
-                      selectedIncident.allocatedUnitCode,
-                      selectedIncident.verifiedAt,
-                      selectedIncident.resolvedAt
-                    ).pillClass
-                  }`}
+                  className={`px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold ${selectedStatusBadge.pillClass}`}
                 >
-                  {
-                    formatQueueStatusBadge(
-                      selectedIncident.status,
-                      selectedIncident.allocatedUnitCode,
-                      selectedIncident.verifiedAt,
-                      selectedIncident.resolvedAt
-                    ).label
-                  }
+                  {selectedStatusBadge.label}
                 </span>
               </div>
             </div>
@@ -1662,7 +1908,7 @@ export const ResponderDashboard: React.FC = () => {
               </div>
               <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10">
                 <span className="text-[#A83B4D] block text-xs font-bold">CURRENT STATUS</span>
-                <span className="text-[#670626] font-bold">{selectedIncident.status}</span>
+                <span className="text-[#670626] font-bold">{selectedStatusBadge.label}</span>
               </div>
               <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10">
                 <span className="text-[#A83B4D] block text-xs font-bold">REPORTER IP</span>
@@ -1672,13 +1918,13 @@ export const ResponderDashboard: React.FC = () => {
               </div>
               <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/10 sm:col-span-3">
                 <span className="text-[#A83B4D] block text-xs font-bold">
-                  GPS &amp; Address
+                  GPS &amp; Street Address
                 </span>
                 <span className="text-emerald-800 font-bold">
                   {formatGpsCoord(selectedIncident.latitude, selectedIncident.longitude)}
                 </span>
                 <p className="text-[#2B010E] text-sm mt-0.5 font-sans font-semibold">
-                  {selectedIncident.locationLabel || formatGpsCoord(selectedIncident.latitude, selectedIncident.longitude)}
+                  {selectedResolvedStreet}
                 </p>
               </div>
             </div>
@@ -1691,6 +1937,40 @@ export const ResponderDashboard: React.FC = () => {
                 {selectedIncident.note || 'No notes.'}
               </p>
             </div>
+
+            {(selectedIncident.closureApprovalMode || selectedIncident.closureSummary) && (
+              <div className="clay-well p-3.5 rounded-xl bg-emerald-50 border border-emerald-700/25 text-xs font-mono text-emerald-950 flex flex-col gap-1.5">
+                {selectedIncident.closureApprovalMode && (
+                  <span className="font-black uppercase text-emerald-800">
+                    Closure Approval Mode: {selectedIncident.closureApprovalMode}
+                  </span>
+                )}
+                {selectedIncident.closureSummary && (
+                  <p className="font-sans text-sm text-emerald-900">
+                    {selectedIncident.closureSummary}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {Array.isArray(selectedIncident.taggedColleagues) &&
+              selectedIncident.taggedColleagues.length > 0 && (
+                <div className="clay-well p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-2">
+                  <span className="text-[#A83B4D] font-mono text-xs font-bold uppercase">
+                    Tagged Unit Colleagues
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedIncident.taggedColleagues.map((col) => (
+                      <span
+                        key={col.userId}
+                        className="px-2.5 py-1 rounded-lg bg-[#F7F1EA] border border-[#670626]/20 text-xs font-mono font-bold text-[#670626]"
+                      >
+                        @{col.fullName} · {col.unit} ({col.rankOrTitle})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
             {(selectedIncident.roboflowPrediction ||
               selectedIncident.claudeSituationSummary ||
@@ -1750,7 +2030,7 @@ export const ResponderDashboard: React.FC = () => {
                 Close
               </ResponderButton>
 
-              {isSubmittedOrPendingStatus(selectedIncident.status) && (
+              {canSelectedVerifyOrReject && (
                 <>
                   <ResponderButton
                     variant="action-green"
@@ -1773,8 +2053,7 @@ export const ResponderDashboard: React.FC = () => {
                 </>
               )}
 
-              {(isSubmittedOrPendingStatus(selectedIncident.status) ||
-                isVerifiedStatus(selectedIncident.status)) && (
+              {canSelectedDispatch && (
                 <ResponderButton
                   variant="secondary"
                   size="sm"
@@ -1783,6 +2062,17 @@ export const ResponderDashboard: React.FC = () => {
                   icon={<Send className="w-4 h-4" />}
                 >
                   Dispatch
+                </ResponderButton>
+              )}
+
+              {!isSelectedTerminal && !canSelectedVerifyOrReject && (
+                <ResponderButton
+                  variant="action-green"
+                  size="sm"
+                  onClick={() => setClosureTargetIncident(selectedIncident)}
+                  icon={<CheckCircle2 className="w-4 h-4" />}
+                >
+                  Submit Evidence / Close Case
                 </ResponderButton>
               )}
 
@@ -1833,9 +2123,33 @@ export const ResponderDashboard: React.FC = () => {
             </div>
           </div>
         </ResponderModalCard>
-      )}
+        );
+      })()}
 
       {/* Specialized Agency Operation Modals */}
+      <ResponderClosureEvidenceModal
+        isOpen={closureTargetIncident !== null}
+        onClose={() => setClosureTargetIncident(null)}
+        incident={closureTargetIncident}
+        responderUnit={activeUnit}
+        onSubmitted={(result: ClosureEvidenceSubmissionResult) => {
+          showStatusFeedback(
+            result.message ||
+              `Updated ${result.report?.referenceCode || 'incident'} (${result.reportStatus})`
+          );
+          dispatchReportEvent({
+            type: 'CLOSURE_EVIDENCE_SUBMITTED',
+            reportId: result.report?.id,
+            status: result.reportStatus
+          });
+          if (selectedIncident?.id && result.report?.id === selectedIncident.id) {
+            setSelectedIncident(result.report);
+          }
+          setClosureTargetIncident(null);
+          void loadData();
+        }}
+      />
+
       {isPcrModalOpen && (
         <PatientCareRecordModal
           isOpen={isPcrModalOpen}

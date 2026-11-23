@@ -29,7 +29,11 @@ public class TriageService(
         if (report == null) return (false, "Report not found.");
 
         report.Status = request.Status;
-        report.VerifiedAt = DateTime.UtcNow;
+        if (request.Status == ReportStatus.Verified)
+        {
+            report.VerifiedAt ??= DateTime.UtcNow;
+            report.RequiresManualVerification = false;
+        }
         if (adminId != Guid.Empty)
             report.VerifiedByAdminId = adminId;
 
@@ -42,7 +46,13 @@ public class TriageService(
                 : $"{report.Note} | Note: {request.AdminNote.Trim()}";
 
         if (request.Status == ReportStatus.Resolved || request.Status == ReportStatus.Closed)
-            report.ResolvedAt = DateTime.UtcNow;
+        {
+            report.ResolvedAt ??= DateTime.UtcNow;
+            if (request.Status == ReportStatus.Closed)
+                report.ClosedAt ??= DateTime.UtcNow;
+            if (report.AllocatedUnitId.HasValue)
+                await unitRepo.UpdateStatusAsync(report.AllocatedUnitId.Value, DutyStatus.OnDuty, ct);
+        }
 
         await reportRepo.UpdateAsync(report, ct);
 
@@ -87,6 +97,8 @@ public class TriageService(
         report.AllocatedUnitId = unit.Id;
         report.AllocatedUnitCode = unit.UnitCode;
         report.Status = ReportStatus.Allocated;
+        report.VerifiedAt ??= DateTime.UtcNow;
+        report.RequiresManualVerification = false;
 
         await reportRepo.UpdateAsync(report, ct);
         await unitRepo.UpdateStatusAsync(unit.Id, DutyStatus.Dispatched, ct);

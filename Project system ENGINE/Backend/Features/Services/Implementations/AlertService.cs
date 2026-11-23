@@ -75,7 +75,7 @@ public class AlertService(
             ReporterRole = UserRole.LDRRMO_Admin,
             Title = InputSanitizer.Sanitize(request.Title.Trim()),
             Note = InputSanitizer.Sanitize((request.Message + (!string.IsNullOrWhiteSpace(request.ExternalLink) ? $" (External: {request.ExternalLink})" : "")).Trim()),
-            Category = IncidentCategory.NaturalDisaster,
+            Category = IncidentCategory.CrimeOrSecurity,
             Severity = sev,
             Status = ReportStatus.Verified,
             Latitude = 8.5147,

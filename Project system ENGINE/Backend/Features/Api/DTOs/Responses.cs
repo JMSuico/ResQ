@@ -159,9 +159,20 @@ public record ReportResponse(
     string? ClaudeUncertaintyNotes = null,
     string? PointerIconType = null,
     bool AiAutoApproved = false,
-    string AiVerificationStatus = "PENDING_REVIEW",
+    string AiVerificationStatus = "AWAITING_MANUAL_REVIEW",
     int? FeedbackRating = null,
-    string? FeedbackComment = null
+    string? FeedbackComment = null,
+    DateTime? ClosedAt = null,
+    string? ClosureSummary = null,
+    string? ClosureApprovalMode = null,
+    List<TaggedColleagueDto>? TaggedColleagues = null
+);
+
+public record TaggedColleagueDto(
+    Guid UserId,
+    string FullName,
+    string Unit,
+    string RankOrTitle
 );
 
 public record ReportEvidenceResponse(
@@ -171,7 +182,36 @@ public record ReportEvidenceResponse(
     string MediaType,
     string Caption,
     string UploadedByName,
-    DateTime CreatedAtUtc
+    DateTime CreatedAtUtc,
+    string ClosureOutcome = "",
+    string AiVerdict = "",
+    string AiReasoning = "",
+    List<TaggedColleagueDto>? TaggedColleagues = null,
+    Guid? ApprovedByUserId = null,
+    DateTime? ApprovedAtUtc = null
+);
+
+public record ClosureEvidenceSubmissionResponse(
+    bool Success,
+    string Message,
+    string Verdict,
+    bool AutoApproved,
+    string ApprovalMode,
+    ReportStatus ReportStatus,
+    string AiReasoning,
+    string ModelUsed,
+    ReportResponse Report,
+    ReportEvidenceResponse Evidence
+);
+
+public record ColleagueResponderDto(
+    Guid Id,
+    string FullName,
+    string DisplayName,
+    string Email,
+    ResponderUnitType Unit,
+    string RankOrTitle,
+    string EmployeeOrResidentId
 );
 
 public record ReportFeedbackResponse(

@@ -127,12 +127,6 @@ public static class CaptureStorageHelper
         candidateRoots.Add(Path.Combine(AppContext.BaseDirectory, "server-data", "uploads"));
         candidateRoots.Add(Path.GetTempPath());
 
-        string uploadSegment = Path.Combine("server-data", "uploads");
-        if (fullTarget.Contains(uploadSegment, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
         foreach (string rawRoot in candidateRoots)
         {
             try

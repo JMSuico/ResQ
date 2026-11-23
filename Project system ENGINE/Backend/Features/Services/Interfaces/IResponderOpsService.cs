@@ -17,4 +17,5 @@ public interface IResponderOpsService
     Task<(bool Success, string? Error, BlotterResponse? Blotter)> FileBlotterAsync(CreateBlotterRequest request, Guid? userId = null, CancellationToken ct = default);
     Task<List<BlotterResponse>> GetBlotterEntriesAsync(Guid? reportId = null, CancellationToken ct = default);
     Task<List<HydrantResponse>> GetHydrantsAsync(CancellationToken ct = default);
+    Task<List<ColleagueResponderDto>> GetUnitColleaguesAsync(ResponderUnitType callerUnit, UserRole callerRole, string? query = null, ResponderUnitType? requestedAgency = null, CancellationToken ct = default);
 }

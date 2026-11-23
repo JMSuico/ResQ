@@ -1,5 +1,5 @@
 // [Layer: Backend/Data/Models]
-// Responsibility: Defines geospatial infrastructure hazard fixtures, hydrants, and CCTV points.
+// Responsibility: Defines geospatial infrastructure fixtures, fire hydrants, and static monitoring points.
 // Pure relational entity model. Universal lambda expressions (=>). Zero emojis.
 
 using System.ComponentModel.DataAnnotations;
@@ -18,7 +18,7 @@ public class IncidentFixture
     [Required, MaxLength(150)]
     public string Title { get; set; } = string.Empty;
 
-    public IncidentCategory Category { get; set; } = IncidentCategory.HazardFixture;
+    public IncidentCategory Category { get; set; } = IncidentCategory.StructuralFire;
 
     public IncidentSeverity Severity { get; set; } = IncidentSeverity.Low;
 

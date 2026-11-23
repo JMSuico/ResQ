@@ -1023,9 +1023,7 @@ public class SecurityAndPersistenceTests
         Assert.Equal("fire", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("StructuralFire"));
         Assert.Equal("medical", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("MedicalEmergency"));
         Assert.Equal("crime", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("CrimeOrSecurity"));
-        Assert.Equal("flood", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("NaturalDisaster"));
-        Assert.Equal("hazard", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("HazardFixture"));
-        Assert.Equal("hazard", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("NonIncident"));
+        Assert.Equal("car-crash", ClaudeHaikuIncidentVisionStrategy.MapCategoryToPointerIcon("NonIncident"));
     }
 
     [Fact]
@@ -1068,7 +1066,7 @@ public class SecurityAndPersistenceTests
             Assert.False(analysis.IsGenuineIncident);
             Assert.Equal("NonIncident", analysis.DetectedCategory);
             Assert.Equal("Low", analysis.RecommendedSeverity);
-            Assert.Equal("hazard", analysis.PointerIconType);
+            Assert.Equal("car-crash", analysis.PointerIconType);
             Assert.Equal("LDRRMO Triage (Non-Incident)", analysis.RecommendedAgencyUnit);
         }
         finally

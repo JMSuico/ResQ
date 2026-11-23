@@ -59,9 +59,71 @@ public class RespondersService(
 
     public async Task<List<HydrantResponse>> GetHydrantsAsync(CancellationToken ct = default) =>
         (await fixtureRepo.GetAllActiveAsync(ct))
-            .Where(f => f.Category == IncidentCategory.HazardFixture && (f.AssignedUnitType == ResponderUnitType.FIRE || f.FixtureCode.StartsWith("HYD-", StringComparison.OrdinalIgnoreCase)))
+            .Where(f => f.AssignedUnitType == ResponderUnitType.FIRE || f.FixtureCode.StartsWith("HYD-", StringComparison.OrdinalIgnoreCase))
             .Select(MapToHydrantResponse)
             .ToList();
+
+    public async Task<List<ColleagueResponderDto>> GetUnitColleaguesAsync(
+        ResponderUnitType callerUnit,
+        UserRole callerRole,
+        string? query = null,
+        ResponderUnitType? requestedAgency = null,
+        CancellationToken ct = default)
+    {
+        if (callerRole == UserRole.Civilian)
+            return [];
+
+        ResponderUnitType? filterUnit;
+        if (callerRole == UserRole.Responder)
+        {
+            if (callerUnit == ResponderUnitType.None)
+                return [];
+            filterUnit = callerUnit;
+        }
+        else if (callerRole == UserRole.LDRRMO_Admin)
+        {
+            ResponderUnitType effective = requestedAgency ?? callerUnit;
+            filterUnit = effective == ResponderUnitType.None ? null : effective;
+        }
+        else
+        {
+            return [];
+        }
+
+        IQueryable<User> usersQuery = db.Users
+            .AsNoTracking()
+            .Where(u => u.Role == UserRole.Responder && !u.IsDeleted && u.Status == AccountStatus.Verified);
+
+        if (filterUnit.HasValue)
+            usersQuery = usersQuery.Where(u => u.Unit == filterUnit.Value);
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            string q = query.Trim().ToLower();
+            usersQuery = usersQuery.Where(u =>
+                u.FullName.ToLower().Contains(q) ||
+                u.DisplayName.ToLower().Contains(q) ||
+                u.Email.ToLower().Contains(q) ||
+                u.RankOrTitle.ToLower().Contains(q) ||
+                u.EmployeeOrResidentId.ToLower().Contains(q));
+        }
+
+        List<User> matchedUsers = await usersQuery
+            .OrderBy(u => u.FullName)
+            .Take(100)
+            .ToListAsync(ct);
+
+        return matchedUsers
+            .Select(u => new ColleagueResponderDto(
+                u.Id,
+                u.FullName,
+                u.EffectiveDisplayName,
+                u.Email,
+                u.Unit,
+                u.RankOrTitle,
+                u.EmployeeOrResidentId))
+            .ToList();
+    }
 
     private async Task<DutyUnit?> ResolveUnitForUpdateAsync(UpdateDutyStatusRequest request, Guid? userId, CancellationToken ct) =>
         request.UnitId.HasValue

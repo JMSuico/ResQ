@@ -1,11 +1,11 @@
 // [Layer: UserRoles/Features/Pages/CiviliansPanel]
-// Responsibility: Detailed emergency report submission screen with live GPS tracking,
-// live camera capture / image upload with clean un-watermarked AI vision analysis,
-// visible AI Processing & Auto-Approve Evaluation indicator, optional personal contact text field (no tel: links),
-// pre-submission confirmation modal, and dynamic AI Auto-Approved vs Pending Review receipt.
+// Responsibility: Detailed incident submission screen ("Reports Incident") with live GPS tracking,
+// auto-resolved Katipunan street address, live camera capture / image upload with clean un-watermarked AI vision analysis,
+// visible AI Processing & Auto-Approve Evaluation indicator synced with fail-closed server rules,
+// optional personal contact text field (no tel: links), pre-submission confirmation modal, and clean receipt.
 // Strictly 100% arrow functions (=>), ZERO 'any', and ZERO emojis.
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -21,9 +21,9 @@ import {
   Flame,
   HeartPulse,
   ShieldAlert,
-  Waves,
   Zap,
-  Clock
+  Clock,
+  MapPin
 } from 'lucide-react';
 import {
   analyzeIncidentImage,
@@ -36,7 +36,7 @@ import {
 import { CameraCaptureModal, CameraCaptureMetadata } from '@/Shared/CameraCaptureModal';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
-import { CATEGORY_LABELS } from '@/Libs/Assets/data';
+import { resolveStreetAddressSync } from '@/Libs/Map/addressResolver';
 import {
   computeLaplacianVariance,
   calculateDynamicClarityThreshold,
@@ -51,6 +51,47 @@ const AI_VISION_CACHE_KEY = 'resqtrack_ai_vision_by_report';
 
 const VALID_SEVERITIES = ['Critical', 'High', 'Medium', 'Low'] as const;
 
+const ACTIVE_CATEGORY_LABELS: Record<string, string> = {
+  VehicularAccident: 'Vehicular Accident',
+  MedicalEmergency: 'Medical Emergency',
+  StructuralFire: 'Structural Fire',
+  CrimeOrSecurity: 'Crime / Security Incident'
+};
+
+interface ActiveCategoryOption {
+  key: string;
+  label: string;
+  agencies: string;
+  iconType: IncidentPointerIconType;
+}
+
+const ACTIVE_CATEGORY_OPTIONS: ActiveCategoryOption[] = [
+  {
+    key: 'VehicularAccident',
+    label: 'Vehicular Accident',
+    agencies: 'RHU (Medics), PNP (Traffic)',
+    iconType: 'car-crash'
+  },
+  {
+    key: 'MedicalEmergency',
+    label: 'Medical Emergency',
+    agencies: 'RHU (Paramedics)',
+    iconType: 'medical'
+  },
+  {
+    key: 'StructuralFire',
+    label: 'Structural Fire',
+    agencies: 'BFP (Fire), RHU (Triage)',
+    iconType: 'fire'
+  },
+  {
+    key: 'CrimeOrSecurity',
+    label: 'Crime / Security Incident',
+    agencies: 'PNP (Patrol)',
+    iconType: 'crime'
+  }
+];
+
 type ExtendedAiAnalysisResponse = IncidentImageAiAnalysisResponse & {
   autoApproveEligible?: boolean;
   aiVerificationStatus?: string | null;
@@ -64,9 +105,9 @@ type ExtendedReportItem = ReportItem & {
 const resolveValidCategoryKey = (candidate?: string | null): string | null => {
   if (!candidate) return null;
   const trimmed = candidate.trim();
-  if (trimmed in CATEGORY_LABELS) return trimmed;
+  if (trimmed in ACTIVE_CATEGORY_LABELS) return trimmed;
   const lower = trimmed.toLowerCase();
-  for (const [key, label] of Object.entries(CATEGORY_LABELS)) {
+  for (const [key, label] of Object.entries(ACTIVE_CATEGORY_LABELS)) {
     if (key.toLowerCase() === lower || label.toLowerCase() === lower) {
       return key;
     }
@@ -83,12 +124,6 @@ const resolveValidCategoryKey = (candidate?: string | null): string | null => {
   if (lower.includes('crime') || lower.includes('security') || lower.includes('police')) {
     return 'CrimeOrSecurity';
   }
-  if (lower.includes('flood') || lower.includes('disaster') || lower.includes('landslide') || lower.includes('storm')) {
-    return 'NaturalDisaster';
-  }
-  if (lower.includes('hazard') || lower.includes('infrastructure')) {
-    return 'HazardFixture';
-  }
   return null;
 };
 
@@ -101,18 +136,15 @@ const resolveValidSeverity = (candidate?: string | null): string | null => {
 
 const derivePointerIconFromCategory = (catKey: string): IncidentPointerIconType => {
   switch (catKey) {
-    case 'VehicularAccident':
-      return 'car-crash';
     case 'StructuralFire':
       return 'fire';
     case 'MedicalEmergency':
       return 'medical';
     case 'CrimeOrSecurity':
       return 'crime';
-    case 'NaturalDisaster':
-      return 'flood';
+    case 'VehicularAccident':
     default:
-      return 'hazard';
+      return 'car-crash';
   }
 };
 
@@ -125,9 +157,6 @@ const renderPointerTypeIcon = (pointerType?: string | null): React.ReactNode => 
     case 'medical':
       return <HeartPulse className="w-4 h-4 text-[#670626]" />;
     case 'crime':
-      return <ShieldAlert className="w-4 h-4 text-[#670626]" />;
-    case 'flood':
-      return <Waves className="w-4 h-4 text-[#670626]" />;
     default:
       return <ShieldAlert className="w-4 h-4 text-[#670626]" />;
   }
@@ -146,15 +175,23 @@ const getInitialStoredContact = (): string => {
 };
 
 export const ReportAccidentPage: React.FC = () => {
-  const { coords, isHardwareGeolocated, signalQuality, refreshGps } = useGpsLocation();
+  const { coords, isHardwareGeolocated, signalQuality, resolvedAddress, refreshGps } = useGpsLocation();
   const { dispatchReportEvent } = useReportEventBus();
   const navigate = useNavigate();
+
+  const autoResolvedStreet = useMemo(
+    () => resolvedAddress || resolveStreetAddressSync(coords.latitude, coords.longitude),
+    [resolvedAddress, coords.latitude, coords.longitude]
+  );
 
   const [title, setTitle] = useState<string>('');
   const [note, setNote] = useState<string>('');
   const [category, setCategory] = useState<string>('VehicularAccident');
   const [severity, setSeverity] = useState<string>('Critical');
-  const [locationLabel, setLocationLabel] = useState<string>('');
+  const [locationLabel, setLocationLabel] = useState<string>(() =>
+    resolveStreetAddressSync(coords.latitude, coords.longitude)
+  );
+  const [hasEditedLocation, setHasEditedLocation] = useState<boolean>(false);
   const [reporterContactNumber, setReporterContactNumber] = useState<string>(() =>
     getInitialStoredContact()
   );
@@ -175,6 +212,12 @@ export const ReportAccidentPage: React.FC = () => {
   const stepTriageRef = useRef<HTMLDivElement>(null);
   const fileUploadInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!hasEditedLocation && autoResolvedStreet) {
+      setLocationLabel(autoResolvedStreet);
+    }
+  }, [hasEditedLocation, autoResolvedStreet]);
+
   const scrollToStep = (ref: React.RefObject<HTMLDivElement | null>): void => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
@@ -182,7 +225,7 @@ export const ReportAccidentPage: React.FC = () => {
   const applyAiAnalysisResult = (res: ExtendedAiAnalysisResponse): void => {
     setAiAnalysisUnavailable(null);
     setAiAnalysis(res);
-    if (res.isGenuineIncident !== false) {
+    if (res.isGenuineIncident === true && res.detectedCategory !== 'NonIncident') {
       const matchedCategory = resolveValidCategoryKey(res.detectedCategory);
       if (matchedCategory) {
         setCategory(matchedCategory);
@@ -208,7 +251,7 @@ export const ReportAccidentPage: React.FC = () => {
     } catch {
       setAiAnalysis(null);
       setAiAnalysisUnavailable(
-        'AI scene analysis service is currently unavailable. Your report will be submitted for manual responder verification.'
+        'AI scene analysis service is currently unavailable. Your report will be routed for duty officer triage.'
       );
     } finally {
       setIsAnalyzingAi(false);
@@ -319,10 +362,10 @@ export const ReportAccidentPage: React.FC = () => {
 
   const isAutoApproveEligible = Boolean(
     aiAnalysis &&
-      (aiAnalysis.autoApproveEligible ||
-        (aiAnalysis.isGenuineIncident !== false &&
-          !aiAnalysis.roboflowNeedsReview &&
-          !captureMetadata?.isBlurry))
+      aiAnalysis.isGenuineIncident === true &&
+      !captureMetadata?.isBlurry &&
+      aiAnalysis.detectedCategory !== 'NonIncident' &&
+      (aiAnalysis.autoApproveEligible === true || !aiAnalysis.roboflowNeedsReview)
   );
 
   const handleFinalSubmit = async () => {
@@ -331,11 +374,9 @@ export const ReportAccidentPage: React.FC = () => {
 
     try {
       const trimmedContact = reporterContactNumber.trim();
-      const aiConfirmedClean =
-        Boolean(aiAnalysis?.isGenuineIncident) && !aiAnalysis?.roboflowNeedsReview;
       const requiresManualVerification =
         Boolean(captureMetadata?.isBlurry) ||
-        (aiAnalysis ? !aiConfirmedClean : Boolean(captureMetadata?.requiresManualVerification));
+        (aiAnalysis ? !isAutoApproveEligible : Boolean(captureMetadata?.requiresManualVerification));
 
       const payload: CivilianCreateReportPayload = {
         title: title.trim(),
@@ -348,7 +389,7 @@ export const ReportAccidentPage: React.FC = () => {
         isHardwareGeolocated,
         isBlurry: captureMetadata?.isBlurry ?? false,
         requiresManualVerification,
-        locationLabel: locationLabel.trim() || 'Katipunan, ZN (GPS Geotag)',
+        locationLabel: locationLabel.trim() || autoResolvedStreet,
         imageDataUrl: imageDataUrl || undefined,
         reporterContactNumber: trimmedContact || undefined,
         roboflowModelId: aiAnalysis?.roboflowModelId ?? null,
@@ -431,7 +472,8 @@ export const ReportAccidentPage: React.FC = () => {
     setSubmittedReport(null);
     setTitle('');
     setNote('');
-    setLocationLabel('');
+    setHasEditedLocation(false);
+    setLocationLabel(autoResolvedStreet);
     setImageDataUrl(null);
     setCaptureMetadata(null);
     setAiAnalysis(null);
@@ -442,19 +484,15 @@ export const ReportAccidentPage: React.FC = () => {
 
   const getCategoryRoutingTag = (catKey: string): { agencies: string[]; desc: string } => {
     switch (catKey) {
-      case 'VehicularAccident':
-        return { agencies: ['RHU (Medics)', 'PNP (Traffic)'], desc: 'Trauma & traffic routing' };
       case 'MedicalEmergency':
         return { agencies: ['RHU (Paramedics)'], desc: 'Medical routing' };
       case 'StructuralFire':
         return { agencies: ['BFP (Fire)', 'RHU (Triage)'], desc: 'Fire & triage routing' };
       case 'CrimeOrSecurity':
         return { agencies: ['PNP (Patrol)'], desc: 'Police patrol routing' };
-      case 'NaturalDisaster':
-        return { agencies: ['LDRRMO', 'RHU', 'BFP'], desc: 'Disaster response routing' };
-      case 'HazardFixture':
+      case 'VehicularAccident':
       default:
-        return { agencies: ['LDRRMO', 'Engineering'], desc: 'Hazard inspection routing' };
+        return { agencies: ['RHU (Medics)', 'PNP (Traffic)'], desc: 'Trauma & traffic routing' };
     }
   };
 
@@ -463,6 +501,9 @@ export const ReportAccidentPage: React.FC = () => {
   if (submittedReport) {
     const isReceiptVerified =
       submittedReport.status === 'Verified' || Boolean(submittedReport.aiAutoApproved);
+    const receiptStatusLabel = isReceiptVerified
+      ? 'AI Auto-Approved (Verified)'
+      : submittedReport.aiVerificationStatus || 'Awaiting Triage (AI Verification & Approval)';
 
     return (
       <div className="flex flex-col gap-6 w-full pb-12">
@@ -472,7 +513,7 @@ export const ReportAccidentPage: React.FC = () => {
               Submission Receipt
             </span>
             <h1 className="text-2xl md:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
-              Report Submitted
+              Reports Incident Logged
             </h1>
           </div>
           <CivilianButton
@@ -519,7 +560,7 @@ export const ReportAccidentPage: React.FC = () => {
                   : 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/50'
               }`}
             >
-              {isReceiptVerified ? 'AI Auto-Approved (Verified)' : 'Submitted — Pending Review'}
+              {receiptStatusLabel}
             </span>
           </div>
 
@@ -527,7 +568,13 @@ export const ReportAccidentPage: React.FC = () => {
             <div className="flex items-center justify-between gap-2">
               <span className="text-[#A83B4D]">Status</span>
               <span className={isReceiptVerified ? 'text-emerald-800 font-black' : 'text-[#670626] font-black'}>
-                {isReceiptVerified ? 'AI Auto-Approved (Verified)' : 'Submitted — Pending Review'}
+                {receiptStatusLabel}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[#A83B4D]">Street Address</span>
+              <span className="text-[#670626] font-bold text-right">
+                {submittedReport.locationLabel || autoResolvedStreet}
               </span>
             </div>
             <div className="flex items-center justify-between gap-2">
@@ -586,10 +633,10 @@ export const ReportAccidentPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F7F1EA]/20 pb-4">
         <div>
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-[#E9D9D0]">
-            Incident Filing
+            Katipunan Incident Filing
           </span>
           <h1 className="text-2xl md:text-3xl font-black text-[#F7F1EA] tracking-tight mt-0.5">
-            Report Emergency
+            Reports Incident
           </h1>
           <p className="text-sm text-[#E9D9D0] mt-1">
             Direct to LDRRMO, RHU, BFP, and PNP.
@@ -697,6 +744,10 @@ export const ReportAccidentPage: React.FC = () => {
               <span className="text-base sm:text-lg font-mono font-black text-[#670626] mt-1">
                 {coords.latitude.toFixed(6)}° N, {coords.longitude.toFixed(6)}° E
               </span>
+              <span className="text-xs font-sans font-semibold text-[#670626]/90 mt-1 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-[#A83B4D] flex-shrink-0" />
+                <span>{autoResolvedStreet}</span>
+              </span>
             </div>
 
             <div className="flex flex-col sm:items-end justify-center">
@@ -715,14 +766,31 @@ export const ReportAccidentPage: React.FC = () => {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-bold text-[#670626]">
-              Landmark or Barangay <span className="text-[#A83B4D] font-normal">(Optional)</span>
-            </label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-sm font-bold text-[#670626]">
+                Street Address / Landmark
+              </label>
+              {hasEditedLocation && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHasEditedLocation(false);
+                    setLocationLabel(autoResolvedStreet);
+                  }}
+                  className="text-xs font-mono font-bold text-[#A83B4D] hover:text-[#670626] underline cursor-pointer"
+                >
+                  Use GPS Street Address
+                </button>
+              )}
+            </div>
             <input
               type="text"
               value={locationLabel}
-              onChange={(e) => setLocationLabel(e.target.value)}
-              placeholder="e.g. Katipunan Public Market, Purok 3"
+              onChange={(e) => {
+                setHasEditedLocation(true);
+                setLocationLabel(e.target.value);
+              }}
+              placeholder="e.g. National Highway, Brgy. Dos, Katipunan, ZN"
               className="px-4 py-3 bg-[#E9D9D0] border border-[#670626]/20 rounded-xl text-sm text-[#670626] placeholder-[#A83B4D]/60 focus:outline-none focus:border-[#670626]"
             />
           </div>
@@ -789,7 +857,7 @@ export const ReportAccidentPage: React.FC = () => {
                     <span>
                       {captureMetadata
                         ? `CLARITY: ${captureMetadata.varianceScore.toFixed(1)}`
-                        : 'CLARITY: PENDING'}
+                        : 'CLARITY OK'}
                     </span>
                   </div>
                 )}
@@ -867,10 +935,10 @@ export const ReportAccidentPage: React.FC = () => {
 
                   <p className="text-sm text-[#A83B4D] leading-relaxed font-medium">
                     {captureMetadata?.isBlurry
-                      ? `Low clarity (${captureMetadata.varianceScore.toFixed(1)}) — manual review required.`
+                      ? `Low clarity (${captureMetadata.varianceScore.toFixed(1)}) — flagged for duty officer triage.`
                       : captureMetadata
                       ? `Clarity verified (${captureMetadata.varianceScore.toFixed(1)}).`
-                      : 'Clarity measurement pending.'}
+                      : 'Clarity check ready.'}
                   </p>
                 </div>
               )}
@@ -927,18 +995,18 @@ export const ReportAccidentPage: React.FC = () => {
                 </div>
                 <span
                   className={`px-3 py-1 rounded-full font-mono text-xs font-bold border ${
-                    aiAnalysis.isGenuineIncident === false
+                    aiAnalysis.isGenuineIncident === false || aiAnalysis.detectedCategory === 'NonIncident'
                       ? 'bg-[#FFF5D6] border-[#B45309]/50 text-[#7C2D12]'
                       : isAutoApproveEligible
                       ? 'bg-emerald-100 border-emerald-400 text-emerald-900'
                       : 'bg-[#E9D9D0] border-[#A83B4D]/50 text-[#670626]'
                   }`}
                 >
-                  {aiAnalysis.isGenuineIncident === false
-                    ? 'No emergency detected in photo — manual review required if submitted'
+                  {aiAnalysis.isGenuineIncident === false || aiAnalysis.detectedCategory === 'NonIncident'
+                    ? 'Non-incident detected — flagged for duty officer triage'
                     : isAutoApproveEligible
-                    ? 'AI Verified — Auto-Approve Eligible'
-                    : 'Incident Detected — Pending Review'}
+                    ? 'AI Verified — AI Auto-Approved Eligible'
+                    : aiAnalysis.aiVerificationStatus || 'Awaiting Triage — Duty Officer Verification'}
                 </span>
               </div>
 
@@ -960,13 +1028,13 @@ export const ReportAccidentPage: React.FC = () => {
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[#A83B4D]">Prediction:</span>
                     <span className="text-[#670626] font-black uppercase">
-                      {aiAnalysis.roboflowPrediction || 'Pending'}
+                      {aiAnalysis.roboflowPrediction || 'AI Reviewing'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[#A83B4D]">Status:</span>
                     <span className="text-[#670626] font-bold">
-                      {aiAnalysis.roboflowNeedsReview ? 'Human Review Flagged' : 'Scene Match'}
+                      {aiAnalysis.roboflowNeedsReview ? 'Duty Officer Triage' : 'Scene Match'}
                     </span>
                   </div>
                 </div>
@@ -982,7 +1050,7 @@ export const ReportAccidentPage: React.FC = () => {
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[#A83B4D]">Category:</span>
                     <span className="text-[#670626] font-black">
-                      {CATEGORY_LABELS[aiAnalysis.detectedCategory] || aiAnalysis.detectedCategory}
+                      {ACTIVE_CATEGORY_LABELS[aiAnalysis.detectedCategory] || aiAnalysis.detectedCategory}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
@@ -1059,6 +1127,46 @@ export const ReportAccidentPage: React.FC = () => {
             />
           </div>
 
+          {/* Active 4-Category Selection Cards */}
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-bold text-[#670626]">Incident Category</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {ACTIVE_CATEGORY_OPTIONS.map((opt) => {
+                const isSelected = category === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setCategory(opt.key)}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
+                      isSelected
+                        ? 'bg-[#670626] text-[#F7F1EA] border-[#670626] shadow-md'
+                        : 'bg-[#E9D9D0] text-[#670626] border-[#670626]/20 hover:border-[#670626]'
+                    }`}
+                  >
+                    <div
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                        isSelected ? 'bg-[#F7F1EA]' : 'bg-[#F7F1EA] border border-[#670626]/20'
+                      }`}
+                    >
+                      {renderPointerTypeIcon(opt.iconType)}
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-xs font-black block leading-tight">{opt.label}</span>
+                      <span
+                        className={`text-[11px] font-mono block mt-0.5 truncate ${
+                          isSelected ? 'text-[#E9D9D0]' : 'text-[#A83B4D]'
+                        }`}
+                      >
+                        {opt.agencies}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-bold text-[#670626]">Category</label>
@@ -1067,9 +1175,9 @@ export const ReportAccidentPage: React.FC = () => {
                 onChange={(e) => setCategory(e.target.value)}
                 className="px-4 py-3 bg-[#E9D9D0] border border-[#670626]/20 rounded-xl text-sm text-[#670626] font-bold focus:outline-none focus:border-[#670626]"
               >
-                {Object.entries(CATEGORY_LABELS).map(([k, label]) => (
-                  <option key={k} value={k}>
-                    {label}
+                {ACTIVE_CATEGORY_OPTIONS.map((opt) => (
+                  <option key={opt.key} value={opt.key}>
+                    {opt.label}
                   </option>
                 ))}
               </select>
@@ -1138,7 +1246,7 @@ export const ReportAccidentPage: React.FC = () => {
               ? 'AI Verifying & Submitting Report...'
               : isAnalyzingAi
               ? 'AI Analyzing Photo...'
-              : 'Submit Report'}
+              : 'Submit Reports Incident'}
           </CivilianButton>
         </div>
       </form>
@@ -1147,7 +1255,7 @@ export const ReportAccidentPage: React.FC = () => {
       <CivilianModalCard
         isOpen={isConfirmModalOpen}
         onClose={() => setIsConfirmModalOpen(false)}
-        title="Confirm Report"
+        title="Confirm Reports Incident"
         size="md"
       >
         <div className="flex flex-col gap-4 text-[#670626]">
@@ -1165,7 +1273,7 @@ export const ReportAccidentPage: React.FC = () => {
                     : 'bg-[#F7F1EA] border-[#A83B4D]/45 text-[#670626]'
                 }`}
               >
-                {isAutoApproveEligible ? 'AI Auto-Approve Eligible' : 'Submitted — Pending Review'}
+                {isAutoApproveEligible ? 'AI Auto-Approved Eligible' : 'Awaiting Triage'}
               </span>
             </div>
             <div className="flex items-center justify-between gap-2">
@@ -1175,6 +1283,12 @@ export const ReportAccidentPage: React.FC = () => {
             <div className="flex items-center justify-between gap-2">
               <span className="text-[#A83B4D]">Severity</span>
               <span className="text-[#670626] font-black uppercase">{severity}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[#A83B4D]">Address</span>
+              <span className="text-[#670626] font-bold text-right truncate max-w-[240px]">
+                {locationLabel.trim() || autoResolvedStreet}
+              </span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[#A83B4D]">Location</span>
@@ -1228,12 +1342,12 @@ export const ReportAccidentPage: React.FC = () => {
         </div>
       </CivilianModalCard>
 
-      {/* Emergency Camera Capture Modal */}
+      {/* Incident Camera Capture Modal */}
       <CameraCaptureModal
         isOpen={isCameraOpen}
         onClose={() => setIsCameraOpen(false)}
         onCapture={handleCaptureComplete}
-        title="Incident Scene Camera"
+        title="Reports Incident Camera"
       />
     </div>
   );

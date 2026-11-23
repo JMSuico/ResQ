@@ -118,6 +118,10 @@ public static class StartupSchemaReconciler
             "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'ClaudeUncertaintyNotes') IS NULL ALTER TABLE [dbo].[Reports] ADD [ClaudeUncertaintyNotes] NVARCHAR(600) NULL;",
             "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'PointerIconType') IS NULL ALTER TABLE [dbo].[Reports] ADD [PointerIconType] NVARCHAR(40) NULL;",
             "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'AiAnalysisJson') IS NULL ALTER TABLE [dbo].[Reports] ADD [AiAnalysisJson] NVARCHAR(MAX) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'ClosedAt') IS NULL ALTER TABLE [dbo].[Reports] ADD [ClosedAt] DATETIME2 NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'ClosureSummary') IS NULL ALTER TABLE [dbo].[Reports] ADD [ClosureSummary] NVARCHAR(1000) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'ClosureApprovalMode') IS NULL ALTER TABLE [dbo].[Reports] ADD [ClosureApprovalMode] NVARCHAR(64) NULL;",
+            "IF OBJECT_ID('dbo.Reports') IS NOT NULL AND COL_LENGTH('dbo.Reports', 'TaggedColleaguesJson') IS NULL ALTER TABLE [dbo].[Reports] ADD [TaggedColleaguesJson] NVARCHAR(MAX) NULL;",
             """
             IF OBJECT_ID('BiometricEnrollments') IS NOT NULL
             BEGIN
@@ -199,12 +203,26 @@ public static class StartupSchemaReconciler
                     [Caption] NVARCHAR(500) NOT NULL CONSTRAINT [DF_ReportEvidences_Caption] DEFAULT N'',
                     [UploadedByUserId] UNIQUEIDENTIFIER NULL,
                     [UploadedByName] NVARCHAR(150) NOT NULL CONSTRAINT [DF_ReportEvidences_UploadedByName] DEFAULT N'',
-                    [CreatedAtUtc] DATETIME2 NOT NULL
+                    [CreatedAtUtc] DATETIME2 NOT NULL,
+                    [ClosureOutcome] NVARCHAR(40) NOT NULL CONSTRAINT [DF_ReportEvidences_ClosureOutcome] DEFAULT N'',
+                    [AiVerdict] NVARCHAR(40) NOT NULL CONSTRAINT [DF_ReportEvidences_AiVerdict] DEFAULT N'',
+                    [AiReasoning] NVARCHAR(1000) NOT NULL CONSTRAINT [DF_ReportEvidences_AiReasoning] DEFAULT N'',
+                    [TaggedColleagueUserIdsJson] NVARCHAR(MAX) NULL,
+                    [TaggedColleagueNamesJson] NVARCHAR(MAX) NULL,
+                    [ApprovedByUserId] UNIQUEIDENTIFIER NULL,
+                    [ApprovedAtUtc] DATETIME2 NULL
                 );
                 CREATE INDEX [IX_ReportEvidences_ReportId] ON [dbo].[ReportEvidences]([ReportId]);
                 CREATE INDEX [IX_ReportEvidences_CreatedAtUtc] ON [dbo].[ReportEvidences]([CreatedAtUtc]);
             END
             """,
+            "IF OBJECT_ID(N'dbo.ReportEvidences', N'U') IS NOT NULL AND COL_LENGTH('dbo.ReportEvidences', 'ClosureOutcome') IS NULL ALTER TABLE [dbo].[ReportEvidences] ADD [ClosureOutcome] NVARCHAR(40) NOT NULL CONSTRAINT [DF_ReportEvidences_ClosureOutcome] DEFAULT N'';",
+            "IF OBJECT_ID(N'dbo.ReportEvidences', N'U') IS NOT NULL AND COL_LENGTH('dbo.ReportEvidences', 'AiVerdict') IS NULL ALTER TABLE [dbo].[ReportEvidences] ADD [AiVerdict] NVARCHAR(40) NOT NULL CONSTRAINT [DF_ReportEvidences_AiVerdict] DEFAULT N'';",
+            "IF OBJECT_ID(N'dbo.ReportEvidences', N'U') IS NOT NULL AND COL_LENGTH('dbo.ReportEvidences', 'AiReasoning') IS NULL ALTER TABLE [dbo].[ReportEvidences] ADD [AiReasoning] NVARCHAR(1000) NOT NULL CONSTRAINT [DF_ReportEvidences_AiReasoning] DEFAULT N'';",
+            "IF OBJECT_ID(N'dbo.ReportEvidences', N'U') IS NOT NULL AND COL_LENGTH('dbo.ReportEvidences', 'TaggedColleagueUserIdsJson') IS NULL ALTER TABLE [dbo].[ReportEvidences] ADD [TaggedColleagueUserIdsJson] NVARCHAR(MAX) NULL;",
+            "IF OBJECT_ID(N'dbo.ReportEvidences', N'U') IS NOT NULL AND COL_LENGTH('dbo.ReportEvidences', 'TaggedColleagueNamesJson') IS NULL ALTER TABLE [dbo].[ReportEvidences] ADD [TaggedColleagueNamesJson] NVARCHAR(MAX) NULL;",
+            "IF OBJECT_ID(N'dbo.ReportEvidences', N'U') IS NOT NULL AND COL_LENGTH('dbo.ReportEvidences', 'ApprovedByUserId') IS NULL ALTER TABLE [dbo].[ReportEvidences] ADD [ApprovedByUserId] UNIQUEIDENTIFIER NULL;",
+            "IF OBJECT_ID(N'dbo.ReportEvidences', N'U') IS NOT NULL AND COL_LENGTH('dbo.ReportEvidences', 'ApprovedAtUtc') IS NULL ALTER TABLE [dbo].[ReportEvidences] ADD [ApprovedAtUtc] DATETIME2 NULL;",
             """
             IF OBJECT_ID(N'dbo.ReportFeedbacks', N'U') IS NULL
             BEGIN
@@ -224,9 +242,9 @@ public static class StartupSchemaReconciler
             """
             IF OBJECT_ID(N'dbo.Reports', N'U') IS NOT NULL
             BEGIN
-                UPDATE [dbo].[Reports] SET [Category] = 1 WHERE [Category] < 1 OR [Category] > 6;
+                UPDATE [dbo].[Reports] SET [Category] = 1 WHERE [Category] < 1 OR [Category] > 4;
                 UPDATE [dbo].[Reports] SET [Severity] = 2 WHERE [Severity] < 1 OR [Severity] > 4;
-                UPDATE [dbo].[Reports] SET [Status] = 1 WHERE [Status] < 1 OR [Status] > 9;
+                UPDATE [dbo].[Reports] SET [Status] = 1 WHERE [Status] < 1 OR [Status] > 10;
                 UPDATE [dbo].[Reports] SET [Latitude] = 8.5147, [Longitude] = 123.2842 WHERE [Latitude] > 13.0;
             END;
             IF OBJECT_ID(N'dbo.DutyUnits', N'U') IS NOT NULL
@@ -240,6 +258,8 @@ public static class StartupSchemaReconciler
             IF OBJECT_ID(N'dbo.IncidentFixtures', N'U') IS NOT NULL
             BEGIN
                 UPDATE [dbo].[IncidentFixtures] SET [Latitude] = 8.5145, [Longitude] = 123.2850 WHERE [Latitude] > 13.0;
+                UPDATE [dbo].[IncidentFixtures] SET [Category] = 3 WHERE [FixtureCode] LIKE N'HYD-%' OR [Category] < 1 OR [Category] > 4;
+                UPDATE [dbo].[IncidentFixtures] SET [IsActive] = 0 WHERE [FixtureCode] IN (N'EVAC-001', N'FLOOD-ZONE-A');
             END;
             IF OBJECT_ID(N'dbo.Users', N'U') IS NOT NULL
             BEGIN
@@ -404,6 +424,10 @@ public static class StartupSchemaReconciler
             "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"ClaudeUncertaintyNotes\" character varying(600);",
             "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"PointerIconType\" character varying(40);",
             "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"AiAnalysisJson\" text;",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"ClosedAt\" timestamp with time zone;",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"ClosureSummary\" character varying(1000);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"ClosureApprovalMode\" character varying(64);",
+            "ALTER TABLE IF EXISTS \"Reports\" ADD COLUMN IF NOT EXISTS \"TaggedColleaguesJson\" text;",
             "ALTER TABLE IF EXISTS \"IdentityVerificationRecords\" ADD COLUMN IF NOT EXISTS \"VerificationTokenId\" character varying(64);",
             "ALTER TABLE IF EXISTS \"IdentityVerificationRecords\" ADD COLUMN IF NOT EXISTS \"AuthenticityVerdict\" character varying(40);",
             "ALTER TABLE IF EXISTS \"IdentityVerificationRecords\" ADD COLUMN IF NOT EXISTS \"FaceToIdMatchScore\" numeric(5,4);",
@@ -465,11 +489,25 @@ public static class StartupSchemaReconciler
                 "Caption" character varying(500) NOT NULL DEFAULT '',
                 "UploadedByUserId" uuid NULL,
                 "UploadedByName" character varying(150) NOT NULL DEFAULT '',
-                "CreatedAtUtc" timestamp with time zone NOT NULL
+                "CreatedAtUtc" timestamp with time zone NOT NULL,
+                "ClosureOutcome" character varying(40) NOT NULL DEFAULT '',
+                "AiVerdict" character varying(40) NOT NULL DEFAULT '',
+                "AiReasoning" character varying(1000) NOT NULL DEFAULT '',
+                "TaggedColleagueUserIdsJson" text NULL,
+                "TaggedColleagueNamesJson" text NULL,
+                "ApprovedByUserId" uuid NULL,
+                "ApprovedAtUtc" timestamp with time zone NULL
             );
             CREATE INDEX IF NOT EXISTS "IX_ReportEvidences_ReportId" ON "ReportEvidences"("ReportId");
             CREATE INDEX IF NOT EXISTS "IX_ReportEvidences_CreatedAtUtc" ON "ReportEvidences"("CreatedAtUtc");
             """,
+            "ALTER TABLE IF EXISTS \"ReportEvidences\" ADD COLUMN IF NOT EXISTS \"ClosureOutcome\" character varying(40) NOT NULL DEFAULT '';",
+            "ALTER TABLE IF EXISTS \"ReportEvidences\" ADD COLUMN IF NOT EXISTS \"AiVerdict\" character varying(40) NOT NULL DEFAULT '';",
+            "ALTER TABLE IF EXISTS \"ReportEvidences\" ADD COLUMN IF NOT EXISTS \"AiReasoning\" character varying(1000) NOT NULL DEFAULT '';",
+            "ALTER TABLE IF EXISTS \"ReportEvidences\" ADD COLUMN IF NOT EXISTS \"TaggedColleagueUserIdsJson\" text;",
+            "ALTER TABLE IF EXISTS \"ReportEvidences\" ADD COLUMN IF NOT EXISTS \"TaggedColleagueNamesJson\" text;",
+            "ALTER TABLE IF EXISTS \"ReportEvidences\" ADD COLUMN IF NOT EXISTS \"ApprovedByUserId\" uuid;",
+            "ALTER TABLE IF EXISTS \"ReportEvidences\" ADD COLUMN IF NOT EXISTS \"ApprovedAtUtc\" timestamp with time zone;",
             """
             CREATE TABLE IF NOT EXISTS "ReportFeedbacks" (
                 "Id" uuid PRIMARY KEY,
@@ -483,9 +521,9 @@ public static class StartupSchemaReconciler
             CREATE INDEX IF NOT EXISTS "IX_ReportFeedbacks_UserId" ON "ReportFeedbacks"("UserId");
             CREATE INDEX IF NOT EXISTS "IX_ReportFeedbacks_ReportId_UserId" ON "ReportFeedbacks"("ReportId", "UserId");
             """,
-            "UPDATE \"Reports\" SET \"Category\" = 1 WHERE \"Category\" < 1 OR \"Category\" > 6;",
+            "UPDATE \"Reports\" SET \"Category\" = 1 WHERE \"Category\" < 1 OR \"Category\" > 4;",
             "UPDATE \"Reports\" SET \"Severity\" = 2 WHERE \"Severity\" < 1 OR \"Severity\" > 4;",
-            "UPDATE \"Reports\" SET \"Status\" = 1 WHERE \"Status\" < 1 OR \"Status\" > 9;",
+            "UPDATE \"Reports\" SET \"Status\" = 1 WHERE \"Status\" < 1 OR \"Status\" > 10;",
             "UPDATE \"Reports\" SET \"Latitude\" = 8.5147, \"Longitude\" = 123.2842 WHERE \"Latitude\" > 13.0;",
             "UPDATE \"DutyUnits\" SET \"BaseLatitude\" = 8.5136, \"BaseLongitude\" = 123.2856, \"ContactHotline\" = '' WHERE \"UnitCode\" = 'LDRRMO-HQ' AND (\"BaseLatitude\" > 13.0 OR \"ContactHotline\" <> '');",
             "UPDATE \"DutyUnits\" SET \"BaseLatitude\" = 8.5142, \"BaseLongitude\" = 123.2862, \"ContactHotline\" = '' WHERE \"UnitCode\" = 'RHU-ALPHA' AND (\"BaseLatitude\" > 13.0 OR \"ContactHotline\" <> '');",
@@ -493,6 +531,8 @@ public static class StartupSchemaReconciler
             "UPDATE \"DutyUnits\" SET \"BaseLatitude\" = 8.5160, \"BaseLongitude\" = 123.2835, \"ContactHotline\" = '' WHERE \"UnitCode\" = 'PNP-SECTOR-01' AND (\"BaseLatitude\" > 13.0 OR \"ContactHotline\" <> '');",
             "UPDATE \"DutyUnits\" SET \"ContactHotline\" = '' WHERE \"ContactHotline\" <> '';",
             "UPDATE \"IncidentFixtures\" SET \"Latitude\" = 8.5145, \"Longitude\" = 123.2850 WHERE \"Latitude\" > 13.0;",
+            "UPDATE \"IncidentFixtures\" SET \"Category\" = 3 WHERE \"FixtureCode\" LIKE 'HYD-%' OR \"Category\" < 1 OR \"Category\" > 4;",
+            "UPDATE \"IncidentFixtures\" SET \"IsActive\" = false WHERE \"FixtureCode\" IN ('EVAC-001', 'FLOOD-ZONE-A');",
             "UPDATE \"Users\" SET \"CityOrMunicipality\" = 'Katipunan' WHERE \"CityOrMunicipality\" = 'Dipolog City';",
             "DROP TABLE IF EXISTS \"FireAlarmStatuses\";"
         ];

@@ -33,9 +33,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   VehicularAccident: 'Vehicular Accident',
   MedicalEmergency: 'Medical Emergency',
   StructuralFire: 'Structural Fire',
-  CrimeOrSecurity: 'Crime / Security Incident',
-  NaturalDisaster: 'Natural Disaster',
-  HazardFixture: 'Infrastructure Hazard'
+  CrimeOrSecurity: 'Crime / Security Incident'
 };
 
 export const SEVERITY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -51,6 +49,9 @@ export const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   Allocated: { bg: 'bg-amber-950/50', text: 'text-amber-400' },
   EnRoute: { bg: 'bg-purple-950/50', text: 'text-purple-400' },
   OnScene: { bg: 'bg-cyan-950/50', text: 'text-cyan-400' },
+  InProgress: { bg: 'bg-sky-950/50', text: 'text-sky-400' },
+  Responded: { bg: 'bg-teal-950/50', text: 'text-teal-400' },
   Resolved: { bg: 'bg-emerald-950/50', text: 'text-emerald-400' },
+  Closed: { bg: 'bg-emerald-950/50', text: 'text-emerald-400' },
   Rejected: { bg: 'bg-rose-950/50', text: 'text-rose-400' }
 };

@@ -29,6 +29,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { getAllReports, updateReportSeverity, ReportItem } from '@/Endpoints/reportsApi';
+import { parseUtcTimestamp } from '@/Endpoints/analyticsApi';
 import {
   getDutyRoster,
   DutyUnit,
@@ -49,9 +50,9 @@ import { usePagination, useTableDraggable, useDebounce, useValueRefreshAuto } fr
 import {
   calculateHaversineDistanceKm,
   calculateDynamicEtaMinutes,
-  getKatipunanBarangay,
   KATIPUNAN_BASE_COORDS
 } from '@/Libs/Map/mapAccuracy';
+import { resolveStreetAddressSync, isRawCoordinateLabel } from '@/Libs/Map/addressResolver';
 import { AdminButton } from './Shared/AdminButton';
 import { AdminModalCard } from './Shared/AdminModalCard';
 import {
@@ -387,8 +388,8 @@ export const IncidentsPage: FC = () => {
         return target.includes(debouncedSearch.toLowerCase());
       })
       .sort((a, b) => {
-        const timeA = new Date(a.createdAt || a.timestamp || 0).getTime();
-        const timeB = new Date(b.createdAt || b.timestamp || 0).getTime();
+        const timeA = parseUtcTimestamp(a.createdAt || a.timestamp)?.getTime() ?? new Date(a.createdAt || a.timestamp || 0).getTime();
+        const timeB = parseUtcTimestamp(b.createdAt || b.timestamp)?.getTime() ?? new Date(b.createdAt || b.timestamp || 0).getTime();
         if (sortOrder === 'asc_date') return timeA - timeB;
         if (sortOrder === 'asc_name') return (a.title || '').localeCompare(b.title || '');
         if (sortOrder === 'desc_name') return (b.title || '').localeCompare(a.title || '');
@@ -411,7 +412,11 @@ export const IncidentsPage: FC = () => {
   const activeRespondersCount = useMemo(() => roster.filter((u) => u.status === 'OnDuty' || u.status === 'Standby').length, [roster]);
   const countToday = reports.length;
   const unassignedCount = useMemo(
-    () => reports.filter((r) => r.status === 'Reported' || r.status === 'Submitted' || r.status === 'Pending' || !r.allocatedUnitId).length,
+    () =>
+      reports.filter((r) => {
+        const st = (r.status || '').toLowerCase();
+        return st !== 'resolved' && st !== 'closed' && st !== 'rejected' && st !== 'responded' && !r.allocatedUnitId;
+      }).length,
     [reports]
   );
   const criticalCount = useMemo(
@@ -423,7 +428,7 @@ export const IncidentsPage: FC = () => {
     if (reports.length === 0) return '0.0 Mins';
     const now = Date.now();
     const totalMinutes = reports.reduce((acc, r) => {
-      const time = new Date(r.createdAt || r.timestamp || now).getTime();
+      const time = parseUtcTimestamp(r.createdAt || r.timestamp)?.getTime() ?? new Date(r.createdAt || r.timestamp || now).getTime();
       return acc + Math.max(0.5, (now - time) / 60000);
     }, 0);
     return `${(totalMinutes / reports.length).toFixed(1)} Mins`;
@@ -574,8 +579,8 @@ export const IncidentsPage: FC = () => {
             <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Unassigned Queue</p>
             <Clock className="w-4 h-4 text-amber-700" />
           </div>
-          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{unassignedCount} Pending</h3>
-          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Awaiting dispatch</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{unassignedCount} Unallocated</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Active Awaiting Dispatch</span>
         </div>
 
         <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-[#670626] flex flex-col justify-between`}>
@@ -583,7 +588,7 @@ export const IncidentsPage: FC = () => {
             <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Critical Priority</p>
             <ShieldAlert className="w-4 h-4 text-[#670626]" />
           </div>
-          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{criticalCount} SOS</h3>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{criticalCount} Critical</h3>
           <span className="text-xs text-[#A83B4D] font-mono font-bold mt-0.5">Immediate action</span>
         </div>
 
@@ -706,10 +711,10 @@ export const IncidentsPage: FC = () => {
             options={[
               { value: 'ALL', label: 'All Statuses' },
               { value: 'Submitted', label: 'Submitted' },
-              { value: 'Pending', label: 'Pending' },
               { value: 'Verified', label: 'Verified' },
+              { value: 'Working Progress', label: 'Working Progress' },
               { value: 'Dispatched', label: 'Dispatched' },
-              { value: 'Resolved', label: 'Resolved' },
+              { value: 'Done', label: 'Done' },
               { value: 'Rejected', label: 'Rejected' }
             ]}
             className="min-w-[140px]"
@@ -720,13 +725,10 @@ export const IncidentsPage: FC = () => {
             onChange={(val) => setSelectedCategory(val as string)}
             options={[
               { value: 'ALL', label: 'All Categories' },
+              { value: 'VehicularAccident', label: 'Vehicular Accident' },
               { value: 'MedicalEmergency', label: 'Medical Emergency' },
-              { value: 'Trauma', label: 'Trauma / Casualty' },
               { value: 'StructuralFire', label: 'Structural Fire' },
-              { value: 'Fire', label: 'Fire & Hazmat' },
-              { value: 'CrimeOrSecurity', label: 'Crime / Security' },
-              { value: 'Police', label: 'Police Security' },
-              { value: 'VehicularAccident', label: 'Vehicular Accident' }
+              { value: 'CrimeOrSecurity', label: 'Crime / Security' }
             ]}
             className="min-w-[140px]"
           />
@@ -736,7 +738,7 @@ export const IncidentsPage: FC = () => {
             onChange={(val) => setSelectedSeverity(val as string)}
             options={[
               { value: 'ALL', label: 'All Severities' },
-              { value: 'Critical', label: 'Critical SOS' },
+              { value: 'Critical', label: 'Critical Incidents' },
               { value: 'High', label: 'High Priority' },
               { value: 'Medium', label: 'Medium Tier' },
               { value: 'Low', label: 'Low Severity' }
@@ -783,8 +785,8 @@ export const IncidentsPage: FC = () => {
                     inc.verifiedAt,
                     inc.resolvedAt
                   );
-                  const canVerifyOrReject = statusBadge.label === 'Submitted' || statusBadge.label === 'Pending';
-                  const isClosedOrRejected = statusBadge.label === 'Resolved' || statusBadge.label === 'Rejected';
+                  const canVerifyOrReject = statusBadge.label === 'Submitted';
+                  const isClosedOrRejected = statusBadge.label === 'Done' || statusBadge.label === 'Rejected';
 
                   return (
                     <tr key={inc.id || i} className="hover:bg-[#F7F1EA]/70 transition-colors">
@@ -834,7 +836,7 @@ export const IncidentsPage: FC = () => {
                       <td className="py-3.5 px-4">
                         <div className="flex flex-col gap-1">
                           <span className="font-mono text-xs text-[#670626] font-bold">
-                            {inc.category || 'Trauma / Casualty'}
+                            {inc.category || 'MedicalEmergency'}
                           </span>
                           <div className="flex items-center gap-2 flex-wrap">
                             {typeof inc.roboflowConfidence === 'number' && (
@@ -856,9 +858,11 @@ export const IncidentsPage: FC = () => {
                           </span>
                           <span className="text-xs text-[#670626] truncate max-w-[210px] flex items-center gap-1">
                             <MapPin className="w-3.5 h-3.5 text-[#A83B4D] flex-shrink-0" />
-                            {inc.locationLabel ||
-                              inc.location ||
-                              getKatipunanBarangay(inc.latitude, inc.longitude)}
+                            {!isRawCoordinateLabel(inc.locationLabel)
+                              ? inc.locationLabel
+                              : !isRawCoordinateLabel(inc.location)
+                              ? inc.location
+                              : resolveStreetAddressSync(inc.latitude, inc.longitude)}
                           </span>
                         </div>
                       </td>
@@ -891,7 +895,7 @@ export const IncidentsPage: FC = () => {
 
                       <td className="py-3.5 px-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-mono text-xs font-bold ${statusBadge.pillClass}`}>
-                          {statusBadge.label === 'Verified' || statusBadge.label === 'Resolved' ? (
+                          {statusBadge.label === 'Verified' || statusBadge.label === 'Done' ? (
                             <CheckCircle2 className="w-3.5 h-3.5" />
                           ) : (
                             <Clock className="w-3.5 h-3.5" />
@@ -978,8 +982,8 @@ export const IncidentsPage: FC = () => {
               inc.verifiedAt,
               inc.resolvedAt
             );
-            const canVerifyOrReject = statusBadge.label === 'Submitted' || statusBadge.label === 'Pending';
-            const isClosedOrRejected = statusBadge.label === 'Resolved' || statusBadge.label === 'Rejected';
+            const canVerifyOrReject = statusBadge.label === 'Submitted';
+            const isClosedOrRejected = statusBadge.label === 'Done' || statusBadge.label === 'Rejected';
 
             return (
               <div
@@ -1028,12 +1032,14 @@ export const IncidentsPage: FC = () => {
                     )}
                   </div>
                   <div className="flex flex-col text-sm text-[#670626] space-y-0.5 min-w-0">
-                    <span className="font-bold">{inc.category || 'Trauma Casualty'}</span>
+                    <span className="font-bold">{inc.category || 'MedicalEmergency'}</span>
                     <span className="text-xs text-[#A83B4D] truncate flex items-center gap-1">
                       <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-                      {inc.locationLabel ||
-                        inc.location ||
-                        getKatipunanBarangay(inc.latitude, inc.longitude)}
+                      {!isRawCoordinateLabel(inc.locationLabel)
+                        ? inc.locationLabel
+                        : !isRawCoordinateLabel(inc.location)
+                        ? inc.location
+                        : resolveStreetAddressSync(inc.latitude, inc.longitude)}
                     </span>
                     <div className="flex items-center gap-2 text-xs font-mono text-[#670626]/80">
                       <span>IP: {inc.submittedIpAddress || 'Unavailable'}</span>

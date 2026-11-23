@@ -538,6 +538,63 @@ export const DutyRosterView: React.FC = () => {
     }
   }, []);
 
+  const getHierarchyHeatStyle = useCallback(
+    (memberCount: number, activeCount: number, totalUnits: number) => {
+      const sharePct = totalUnits > 0 ? Math.round((memberCount / totalUnits) * 100) : 0;
+      const readinessPct = memberCount > 0 ? Math.round((activeCount / memberCount) * 100) : 0;
+
+      if (memberCount === 0) {
+        return {
+          sharePct,
+          readinessPct,
+          heatLabel: 'Unassigned',
+          cardTone: 'bg-[#E9D9D0]/55 border-[#670626]/15',
+          badgeTone: 'bg-stone-200 text-stone-700 border-stone-400/40',
+          barTone: 'bg-stone-400'
+        };
+      }
+      if (sharePct >= 40 || activeCount >= 3) {
+        return {
+          sharePct,
+          readinessPct,
+          heatLabel: 'High Load',
+          cardTone: 'bg-rose-50/90 border-rose-700/35 hover:border-[#670626]',
+          badgeTone: 'bg-[#670626] text-[#F7F1EA] border-[#4A041A]',
+          barTone: 'bg-[#670626]'
+        };
+      }
+      if (readinessPct >= 60 || activeCount >= 2) {
+        return {
+          sharePct,
+          readinessPct,
+          heatLabel: 'Active Ready',
+          cardTone: 'bg-emerald-50/90 border-emerald-700/35 hover:border-emerald-700',
+          badgeTone: 'bg-emerald-100 text-emerald-900 border-emerald-700/35',
+          barTone: 'bg-emerald-600'
+        };
+      }
+      if (activeCount >= 1) {
+        return {
+          sharePct,
+          readinessPct,
+          heatLabel: 'Moderate',
+          cardTone: 'bg-amber-50/90 border-amber-700/35 hover:border-amber-700',
+          badgeTone: 'bg-amber-100 text-amber-900 border-amber-700/35',
+          barTone: 'bg-amber-600'
+        };
+      }
+      return {
+        sharePct,
+        readinessPct,
+        heatLabel: 'Standby / Low',
+        cardTone: 'bg-sky-50/85 border-sky-700/30 hover:border-sky-700',
+        badgeTone: 'bg-sky-100 text-sky-900 border-sky-700/30',
+        barTone: 'bg-sky-600'
+      };
+    },
+    []
+  );
+
   const sortOptions = useMemo(
     () => [
       { value: 'LEADERBOARD' as ColleagueSortOption, label: 'Sort: Performance' },
@@ -860,20 +917,35 @@ export const DutyRosterView: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mt-4">
           {organizationTiers.map((tierObj, index) => {
             const isTierSelected = selectedTierFilter === tierObj.tier;
+            const activeInTier = tierObj.members.filter(
+              (m) => m.status === 'OnDuty' || m.status === 'Dispatched'
+            ).length;
+            const heat = getHierarchyHeatStyle(
+              tierObj.members.length,
+              activeInTier,
+              agencyScopedColleagues.length
+            );
             return (
               <div
                 key={tierObj.tier}
                 className={`clay-well rounded-2xl border p-4 transition-all duration-200 flex flex-col justify-between ${
                   isTierSelected
-                    ? 'border-[#670626] bg-[#E9D9D0] ring-2 ring-[#670626]/25'
-                    : 'bg-[#E9D9D0]/80 border-[#670626]/15 hover:border-[#A83B4D]'
+                    ? `${heat.cardTone} ring-2 ring-[#670626] border-[#670626]`
+                    : heat.cardTone
                 }`}
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2.5">
-                    <span className="px-2.5 py-0.5 rounded-lg text-xs font-mono font-black bg-[#670626] text-[#F7F1EA]">
-                      {tierObj.code}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2.5 py-0.5 rounded-lg text-xs font-mono font-black bg-[#670626] text-[#F7F1EA]">
+                        {tierObj.code}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold border ${heat.badgeTone}`}
+                      >
+                        {heat.heatLabel}
+                      </span>
+                    </div>
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
@@ -903,6 +975,24 @@ export const DutyRosterView: React.FC = () => {
                     {tierObj.title}
                   </h3>
                   <p className="text-xs text-[#5B2A35] mt-0.5">{tierObj.subtitle}</p>
+
+                  {/* Tier Load & Readiness Intensity Bar */}
+                  <div className="mt-2.5 p-2 rounded-xl bg-[#F7F1EA]/90 border border-[#670626]/12">
+                    <div className="flex items-center justify-between text-xs font-mono mb-1">
+                      <span className="text-[#5B2A35] font-semibold">
+                        Share: <strong className="text-[#670626]">{heat.sharePct}%</strong>
+                      </span>
+                      <span className="text-[#5B2A35] font-semibold">
+                        Ready: <strong className="text-emerald-800">{heat.readinessPct}%</strong>
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-[#E9D9D0] overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${heat.barTone}`}
+                        style={{ width: `${Math.max(heat.sharePct, tierObj.members.length > 0 ? 8 : 0)}%` }}
+                      />
+                    </div>
+                  </div>
 
                   <div className="mt-3 pt-2.5 border-t border-[#670626]/15 flex flex-col gap-2">
                     {tierObj.members.length === 0 ? (
@@ -941,12 +1031,7 @@ export const DutyRosterView: React.FC = () => {
                 <div className="mt-3 pt-2.5 border-t border-[#670626]/15 flex items-center justify-between text-xs font-mono text-[#5B2A35]">
                   <span>Active Duty</span>
                   <span className="text-emerald-800 font-bold">
-                    {
-                      tierObj.members.filter(
-                        (m) => m.status === 'OnDuty' || m.status === 'Dispatched'
-                      ).length
-                    }{' '}
-                    / {tierObj.members.length}
+                    {activeInTier} / {tierObj.members.length}
                   </span>
                 </div>
               </div>
@@ -955,51 +1040,155 @@ export const DutyRosterView: React.FC = () => {
         </div>
       </div>
 
-      {/* Status Filter Buttons + Search, Sort, Toggle & Directory */}
+      {/* Status Filter Heatmap Matrix + Search, Sort, Toggle & Directory */}
       <div className="flex flex-col gap-4">
         <div className="clay-surface p-4 bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#A83B4D] flex items-center gap-2">
               <Filter className="w-4 h-4 text-[#670626]" />
-              <span>Filter by Status</span>
+              <span>Duty Status Heatmap Matrix</span>
             </span>
-            <span className="text-xs font-mono text-[#670626] font-bold">
-              {processedColleagues.length} of {agencyScopedColleagues.length}
-            </span>
+            <div className="flex items-center gap-3 text-xs font-mono">
+              <span className="inline-flex items-center gap-1 text-emerald-800 font-bold">
+                <span className="w-2 h-2 rounded-full bg-emerald-600" />
+                On Duty
+              </span>
+              <span className="inline-flex items-center gap-1 text-amber-800 font-bold">
+                <span className="w-2 h-2 rounded-full bg-amber-600" />
+                Dispatched
+              </span>
+              <span className="inline-flex items-center gap-1 text-sky-800 font-bold">
+                <span className="w-2 h-2 rounded-full bg-sky-600" />
+                Standby
+              </span>
+              <span className="text-[#670626] font-bold">
+                {processedColleagues.length} of {agencyScopedColleagues.length}
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
             {(
               [
-                { key: 'ALL_COLLEAGUES', label: 'All', count: statusCounts.ALL_COLLEAGUES },
-                { key: 'ACTIVE_AVAILABLE', label: 'On Duty', count: statusCounts.ACTIVE_AVAILABLE },
-                { key: 'BEING_DISPATCHED', label: 'Dispatched', count: statusCounts.BEING_DISPATCHED },
-                { key: 'STANDBY', label: 'Standby', count: statusCounts.STANDBY },
-                { key: 'OFF_DUTY', label: 'Off Duty', count: statusCounts.OFF_DUTY }
-              ] as Array<{ key: StatusFilterOption; label: string; count: number }>
+                {
+                  key: 'ALL_COLLEAGUES',
+                  label: 'All',
+                  count: statusCounts.ALL_COLLEAGUES,
+                  dotClass: 'bg-[#670626]',
+                  barClass: 'bg-[#670626]',
+                  idleHigh: 'bg-[#E9D9D0] text-[#670626] border-[#670626]/30 hover:bg-[#DFC9BE]',
+                  idleLow: 'bg-[#E9D9D0]/60 text-[#670626] border-[#670626]/15 hover:bg-[#E9D9D0]',
+                  activeTone: 'bg-[#670626] text-[#F7F1EA] border-[#4A041A] shadow-md',
+                  badgeIdle: 'bg-[#F7F1EA] text-[#670626]'
+                },
+                {
+                  key: 'ACTIVE_AVAILABLE',
+                  label: 'On Duty',
+                  count: statusCounts.ACTIVE_AVAILABLE,
+                  dotClass: 'bg-emerald-600',
+                  barClass: 'bg-emerald-600',
+                  idleHigh: 'bg-emerald-100 text-emerald-950 border-emerald-700/35 hover:bg-emerald-200/75',
+                  idleLow: 'bg-emerald-50 text-emerald-900 border-emerald-700/20 hover:bg-emerald-100',
+                  activeTone: 'bg-emerald-700 text-[#F7F1EA] border-emerald-900 shadow-md',
+                  badgeIdle: 'bg-white/90 text-emerald-900'
+                },
+                {
+                  key: 'BEING_DISPATCHED',
+                  label: 'Dispatched',
+                  count: statusCounts.BEING_DISPATCHED,
+                  dotClass: 'bg-amber-600',
+                  barClass: 'bg-amber-600',
+                  idleHigh: 'bg-amber-100 text-amber-950 border-amber-700/35 hover:bg-amber-200/75',
+                  idleLow: 'bg-amber-50 text-amber-900 border-amber-700/20 hover:bg-amber-100',
+                  activeTone: 'bg-amber-600 text-[#F7F1EA] border-amber-800 shadow-md',
+                  badgeIdle: 'bg-white/90 text-amber-900'
+                },
+                {
+                  key: 'STANDBY',
+                  label: 'Standby',
+                  count: statusCounts.STANDBY,
+                  dotClass: 'bg-sky-600',
+                  barClass: 'bg-sky-600',
+                  idleHigh: 'bg-sky-100 text-sky-950 border-sky-700/35 hover:bg-sky-200/75',
+                  idleLow: 'bg-sky-50 text-sky-900 border-sky-700/20 hover:bg-sky-100',
+                  activeTone: 'bg-sky-700 text-[#F7F1EA] border-sky-900 shadow-md',
+                  badgeIdle: 'bg-white/90 text-sky-900'
+                },
+                {
+                  key: 'OFF_DUTY',
+                  label: 'Off Duty',
+                  count: statusCounts.OFF_DUTY,
+                  dotClass: 'bg-stone-500',
+                  barClass: 'bg-stone-500',
+                  idleHigh: 'bg-stone-200 text-stone-900 border-stone-500/40 hover:bg-stone-300/75',
+                  idleLow: 'bg-stone-100 text-stone-700 border-stone-400/25 hover:bg-stone-200/75',
+                  activeTone: 'bg-stone-700 text-[#F7F1EA] border-stone-900 shadow-md',
+                  badgeIdle: 'bg-white/90 text-stone-800'
+                }
+              ] as Array<{
+                key: StatusFilterOption;
+                label: string;
+                count: number;
+                dotClass: string;
+                barClass: string;
+                idleHigh: string;
+                idleLow: string;
+                activeTone: string;
+                badgeIdle: string;
+              }>
             ).map((btn) => {
               const isSelected = statusFilter === btn.key;
+              const totalUnits = Math.max(1, statusCounts.ALL_COLLEAGUES);
+              const intensityPct =
+                statusCounts.ALL_COLLEAGUES > 0
+                  ? Math.round((btn.count / totalUnits) * 100)
+                  : 0;
+              const idleClass = intensityPct >= 30 ? btn.idleHigh : btn.idleLow;
+
               return (
                 <button
                   key={btn.key}
                   type="button"
                   onClick={() => setStatusFilter(btn.key)}
-                  className={`py-2.5 px-3.5 rounded-xl font-mono text-sm font-bold border transition-all flex items-center justify-between gap-2 cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#670626] text-[#F7F1EA] border-[#4A041A] shadow-md'
-                      : 'bg-[#E9D9D0] text-[#670626] border-[#670626]/15 hover:bg-[#DFC9BE]'
+                  className={`p-3 rounded-xl font-mono text-sm font-bold border transition-all flex flex-col gap-2 cursor-pointer ${
+                    isSelected ? btn.activeTone : idleClass
                   }`}
                 >
-                  <span>{btn.label}</span>
-                  <span
-                    className={`px-2 py-0.5 rounded-lg text-xs ${
-                      isSelected
-                        ? 'bg-[#F7F1EA]/20 text-[#F7F1EA]'
-                        : 'bg-[#F7F1EA] text-[#670626]'
-                    }`}
-                  >
-                    {btn.count}
-                  </span>
+                  <div className="flex items-center justify-between gap-2 w-full">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          isSelected ? 'bg-[#F7F1EA]' : btn.dotClass
+                        }`}
+                      />
+                      <span>{btn.label}</span>
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-lg text-xs font-black tabular-nums ${
+                        isSelected ? 'bg-[#F7F1EA]/20 text-[#F7F1EA]' : btn.badgeIdle
+                      }`}
+                    >
+                      {btn.count}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full">
+                    <div
+                      className={`flex-1 h-1.5 rounded-full overflow-hidden ${
+                        isSelected ? 'bg-[#F7F1EA]/25' : 'bg-black/10'
+                      }`}
+                    >
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          isSelected ? 'bg-[#F7F1EA]' : btn.barClass
+                        }`}
+                        style={{ width: `${intensityPct}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-bold tabular-nums opacity-90">
+                      {intensityPct}%
+                    </span>
+                  </div>
                 </button>
               );
             })}

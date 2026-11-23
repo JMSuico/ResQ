@@ -1,9 +1,9 @@
 // [Layer: Shared/Charts]
 // Responsibility: SVG smooth curvey line chart for incident volume and triage response telemetry.
 // Self-contained SVG vectors provide deterministic rendering with zero-jitter interactive telemetry.
-// Universal lambda expressions (=>).
+// Universal lambda expressions (=>). ZERO 'any', ZERO emojis.
 
-import React, { FC, useState, useCallback } from 'react';
+import React, { FC, useState, useCallback, useId } from 'react';
 import { TrendingUp } from 'lucide-react';
 
 export interface DataPoint {
@@ -21,12 +21,12 @@ export interface LinearCurveyChartProps {
 const DEFAULT_WIDTH = 540;
 const DEFAULT_HEIGHT = 200;
 const LEFT_PADDING = 40;
-const RIGHT_PADDING = 20;
+const RIGHT_PADDING = 38;
 const TOP_PADDING = 22;
 const BOTTOM_PADDING = 30;
 const SURGE_CRITICAL_RATIO = 0.75;
 const SURGE_ELEVATED_RATIO = 0.45;
-const TOOLTIP_BOUND_MARGIN = 90;
+const TOOLTIP_BOUND_MARGIN = 95;
 const TOP_BOUND_MARGIN = 65;
 
 interface SurgeStatus {
@@ -36,8 +36,8 @@ interface SurgeStatus {
   textColor: string;
 }
 
-const computeSurgeStatus = (value: number, max: number): SurgeStatus => {
-  if (value === 0) {
+const computeSurgeStatus = (value: number, rawPeak: number): SurgeStatus => {
+  if (value === 0 || rawPeak <= 0) {
     return {
       text: 'Zero',
       badgeClass: 'bg-[#E9D9D0] text-[#5C313E] border-[#D4B8AA]',
@@ -45,7 +45,7 @@ const computeSurgeStatus = (value: number, max: number): SurgeStatus => {
       textColor: 'text-[#7A4E59]'
     };
   }
-  if (value >= max * SURGE_CRITICAL_RATIO) {
+  if (value >= rawPeak * SURGE_CRITICAL_RATIO) {
     return {
       text: 'Critical',
       badgeClass: 'bg-rose-100 text-[#991B1B] border-rose-300 shadow-sm',
@@ -53,7 +53,7 @@ const computeSurgeStatus = (value: number, max: number): SurgeStatus => {
       textColor: 'text-[#991B1B]'
     };
   }
-  if (value >= max * SURGE_ELEVATED_RATIO) {
+  if (value >= rawPeak * SURGE_ELEVATED_RATIO) {
     return {
       text: 'Elevated',
       badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 shadow-sm',
@@ -76,6 +76,9 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
   height = DEFAULT_HEIGHT
 }) => {
   const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const gradientId = `linearCurveGradient-${uid}`;
+  const filterId = `laserGlow-${uid}`;
 
   const safeData = data && data.length > 0 ? data : [
     { label: '00:00', value: 0 },
@@ -97,23 +100,33 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
   const plotHeight = height - TOP_PADDING - BOTTOM_PADDING;
   const baselineY = height - BOTTOM_PADDING;
 
-  // Compute SVG curve points bounded cleanly inside padded Y/X plot area
   const points = safeData.map((d, i) => {
-    const x = safeData.length > 1 ? LEFT_PADDING + (i / (safeData.length - 1)) * plotWidth : LEFT_PADDING + plotWidth / 2;
+    const x =
+      safeData.length > 1
+        ? LEFT_PADDING + (i / (safeData.length - 1)) * plotWidth
+        : LEFT_PADDING + plotWidth / 2;
     const y = baselineY - (d.value / maxValue) * plotHeight;
     return { x, y };
   });
 
-  const pathD = points.reduce((acc, p, i, arr) => {
-    if (i === 0) return `M ${p.x} ${p.y}`;
-    const prev = arr[i - 1];
-    const cpX = (prev.x + p.x) / 2;
-    return `${acc} C ${cpX} ${prev.y}, ${cpX} ${p.y}, ${p.x} ${p.y}`;
-  }, '');
+  const isSinglePoint = points.length === 1;
+  const singleSpanHalf = 22;
 
-  const areaD = `${pathD} L ${points[points.length - 1].x} ${baselineY} L ${points[0].x} ${baselineY} Z`;
+  const pathD = isSinglePoint
+    ? `M ${points[0].x - singleSpanHalf} ${points[0].y} L ${points[0].x + singleSpanHalf} ${points[0].y}`
+    : points.reduce((acc, p, i, arr) => {
+        if (i === 0) return `M ${p.x} ${p.y}`;
+        const prev = arr[i - 1];
+        const cpX = (prev.x + p.x) / 2;
+        return `${acc} C ${cpX} ${prev.y}, ${cpX} ${p.y}, ${p.x} ${p.y}`;
+      }, '');
 
-  // Zero-jitter point calculation: only update index if nearest point changed
+  const areaD = isSinglePoint
+    ? `M ${points[0].x - singleSpanHalf} ${points[0].y} L ${points[0].x + singleSpanHalf} ${points[0].y} L ${
+        points[0].x + singleSpanHalf
+      } ${baselineY} L ${points[0].x - singleSpanHalf} ${baselineY} Z`
+    : `${pathD} L ${points[points.length - 1].x} ${baselineY} L ${points[0].x} ${baselineY} Z`;
+
   const updateNearestPoint = useCallback(
     (clientX: number, targetRect: DOMRect) => {
       const x = ((clientX - targetRect.left) / targetRect.width) * width;
@@ -150,11 +163,10 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
 
   const activePoint = activePointIndex !== null ? points[activePointIndex] : null;
   const activeData = activePointIndex !== null ? safeData[activePointIndex] : null;
-  const activeSurge = activeData ? computeSurgeStatus(activeData.value, maxValue) : null;
+  const activeSurge = activeData ? computeSurgeStatus(activeData.value, rawPeak) : null;
   const percentageOfTotal =
     activeData && totalVolume > 0 ? ((activeData.value / totalVolume) * 100).toFixed(1) : '0.0';
 
-  // Tooltip positioning logic (bounded within container)
   const isNearTop = activePoint ? activePoint.y < TOP_BOUND_MARGIN : false;
   const isNearLeft = activePoint ? activePoint.x < TOOLTIP_BOUND_MARGIN : false;
   const isNearRight = activePoint ? activePoint.x > width - TOOLTIP_BOUND_MARGIN : false;
@@ -162,9 +174,16 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
   let tooltipLeftStyle: React.CSSProperties = {};
   if (activePoint) {
     if (isNearLeft) {
-      tooltipLeftStyle = { left: '8px', transform: isNearTop ? 'translateY(14px)' : 'translateY(-100%) translateY(-14px)' };
+      tooltipLeftStyle = {
+        left: '8px',
+        transform: isNearTop ? 'translateY(14px)' : 'translateY(-100%) translateY(-14px)'
+      };
     } else if (isNearRight) {
-      tooltipLeftStyle = { right: '8px', left: 'auto', transform: isNearTop ? 'translateY(14px)' : 'translateY(-100%) translateY(-14px)' };
+      tooltipLeftStyle = {
+        right: '8px',
+        left: 'auto',
+        transform: isNearTop ? 'translateY(14px)' : 'translateY(-100%) translateY(-14px)'
+      };
     } else {
       tooltipLeftStyle = {
         left: `${(activePoint.x / width) * 100}%`,
@@ -207,13 +226,12 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleMouseLeave}
         >
-          {/* Gradient Def */}
           <defs>
-            <linearGradient id="linearCurveGradient" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={color} stopOpacity="0.32" />
               <stop offset="100%" stopColor={color} stopOpacity="0.0" />
             </linearGradient>
-            <filter id="laserGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <filter id={filterId} x="-20%" y="-20%" width="140%" height="140%">
               <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#A83B4D" floodOpacity="0.55" />
             </filter>
           </defs>
@@ -247,7 +265,7 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
           })}
 
           {/* Area Fill */}
-          <path d={areaD} fill="url(#linearCurveGradient)" className="transition-all duration-300" />
+          <path d={areaD} fill={`url(#${gradientId})`} className="transition-all duration-300" />
 
           {/* Curve Stroke */}
           <path
@@ -271,7 +289,7 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
                 strokeDasharray="3 3"
                 strokeWidth="1.5"
                 opacity="0.85"
-                filter="url(#laserGlow)"
+                filter={`url(#${filterId})`}
               />
             </g>
           )}
@@ -318,7 +336,6 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
                   }}
                 />
 
-                {/* X-axis Dynamic Bucket Label */}
                 <text
                   x={p.x}
                   y={height - 8}
@@ -335,7 +352,6 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
             );
           })}
 
-          {/* Transparent Overlay Rect for continuous pointer detection */}
           <rect
             x="0"
             y="0"
@@ -349,12 +365,16 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
         {/* Floating Claymorphic Tooltip */}
         {activePoint && activeData && activeSurge && (
           <div
-            className="absolute pointer-events-none z-30 transition-all duration-150 ease-out"
+            className="absolute pointer-events-none z-30 transition-all duration-150 ease-out flex flex-col"
             style={{
               top: `${(activePoint.y / height) * 100}%`,
               ...tooltipLeftStyle
             }}
           >
+            {isNearTop && (
+              <div className="w-2.5 h-2.5 bg-[#F7F1EA] border-l border-t border-[#E9D9D0] transform rotate-45 shadow-sm -mb-[5px] mx-auto z-10" />
+            )}
+
             <div className="clay-surface bg-[#F7F1EA] border border-[#E9D9D0] rounded-xl p-3 shadow-xl min-w-[175px] text-xs font-mono flex flex-col gap-1.5 text-[#3B1722]">
               <div className="flex items-center justify-between gap-3 border-b border-[#E9D9D0] pb-1">
                 <span className="text-xs text-[#7A4E59] uppercase">Window</span>
@@ -381,13 +401,9 @@ export const LinearCurveyChart: FC<LinearCurveyChartProps> = ({
               </div>
             </div>
 
-            <div
-              className={`w-2.5 h-2.5 bg-[#F7F1EA] border-[#E9D9D0] transform rotate-45 shadow-md ${
-                isNearTop
-                  ? 'border-l border-t -mt-[5px] mx-auto'
-                  : 'border-r border-b -mt-[5px] mx-auto'
-              }`}
-            />
+            {!isNearTop && (
+              <div className="w-2.5 h-2.5 bg-[#F7F1EA] border-r border-b border-[#E9D9D0] transform rotate-45 shadow-md -mt-[5px] mx-auto" />
+            )}
           </div>
         )}
       </div>

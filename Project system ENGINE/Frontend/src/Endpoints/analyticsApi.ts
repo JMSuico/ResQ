@@ -42,6 +42,65 @@ export interface HeatmapMatrixDto {
   matrix: number[][];
 }
 
+export interface AnalyticsOverviewDto {
+  volumeSeries: number[];
+  activeIncidents: number;
+  resolvedIncidents: number;
+  onDutyUnits: number;
+  generatedAtUtc: string;
+}
+
+export interface RoleAnalyticsDashboardDto {
+  scope: string;
+  summary: AnalyticsSummaryDto;
+  volumeTrend: TelemetryDataPoint[];
+  severityBreakdown: SeverityBreakdownItem[];
+  agencyWorkload: AgencyWorkloadItem[];
+  heatmapMatrix: HeatmapMatrixDto;
+  categoryBreakdown: SeverityBreakdownItem[];
+}
+
+export const ASIA_MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+export const parseUtcTimestamp = (raw?: string | null): Date | null => {
+  if (!raw || !raw.trim()) return null;
+  const trimmed = raw.trim();
+  const hasZone = /([Zz]|[+-]\d{2}:?\d{2})$/.test(trimmed);
+  const normalized = hasZone ? trimmed : `${trimmed}Z`;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+export const toManilaDate = (raw?: string | null): Date | null => {
+  const utc = parseUtcTimestamp(raw);
+  return utc ? new Date(utc.getTime() + ASIA_MANILA_OFFSET_MS) : null;
+};
+
+export const toManilaParts = (raw?: string | null): { dayIndex: number; hour: number } | null => {
+  const utcDate = parseUtcTimestamp(raw);
+  if (!utcDate) return null;
+  const pht = new Date(utcDate.getTime() + ASIA_MANILA_OFFSET_MS);
+  const jsDay = pht.getUTCDay();
+  const dayIndex = (jsDay + 6) % 7;
+  return { dayIndex, hour: pht.getUTCHours() };
+};
+
+export const computeTwoMinFadeSecondsLeft = (
+  resolvedAt?: string | null,
+  closedAt?: string | null,
+  status?: string | null,
+  nowMs: number = Date.now()
+): number | null => {
+  const s = (status || '').trim().toLowerCase();
+  const isDone = s === 'resolved' || s === 'closed' || s === 'completed' || Boolean(resolvedAt || closedAt);
+  if (!isDone) return null;
+  const doneIso = closedAt || resolvedAt;
+  if (!doneIso) return 0;
+  const parsed = parseUtcTimestamp(doneIso);
+  if (!parsed) return 0;
+  return Math.max(0, Math.floor((parsed.getTime() + 120 * 1000 - nowMs) / 1000));
+};
+
 // ==========================================
 // Fallback Aggregation Algorithms
 // ==========================================
@@ -110,12 +169,10 @@ const computeVolume24hFallback = async (): Promise<TelemetryDataPoint[]> => {
   };
 
   reports.forEach((r) => {
-    const ts = r.createdAt;
-    if (!ts) return;
-    const d = new Date(ts);
-    if (isNaN(d.getTime())) return;
+    const parts = toManilaParts(r.createdAt);
+    if (!parts) return;
 
-    const hour = d.getHours();
+    const hour = parts.hour;
     if (hour < 4) buckets['00:00']++;
     else if (hour < 8) buckets['04:00']++;
     else if (hour < 12) buckets['08:00']++;
@@ -141,68 +198,74 @@ const computeSeverityBreakdownFallback = async (): Promise<SeverityBreakdownItem
     { label: 'Low Severity', value: low, color: '#10b981' },
     { label: 'Medium Tier', value: med, color: '#f59e0b' },
     { label: 'High Priority', value: high, color: '#ea580c' },
-    { label: 'Critical SOS', value: crit, color: '#ef4444' }
+    { label: 'Critical Alert', value: crit, color: '#ef4444' }
   ];
 };
 
-const computeAgencyWorkloadFallback = async (): Promise<AgencyWorkloadItem[]> => {
-  const [reports, roster]: [ReportItem[], DutyUnit[]] = await Promise.all([
-    getAllReports().catch(() => [] as ReportItem[]),
-    getDutyRoster().catch(() => [] as DutyUnit[])
-  ]);
+export const classifyReportAgency = (r: Pick<ReportItem, 'allocatedUnitCode' | 'recommendedAgencyUnit' | 'category'>): 'RHU' | 'FIRE' | 'PNP' | 'LDRRMO' => {
+  const code = (r.allocatedUnitCode || '').toUpperCase();
+  const rec = (r.recommendedAgencyUnit || '').toUpperCase();
+  const cat = (r.category || '').toLowerCase();
 
-  const rhuReports = reports.filter((r) => {
-    const a = (r.recommendedAgencyUnit || '').toUpperCase();
-    const c = (r.category || '').toLowerCase();
-    const code = (r.allocatedUnitCode || '').toUpperCase();
-    return a === 'RHU' || c.includes('medic') || c.includes('health') || code.includes('RHU');
-  }).length;
-  const rhuRoster = roster.filter((u) => (u.agency || '').toUpperCase() === 'RHU').length;
-  const rhuCount = rhuReports > 0 ? rhuReports : rhuRoster;
+  if (code.includes('RHU') || rec.includes('RHU') || rec.includes('MEDICAL') || cat.includes('medical')) {
+    return 'RHU';
+  }
+  if (code.includes('BFP') || code.includes('FIRE') || rec.includes('FIRE') || rec.includes('BFP') || cat.includes('fire')) {
+    return 'FIRE';
+  }
+  if (code.includes('PNP') || rec.includes('PNP') || rec.includes('POLICE') || cat.includes('crime') || cat.includes('security') || cat.includes('vehicular')) {
+    return 'PNP';
+  }
+  return 'LDRRMO';
+};
 
-  const fireReports = reports.filter((r) => {
-    const a = (r.recommendedAgencyUnit || '').toUpperCase();
-    const c = (r.category || '').toLowerCase();
-    const code = (r.allocatedUnitCode || '').toUpperCase();
-    return a === 'FIRE' || a === 'BFP' || c.includes('fire') || c.includes('conflagration') || code.includes('FIRE') || code.includes('BFP');
-  }).length;
-  const fireRoster = roster.filter((u) => {
-    const ag = (u.agency || '').toUpperCase();
-    return ag === 'FIRE' || ag === 'BFP';
-  }).length;
-  const fireCount = fireReports > 0 ? fireReports : fireRoster;
+export const buildAgencyWorkloadFromReports = (reports: ReportItem[]): AgencyWorkloadItem[] => {
+  let rhuCount = 0;
+  let fireCount = 0;
+  let pnpCount = 0;
+  let ldrrmoCount = 0;
 
-  const pnpReports = reports.filter((r) => {
-    const a = (r.recommendedAgencyUnit || '').toUpperCase();
-    const c = (r.category || '').toLowerCase();
-    const code = (r.allocatedUnitCode || '').toUpperCase();
-    return a === 'PNP' || c.includes('police') || c.includes('crime') || c.includes('security') || code.includes('PNP');
-  }).length;
-  const pnpRoster = roster.filter((u) => (u.agency || '').toUpperCase() === 'PNP').length;
-  const pnpCount = pnpReports > 0 ? pnpReports : pnpRoster;
+  reports.forEach((r) => {
+    const agency = classifyReportAgency(r);
+    if (agency === 'RHU') rhuCount++;
+    else if (agency === 'FIRE') fireCount++;
+    else if (agency === 'PNP') pnpCount++;
+    else ldrrmoCount++;
+  });
 
-  const total = rhuCount + fireCount + pnpCount;
+  const total = rhuCount + fireCount + pnpCount + ldrrmoCount;
 
   return [
     {
       label: 'RHU Medical',
       value: rhuCount,
       color: '#0284c7',
-      percentage: total > 0 ? Math.round((rhuCount / total) * 100) : 0
+      percentage: total > 0 ? Math.round((rhuCount / total) * 1000) / 10 : 0
     },
     {
       label: 'BFP Fire Rescue',
       value: fireCount,
       color: '#ea580c',
-      percentage: total > 0 ? Math.round((fireCount / total) * 100) : 0
+      percentage: total > 0 ? Math.round((fireCount / total) * 1000) / 10 : 0
     },
     {
       label: 'PNP Police Force',
       value: pnpCount,
       color: '#3b82f6',
-      percentage: total > 0 ? Math.round((pnpCount / total) * 100) : 0
+      percentage: total > 0 ? Math.round((pnpCount / total) * 1000) / 10 : 0
+    },
+    {
+      label: 'LDRRMO Command',
+      value: ldrrmoCount,
+      color: '#670626',
+      percentage: total > 0 ? Math.round((ldrrmoCount / total) * 1000) / 10 : 0
     }
   ];
+};
+
+const computeAgencyWorkloadFallback = async (): Promise<AgencyWorkloadItem[]> => {
+  const reports: ReportItem[] = await getAllReports().catch(() => [] as ReportItem[]);
+  return buildAgencyWorkloadFromReports(reports);
 };
 
 const computeHeatmapMatrixFallback = async (): Promise<HeatmapMatrixDto> => {
@@ -213,16 +276,11 @@ const computeHeatmapMatrixFallback = async (): Promise<HeatmapMatrixDto> => {
   const reports: ReportItem[] = await getAllReports().catch(() => [] as ReportItem[]);
 
   reports.forEach((r) => {
-    const ts = r.createdAt;
-    if (!ts) return;
-    const d = new Date(ts);
-    if (isNaN(d.getTime())) return;
+    const parts = toManilaParts(r.createdAt);
+    if (!parts) return;
 
-    const dayIndex = (d.getDay() + 6) % 7;
-    const hour = d.getHours();
-    const hourIndex = Math.min(5, Math.max(0, Math.floor(hour / 4)));
-
-    matrix[dayIndex][hourIndex]++;
+    const hourIndex = Math.min(5, Math.max(0, Math.floor(parts.hour / 4)));
+    matrix[parts.dayIndex][hourIndex]++;
   });
 
   return { days, hours, matrix };
@@ -271,3 +329,11 @@ export const getHeatmapMatrix = async (): Promise<HeatmapMatrixDto> => {
     return await computeHeatmapMatrixFallback();
   }
 };
+
+export const getAnalyticsOverview = (): Promise<AnalyticsOverviewDto> =>
+  requestJson<AnalyticsOverviewDto>('/api/analytics/overview', { method: 'GET' });
+
+export const getRoleAnalyticsDashboard = (horizon = '30d'): Promise<RoleAnalyticsDashboardDto> =>
+  requestJson<RoleAnalyticsDashboardDto>(`/api/analytics/role-dashboard?horizon=${encodeURIComponent(horizon)}`, {
+    method: 'GET'
+  });

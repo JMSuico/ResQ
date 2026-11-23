@@ -37,39 +37,53 @@ import {
   resolveResponderBadgeVisual,
   getMedicPointerSettings,
   saveMedicPointerSettings,
-  getRemainingCloseSeconds,
-  formatCountdownMmSs,
+  formatTwoMinCountdown,
   formatDateTimeWithSecondsAmPm,
   parseIncidentTimestampMs,
   shouldPulseIncidentBeacon,
   RESPONDED_GREEN_COLOR,
-  DEFAULT_VERIFICATION_CLOSE_SECONDS
+  TWO_MINUTE_CLOSE_SECONDS
 } from './radarPointerCategories';
 import { ImageLightboxModal, LightboxMediaItem } from './ImageLightboxModal';
 import { DeployRespondersModal } from './DeployRespondersModal';
+import { ResponderClosureEvidenceModal } from './ResponderClosureEvidenceModal';
+import { ReportItem, TaggedColleagueItem } from '@/Endpoints/reportsApi';
 import { DutyUnit } from '@/Endpoints/responderOpsApi';
 import {
   calculateHaversineDistanceKm,
   calculateDynamicEtaMinutes
 } from '@/Libs/Map/mapAccuracy';
+import {
+  isRawCoordinateLabel,
+  resolveStreetAddressSync,
+  resolveStreetAddressAsync
+} from '@/Libs/Map/addressResolver';
 import { useFluidResposiveness, useDraggable } from '@/Hooks';
 
 export interface IncidentPinData {
   id: string;
   title?: string;
   type: string;
-  status: 'critical' | 'active' | 'resolved' | 'Responded' | 'Verified' | string;
+  status: 'critical' | 'active' | 'resolved' | 'InProgress' | 'WorkingProgress' | 'Responded' | 'Verified' | 'Closed' | string;
   statusLabel?: string;
   place: string;
+  locationLabel?: string;
   lat: number;
   lng: number;
   category?: string;
   pointerCategory?: string;
+  pointerIconType?: string | null;
   severity?: string;
   ipAddress?: string;
   evidenceUrl?: string;
   evidenceImages?: Array<LightboxMediaItem | string>;
   verifiedAt?: string | number | null;
+  resolvedAt?: string | null;
+  closedAt?: string | null;
+  aiVerificationStatus?: string | null;
+  closureSummary?: string | null;
+  closureApprovalMode?: string | null;
+  taggedColleagues?: TaggedColleagueItem[];
   reportedAt?: string;
   isBlurry?: boolean;
   requiresManualVerification?: boolean;
@@ -87,10 +101,12 @@ export interface MapMarker {
   lat: number;
   lng: number;
   title: string;
+  locationLabel?: string;
   severity?: 'critical' | 'moderate' | 'low' | string;
   type?: 'gps' | 'fixture' | 'incident' | string;
   category?: string;
   pointerCategory?: string;
+  pointerIconType?: string | null;
   agency?: string;
   description?: string;
   status?: string;
@@ -98,6 +114,12 @@ export interface MapMarker {
   evidenceUrl?: string;
   reportedAt?: string | number | null;
   verifiedAt?: string | number | null;
+  resolvedAt?: string | null;
+  closedAt?: string | null;
+  aiVerificationStatus?: string | null;
+  closureSummary?: string | null;
+  closureApprovalMode?: string | null;
+  taggedColleagues?: TaggedColleagueItem[];
   requiresManualVerification?: boolean;
   gpsAccuracyMeters?: number;
   allocatedUnitId?: string | null;
@@ -121,6 +143,7 @@ export interface SatelliteCommandMapProps {
   selectedIncidentId?: string | null;
   onSelectIncident?: (incident: IncidentPinData) => void;
   onRequestDeploy?: (incident: IncidentPinData) => void;
+  onOpenClosureEvidence?: (incident: IncidentPinData) => void;
   onExpandMap?: () => void;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
@@ -135,6 +158,106 @@ export interface SatelliteCommandMapProps {
   onCloseCallout?: () => void;
   hideZoomControls?: boolean;
 }
+
+interface PinLifecycleState {
+  isWorkingProgress: boolean;
+  isDone: boolean;
+  elapsedSeconds: number;
+  remainingFadeSeconds: number;
+  isFadedOut: boolean;
+  fadeOpacity: number;
+}
+
+const computePinLifecycle = (
+  inc: Pick<IncidentPinData, 'status' | 'resolvedAt' | 'closedAt'>,
+  nowMs: number
+): PinLifecycleState => {
+  const statusLower = (inc.status || '').trim().toLowerCase();
+  const isWorkingProgress =
+    statusLower === 'inprogress' ||
+    statusLower === 'workingprogress' ||
+    statusLower === 'in_progress';
+  const doneTsRaw = inc.resolvedAt || inc.closedAt || null;
+  const isDone =
+    statusLower === 'resolved' ||
+    statusLower === 'closed' ||
+    Boolean(doneTsRaw);
+
+  if (!isDone) {
+    return {
+      isWorkingProgress,
+      isDone: false,
+      elapsedSeconds: 0,
+      remainingFadeSeconds: TWO_MINUTE_CLOSE_SECONDS,
+      isFadedOut: false,
+      fadeOpacity: 1
+    };
+  }
+
+  const doneMs = doneTsRaw ? parseIncidentTimestampMs(doneTsRaw) : null;
+  if (doneMs === null) {
+    return {
+      isWorkingProgress: false,
+      isDone: true,
+      elapsedSeconds: 0,
+      remainingFadeSeconds: TWO_MINUTE_CLOSE_SECONDS,
+      isFadedOut: false,
+      fadeOpacity: 1
+    };
+  }
+
+  const elapsedSeconds = Math.max(0, Math.floor((nowMs - doneMs) / 1000));
+  const remainingFadeSeconds = Math.max(0, TWO_MINUTE_CLOSE_SECONDS - elapsedSeconds);
+  const isFadedOut = elapsedSeconds >= TWO_MINUTE_CLOSE_SECONDS;
+  const fadeOpacity = isFadedOut
+    ? 0
+    : Math.max(0.15, (TWO_MINUTE_CLOSE_SECONDS - elapsedSeconds) / TWO_MINUTE_CLOSE_SECONDS);
+
+  return {
+    isWorkingProgress: false,
+    isDone: true,
+    elapsedSeconds,
+    remainingFadeSeconds,
+    isFadedOut,
+    fadeOpacity
+  };
+};
+
+const toCoordKey = (lat: number, lng: number): string =>
+  `${lat.toFixed(4)},${lng.toFixed(4)}`;
+
+const buildFallbackReportItem = (inc: IncidentPinData, displayPlace: string): ReportItem => ({
+  id: inc.id,
+  referenceCode: inc.id,
+  reporterId: '',
+  reporterName: 'Field Reporter',
+  reporterRole: 'Civilian',
+  title: inc.title || inc.type || 'Active Incident',
+  note: inc.description || '',
+  category: inc.category || 'MedicalEmergency',
+  severity: inc.severity || 'High',
+  status: inc.status || 'Active',
+  latitude: inc.lat,
+  longitude: inc.lng,
+  locationLabel: displayPlace,
+  hasImage: Boolean(inc.evidenceUrl),
+  imageUrl: inc.evidenceUrl || null,
+  allocatedUnitId: inc.allocatedUnitId || null,
+  allocatedUnitCode: inc.allocatedUnitCode || null,
+  createdAt: inc.reportedAt || new Date().toISOString(),
+  verifiedAt: inc.verifiedAt ? String(inc.verifiedAt) : null,
+  resolvedAt: inc.resolvedAt || null,
+  closedAt: inc.closedAt || null,
+  gpsAccuracyMeters: inc.gpsAccuracyMeters || null,
+  isHardwareGeolocated: true,
+  isBlurry: Boolean(inc.isBlurry),
+  requiresManualVerification: Boolean(inc.requiresManualVerification),
+  recommendedAgencyUnit: inc.recommendedAgency || null,
+  aiVerificationStatus: inc.aiVerificationStatus || null,
+  closureSummary: inc.closureSummary || null,
+  closureApprovalMode: inc.closureApprovalMode || null,
+  taggedColleagues: inc.taggedColleagues || []
+});
 
 // Katipunan, Zamboanga del Norte (7109) Municipal Sector Geofence & Strategic Bounding Box
 // (Matching exact territorial boundary from Nabilid/Tuburan on the West to Malugas/Punta on the East)
@@ -164,6 +287,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   selectedIncidentId,
   onSelectIncident,
   onRequestDeploy,
+  onOpenClosureEvidence,
   onExpandMap,
   isExpanded,
   onToggleExpand,
@@ -186,19 +310,28 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
   const respondersLayerRef = useRef<L.LayerGroup | null>(null);
   const radarRingsLayerRef = useRef<L.LayerGroup | null>(null);
   const closedIncidentIdRef = useRef<string | null>(null);
-  const markerInstancesRef = useRef<Map<string, { marker: L.Marker; circle?: L.Circle }>>(new Map());
+  const markerInstancesRef = useRef<
+    Map<string, { marker: L.Marker; circle?: L.Circle; lastHtml: string }>
+  >(new Map());
+  const requestedGeocodeKeysRef = useRef<Set<string>>(new Set());
 
   const [sortMode, setSortMode] = useState<'ALL' | 'FOR_MEDICS'>('ALL');
   const [pointerSettings, setPointerSettings] = useState(() => getMedicPointerSettings());
   const [showLegendDrawer, setShowLegendDrawer] = useState<boolean>(false);
   const [isExpandedFullscreen, setIsExpandedFullscreen] = useState<boolean>(false);
   const [activePointer, setActivePointer] = useState<IncidentPinData | null>(null);
-  const [respondedIds, setRespondedIds] = useState<Record<string, boolean>>({});
   const [tickNow, setTickNow] = useState<number>(() => Date.now());
   const [lightboxOpen, setLightboxOpen] = useState<boolean>(false);
   const [calloutPoint, setCalloutPoint] = useState<{ x: number; y: number } | null>(null);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState<boolean>(false);
   const [deployTargetIncident, setDeployTargetIncident] = useState<IncidentPinData | null>(null);
+  const [closureTargetIncident, setClosureTargetIncident] = useState<IncidentPinData | null>(null);
+  const [resolvedAddressesByCoord, setResolvedAddressesByCoord] = useState<Record<string, string>>({});
+
+  const isCivilianViewer = useMemo(
+    () => (roleFilter || '').trim().toLowerCase() === 'civilian',
+    [roleFilter]
+  );
 
   const isViewerMedic = useMemo(
     () => (roleFilter || '').toUpperCase().includes('MEDIC') || (roleFilter || '').toUpperCase().includes('RHU'),
@@ -393,11 +526,37 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     return list;
   }, [responders, markers]);
 
+  const getExtractedStreetAddress = useCallback(
+    (inc: Pick<IncidentPinData, 'lat' | 'lng' | 'locationLabel' | 'place'>): string => {
+      if (inc.locationLabel && !isRawCoordinateLabel(inc.locationLabel)) {
+        return inc.locationLabel;
+      }
+      const key = toCoordKey(inc.lat, inc.lng);
+      const cachedAsync = resolvedAddressesByCoord[key];
+      if (cachedAsync && !isRawCoordinateLabel(cachedAsync)) {
+        return cachedAsync;
+      }
+      if (inc.place && !isRawCoordinateLabel(inc.place)) {
+        return inc.place;
+      }
+      return resolveStreetAddressSync(inc.lat, inc.lng);
+    },
+    [resolvedAddressesByCoord]
+  );
+
   // Merge `incidents` and `markers` into a unified enriched list with 16-category resolution
   // Excludes responder units (type === 'gps') which are rendered separately
   const unifiedIncidents: Array<IncidentPinData & { categoryMeta: RadarPointerCategoryMeta }> =
     useMemo(() => {
-      const combined: IncidentPinData[] = [...incidents];
+      const combined: IncidentPinData[] = incidents.map((inc) => ({
+        ...inc,
+        place:
+          inc.locationLabel && !isRawCoordinateLabel(inc.locationLabel)
+            ? inc.locationLabel
+            : inc.place && !isRawCoordinateLabel(inc.place)
+            ? inc.place
+            : resolveStreetAddressSync(inc.lat, inc.lng)
+      }));
 
       markers.forEach((m) => {
         if (m.type === 'gps') return;
@@ -406,22 +565,35 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           const lng = Number(m.lng);
           if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return;
 
+          const extractedPlace =
+            m.locationLabel && !isRawCoordinateLabel(m.locationLabel)
+              ? m.locationLabel
+              : resolveStreetAddressSync(lat, lng);
+
           combined.push({
             id: m.id,
             title: m.title,
             type: m.title,
             status: m.status || (m.severity === 'critical' ? 'critical' : 'active'),
             statusLabel: m.status || m.severity || 'Active',
-            place: m.description || m.category || 'Katipunan Tactical Sector',
+            place: extractedPlace,
+            locationLabel: m.locationLabel,
             lat,
             lng,
             category: m.category,
             pointerCategory: m.pointerCategory,
+            pointerIconType: m.pointerIconType,
             severity: m.severity,
             ipAddress: m.ipAddress,
             evidenceUrl: m.evidenceUrl,
             reportedAt: m.reportedAt ? String(m.reportedAt) : undefined,
             verifiedAt: m.verifiedAt,
+            resolvedAt: m.resolvedAt,
+            closedAt: m.closedAt,
+            aiVerificationStatus: m.aiVerificationStatus,
+            closureSummary: m.closureSummary,
+            closureApprovalMode: m.closureApprovalMode,
+            taggedColleagues: m.taggedColleagues,
             requiresManualVerification: m.requiresManualVerification,
             recommendedAgency: m.agency,
             gpsAccuracyMeters: m.gpsAccuracyMeters,
@@ -434,14 +606,13 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       });
 
       return combined.map((inc, index) => {
-        // Assign deterministic category across the 16 categories if generic
         const explicitMatch =
           inc.pointerCategory || inc.category || inc.type
             ? resolvePointerCategory({
                 pointerCategory: inc.pointerCategory,
                 category: inc.category,
                 type: inc.type,
-                title: inc.place,
+                title: inc.title || inc.place,
                 severity: inc.severity,
                 id: inc.id
               })
@@ -452,15 +623,20 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           ipAddress: inc.ipAddress,
           evidenceUrl: inc.evidenceUrl,
           rawReportedAt: inc.rawReportedAt ?? inc.reportedAt ?? null,
-          reportedAt: inc.reportedAt || formatDateTimeWithSecondsAmPm(new Date(Date.now() - index * 95000)),
+          reportedAt: inc.reportedAt ? formatDateTimeWithSecondsAmPm(inc.reportedAt) : undefined,
           categoryMeta: explicitMatch
         };
       });
     }, [incidents, markers]);
 
-  // Filter pointers based on SORT mode & Medic Pointer Settings
+  // Filter pointers based on SORT mode, Medic Pointer Settings, and 2-minute Done fade-out expiration
   const visibleIncidents = useMemo(() => {
     return unifiedIncidents.filter((inc) => {
+      const lifecycle = computePinLifecycle(inc, tickNow);
+      if (lifecycle.isFadedOut) {
+        return false;
+      }
+
       if (sortMode === 'FOR_MEDICS') {
         return inc.categoryMeta.isMedicAllowed;
       }
@@ -471,7 +647,42 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
 
       return true;
     });
-  }, [unifiedIncidents, sortMode, pointerSettings.hideNonMedicOnSort]);
+  }, [unifiedIncidents, sortMode, pointerSettings.hideNonMedicOnSort, tickNow]);
+
+  // Lazily resolve OSM Nominatim street addresses for visible pins without blocking UI
+  useEffect(() => {
+    let isCancelled = false;
+    visibleIncidents.forEach((inc) => {
+      if (inc.locationLabel && !isRawCoordinateLabel(inc.locationLabel)) return;
+      const key = toCoordKey(inc.lat, inc.lng);
+      if (resolvedAddressesByCoord[key] || requestedGeocodeKeysRef.current.has(key)) return;
+      requestedGeocodeKeysRef.current.add(key);
+
+      void resolveStreetAddressAsync(inc.lat, inc.lng).then((resolved) => {
+        if (!isCancelled && resolved && !isRawCoordinateLabel(resolved)) {
+          setResolvedAddressesByCoord((prev) =>
+            prev[key] === resolved ? prev : { ...prev, [key]: resolved }
+          );
+        }
+      });
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [visibleIncidents, resolvedAddressesByCoord]);
+
+  // Auto-close callout selection when an active pin completes its 120s fade-out
+  useEffect(() => {
+    if (!activePointer) return;
+    const latest = unifiedIncidents.find((i) => i.id === activePointer.id) || activePointer;
+    const lifecycle = computePinLifecycle(latest, tickNow);
+    if (lifecycle.isFadedOut) {
+      closedIncidentIdRef.current = activePointer.id;
+      setActivePointer(null);
+      onCloseCallout?.();
+    }
+  }, [activePointer, unifiedIncidents, tickNow, onCloseCallout]);
 
   // Initialize Leaflet map
   useEffect(() => {
@@ -691,10 +902,9 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       activeIds.add(inc.id);
 
       const meta = inc.categoryMeta;
-      const isResponded =
-        Boolean(respondedIds[inc.id]) ||
-        inc.status?.toLowerCase() === 'responded' ||
-        inc.status?.toLowerCase() === 'resolved';
+      const lifecycle = computePinLifecycle(inc, tickNow);
+      const isDone = lifecycle.isDone;
+      const isWorkingProgress = lifecycle.isWorkingProgress;
 
       const isViewerMedic =
         (roleFilter || '').toUpperCase().includes('MEDIC') ||
@@ -704,36 +914,48 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         isViewerMedic &&
         pointerSettings.paleNonMedicEnabled &&
         !meta.isMedicAllowed &&
-        !isResponded;
+        !isDone;
 
       const beacon = resolveIncidentBeaconVisual(
         {
           category: inc.category,
           pointerCategory: inc.pointerCategory,
+          pointerIconType: inc.pointerIconType,
           type: inc.type,
           title: inc.title,
           description: inc.description || inc.place,
           severity: inc.severity
         },
         meta,
-        isResponded
+        isDone
       );
 
-      const pointerBgColor = beacon.bgColor;
+      const pointerBgColor = isDone
+        ? RESPONDED_GREEN_COLOR
+        : isWorkingProgress
+        ? '#0284C7'
+        : beacon.bgColor;
+
+      const pinOpacity = isPaleNonMedic
+        ? 0.38
+        : isDone
+        ? lifecycle.fadeOpacity
+        : 1;
+
       const paleStyle = isPaleNonMedic
-        ? 'opacity: 0.38; filter: grayscale(82%);'
-        : 'opacity: 1;';
+        ? `opacity: ${pinOpacity}; filter: grayscale(82%);`
+        : `opacity: ${pinOpacity.toFixed(3)};`;
 
       const statusLower = (inc.status || '').trim().toLowerCase();
       const pulseState = shouldPulseIncidentBeacon({
         status: inc.status,
         verifiedAt: inc.verifiedAt,
         reportedAt: inc.rawReportedAt,
-        isResponded,
+        isResponded: isDone,
         isFixture: inc.isFixture
       });
 
-      const shouldPulse = pulseState.shouldPulse && !isPaleNonMedic;
+      const shouldPulse = pulseState.shouldPulse && !isPaleNonMedic && !isDone && !isWorkingProgress;
       const isNewUpload = shouldPulse && pulseState.isNewUpload;
       const showNewPill =
         shouldPulse &&
@@ -749,8 +971,28 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         `
         : '';
 
-      const newBadgeHtml = showNewPill
+      const statusBadgeHtml = isDone
+        ? `<span style="position:absolute;top:-15px;left:50%;transform:translateX(-50%);white-space:nowrap;padding:1px 5px;border-radius:9999px;background:#059669;color:#FFFFFF;border:1.5px solid #F7F1EA;font-family:monospace;font-size:7.5px;font-weight:800;letter-spacing:0.04em;line-height:1.25;box-shadow:0 2px 6px rgba(5,150,105,0.45);pointer-events:none;z-index:5;">MARK AS DONE · ${formatTwoMinCountdown(
+            lifecycle.remainingFadeSeconds
+          )}</span>`
+        : isWorkingProgress
+        ? '<span style="position:absolute;top:-14px;left:50%;transform:translateX(-50%);white-space:nowrap;padding:1px 5px;border-radius:9999px;background:#0284C7;color:#FFFFFF;border:1.5px solid #F7F1EA;font-family:monospace;font-size:7.5px;font-weight:800;letter-spacing:0.04em;line-height:1.25;box-shadow:0 2px 6px rgba(2,132,199,0.45);pointer-events:none;z-index:5;">WORKING PROGRESS</span>'
+        : showNewPill
         ? '<span class="resqtrack-new-badge">NEW</span>'
+        : '';
+
+      // 2-minute SVG circular countdown ring around the pointer icon when Mark as Done
+      const ringRadius = 21;
+      const ringCircumference = 2 * Math.PI * ringRadius;
+      const ringProgress = lifecycle.remainingFadeSeconds / TWO_MINUTE_CLOSE_SECONDS;
+      const ringDashOffset = ringCircumference * (1 - Math.max(0, Math.min(1, ringProgress)));
+      const doneCountdownRingSvg = isDone
+        ? `<svg width="46" height="46" viewBox="0 0 46 46" style="position:absolute;top:-4px;left:-1px;pointer-events:none;z-index:3;transform:rotate(-90deg);">
+            <circle cx="23" cy="23" r="${ringRadius}" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="2.5" />
+            <circle cx="23" cy="23" r="${ringRadius}" fill="none" stroke="#34D399" stroke-width="2.8" stroke-linecap="round" stroke-dasharray="${ringCircumference.toFixed(
+              2
+            )}" stroke-dashoffset="${ringDashOffset.toFixed(2)}" />
+          </svg>`
         : '';
 
       const isTargetDispatch = selectedIncidentId === inc.id || activePointer?.id === inc.id;
@@ -771,13 +1013,12 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         ? 250
         : 0;
 
-      const pinIcon = L.divIcon({
-        className: 'resqtrack-tactical-pointer',
-        html: `
-          <div style="position:relative;width:44px;height:48px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow:visible;${paleStyle};transition:all 200ms ease;cursor:pointer;">
+      const pinHtml = `
+          <div style="position:relative;width:44px;height:48px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow:visible;${paleStyle}transition:opacity 300ms ease;cursor:pointer;">
             ${wavePulseHtml}
             ${dispatchHaloHtml}
-            ${newBadgeHtml}
+            ${doneCountdownRingSvg}
+            ${statusBadgeHtml}
             <div class="${coreBadgeClass}" style="position:relative;width:38px;height:38px;border-radius:9999px;background:${pointerBgColor};border:2.5px solid #F7F1EA;box-shadow:${coreBoxShadow};display:flex;align-items:center;justify-content:center;color:#FFFFFF;z-index:2;">
               <svg role="img" aria-label="${beacon.ariaLabel}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));">
                 ${beacon.svgMarkup}
@@ -785,13 +1026,10 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
             </div>
             <div style="width:10px;height:10px;background:${pointerBgColor};border-right:2px solid #F7F1EA;border-bottom:2px solid #F7F1EA;transform:rotate(45deg);margin-top:-6px;z-index:1;box-shadow:2px 2px 6px rgba(0,0,0,0.35);"></div>
           </div>
-        `,
-        iconSize: [44, 48],
-        iconAnchor: [22, 46]
-      });
+        `;
 
       // Smooth distress signal live repositioning:
-      // If marker already exists, smoothly update coordinates via Leaflet CSS transition glide
+      // If marker already exists, smoothly update coordinates & only swap icon if HTML changed
       const existing = markerInstancesRef.current.get(inc.id);
       if (existing) {
         const cur = existing.marker.getLatLng();
@@ -817,9 +1055,26 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           setActivePointer(inc);
           onSelectIncident?.(inc);
         });
-        existing.marker.setIcon(pinIcon);
+        if (existing.lastHtml !== pinHtml) {
+          existing.marker.setIcon(
+            L.divIcon({
+              className: 'resqtrack-tactical-pointer',
+              html: pinHtml,
+              iconSize: [44, 48],
+              iconAnchor: [22, 46]
+            })
+          );
+          existing.lastHtml = pinHtml;
+        }
         return;
       }
+
+      const pinIcon = L.divIcon({
+        className: 'resqtrack-tactical-pointer',
+        html: pinHtml,
+        iconSize: [44, 48],
+        iconAnchor: [22, 46]
+      });
 
       const marker = L.marker([lat, lng], {
         icon: pinIcon,
@@ -827,7 +1082,6 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         title: `${meta.label} — ${inc.id}`
       });
 
-      // Accuracy circles disabled to maintain clean tactical satellite view matching reference standard
       let accuracyCircle: L.Circle | undefined;
 
       marker.on('click', (e) => {
@@ -840,15 +1094,13 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         closedIncidentIdRef.current = null;
         setActivePointer(inc);
         onSelectIncident?.(inc);
-        // Map stability guarantee: The marker is already right under the user's cursor.
-        // Omit pan animation on click to eliminate competing Leaflet pan loops and prevent map shaking.
       });
 
       markersLayer.addLayer(marker);
-      markerInstancesRef.current.set(inc.id, { marker, circle: accuracyCircle });
+      markerInstancesRef.current.set(inc.id, { marker, circle: accuracyCircle, lastHtml: pinHtml });
     });
 
-    // Clean up expired markers
+    // Clean up expired or faded-out markers
     markerInstancesRef.current.forEach((val, id) => {
       if (!activeIds.has(id)) {
         markersLayer.removeLayer(val.marker);
@@ -856,7 +1108,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         markerInstancesRef.current.delete(id);
       }
     });
-  }, [visibleIncidents, pointerSettings.paleNonMedicEnabled, respondedIds, onSelectIncident, activePointer, selectedIncidentId, roleFilter]);
+  }, [visibleIncidents, pointerSettings.paleNonMedicEnabled, tickNow, onSelectIncident, activePointer, selectedIncidentId, roleFilter]);
 
   // Render on-duty responder units on map with agency vehicle badges & emerald availability rings
   useEffect(() => {
@@ -933,12 +1185,12 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           const lat = Number(inc.lat);
           const lng = Number(inc.lng);
           if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return false;
-          const isResponded = Boolean(respondedIds[inc.id]);
+          const lifecycle = computePinLifecycle(inc, tickNow);
           return shouldPulseIncidentBeacon({
             status: inc.status,
             verifiedAt: inc.verifiedAt,
             reportedAt: inc.rawReportedAt,
-            isResponded,
+            isResponded: lifecycle.isDone,
             isFixture: inc.isFixture
           }).shouldPulse;
         })
@@ -950,8 +1202,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       null;
 
     const focusIsResponded = newestActiveIncident
-      ? Boolean(respondedIds[newestActiveIncident.id]) ||
-        ['responded', 'resolved', 'closed'].includes((newestActiveIncident.status || '').toLowerCase())
+      ? computePinLifecycle(newestActiveIncident, tickNow).isDone
       : false;
 
     const focusRingColor = newestActiveIncident
@@ -1006,7 +1257,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       });
       radarLayer.addLayer(circle);
     });
-  }, [activePointer, selectedIncidentId, visibleIncidents, respondedIds]);
+  }, [activePointer, selectedIncidentId, visibleIncidents, tickNow]);
 
   // When a report is clicked, dynamically center map and draw proximity circles or lines to closest on-duty units
   useEffect(() => {
@@ -1141,11 +1392,12 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     }
   };
 
-  const handleMarkResponded = (incidentId: string) => {
-    setRespondedIds((prev) => ({
-      ...prev,
-      [incidentId]: !prev[incidentId]
-    }));
+  const handleOpenClosureEvidenceClick = (inc: IncidentPinData) => {
+    if (onOpenClosureEvidence) {
+      onOpenClosureEvidence(inc);
+    } else {
+      setClosureTargetIncident(inc);
+    }
   };
 
   const handleRequestDeployClick = (inc: IncidentPinData) => {
@@ -1158,45 +1410,31 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
     }
   };
 
-  const activeCategoryMeta = activePointer
+  const resolvedActivePointer = activePointer
+    ? unifiedIncidents.find((i) => i.id === activePointer.id) || activePointer
+    : null;
+
+  const activeCategoryMeta = resolvedActivePointer
     ? resolvePointerCategory({
-        pointerCategory: activePointer.pointerCategory,
-        category: activePointer.category,
-        type: activePointer.type,
-        title: activePointer.place,
-        severity: activePointer.severity,
-        id: activePointer.id
+        pointerCategory: resolvedActivePointer.pointerCategory,
+        category: resolvedActivePointer.category,
+        type: resolvedActivePointer.type,
+        title: resolvedActivePointer.title || resolvedActivePointer.place,
+        severity: resolvedActivePointer.severity,
+        id: resolvedActivePointer.id
       })
     : null;
 
-  const activeIsResponded = activePointer
-    ? Boolean(respondedIds[activePointer.id]) ||
-      activePointer.status?.toLowerCase() === 'responded' ||
-      activePointer.status?.toLowerCase() === 'resolved'
-    : false;
+  const activeLifecycle = resolvedActivePointer
+    ? computePinLifecycle(resolvedActivePointer, tickNow)
+    : null;
 
-  const activeVerifiedTimestamp =
-    activePointer && activePointer.verifiedAt
-      ? new Date(activePointer.verifiedAt).getTime()
-      : null;
-
-  const activeRemainingSeconds = activeVerifiedTimestamp
-    ? getRemainingCloseSeconds(activeVerifiedTimestamp)
-    : DEFAULT_VERIFICATION_CLOSE_SECONDS;
-
-  const activeProgressPercent = activeVerifiedTimestamp
-    ? Math.min(
-        100,
-        Math.max(
-          0,
-          Math.round(
-            ((DEFAULT_VERIFICATION_CLOSE_SECONDS - activeRemainingSeconds) /
-              DEFAULT_VERIFICATION_CLOSE_SECONDS) *
-              100
-          )
-        )
-      )
-    : 0;
+  const activeIsDone = Boolean(activeLifecycle?.isDone);
+  const activeIsWorkingProgress = Boolean(activeLifecycle?.isWorkingProgress);
+  const activeFadeRemainingSeconds = activeLifecycle?.remainingFadeSeconds ?? TWO_MINUTE_CLOSE_SECONDS;
+  const activeDisplayPlace = resolvedActivePointer
+    ? getExtractedStreetAddress(resolvedActivePointer)
+    : 'Katipunan, Zamboanga del Norte';
 
   return (
     <div
@@ -1501,13 +1739,13 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
               className="w-3.5 h-3.5 rounded-full inline-block"
               style={{ backgroundColor: RESPONDED_GREEN_COLOR }}
             />
-            <span>GREEN POINTER = Responded / Active Unit On Scene</span>
+            <span>GREEN POINTER = Mark as Done (2-Min Fade)</span>
           </div>
         </div>
       )}
 
       {/* Tactical Cloud Message Box Callout (Speech bubble pointing directly at the UI pointer icon) */}
-      {activePointer && activeCategoryMeta && calloutPoint && (() => {
+      {resolvedActivePointer && activeCategoryMeta && calloutPoint && (() => {
         const containerW = mapContainerRef.current?.clientWidth || 700;
         const containerH = mapContainerRef.current?.clientHeight || 500;
         const isCompactMinimap = isMinimapProp || containerH < 440 || containerW < 460;
@@ -1519,27 +1757,22 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
           ? Math.min(310, containerW - 24)
           : isTablet
           ? Math.min(350, containerW - 32)
-          : Math.min(390, Math.max(340, Math.round(containerW * 0.38)));
+          : Math.min(400, Math.max(345, Math.round(containerW * 0.38)));
         const halfW = cardW / 2;
 
         const rawX = calloutPoint.x;
         const rawY = calloutPoint.y;
-        const pinClearance = isCompactMinimap ? 12 : 18;
         const safeMargin = 12;
 
-        // Guaranteed non-clipping decision: Initial placement centered in viewport
-        // Eliminates partial cutoff at top/bottom across all browser zoom levels.
         const cardMaxH = Math.max(160, containerH - safeMargin * 2);
         const targetCardH = isCompactMinimap
-          ? Math.min(240, cardMaxH)
-          : Math.min(430, cardMaxH);
+          ? Math.min(250, cardMaxH)
+          : Math.min(450, cardMaxH);
 
-        // Center card on the map viewport by default so entire header and body are 100% visible
         const clampX = Math.round(containerW / 2);
         const clampedTop = Math.max(safeMargin, Math.round((containerH - targetCardH) / 2));
         const isPlacedAbove = rawY > clampedTop + targetCardH / 2;
 
-        // Bounded dragging: card cannot be dragged beyond map container boundaries
         const boundedDragX = Math.max(
           -clampX + halfW + safeMargin,
           Math.min(containerW - clampX - halfW - safeMargin, dragOffset.x)
@@ -1550,6 +1783,17 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
         );
 
         const arrowOffset = Math.max(-halfW + 28, Math.min(halfW - 28, rawX - clampX));
+
+        const headerAccentColor = activeIsDone
+          ? RESPONDED_GREEN_COLOR
+          : activeIsWorkingProgress
+          ? '#0284C7'
+          : activeCategoryMeta.color;
+
+        const miniRingRadius = 8;
+        const miniRingCirc = 2 * Math.PI * miniRingRadius;
+        const miniRingOffset =
+          miniRingCirc * (1 - Math.max(0, Math.min(1, activeFadeRemainingSeconds / TWO_MINUTE_CLOSE_SECONDS)));
 
         return (
           <div
@@ -1567,7 +1811,7 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                 maxHeight: `${targetCardH}px`
               }}
             >
-              {/* 1. FIXED DRAGGABLE HEADER - NEVER SCROLLS OUT OF VIEW */}
+              {/* 1. FIXED DRAGGABLE HEADER */}
               <div
                 {...dragHandleProps}
                 onPointerDown={(e) => {
@@ -1578,38 +1822,42 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                 title="Drag to reposition card on map"
                 style={{
                   ...dragHandleProps.style,
-                  background: `linear-gradient(90deg, ${
-                    activeIsResponded ? RESPONDED_GREEN_COLOR : activeCategoryMeta.color
-                  }1A 0%, #F7F1EA 100%)`
+                  background: `linear-gradient(90deg, ${headerAccentColor}1A 0%, #F7F1EA 100%)`
                 }}
               >
                 <div className="flex items-center gap-2 min-w-0 pointer-events-none">
                   <div
                     className="w-7 h-7 rounded-full flex items-center justify-center text-white border-2 border-[#F7F1EA] flex-shrink-0 shadow"
-                    style={{
-                      backgroundColor: activeIsResponded
-                        ? RESPONDED_GREEN_COLOR
-                        : activeCategoryMeta.color
-                    }}
+                    style={{ backgroundColor: headerAccentColor }}
                   >
                     {React.createElement(activeCategoryMeta.icon, { className: 'w-3.5 h-3.5' })}
                   </div>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-xs font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#E9D9D0] border border-[#D4B8AA] text-[#670626] font-bold">
-                        {activePointer.id}
+                        {resolvedActivePointer.id}
                       </span>
-                      <span
-                        className={`text-xs font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${
-                          activeCategoryMeta.isMedicAllowed
-                            ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
-                            : 'bg-amber-100 border-amber-300 text-amber-900'
-                        }`}
-                      >
-                        {activeCategoryMeta.isMedicAllowed
-                          ? 'MEDIC ALLOWED'
-                          : 'VIEW-ONLY (NON-MEDIC)'}
-                      </span>
+                      {activeIsDone ? (
+                        <span className="text-[11px] font-mono font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-600 text-white border border-emerald-500">
+                          MARK AS DONE
+                        </span>
+                      ) : activeIsWorkingProgress ? (
+                        <span className="text-[11px] font-mono font-extrabold uppercase px-1.5 py-0.5 rounded bg-sky-600 text-white border border-amber-300">
+                          WORKING PROGRESS
+                        </span>
+                      ) : (
+                        <span
+                          className={`text-xs font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${
+                            activeCategoryMeta.isMedicAllowed
+                              ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                              : 'bg-amber-100 border-amber-300 text-amber-900'
+                          }`}
+                        >
+                          {activeCategoryMeta.isMedicAllowed
+                            ? 'MEDIC ALLOWED'
+                            : 'VIEW-ONLY (NON-MEDIC)'}
+                        </span>
+                      )}
                     </div>
                     <h4 className="text-sm font-extrabold text-[#670626] truncate mt-0.5">
                       {activeCategoryMeta.label}
@@ -1638,240 +1886,335 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                 </div>
               </div>
 
-              {/* 2. SCROLLABLE BODY - ONLY BODY SCROLLS */}
+              {/* 2. SCROLLABLE BODY */}
               <div
                 className="overflow-y-auto flex-1 min-h-0 tactical-modal-scroll"
                 style={{
                   maxHeight: `${cardMaxH - 52}px`
                 }}
               >
-
               {isCompactMinimap ? (
                 /* Compact Minimap Callout */
                 <div className="p-2.5 space-y-2 text-xs">
                   <div className="flex items-center justify-between gap-1 text-xs font-mono">
                     <span className="text-[#3B1722] font-bold truncate">
-                      {activePointer.type || activeCategoryMeta.label}
+                      {resolvedActivePointer.type || activeCategoryMeta.label}
                     </span>
                     <span
                       className={`px-1.5 py-0.5 rounded text-xs font-bold ${
-                        activeIsResponded
+                        activeIsDone
                           ? 'bg-emerald-600 text-white'
+                          : activeIsWorkingProgress
+                          ? 'bg-sky-600 text-white'
                           : 'bg-[#670626] text-[#F7F1EA]'
                       }`}
                     >
-                      {activeIsResponded ? 'RESPONDED' : activeCategoryMeta.severityLevel}
+                      {activeIsDone
+                        ? 'MARK AS DONE'
+                        : activeIsWorkingProgress
+                        ? 'WORKING PROGRESS'
+                        : activeCategoryMeta.severityLevel}
                     </span>
                   </div>
 
                   <div className="p-2 rounded-xl bg-[#E9D9D0]/65 border border-[#D4B8AA] space-y-1 text-xs font-mono">
-                    <div className="flex items-center justify-between text-[#5C313E]">
-                      <span className="flex items-center gap-1 min-w-0">
-                        <MapPin className="w-3 h-3 text-[#670626] shrink-0" />
-                        <span className="truncate max-w-[160px] text-[#3B1722] font-semibold">
-                          {activePointer.place || 'Katipunan C2 Area'}
-                        </span>
+                    <div className="flex items-start gap-1 text-[#5C313E]">
+                      <MapPin className="w-3 h-3 text-[#670626] shrink-0 mt-0.5" />
+                      <span className="text-[#3B1722] font-semibold leading-snug">
+                        {activeDisplayPlace}
                       </span>
-                      <span className="text-emerald-800 font-bold shrink-0">
-                        {activePointer.lat.toFixed(4)}°, {activePointer.lng.toFixed(4)}°
-                      </span>
+                    </div>
+                    <div className="text-emerald-800 font-bold pl-4">
+                      {resolvedActivePointer.lat.toFixed(6)}, {resolvedActivePointer.lng.toFixed(6)}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 pt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => handleMarkResponded(activePointer.id)}
-                      className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-mono font-bold border transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                        activeIsResponded
-                          ? 'bg-emerald-100 border-emerald-400 text-emerald-900'
-                          : 'bg-[#E9D9D0]/80 border-[#D4B8AA] text-[#670626] hover:bg-[#DFC9BE]'
-                      }`}
-                    >
-                      <CheckCircle2 className="w-3 h-3" />
-                      <span>{activeIsResponded ? 'RESPONDED' : 'MARK DONE'}</span>
-                    </button>
+                  {activeIsDone && (
+                    <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-300 flex items-center justify-between gap-2 text-xs font-mono text-emerald-900">
+                      <span className="font-bold">
+                        Fading from map in {formatTwoMinCountdown(activeFadeRemainingSeconds)}
+                      </span>
+                      <svg width="22" height="22" viewBox="0 0 22 22" className="-rotate-90 shrink-0">
+                        <circle cx="11" cy="11" r={miniRingRadius} fill="none" stroke="#A7F3D0" strokeWidth="2.5" />
+                        <circle
+                          cx="11"
+                          cy="11"
+                          r={miniRingRadius}
+                          fill="none"
+                          stroke="#059669"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeDasharray={miniRingCirc}
+                          strokeDashoffset={miniRingOffset}
+                        />
+                      </svg>
+                    </div>
+                  )}
 
-                    {onExpandMap && (
-                      <button
-                        type="button"
-                        onClick={onExpandMap}
-                        className="py-1.5 px-2.5 rounded-lg bg-[#670626] hover:bg-[#7D0A30] text-[#F7F1EA] text-xs font-mono font-bold flex items-center justify-center gap-1 cursor-pointer shadow"
-                        title="Enlarge map to full view"
-                      >
-                        <Maximize2 className="w-3 h-3" />
-                        <span>ENLARGE</span>
-                      </button>
-                    )}
-                  </div>
+                  {(!isCivilianViewer || Boolean(onExpandMap)) && (
+                    <div className="flex items-center gap-1.5 pt-0.5">
+                      {!isCivilianViewer && !activeIsDone && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenClosureEvidenceClick(resolvedActivePointer)}
+                          className="flex-1 py-1.5 px-2 rounded-lg text-xs font-mono font-bold border bg-emerald-600 hover:bg-emerald-700 border-emerald-500 text-white transition-all flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>CLOSE CASE</span>
+                        </button>
+                      )}
+
+                      {onExpandMap && (
+                        <button
+                          type="button"
+                          onClick={onExpandMap}
+                          className="py-1.5 px-2.5 rounded-lg bg-[#670626] hover:bg-[#7D0A30] text-[#F7F1EA] text-xs font-mono font-bold flex items-center justify-center gap-1 cursor-pointer shadow"
+                          title="Enlarge map to full view"
+                        >
+                          <Maximize2 className="w-3 h-3" />
+                          <span>ENLARGE</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 /* Full Map View Callout Body */
                 <div className="p-3 space-y-2.5 text-xs">
-                {/* Picture Evidence Preview (Real Capture or Clean Fallback — Zero Unsplash) */}
-                {activePointer.evidenceUrl ? (
-                  <div className="relative rounded-xl overflow-hidden border border-[#D4B8AA] bg-[#3B1722] group">
-                    <img
-                      src={activePointer.evidenceUrl}
-                      alt={activeCategoryMeta.label}
-                      className="w-full h-28 object-cover"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#240812]/90 via-black/15 to-transparent flex flex-col justify-between p-2">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <span className="px-1.5 py-0.5 rounded bg-[#F7F1EA]/95 border border-[#E9D9D0] text-xs font-mono font-bold text-[#670626]">
-                          {activePointer.reportedAt || formatDateTimeWithSecondsAmPm(new Date())}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setLightboxOpen(true)}
-                          className="px-2 py-0.5 rounded bg-[#670626] hover:bg-[#7D0A30] text-[#F7F1EA] text-xs font-mono font-bold flex items-center gap-1 cursor-pointer shadow"
-                        >
-                          <Camera className="w-3 h-3" />
-                          <span>INSPECT</span>
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between text-xs font-mono text-[#F7F1EA]">
-                        <span className="truncate font-semibold">{activePointer.type}</span>
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-xs font-bold ${
-                            activeIsResponded
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-[#991B1B] text-white'
-                          }`}
-                        >
-                          {activeIsResponded ? 'RESPONDED' : activeCategoryMeta.severityLevel}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-[#D4B8AA] bg-[#E9D9D0]/65 p-2.5 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-[#F7F1EA] border border-[#D4B8AA] flex items-center justify-center text-[#A83B4D] shrink-0">
-                        <Camera className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-[#3B1722] truncate">
-                          {activePointer.type || activeCategoryMeta.shortLabel}
+                  {/* Picture Evidence Preview */}
+                  {resolvedActivePointer.evidenceUrl ? (
+                    <div className="relative rounded-xl overflow-hidden border border-[#D4B8AA] bg-[#3B1722] group">
+                      <img
+                        src={resolvedActivePointer.evidenceUrl}
+                        alt={activeCategoryMeta.label}
+                        className="w-full h-28 object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#240812]/90 via-black/15 to-transparent flex flex-col justify-between p-2">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded bg-[#F7F1EA]/95 border border-[#E9D9D0] text-xs font-mono font-bold text-[#670626]">
+                            {resolvedActivePointer.reportedAt || 'Live Incident'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setLightboxOpen(true)}
+                            className="px-2 py-0.5 rounded bg-[#670626] hover:bg-[#7D0A30] text-[#F7F1EA] text-xs font-mono font-bold flex items-center gap-1 cursor-pointer shadow"
+                          >
+                            <Camera className="w-3 h-3" />
+                            <span>INSPECT</span>
+                          </button>
                         </div>
-                        <div className="text-xs font-mono text-[#7A4E59] truncate">
-                          {activePointer.reportedAt || formatDateTimeWithSecondsAmPm(new Date())}
+                        <div className="flex items-center justify-between text-xs font-mono text-[#F7F1EA]">
+                          <span className="truncate font-semibold">{resolvedActivePointer.type}</span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                              activeIsDone
+                                ? 'bg-emerald-600 text-white'
+                                : activeIsWorkingProgress
+                                ? 'bg-sky-600 text-white'
+                                : 'bg-[#991B1B] text-white'
+                            }`}
+                          >
+                            {activeIsDone
+                              ? 'MARK AS DONE'
+                              : activeIsWorkingProgress
+                              ? 'WORKING PROGRESS'
+                              : activeCategoryMeta.severityLevel}
+                          </span>
                         </div>
                       </div>
                     </div>
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs font-mono font-bold shrink-0 ${
-                        activeIsResponded
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-[#670626] text-[#F7F1EA]'
-                      }`}
-                    >
-                      {activeIsResponded ? 'RESPONDED' : activeCategoryMeta.severityLevel}
-                    </span>
-                  </div>
-                )}
+                  ) : (
+                    <div className="rounded-xl border border-[#D4B8AA] bg-[#E9D9D0]/65 p-2.5 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-[#F7F1EA] border border-[#D4B8AA] flex items-center justify-center text-[#A83B4D] shrink-0">
+                          <Camera className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-[#3B1722] truncate">
+                            {resolvedActivePointer.type || activeCategoryMeta.shortLabel}
+                          </div>
+                          <div className="text-xs font-mono text-[#7A4E59] truncate">
+                            {resolvedActivePointer.reportedAt || 'Live Incident'}
+                          </div>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs font-mono font-bold shrink-0 ${
+                          activeIsDone
+                            ? 'bg-emerald-600 text-white'
+                            : activeIsWorkingProgress
+                            ? 'bg-sky-600 text-white'
+                            : 'bg-[#670626] text-[#F7F1EA]'
+                        }`}
+                      >
+                        {activeIsDone
+                          ? 'MARK AS DONE'
+                          : activeIsWorkingProgress
+                          ? 'WORKING PROGRESS'
+                          : activeCategoryMeta.severityLevel}
+                      </span>
+                    </div>
+                  )}
 
-                {/* Telemetry Grid */}
-                <div className="grid grid-cols-2 gap-1.5 text-xs">
-                  <div className="p-2 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
-                    <div className="flex items-center gap-1 text-xs font-mono uppercase text-[#7A4E59]">
-                      <Cpu className="w-3 h-3 text-[#A83B4D]" />
-                      <span>IP ADDRESS</span>
-                    </div>
-                    <div className="font-mono font-bold text-[#670626] mt-0.5 truncate text-xs">
-                      {activePointer.ipAddress || 'Pending / Direct GPS'}
-                    </div>
-                  </div>
-
-                  <div className="p-2 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
-                    <div className="flex items-center gap-1 text-xs font-mono uppercase text-[#7A4E59]">
-                      <Navigation className="w-3 h-3 text-emerald-700" />
-                      <span>GPS TELEMETRY</span>
-                    </div>
-                    <div className="font-mono font-bold text-emerald-800 mt-0.5 truncate text-xs">
-                      {activePointer.lat.toFixed(4)}°, {activePointer.lng.toFixed(4)}°
-                    </div>
-                  </div>
-
-                  <div className="col-span-2 p-2 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5] flex items-start justify-between gap-1.5">
-                    <div className="min-w-0">
+                  {/* Telemetry Grid */}
+                  <div className="grid grid-cols-2 gap-1.5 text-xs">
+                    <div className="p-2 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
                       <div className="flex items-center gap-1 text-xs font-mono uppercase text-[#7A4E59]">
-                        <MapPin className="w-3 h-3 text-[#670626]" />
-                        <span>STREET ADDRESS</span>
+                        <Cpu className="w-3 h-3 text-[#A83B4D]" />
+                        <span>IP ADDRESS</span>
                       </div>
-                      <div className="font-semibold text-[#3B1722] mt-0.5 truncate text-xs">
-                        {activePointer.place || 'Katipunan National Highway, ZN'}
+                      <div className="font-mono font-bold text-[#670626] mt-0.5 truncate text-xs">
+                        {resolvedActivePointer.ipAddress || 'Direct GPS'}
                       </div>
                     </div>
-                    <span className="px-1.5 py-0.5 rounded bg-[#F7F1EA] border border-[#D4B8AA] text-xs font-mono font-bold text-[#670626] flex-shrink-0">
-                      {activeCategoryMeta.agency}
-                    </span>
-                  </div>
-                </div>
 
-                {/* 5-Minute Verification Loading Timer (05:00 -> 00:00 Case Closed) */}
-                <div className="p-2.5 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5] space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1 text-xs font-mono font-bold text-amber-800">
-                      <Clock className="w-3.5 h-3.5 text-amber-700" />
-                      <span>
-                        {activeVerifiedTimestamp
-                          ? activeRemainingSeconds > 0
-                            ? `TIMER: ${formatCountdownMmSs(activeRemainingSeconds)}`
-                            : 'CASE CLOSED (SOLVED)'
-                          : '5-MIN VERIFY TIMER (05:00)'}
+                    <div className="p-2 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5]">
+                      <div className="flex items-center gap-1 text-xs font-mono uppercase text-[#7A4E59]">
+                        <Navigation className="w-3 h-3 text-emerald-700" />
+                        <span>EXACT COORDS</span>
+                      </div>
+                      <div className="font-mono font-bold text-emerald-800 mt-0.5 truncate text-[11px]">
+                        {resolvedActivePointer.lat.toFixed(6)}, {resolvedActivePointer.lng.toFixed(6)}
+                      </div>
+                    </div>
+
+                    <div className="col-span-2 p-2 rounded-xl bg-[#E9D9D0]/60 border border-[#D8C1B5] flex items-start justify-between gap-1.5">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1 text-xs font-mono uppercase text-[#7A4E59]">
+                          <MapPin className="w-3 h-3 text-[#670626]" />
+                          <span>STREET ADDRESS</span>
+                        </div>
+                        <div className="font-semibold text-[#3B1722] mt-0.5 leading-snug text-xs">
+                          {activeDisplayPlace}
+                        </div>
+                      </div>
+                      <span className="px-1.5 py-0.5 rounded bg-[#F7F1EA] border border-[#D4B8AA] text-xs font-mono font-bold text-[#670626] flex-shrink-0">
+                        {activeCategoryMeta.agency}
                       </span>
                     </div>
                   </div>
 
-                  <div className="w-full h-1.5 rounded-full bg-[#F7F1EA] overflow-hidden border border-[#D8C1B5]">
-                    <div
-                      className="h-full bg-gradient-to-r from-[#A83B4D] via-[#670626] to-emerald-600 transition-all duration-500"
-                      style={{
-                        width: `${activeVerifiedTimestamp ? activeProgressPercent : 12}%`
-                      }}
-                    />
-                  </div>
-                </div>
+                  {/* Working Progress Status Card */}
+                  {activeIsWorkingProgress && !activeIsDone && (
+                    <div className="p-2.5 rounded-xl bg-sky-50 border border-sky-300 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="px-2 py-0.5 rounded bg-sky-600 text-white text-[11px] font-mono font-extrabold">
+                          WORKING PROGRESS
+                        </span>
+                        {resolvedActivePointer.closureApprovalMode && (
+                          <span className="text-[11px] font-mono font-bold text-sky-900">
+                            {resolvedActivePointer.closureApprovalMode}
+                          </span>
+                        )}
+                      </div>
+                      {resolvedActivePointer.closureSummary && (
+                        <p className="text-xs text-sky-950 font-medium leading-snug">
+                          {resolvedActivePointer.closureSummary}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
-                {/* Action Footer: Role-Gated "REQUEST TO DISPATCH OR DEPLOY" */}
-                <div className="pt-0.5 flex flex-col gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleMarkResponded(activePointer.id)}
-                    className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-mono font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                      activeIsResponded
-                        ? 'bg-emerald-100 border-emerald-400 text-emerald-900'
-                        : 'bg-[#E9D9D0]/80 border-[#D4B8AA] text-[#670626] hover:bg-[#DFC9BE]'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>
-                      {activeIsResponded ? 'RESPONDED (GREEN PIN)' : 'MARK RESPONDED (GREEN)'}
-                    </span>
-                  </button>
+                  {/* Mark as Done 2-Minute (120s) Fade Countdown & Closure Details */}
+                  {activeIsDone && (
+                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <svg width="24" height="24" viewBox="0 0 22 22" className="-rotate-90 shrink-0">
+                            <circle cx="11" cy="11" r={miniRingRadius} fill="none" stroke="#A7F3D0" strokeWidth="2.5" />
+                            <circle
+                              cx="11"
+                              cy="11"
+                              r={miniRingRadius}
+                              fill="none"
+                              stroke="#059669"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeDasharray={miniRingCirc}
+                              strokeDashoffset={miniRingOffset}
+                            />
+                          </svg>
+                          <div className="text-xs font-mono font-extrabold text-emerald-900">
+                            Fading from map in {formatTwoMinCountdown(activeFadeRemainingSeconds)}
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-mono font-extrabold">
+                          MARK AS DONE
+                        </span>
+                      </div>
 
-                  {(!isViewerMedic || activeCategoryMeta.isMedicAllowed) ? (
-                    <button
-                      type="button"
-                      onClick={() => handleRequestDeployClick(activePointer)}
-                      className="w-full py-2 px-3 rounded-xl bg-[#670626] hover:bg-[#7D0A30] text-[#F7F1EA] font-extrabold text-xs uppercase tracking-wider shadow-[0_8px_18px_-4px_rgba(103,6,38,0.45)] border border-[#A83B4D]/50 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>REQUEST TO DISPATCH OR DEPLOY</span>
-                    </button>
-                  ) : (
-                    <div className="w-full py-1.5 px-2 rounded-xl bg-amber-100 border border-amber-300 text-amber-900 text-xs font-mono font-bold flex items-center justify-center gap-1.5 text-center">
-                      <Lock className="w-3.5 h-3.5 flex-shrink-0 text-amber-800" />
-                      <span>NON-MEDIC // ASSIGNED TO {activeCategoryMeta.agency}</span>
+                      {resolvedActivePointer.closureApprovalMode && (
+                        <div className="text-[11px] font-mono font-bold text-emerald-800">
+                          Approval Mode: {resolvedActivePointer.closureApprovalMode}
+                        </div>
+                      )}
+
+                      {resolvedActivePointer.closureSummary && (
+                        <p className="text-xs text-emerald-950 font-medium leading-snug">
+                          {resolvedActivePointer.closureSummary}
+                        </p>
+                      )}
+
+                      {resolvedActivePointer.taggedColleagues &&
+                        resolvedActivePointer.taggedColleagues.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {resolvedActivePointer.taggedColleagues.map((colleague) => (
+                              <span
+                                key={colleague.userId}
+                                className="px-2 py-0.5 rounded-full bg-emerald-700 text-white text-[10px] font-mono font-semibold"
+                              >
+                                @{colleague.fullName}
+                                {colleague.rankOrTitle ? ` · ${colleague.rankOrTitle}` : ''}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                    </div>
+                  )}
+
+                  {/* Situation Details */}
+                  {resolvedActivePointer.description && (
+                    <div className="p-2 rounded-xl bg-[#EFE5DC]/70 border border-[#D8C1B5] text-xs text-[#3B1722] leading-snug">
+                      {resolvedActivePointer.description}
+                    </div>
+                  )}
+
+                  {/* Action Footer: STRICTLY HIDDEN FOR CIVILIANS */}
+                  {!isCivilianViewer && (
+                    <div className="pt-0.5 flex flex-col gap-1.5">
+                      {!activeIsDone && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenClosureEvidenceClick(resolvedActivePointer)}
+                          className="w-full py-1.5 px-2.5 rounded-lg text-xs font-mono font-bold border bg-emerald-600 hover:bg-emerald-700 border-emerald-500 text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>SUBMIT DUTY EVIDENCE / CLOSE CASE</span>
+                        </button>
+                      )}
+
+                      {(!isViewerMedic || activeCategoryMeta.isMedicAllowed) ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRequestDeployClick(resolvedActivePointer)}
+                          className="w-full py-2 px-3 rounded-xl bg-[#670626] hover:bg-[#7D0A30] text-[#F7F1EA] font-extrabold text-xs uppercase tracking-wider shadow-[0_8px_18px_-4px_rgba(103,6,38,0.45)] border border-[#A83B4D]/50 flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>DISPATCH UNIT</span>
+                        </button>
+                      ) : (
+                        <div className="w-full py-1.5 px-2 rounded-xl bg-amber-100 border border-amber-300 text-amber-900 text-xs font-mono font-bold flex items-center justify-center gap-1.5 text-center">
+                          <Lock className="w-3.5 h-3.5 flex-shrink-0 text-amber-800" />
+                          <span>NON-MEDIC // ASSIGNED TO {activeCategoryMeta.agency}</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              </div>
               )}
               </div>
 
-              {/* Cloud Message Box Caret / Tail pointing directly to the UI Pointer Icon */}
+              {/* Cloud Message Box Caret / Tail */}
               {!isCompactMinimap && (
                 <div
                   className={`absolute w-3.5 h-3.5 bg-[#F7F1EA] ${
@@ -1958,12 +2301,12 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
       <ImageLightboxModal
         isOpen={lightboxOpen}
         onClose={() => setLightboxOpen(false)}
-        imageUrl={activePointer?.evidenceUrl || null}
-        images={activePointer?.evidenceImages}
-        timestamp={activePointer?.reportedAt}
+        imageUrl={resolvedActivePointer?.evidenceUrl || null}
+        images={resolvedActivePointer?.evidenceImages}
+        timestamp={resolvedActivePointer?.reportedAt}
         title={
-          activePointer && activeCategoryMeta
-            ? `${activeCategoryMeta.label} — ${activePointer.id}`
+          resolvedActivePointer && activeCategoryMeta
+            ? `${activeCategoryMeta.label} — ${resolvedActivePointer.id}`
             : 'Incident Evidence Inspection'
         }
       />
@@ -1985,6 +2328,36 @@ export const SatelliteCommandMap: FC<SatelliteCommandMapProps> = ({
                   status: 'Allocated',
                   allocatedUnitCode: unit.unitCode,
                   allocatedUnitId: unit.id
+                }
+              : prev
+          );
+        }}
+      />
+
+      {/* Embedded Responder Closure Evidence Modal Fallback */}
+      <ResponderClosureEvidenceModal
+        isOpen={Boolean(closureTargetIncident)}
+        onClose={() => setClosureTargetIncident(null)}
+        incident={
+          closureTargetIncident
+            ? buildFallbackReportItem(
+                closureTargetIncident,
+                getExtractedStreetAddress(closureTargetIncident)
+              )
+            : null
+        }
+        responderUnit={roleFilter}
+        onSubmitted={(result) => {
+          setActivePointer((prev) =>
+            prev && result.report && prev.id === result.report.id
+              ? {
+                  ...prev,
+                  status: result.report.status,
+                  resolvedAt: result.report.resolvedAt || null,
+                  closedAt: result.report.closedAt || null,
+                  closureSummary: result.report.closureSummary || null,
+                  closureApprovalMode: result.report.closureApprovalMode || result.approvalMode,
+                  taggedColleagues: result.report.taggedColleagues || prev.taggedColleagues
                 }
               : prev
           );

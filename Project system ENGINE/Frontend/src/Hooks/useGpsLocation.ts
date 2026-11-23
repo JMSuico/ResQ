@@ -6,6 +6,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { KATIPUNAN_BASE_COORDS } from '@/Libs/Map/mapAccuracy';
+import {
+  resolveStreetAddressSync,
+  resolveStreetAddressAsync
+} from '@/Libs/Map/addressResolver';
 
 export interface GpsCoordinates {
   latitude: number;
@@ -45,6 +49,9 @@ export const useGpsLocation = () => {
   const [isTracking, setIsTracking] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [fixCount, setFixCount] = useState<number>(0);
+  const [resolvedAddress, setResolvedAddress] = useState<string>(() =>
+    resolveStreetAddressSync(MUNICIPAL_KATIPUNAN_COORDS.latitude, MUNICIPAL_KATIPUNAN_COORDS.longitude)
+  );
 
   const watchIdRef = useRef<number | null>(null);
 
@@ -150,6 +157,22 @@ export const useGpsLocation = () => {
     };
   }, [startGpsStream, clearActiveWatch]);
 
+  useEffect(() => {
+    let isCancelled = false;
+    const syncAddr = resolveStreetAddressSync(coords.latitude, coords.longitude);
+    setResolvedAddress(syncAddr);
+
+    void resolveStreetAddressAsync(coords.latitude, coords.longitude).then((asyncAddr) => {
+      if (!isCancelled && asyncAddr) {
+        setResolvedAddress(asyncAddr);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [coords.latitude, coords.longitude]);
+
   // Derive signal quality rating from accuracy radius in meters:
   // < 15m: 'excellent'
   // 15m - 50m: 'good'
@@ -179,6 +202,7 @@ export const useGpsLocation = () => {
     fixCount,
     signalQuality,
     formattedCoords,
+    resolvedAddress,
     refreshLocation,
     refreshGps: startGpsStream,
     stopGps: clearActiveWatch

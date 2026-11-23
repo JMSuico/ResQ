@@ -21,7 +21,8 @@ public class ReportService(
     IAuditLogRepository auditRepo,
     IIncidentSceneAiAnalysisStrategy? incidentVisionStrategy = null,
     IIncidentAutoApprovalStrategy? incidentAutoApprovalStrategy = null,
-    AppDbContext? db = null) : IReportService
+    AppDbContext? db = null,
+    IIncidentClosureAiStrategy? closureAiStrategy = null) : IReportService
 {
     private readonly IIncidentSceneAiAnalysisStrategy _incidentVisionStrategy =
         incidentVisionStrategy ?? new DualStageIncidentSceneAiStrategy();
@@ -34,6 +35,22 @@ public class ReportService(
     public async Task<ReportResponse> CreateReportAsync(Guid reporterId, CreateReportRequest request, string reportsRootPath, CancellationToken ct = default, string? submittedIpAddress = null)
     {
         var reporter = await userRepo.GetByIdAsync(reporterId, ct);
+
+        List<TaggedColleagueDto> taggedColleagues = [];
+        if (request.TaggedColleagueIds is { Count: > 0 })
+        {
+            var (colleaguesOk, colleaguesError, resolved) = await ValidateAndResolveTaggedColleaguesAsync(
+                request.TaggedColleagueIds,
+                reporter?.Role ?? UserRole.Civilian,
+                reporter?.Unit ?? ResponderUnitType.None,
+                expectedUnit: null,
+                ct);
+            if (!colleaguesOk)
+                throw new UnauthorizedAccessException(colleaguesError ?? "Colleague tagging is strictly restricted to active same-unit responders.");
+
+            taggedColleagues = resolved;
+        }
+
         string? imagePath = await CaptureStorageHelper.SavePngDataUrlAsync(request.ImageDataUrl, reportsRootPath, "REPORT", ct);
 
         IncidentCategory safeCategory = Enum.IsDefined(request.Category) ? request.Category : IncidentCategory.VehicularAccident;
@@ -121,7 +138,7 @@ public class ReportService(
             : null;
 
         bool aiAutoApproved = autoDecision?.AutoApproved ?? false;
-        string aiVerificationStatus = autoDecision?.AiVerificationStatus ?? "PENDING_REVIEW";
+        string aiVerificationStatus = autoDecision?.AiVerificationStatus ?? "AWAITING_MANUAL_REVIEW";
 
         string? aiAnalysisJson = (aiAnalysis is not null || hasPreAnalyzedFields || autoDecision is not null)
             ? SerializeAiAnalysisJson(
@@ -180,7 +197,8 @@ public class ReportService(
             ClaudeVisibleHazards = claudeVisibleHazards,
             ClaudeUncertaintyNotes = claudeUncertaintyNotes,
             PointerIconType = pointerIconType,
-            AiAnalysisJson = aiAnalysisJson
+            AiAnalysisJson = aiAnalysisJson,
+            TaggedColleaguesJson = taggedColleagues.Count > 0 ? JsonSerializer.Serialize(taggedColleagues) : null
         };
 
         await reportRepo.AddAsync(report, ct);
@@ -472,6 +490,281 @@ public class ReportService(
         return (true, false, null, MapToFeedbackResponse(existing));
     }
 
+    public async Task<(bool Success, bool NotFound, bool Forbidden, string? Error, ClosureEvidenceSubmissionResponse? Result)> SubmitClosureEvidenceAsync(
+        Guid reportId,
+        SubmitClosureEvidenceRequest request,
+        Guid actorUserId,
+        UserRole actorRole,
+        ResponderUnitType actorUnit,
+        string? actorName,
+        string reportsRootPath,
+        CancellationToken ct = default)
+    {
+        if (db is null)
+            return (false, false, false, "Closure database context unavailable.", null);
+
+        var report = await reportRepo.GetByIdAsync(reportId, ct);
+        if (report is null)
+            return (false, true, false, "Report not found.", null);
+
+        if (actorRole != UserRole.Responder && actorRole != UserRole.LDRRMO_Admin)
+            return (false, false, true, "Only Responders and LDRRMO Administrators may submit closure evidence.", null);
+
+        var (colleaguesOk, colleaguesError, taggedColleagues) = await ValidateAndResolveTaggedColleaguesAsync(
+            request.TaggedColleagueIds,
+            actorRole,
+            actorUnit,
+            report.AllocatedUnit?.Agency,
+            ct);
+        if (!colleaguesOk)
+            return (false, false, true, colleaguesError ?? "Colleague tagging is strictly restricted to active same-unit responders.", null);
+
+        string? savedPath = await CaptureStorageHelper.SaveCaptureDataUrlAsync(request.ImageDataUrl, reportsRootPath, $"CLOSURE_{reportId:N}", ct);
+        if (string.IsNullOrWhiteSpace(savedPath))
+            return (false, false, false, "Invalid or unsupported closure evidence image payload. Only PNG, JPEG, and WebP up to 5 MB are allowed.", null);
+
+        string unitLabel = actorUnit != ResponderUnitType.None
+            ? actorUnit.ToString()
+            : report.AllocatedUnitCode ?? report.RecommendedAgencyUnit ?? "LDRRMO";
+
+        IncidentClosureAiEvaluation eval = request.TriggerAiAutoApprove && closureAiStrategy is not null
+            ? await closureAiStrategy.EvaluateClosureEvidenceAsync(
+                new IncidentClosureAiInput(
+                    ImageDataUrl: request.ImageDataUrl,
+                    Notes: request.Notes,
+                    RequestedOutcome: request.RequestedOutcome,
+                    IncidentTitle: report.Title,
+                    IncidentCategory: report.Category.ToString(),
+                    ResponderUnit: unitLabel),
+                ct)
+            : new IncidentClosureAiEvaluation(
+                Verdict: "ManualReviewRequired",
+                EvidenceCategory: "FieldClosureEvidence",
+                AutoApproved: false,
+                Confidence: 0.0,
+                Reasoning: "Manual command review requested.",
+                ModelUsed: "manual-review",
+                RanOnline: false);
+
+        string resolvedUploader = !string.IsNullOrWhiteSpace(actorName)
+            ? InputSanitizer.Sanitize(actorName)
+            : (actorUserId != Guid.Empty
+                ? (await userRepo.GetByIdAsync(actorUserId, ct))?.FullName ?? "Operational Responder"
+                : "Operational Responder");
+
+        DateTime now = DateTime.UtcNow;
+        bool promotedToResolved = await ApplyClosureEvaluationToReportAsync(report, eval, actorUserId, request.Notes, taggedColleagues, now, ct);
+
+        string colleagueIdsJson = JsonSerializer.Serialize(taggedColleagues.Select(c => c.UserId).ToList());
+        string colleagueNamesJson = JsonSerializer.Serialize(taggedColleagues.Select(c => c.FullName).ToList());
+        string safeOutcome = (eval.Verdict ?? "ManualReviewRequired").Length > 40 ? eval.Verdict![..40] : (eval.Verdict ?? "ManualReviewRequired");
+        string safeReasoning = (eval.Reasoning ?? string.Empty).Length > 1000 ? eval.Reasoning![..1000] : (eval.Reasoning ?? string.Empty);
+
+        var evidence = new ReportEvidenceRecord
+        {
+            ReportId = reportId,
+            FilePath = savedPath,
+            MediaType = "image",
+            Caption = SanitizeOptionalField(request.Notes, 500) ?? string.Empty,
+            UploadedByUserId = actorUserId != Guid.Empty ? actorUserId : null,
+            UploadedByName = resolvedUploader.Length > 150 ? resolvedUploader[..150] : resolvedUploader,
+            CreatedAtUtc = now,
+            ClosureOutcome = safeOutcome,
+            AiVerdict = safeOutcome,
+            AiReasoning = safeReasoning,
+            TaggedColleagueUserIdsJson = taggedColleagues.Count > 0 ? colleagueIdsJson : null,
+            TaggedColleagueNamesJson = taggedColleagues.Count > 0 ? colleagueNamesJson : null,
+            ApprovedByUserId = promotedToResolved && actorUserId != Guid.Empty ? actorUserId : null,
+            ApprovedAtUtc = promotedToResolved ? now : null
+        };
+
+        await db.ReportEvidences.AddAsync(evidence, ct);
+        await reportRepo.UpdateAsync(report, ct);
+
+        await AppendAuditLogAsync(
+            actorUserId,
+            "REPORT_CLOSURE_EVIDENCE_SUBMITTED",
+            $"Report: {report.ReferenceCode}, Verdict: {eval.Verdict}, AutoApproved: {eval.AutoApproved}, Mode: {report.ClosureApprovalMode}, Status: {report.Status}, Colleagues: {taggedColleagues.Count}",
+            ct);
+
+        string message = promotedToResolved
+            ? "Closure evidence verified by AI; incident resolved."
+            : string.Equals(eval.Verdict, "InProgress", StringComparison.OrdinalIgnoreCase)
+                ? "Progress evidence verified; incident marked InProgress."
+                : "Closure evidence recorded; awaiting manual LDRRMO approval.";
+
+        return (true, false, false, null, new ClosureEvidenceSubmissionResponse(
+            Success: true,
+            Message: message,
+            Verdict: eval.Verdict ?? "ManualReviewRequired",
+            AutoApproved: eval.AutoApproved,
+            ApprovalMode: report.ClosureApprovalMode ?? "AWAITING_MANUAL_APPROVE",
+            ReportStatus: report.Status,
+            AiReasoning: eval.Reasoning ?? string.Empty,
+            ModelUsed: eval.ModelUsed ?? "unknown",
+            Report: MapToResponse(report),
+            Evidence: MapToEvidenceResponse(evidence)));
+    }
+
+    public async Task<(bool Success, bool NotFound, bool Forbidden, string? Error, ClosureEvidenceSubmissionResponse? Result)> ApproveClosureAsync(
+        Guid reportId,
+        ApproveClosureRequest request,
+        Guid actorUserId,
+        UserRole actorRole,
+        string? actorName,
+        CancellationToken ct = default)
+    {
+        if (db is null)
+            return (false, false, false, "Closure database context unavailable.", null);
+
+        var report = await reportRepo.GetByIdAsync(reportId, ct);
+        if (report is null)
+            return (false, true, false, "Report not found.", null);
+
+        if (!request.UseAi && actorRole != UserRole.LDRRMO_Admin)
+            return (false, false, true, "Only LDRRMO Administrators may manually approve incident closure.", null);
+
+        if (request.UseAi && actorRole != UserRole.LDRRMO_Admin && actorRole != UserRole.Responder)
+            return (false, false, true, "Only Responders and LDRRMO Administrators may trigger AI closure verification.", null);
+
+        ReportEvidenceRecord? latestEvidence = await db.ReportEvidences
+            .Where(e => e.ReportId == reportId)
+            .OrderByDescending(e => e.CreatedAtUtc)
+            .FirstOrDefaultAsync(ct);
+
+        DateTime now = DateTime.UtcNow;
+
+        if (request.UseAi)
+        {
+            if (latestEvidence is null ||
+                string.IsNullOrWhiteSpace(latestEvidence.FilePath) ||
+                !CaptureStorageHelper.IsPathWithinAllowedRoots(latestEvidence.FilePath) ||
+                !File.Exists(latestEvidence.FilePath))
+            {
+                return (false, false, false, "Photo evidence is required for AI closure verification.", null);
+            }
+
+            if (closureAiStrategy is null)
+                return (false, false, false, "AI closure verification strategy is unavailable.", null);
+
+            var (bytes, contentType) = await CaptureStorageHelper.ReadCaptureFileAsync(latestEvidence.FilePath, ct);
+            if (bytes.Length == 0)
+                return (false, false, false, "Photo evidence is required for AI closure verification.", null);
+
+            string dataUrl = $"data:{contentType};base64,{Convert.ToBase64String(bytes)}";
+            string unitLabel = report.AllocatedUnitCode ?? report.RecommendedAgencyUnit ?? "LDRRMO";
+
+            IncidentClosureAiEvaluation eval = await closureAiStrategy.EvaluateClosureEvidenceAsync(
+                new IncidentClosureAiInput(
+                    ImageDataUrl: dataUrl,
+                    Notes: request.AdminNote ?? latestEvidence.Caption,
+                    RequestedOutcome: "Done",
+                    IncidentTitle: report.Title,
+                    IncidentCategory: report.Category.ToString(),
+                    ResponderUnit: unitLabel),
+                ct);
+
+            bool promoted = await ApplyClosureEvaluationToReportAsync(report, eval, actorUserId, request.AdminNote, null, now, ct);
+
+            string safeOutcome = (eval.Verdict ?? "ManualReviewRequired").Length > 40 ? eval.Verdict![..40] : (eval.Verdict ?? "ManualReviewRequired");
+            string safeReasoning = (eval.Reasoning ?? string.Empty).Length > 1000 ? eval.Reasoning![..1000] : (eval.Reasoning ?? string.Empty);
+
+            latestEvidence.ClosureOutcome = safeOutcome;
+            latestEvidence.AiVerdict = safeOutcome;
+            latestEvidence.AiReasoning = safeReasoning;
+            if (promoted)
+            {
+                latestEvidence.ApprovedByUserId = actorUserId != Guid.Empty ? actorUserId : null;
+                latestEvidence.ApprovedAtUtc = now;
+            }
+
+            await reportRepo.UpdateAsync(report, ct);
+
+            await AppendAuditLogAsync(
+                actorUserId,
+                "REPORT_CLOSURE_AI_VERIFIED",
+                $"Report: {report.ReferenceCode}, Verdict: {eval.Verdict}, AutoApproved: {eval.AutoApproved}, Status: {report.Status}",
+                ct);
+
+            return (true, false, false, null, new ClosureEvidenceSubmissionResponse(
+                Success: true,
+                Message: promoted
+                    ? "Latest closure evidence verified by AI; incident resolved."
+                    : string.Equals(eval.Verdict, "InProgress", StringComparison.OrdinalIgnoreCase)
+                        ? "Latest evidence indicates ongoing work; incident marked InProgress."
+                        : "AI could not auto-approve closure; manual LDRRMO approval required.",
+                Verdict: eval.Verdict ?? "ManualReviewRequired",
+                AutoApproved: eval.AutoApproved,
+                ApprovalMode: report.ClosureApprovalMode ?? "AWAITING_MANUAL_APPROVE",
+                ReportStatus: report.Status,
+                AiReasoning: eval.Reasoning ?? string.Empty,
+                ModelUsed: eval.ModelUsed ?? "unknown",
+                Report: MapToResponse(report),
+                Evidence: MapToEvidenceResponse(latestEvidence)));
+        }
+
+        ReportStatus targetStatus = request.TargetStatus is ReportStatus.Closed or ReportStatus.Resolved
+            ? request.TargetStatus
+            : ReportStatus.Resolved;
+
+        report.Status = targetStatus;
+        report.ResolvedAt ??= now;
+        if (targetStatus == ReportStatus.Closed)
+            report.ClosedAt ??= now;
+        report.RequiresManualVerification = false;
+        report.ClosureApprovalMode = "ADMIN_MANUAL_APPROVED_CLOSURE";
+        if (!string.IsNullOrWhiteSpace(request.AdminNote))
+            report.ClosureSummary = SanitizeOptionalField(request.AdminNote, 1000) ?? report.ClosureSummary;
+
+        await ReleaseAllocatedUnitAsync(report, ct);
+
+        if (latestEvidence is not null)
+        {
+            latestEvidence.ApprovedByUserId = actorUserId != Guid.Empty ? actorUserId : null;
+            latestEvidence.ApprovedAtUtc = now;
+            latestEvidence.ClosureOutcome = targetStatus.ToString();
+            if (!string.IsNullOrWhiteSpace(request.AdminNote) && string.IsNullOrWhiteSpace(latestEvidence.AiReasoning))
+                latestEvidence.AiReasoning = SanitizeOptionalField(request.AdminNote, 1000) ?? string.Empty;
+        }
+
+        await reportRepo.UpdateAsync(report, ct);
+
+        await AppendAuditLogAsync(
+            actorUserId,
+            "REPORT_CLOSURE_MANUAL_APPROVED",
+            $"Report: {report.ReferenceCode}, TargetStatus: {targetStatus}, AdminId: {actorUserId}, Note: {SanitizeOptionalField(request.AdminNote, 200)}",
+            ct);
+
+        ReportEvidenceResponse evidenceResponse = latestEvidence is not null
+            ? MapToEvidenceResponse(latestEvidence)
+            : new ReportEvidenceResponse(
+                Guid.Empty,
+                report.Id,
+                string.Empty,
+                "note",
+                report.ClosureSummary ?? string.Empty,
+                !string.IsNullOrWhiteSpace(actorName) ? InputSanitizer.Sanitize(actorName) : "LDRRMO Administrator",
+                now,
+                targetStatus.ToString(),
+                "ManualApproval",
+                report.ClosureSummary ?? "Manually approved by LDRRMO Administrator.",
+                DeserializeTaggedColleagues(report.TaggedColleaguesJson),
+                actorUserId != Guid.Empty ? actorUserId : null,
+                now);
+
+        return (true, false, false, null, new ClosureEvidenceSubmissionResponse(
+            Success: true,
+            Message: $"Incident manually approved as {targetStatus}.",
+            Verdict: "ManualApproved",
+            AutoApproved: false,
+            ApprovalMode: "ADMIN_MANUAL_APPROVED_CLOSURE",
+            ReportStatus: report.Status,
+            AiReasoning: report.ClosureSummary ?? "Manually approved by LDRRMO Administrator.",
+            ModelUsed: "manual-admin-approval",
+            Report: MapToResponse(report),
+            Evidence: evidenceResponse));
+    }
+
     public async Task<bool> RecordDistressBeaconAsync(Guid reportId, DistressBeaconRequest beacon, CancellationToken ct = default)
     {
         var report = await reportRepo.GetByIdAsync(reportId, ct);
@@ -586,7 +879,7 @@ public class ReportService(
                                 statusProp.ValueKind == JsonValueKind.String &&
                                 !string.IsNullOrWhiteSpace(statusProp.GetString())
                     ? statusProp.GetString()!
-                    : (approved ? ClaudeIncidentAutoApprovalStrategy.StatusAutoApproved : "PENDING_REVIEW");
+                    : (approved ? ClaudeIncidentAutoApprovalStrategy.StatusAutoApproved : "AWAITING_MANUAL_REVIEW");
                 return (approved, status);
             }
             catch (JsonException)
@@ -595,7 +888,153 @@ public class ReportService(
             }
         }
 
-        return (false, "PENDING_REVIEW");
+        return (false, "AWAITING_MANUAL_REVIEW");
+    }
+
+    private async Task<(bool Ok, string? Error, List<TaggedColleagueDto> Colleagues)> ValidateAndResolveTaggedColleaguesAsync(
+        List<Guid>? requestedIds,
+        UserRole actorRole,
+        ResponderUnitType actorUnit,
+        ResponderUnitType? expectedUnit,
+        CancellationToken ct)
+    {
+        if (requestedIds is null || requestedIds.Count == 0)
+            return (true, null, []);
+
+        List<Guid> distinctIds = requestedIds.Where(id => id != Guid.Empty).Distinct().ToList();
+        if (distinctIds.Count == 0)
+            return (true, null, []);
+
+        if (actorRole == UserRole.Civilian)
+            return (false, "Colleague tagging is strictly restricted to active same-unit responders.", []);
+
+        if (actorRole == UserRole.Responder && actorUnit == ResponderUnitType.None)
+            return (false, "Colleague tagging is strictly restricted to active same-unit responders.", []);
+
+        List<User> users = db is not null
+            ? await db.Users
+                .AsNoTracking()
+                .Where(u => distinctIds.Contains(u.Id))
+                .ToListAsync(ct)
+            : (await Task.WhenAll(distinctIds.Select(id => userRepo.GetByIdAsync(id, ct))))
+                .Where(u => u is not null)
+                .Cast<User>()
+                .ToList();
+
+        if (users.Count != distinctIds.Count)
+            return (false, "Colleague tagging is strictly restricted to active same-unit responders.", []);
+
+        bool allValid = actorRole == UserRole.Responder
+            ? users.All(u => u.Role == UserRole.Responder && u.Unit == actorUnit && !u.IsDeleted && u.Status == AccountStatus.Verified)
+            : users.All(u =>
+                u.Role == UserRole.Responder &&
+                !u.IsDeleted &&
+                u.Status == AccountStatus.Verified &&
+                (!expectedUnit.HasValue || expectedUnit.Value == ResponderUnitType.None || u.Unit == expectedUnit.Value));
+
+        if (!allValid)
+            return (false, "Colleague tagging is strictly restricted to active same-unit responders.", []);
+
+        List<TaggedColleagueDto> resolved = users
+            .Select(u => new TaggedColleagueDto(u.Id, u.FullName, u.Unit.ToString(), u.RankOrTitle))
+            .ToList();
+
+        return (true, null, resolved);
+    }
+
+    private async Task<bool> ApplyClosureEvaluationToReportAsync(
+        Report report,
+        IncidentClosureAiEvaluation eval,
+        Guid actorUserId,
+        string? notes,
+        List<TaggedColleagueDto>? taggedColleagues,
+        DateTime now,
+        CancellationToken ct)
+    {
+        string? sanitizedSummary = SanitizeOptionalField(notes, 1000) ?? SanitizeOptionalField(eval.Reasoning, 1000);
+        if (!string.IsNullOrWhiteSpace(sanitizedSummary))
+            report.ClosureSummary = sanitizedSummary;
+
+        if (taggedColleagues is { Count: > 0 })
+            report.TaggedColleaguesJson = JsonSerializer.Serialize(taggedColleagues);
+
+        if (eval.AutoApproved && string.Equals(eval.Verdict, "Done", StringComparison.OrdinalIgnoreCase))
+        {
+            report.Status = ReportStatus.Resolved;
+            report.ResolvedAt ??= now;
+            report.RequiresManualVerification = false;
+            report.ClosureApprovalMode = "AI_AUTO_APPROVED_CLOSURE";
+            await ReleaseAllocatedUnitAsync(report, ct);
+            return true;
+        }
+
+        if (string.Equals(eval.Verdict, "InProgress", StringComparison.OrdinalIgnoreCase))
+        {
+            report.Status = ReportStatus.InProgress;
+            report.ResolvedAt = null;
+            report.ClosureApprovalMode = "AI_WORKING_PROGRESS";
+            return false;
+        }
+
+        report.ClosureApprovalMode = "AWAITING_MANUAL_APPROVE";
+        return false;
+    }
+
+    private async Task ReleaseAllocatedUnitAsync(Report report, CancellationToken ct)
+    {
+        if (db is null || !report.AllocatedUnitId.HasValue)
+            return;
+
+        DutyUnit? unit = report.AllocatedUnit ?? await db.DutyUnits.FirstOrDefaultAsync(u => u.Id == report.AllocatedUnitId.Value, ct);
+        if (unit is not null && unit.Status != DutyStatus.OnDuty)
+        {
+            unit.Status = DutyStatus.OnDuty;
+            unit.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private static List<TaggedColleagueDto>? DeserializeTaggedColleagues(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<TaggedColleagueDto>>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static List<TaggedColleagueDto>? DeserializeEvidenceColleagues(string? idsJson, string? namesJson)
+    {
+        if (string.IsNullOrWhiteSpace(idsJson))
+            return null;
+
+        try
+        {
+            List<Guid>? ids = JsonSerializer.Deserialize<List<Guid>>(idsJson);
+            if (ids is null || ids.Count == 0)
+                return null;
+
+            List<string>? names = !string.IsNullOrWhiteSpace(namesJson)
+                ? JsonSerializer.Deserialize<List<string>>(namesJson)
+                : null;
+
+            return ids
+                .Select((id, idx) => new TaggedColleagueDto(
+                    id,
+                    names is not null && idx < names.Count ? names[idx] : string.Empty,
+                    string.Empty,
+                    string.Empty))
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task<List<ReportResponse>> MapReportsWithFeedbackAsync(List<Report> reports, CancellationToken ct)
@@ -627,7 +1066,13 @@ public class ReportService(
             e.MediaType,
             e.Caption,
             e.UploadedByName,
-            e.CreatedAtUtc);
+            e.CreatedAtUtc,
+            e.ClosureOutcome,
+            e.AiVerdict,
+            e.AiReasoning,
+            DeserializeEvidenceColleagues(e.TaggedColleagueUserIdsJson, e.TaggedColleagueNamesJson),
+            e.ApprovedByUserId,
+            e.ApprovedAtUtc);
 
     private static ReportFeedbackResponse MapToFeedbackResponse(ReportFeedbackRecord f) =>
         new(
@@ -687,7 +1132,11 @@ public class ReportService(
             aiAutoApproved,
             aiVerificationStatus,
             feedbackRating,
-            feedbackComment
+            feedbackComment,
+            r.ClosedAt,
+            r.ClosureSummary,
+            r.ClosureApprovalMode,
+            DeserializeTaggedColleagues(r.TaggedColleaguesJson)
         );
     }
 }

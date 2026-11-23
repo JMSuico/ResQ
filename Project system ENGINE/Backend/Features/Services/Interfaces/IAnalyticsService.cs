@@ -3,6 +3,7 @@
 // Universal lambda expressions (=>). Zero emojis.
 
 using Backend.Features.Api.DTOs;
+using Backend.Features.Data.Enums;
 
 namespace Backend.Features.Services.Interfaces;
 
@@ -13,4 +14,6 @@ public interface IAnalyticsService
     Task<List<SeverityBreakdownItem>> GetSeverityBreakdownAsync(CancellationToken ct = default);
     Task<List<AgencyWorkloadItem>> GetAgencyWorkloadAsync(CancellationToken ct = default);
     Task<HeatmapMatrixResponse> GetHeatmapMatrixAsync(CancellationToken ct = default);
+    Task<AnalyticsOverviewResponse> GetOverviewAsync(CancellationToken ct = default);
+    Task<RoleAnalyticsDashboardResponse> GetRoleDashboardAsync(UserRole role, Guid userId, ResponderUnitType callerUnit, string horizon = "30d", CancellationToken ct = default);
 }

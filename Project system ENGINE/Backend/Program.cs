@@ -174,6 +174,7 @@ builder.Services.AddScoped<IRoboflowAccidentDetectionStrategy, RoboflowServerles
 builder.Services.AddScoped<IClaudeIncidentVisionStrategy, ClaudeHaikuIncidentVisionStrategy>();
 builder.Services.AddScoped<IIncidentSceneAiAnalysisStrategy, DualStageIncidentSceneAiStrategy>();
 builder.Services.AddScoped<IIncidentAutoApprovalStrategy, ClaudeIncidentAutoApprovalStrategy>();
+builder.Services.AddScoped<IIncidentClosureAiStrategy, ClaudeIncidentClosureAiStrategy>();
 builder.Services.AddSingleton<IBiometricTrainingQueue, BiometricTrainingChannelQueue>();
 builder.Services.AddHostedService<BiometricTrainingBackgroundService>();
 

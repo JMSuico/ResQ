@@ -24,6 +24,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { getAlerts, markAlertRead, sendEmergencyBroadcast, AlertItem } from '@/Endpoints/reportsApi';
+import { parseUtcTimestamp } from '@/Endpoints/analyticsApi';
 import {
   SearchBar,
   Dropdown,
@@ -192,8 +193,10 @@ export const AlertsCenter: FC = () => {
         return target.includes(debouncedSearch.toLowerCase());
       })
       .sort((a, b) => {
+        const timeA = parseUtcTimestamp(a.timestamp)?.getTime() ?? 0;
+        const timeB = parseUtcTimestamp(b.timestamp)?.getTime() ?? 0;
         if (sortOrder === 'asc_date') {
-          return new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime();
+          return timeA - timeB;
         }
         if (sortOrder === 'asc_name') {
           return (a.title || '').localeCompare(b.title || '');
@@ -201,7 +204,7 @@ export const AlertsCenter: FC = () => {
         if (sortOrder === 'desc_name') {
           return (b.title || '').localeCompare(a.title || '');
         }
-        return new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime();
+        return timeB - timeA;
       });
   }, [alerts, severityFilter, debouncedSearch, sortOrder]);
 
@@ -243,20 +246,19 @@ export const AlertsCenter: FC = () => {
     VehicularAccident: 'Traffic',
     CrimeOrSecurity: 'Security',
     StructuralFire: 'Fire',
-    MedicalEmergency: 'Medical',
-    FloodOrLandslide: 'Flood',
-    NaturalDisaster: 'Disaster',
-    OtherEmergency: 'Other'
+    MedicalEmergency: 'Medical'
   };
 
   const { dispatchedUnitsCount, dispatchedUnitsSummary } = useMemo(() => {
     const shortLabels = new Set<string>();
     alerts.forEach((a) => {
       if (a.category) {
-        shortLabels.add(CATEGORY_SHORT_LABELS[a.category] || a.category);
+        shortLabels.add(CATEGORY_SHORT_LABELS[a.category] || 'Command Advisory');
+      } else {
+        shortLabels.add('Command Advisory');
       }
     });
-    const count = shortLabels.size;
+    const count = alerts.length > 0 ? shortLabels.size : 0;
     const summary = Array.from(shortLabels).slice(0, 3).join(' · ') || 'No active advisories';
     return {
       dispatchedUnitsCount: `${count} ${count === 1 ? 'Unit' : 'Units'}`,
@@ -460,7 +462,7 @@ export const AlertsCenter: FC = () => {
                     </td>
 
                     <td className="py-3.5 px-4 font-mono text-[#A83B4D] text-xs">
-                      {a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : 'Live Ingestion'}
+                      {a.timestamp ? (parseUtcTimestamp(a.timestamp)?.toLocaleTimeString() ?? 'Live Ingestion') : 'Live Ingestion'}
                     </td>
 
                     <td className="py-3.5 px-4">
@@ -554,7 +556,7 @@ export const AlertsCenter: FC = () => {
 
               <div className="pt-3 border-t border-[#670626]/15 flex items-center justify-between">
                 <span className="text-xs font-mono text-[#A83B4D]">
-                  {a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : 'Live'}
+                  {a.timestamp ? (parseUtcTimestamp(a.timestamp)?.toLocaleTimeString() ?? 'Live') : 'Live'}
                 </span>
                 {!a.isRead ? (
                   <AdminButton

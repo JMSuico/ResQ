@@ -26,7 +26,16 @@ import {
 import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
 import { getIncidentFixtures, allocateReportUnit, IncidentFixture } from '@/Endpoints/adminGovernanceApi';
 import { getDutyRoster, DutyUnit } from '@/Endpoints/responderOpsApi';
-import { getAnalyticsSummary, AnalyticsSummaryDto } from '@/Endpoints/analyticsApi';
+import {
+  ASIA_MANILA_OFFSET_MS,
+  getAnalyticsSummary,
+  parseUtcTimestamp,
+  toManilaDate,
+  toManilaParts,
+  buildAgencyWorkloadFromReports,
+  AnalyticsSummaryDto
+} from '@/Endpoints/analyticsApi';
+import { resolveStreetAddressSync } from '@/Libs/Map/addressResolver';
 import { SatelliteCommandMap, MapMarker } from '@/Shared/SatelliteCommandMap';
 import { LinearCurveyChart, BarGraphChart, PieGraphChart } from '@/Shared/Charts';
 import { Dropdown } from '@/Shared';
@@ -99,19 +108,19 @@ export const findNearestResponderUnit = (
 };
 
 const filterReportsByTimeHorizon = (items: ReportItem[], horizon: string): ReportItem[] => {
-  const now = new Date();
-  const nowMs = now.getTime();
+  const nowUtc = Date.now();
+  const nowPht = new Date(nowUtc + ASIA_MANILA_OFFSET_MS);
 
   return items.filter((r) => {
-    if (!r.createdAt) return true;
-    const d = new Date(r.createdAt);
-    if (isNaN(d.getTime())) return true;
+    const utc = parseUtcTimestamp(r.createdAt);
+    if (!utc) return horizon !== '24h' && horizon !== '7d';
+    const dPht = new Date(utc.getTime() + ASIA_MANILA_OFFSET_MS);
 
     if (horizon === '24h') {
-      return nowMs - d.getTime() <= 24 * 60 * 60 * 1000;
+      return nowUtc - utc.getTime() <= 24 * 60 * 60 * 1000;
     }
     if (horizon === '7d') {
-      return nowMs - d.getTime() <= 7 * 24 * 60 * 60 * 1000;
+      return nowUtc - utc.getTime() <= 7 * 24 * 60 * 60 * 1000;
     }
     if (horizon.startsWith('week_')) {
       const dayMap: Record<string, number> = {
@@ -125,12 +134,12 @@ const filterReportsByTimeHorizon = (items: ReportItem[], horizon: string): Repor
       };
       const targetDay = dayMap[horizon];
       if (targetDay !== undefined) {
-        return d.getDay() === targetDay;
+        return nowUtc - utc.getTime() <= 7 * 24 * 60 * 60 * 1000 && dPht.getUTCDay() === targetDay;
       }
-      return nowMs - d.getTime() <= 7 * 24 * 60 * 60 * 1000;
+      return nowUtc - utc.getTime() <= 7 * 24 * 60 * 60 * 1000;
     }
     if (horizon === 'month_30') {
-      return nowMs - d.getTime() <= 30 * 24 * 60 * 60 * 1000;
+      return nowUtc - utc.getTime() <= 30 * 24 * 60 * 60 * 1000;
     }
     if (horizon.startsWith('month_')) {
       const monthMap: Record<string, number> = {
@@ -149,15 +158,13 @@ const filterReportsByTimeHorizon = (items: ReportItem[], horizon: string): Repor
       };
       const targetMonth = monthMap[horizon];
       if (targetMonth !== undefined) {
-        return d.getMonth() === targetMonth;
+        return dPht.getUTCFullYear() === nowPht.getUTCFullYear() && dPht.getUTCMonth() === targetMonth;
       }
       return true;
     }
-    if (horizon === 'year_2025') {
-      return d.getFullYear() === 2025;
-    }
-    if (horizon === 'year_2026') {
-      return d.getFullYear() === 2026;
+    if (horizon.startsWith('year_')) {
+      const yearNum = Number(horizon.replace('year_', ''));
+      return Number.isFinite(yearNum) ? dPht.getUTCFullYear() === yearNum : true;
     }
     return true;
   });
@@ -171,26 +178,25 @@ const buildTrendSeriesForHorizon = (
   horizon: string
 ): { points: { label: string; value: number }[]; subtitle: string } => {
   const filtered = filterReportsByTimeHorizon(reports, horizon);
-  const now = new Date();
+  const nowPht = new Date(Date.now() + ASIA_MANILA_OFFSET_MS);
 
   if (horizon === '7d') {
     const daySlots: { key: string; label: string; count: number }[] = [];
     for (let offset = 6; offset >= 0; offset -= 1) {
-      const slotDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset);
-      const key = `${slotDate.getFullYear()}-${slotDate.getMonth()}-${slotDate.getDate()}`;
-      daySlots.push({ key, label: WEEKDAY_NAMES_SHORT[slotDate.getDay()], count: 0 });
+      const slotDate = new Date(Date.UTC(nowPht.getUTCFullYear(), nowPht.getUTCMonth(), nowPht.getUTCDate() - offset));
+      const key = `${slotDate.getUTCFullYear()}-${slotDate.getUTCMonth()}-${slotDate.getUTCDate()}`;
+      daySlots.push({ key, label: WEEKDAY_NAMES_SHORT[slotDate.getUTCDay()], count: 0 });
     }
     filtered.forEach((r) => {
-      if (!r.createdAt) return;
-      const d = new Date(r.createdAt);
-      if (isNaN(d.getTime())) return;
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const dPht = toManilaDate(r.createdAt);
+      if (!dPht) return;
+      const key = `${dPht.getUTCFullYear()}-${dPht.getUTCMonth()}-${dPht.getUTCDate()}`;
       const match = daySlots.find((s) => s.key === key);
       if (match) match.count += 1;
     });
     return {
       points: daySlots.map((s) => ({ label: s.label, value: s.count })),
-      subtitle: 'Last 7 days'
+      subtitle: 'Last 7 days (PHT)'
     };
   }
 
@@ -198,20 +204,19 @@ const buildTrendSeriesForHorizon = (
     const windowDays = 30;
     const bucketCount = 6;
     const spanDays = 5;
-    const startMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (windowDays - 1)).getTime();
+    const startMs = Date.UTC(nowPht.getUTCFullYear(), nowPht.getUTCMonth(), nowPht.getUTCDate() - (windowDays - 1));
     const labels: string[] = [];
     const counts = new Array<number>(bucketCount).fill(0);
 
     for (let i = 0; i < bucketCount; i += 1) {
       const bucketDate = new Date(startMs + i * spanDays * 24 * 60 * 60 * 1000);
-      labels.push(`${MONTH_NAMES_SHORT[bucketDate.getMonth()]} ${bucketDate.getDate()}`);
+      labels.push(`${MONTH_NAMES_SHORT[bucketDate.getUTCMonth()]} ${bucketDate.getUTCDate()}`);
     }
 
     filtered.forEach((r) => {
-      if (!r.createdAt) return;
-      const d = new Date(r.createdAt);
-      if (isNaN(d.getTime())) return;
-      const diffDays = Math.floor((d.getTime() - startMs) / (24 * 60 * 60 * 1000));
+      const dPht = toManilaDate(r.createdAt);
+      if (!dPht) return;
+      const diffDays = Math.floor((dPht.getTime() - startMs) / (24 * 60 * 60 * 1000));
       if (diffDays >= 0 && diffDays < windowDays) {
         const idx = Math.min(bucketCount - 1, Math.floor(diffDays / spanDays));
         counts[idx] += 1;
@@ -220,17 +225,16 @@ const buildTrendSeriesForHorizon = (
 
     return {
       points: labels.map((label, idx) => ({ label, value: counts[idx] })),
-      subtitle: 'Last 30 days'
+      subtitle: 'Last 30 days (PHT)'
     };
   }
 
   if (horizon.startsWith('month_')) {
     const weekBuckets: Record<string, number> = { Wk1: 0, Wk2: 0, Wk3: 0, Wk4: 0, Wk5: 0 };
     filtered.forEach((r) => {
-      if (!r.createdAt) return;
-      const d = new Date(r.createdAt);
-      if (isNaN(d.getTime())) return;
-      const day = d.getDate();
+      const dPht = toManilaDate(r.createdAt);
+      if (!dPht) return;
+      const day = dPht.getUTCDate();
       if (day <= 7) weekBuckets.Wk1 += 1;
       else if (day <= 14) weekBuckets.Wk2 += 1;
       else if (day <= 21) weekBuckets.Wk3 += 1;
@@ -240,22 +244,21 @@ const buildTrendSeriesForHorizon = (
     const monthToken = horizon.replace('month_', '').toUpperCase();
     return {
       points: Object.entries(weekBuckets).map(([label, value]) => ({ label, value })),
-      subtitle: `${monthToken} weekly breakdown`
+      subtitle: `${monthToken} weekly breakdown (PHT)`
     };
   }
 
   if (horizon.startsWith('year_')) {
     const counts = new Array<number>(12).fill(0);
     filtered.forEach((r) => {
-      if (!r.createdAt) return;
-      const d = new Date(r.createdAt);
-      if (isNaN(d.getTime())) return;
-      counts[d.getMonth()] += 1;
+      const dPht = toManilaDate(r.createdAt);
+      if (!dPht) return;
+      counts[dPht.getUTCMonth()] += 1;
     });
     const yearLabel = horizon.replace('year_', '');
     return {
       points: MONTH_NAMES_SHORT.map((label, idx) => ({ label, value: counts[idx] })),
-      subtitle: `${yearLabel} monthly volume`
+      subtitle: `${yearLabel} monthly volume (PHT)`
     };
   }
 
@@ -268,10 +271,9 @@ const buildTrendSeriesForHorizon = (
     '20:00': 0
   };
   filtered.forEach((r) => {
-    if (!r.createdAt) return;
-    const d = new Date(r.createdAt);
-    if (isNaN(d.getTime())) return;
-    const hour = d.getHours();
+    const parts = toManilaParts(r.createdAt);
+    if (!parts) return;
+    const hour = parts.hour;
     if (hour < 4) hourBuckets['00:00'] += 1;
     else if (hour < 8) hourBuckets['04:00'] += 1;
     else if (hour < 12) hourBuckets['08:00'] += 1;
@@ -281,8 +283,8 @@ const buildTrendSeriesForHorizon = (
   });
 
   const subtitle = horizon.startsWith('week_')
-    ? `${horizon.replace('week_', '').toUpperCase()} hourly`
-    : '24-hour volume';
+    ? `${horizon.replace('week_', '').toUpperCase()} hourly (PHT)`
+    : '24-hour volume (PHT)';
 
   return {
     points: Object.entries(hourBuckets).map(([label, value]) => ({ label, value })),
@@ -332,8 +334,8 @@ export const AdminDashboard: FC = () => {
     { value: 'month_oct', label: 'Month: October' },
     { value: 'month_nov', label: 'Month: November' },
     { value: 'month_dec', label: 'Month: December' },
-    { value: 'year_2025', label: 'Year: 2025' },
-    { value: 'year_2026', label: 'Year: 2026' }
+    { value: `year_${new Date().getFullYear() - 1}`, label: `Year: ${new Date().getFullYear() - 1}` },
+    { value: `year_${new Date().getFullYear()}`, label: `Year: ${new Date().getFullYear()}` }
   ];
 
   const showToast = useCallback((msg: string) => {
@@ -473,7 +475,8 @@ export const AdminDashboard: FC = () => {
       title: fix.title,
       type: 'fixture' as const,
       category: fix.category,
-      agency: fix.assignedUnitType
+      agency: fix.assignedUnitType,
+      locationLabel: resolveStreetAddressSync(fix.latitude, fix.longitude)
     })),
     ...reports.map((rep) => ({
       id: rep.id,
@@ -486,9 +489,17 @@ export const AdminDashboard: FC = () => {
       severity: rep.severity,
       evidenceUrl: rep.hasImage ? (rep.imageUrl || `/api/reports/${rep.id}/image`) : undefined,
       verifiedAt: rep.verifiedAt,
+      resolvedAt: rep.resolvedAt,
+      closedAt: rep.closedAt,
+      aiVerificationStatus: rep.aiVerificationStatus,
+      closureSummary: rep.closureSummary,
+      closureApprovalMode: rep.closureApprovalMode,
+      taggedColleagues: rep.taggedColleagues,
+      pointerIconType: rep.pointerIconType ?? undefined,
       requiresManualVerification: rep.requiresManualVerification,
       gpsAccuracyMeters: rep.gpsAccuracyMeters ?? undefined,
-      description: rep.note || rep.locationLabel,
+      locationLabel: rep.locationLabel || resolveStreetAddressSync(Number(rep.currentLatitude ?? rep.latitude), Number(rep.currentLongitude ?? rep.longitude)),
+      description: rep.note || undefined,
       allocatedUnitId: rep.allocatedUnitId,
       allocatedUnitCode: rep.allocatedUnitCode
     })),
@@ -501,7 +512,8 @@ export const AdminDashboard: FC = () => {
         title: `${u.unitCode} - ${u.unitName} (${u.status})`,
         type: 'gps' as const,
         agency: u.agency,
-        status: u.status
+        status: u.status,
+        locationLabel: resolveStreetAddressSync(u.baseLatitude, u.baseLongitude)
       }))
   ], [fixtures, reports, roster]);
 
@@ -530,52 +542,29 @@ export const AdminDashboard: FC = () => {
 
   const agencyData = useMemo(() => {
     const filtered = filterReportsByTimeHorizon(reports, agencyTimeHorizon);
-    const rhuReports = filtered.filter((r) => {
-      const a = (r.recommendedAgencyUnit || '').toUpperCase();
-      const c = (r.category || '').toLowerCase();
-      const code = (r.allocatedUnitCode || '').toUpperCase();
-      return a === 'RHU' || c.includes('medic') || c.includes('health') || code.includes('RHU');
-    }).length;
-    const rhuRoster = roster.filter((u) => (u.agency || '').toUpperCase() === 'RHU').length;
-    const rhu = rhuReports > 0 ? rhuReports : (filtered.length === 0 ? 0 : rhuRoster);
-
-    const fireReports = filtered.filter((r) => {
-      const a = (r.recommendedAgencyUnit || '').toUpperCase();
-      const c = (r.category || '').toLowerCase();
-      const code = (r.allocatedUnitCode || '').toUpperCase();
-      return a === 'FIRE' || a === 'BFP' || c.includes('fire') || code.includes('FIRE') || code.includes('BFP');
-    }).length;
-    const fireRoster = roster.filter((u) => {
-      const ag = (u.agency || '').toUpperCase();
-      return ag === 'FIRE' || ag === 'BFP';
-    }).length;
-    const fire = fireReports > 0 ? fireReports : (filtered.length === 0 ? 0 : fireRoster);
-
-    const pnpReports = filtered.filter((r) => {
-      const a = (r.recommendedAgencyUnit || '').toUpperCase();
-      const c = (r.category || '').toLowerCase();
-      const code = (r.allocatedUnitCode || '').toUpperCase();
-      return a === 'PNP' || c.includes('police') || c.includes('crime') || code.includes('PNP');
-    }).length;
-    const pnpRoster = roster.filter((u) => (u.agency || '').toUpperCase() === 'PNP').length;
-    const pnp = pnpReports > 0 ? pnpReports : (filtered.length === 0 ? 0 : pnpRoster);
-
-    return [
-      { label: 'RHU Medical', value: rhu, color: '#670626' },
-      { label: 'BFP Fire', value: fire, color: '#A83B4D' },
-      { label: 'PNP Police', value: pnp, color: '#0284c7' }
-    ];
-  }, [reports, roster, agencyTimeHorizon]);
+    return buildAgencyWorkloadFromReports(filtered).map((item) => ({
+      label: item.label,
+      value: item.value,
+      color: item.color
+    }));
+  }, [reports, agencyTimeHorizon]);
 
   const totalReportsCount = analyticsSummary?.totalIncidents ?? reports.length;
-  const unallocatedQueueCount = reports.filter((r) => !r.allocatedUnitId && r.status !== 'Resolved').length;
+  const unallocatedQueueCount = reports.filter((r) => {
+    const st = (r.status || '').toLowerCase();
+    return !r.allocatedUnitId && st !== 'resolved' && st !== 'closed' && st !== 'rejected';
+  }).length;
   const onDutyCount = roster.filter((u) => u.status === 'OnDuty' || u.status === 'Dispatched').length;
   const dispatchedCount = roster.filter((u) => u.status === 'Dispatched').length;
   const criticalCount = reports.filter((r) => {
     const s = (r.severity || '').toLowerCase();
-    return (s === 'critical' || s === 'severe') && (r.status || '').toLowerCase() !== 'resolved';
+    const st = (r.status || '').toLowerCase();
+    return (s === 'critical' || s === 'severe') && st !== 'resolved' && st !== 'closed' && st !== 'rejected';
   }).length;
-  const resolvedCount = reports.filter((r) => (r.status || '').toLowerCase() === 'resolved').length;
+  const resolvedCount = reports.filter((r) => {
+    const st = (r.status || '').toLowerCase();
+    return st === 'resolved' || st === 'closed' || Boolean(r.resolvedAt || r.closedAt);
+  }).length;
   const dynamicResolutionRate = reports.length > 0
     ? `${((resolvedCount / reports.length) * 100).toFixed(1)}%`
     : '0.0%';
@@ -1001,8 +990,8 @@ export const AdminDashboard: FC = () => {
                         <span className="text-xs font-mono font-bold text-[#670626]">
                           {inc.allocatedUnitCode}
                         </span>
-                      ) : statusBadge.label === 'Resolved' || statusBadge.label === 'Rejected' ? (
-                        <span className="text-xs font-mono text-[#A83B4D]">Closed</span>
+                      ) : statusBadge.label === 'Done' || statusBadge.label === 'Rejected' ? (
+                        <span className="text-xs font-mono text-[#A83B4D]">{statusBadge.label}</span>
                       ) : (
                         <AdminButton
                           variant="primary"

@@ -154,7 +154,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     menuItems = [
       { to: '/civilian/dashboard', label: 'Dashboard', icon: Home },
       { to: '/civilian/live-map', label: 'Live Map', icon: Map },
-      { to: '/civilian/report', label: 'Report SOS', icon: Camera },
+      { to: '/civilian/report', label: 'Reports Incident', icon: Camera },
       { to: '/civilian/my-reports', label: 'My Reports', icon: AlertTriangle },
       { to: '/civilian/profile', label: 'Profile', icon: User }
     ];

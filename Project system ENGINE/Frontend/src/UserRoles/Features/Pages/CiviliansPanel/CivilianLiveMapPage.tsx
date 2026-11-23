@@ -1,6 +1,6 @@
 // [Layer: UserRoles/Features/Pages/CiviliansPanel]
 // Responsibility: Interactive live satellite command map for Katipunan residents.
-// Displays real-time GPS telemetry, evacuation shelters, and signed-in resident's My Reports (N)
+// Displays real-time GPS telemetry, extracted street addresses, evacuation shelters, and signed-in resident's My Reports (N)
 // sorted strictly newest-to-oldest (descending by createdAt), navigating to /civilian/my-reports on click.
 // Strictly 100% arrow functions (=>), ZERO 'any', ZERO emojis, resident-only telemetry, and ZERO tel: links.
 
@@ -23,6 +23,7 @@ import { useSession } from '@/Hooks/useSession';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { KATIPUNAN_BASE_COORDS } from '@/Libs/Map/mapAccuracy';
+import { resolveStreetAddressSync } from '@/Libs/Map/addressResolver';
 import { formatRelativeTime } from '@/Libs/Assets/formatters';
 import { CivilianButton } from './Shared/CivilianButton';
 
@@ -30,18 +31,28 @@ const REFRESH_INTERVAL_MS = 8000;
 
 type MapLayerFilter = 'ALL' | 'MY_REPORTS' | 'SHELTERS';
 
-const resolveMapReportStatus = (report: ReportItem): { label: string; badgeClass: string } => {
-  const raw = (report.status || 'Reported').toUpperCase();
+type ExtendedReportItem = ReportItem & {
+  aiAutoApproved?: boolean;
+};
+
+const resolveMapReportStatus = (report: ExtendedReportItem): { label: string; badgeClass: string } => {
+  const raw = (report.status || 'Reported').trim().toUpperCase();
   if (raw === 'REJECTED') {
     return {
       label: 'Rejected',
       badgeClass: 'bg-[#670626] text-[#F7F1EA] border-[#670626]'
     };
   }
-  if (raw === 'RESOLVED' || raw === 'CLOSED' || report.resolvedAt) {
+  if (raw === 'RESOLVED' || raw === 'CLOSED' || Boolean(report.resolvedAt) || Boolean(report.closedAt)) {
     return {
-      label: 'Resolved',
+      label: 'Mark as Done',
       badgeClass: 'bg-[#E9D9D0] text-[#670626] border-[#670626]/35'
+    };
+  }
+  if (raw === 'INPROGRESS' || raw === 'IN_PROGRESS' || raw === 'WORKINGPROGRESS') {
+    return {
+      label: 'Working Progress',
+      badgeClass: 'bg-[#A83B4D] text-[#F7F1EA] border-[#A83B4D]'
     };
   }
   if (raw === 'ALLOCATED' || raw === 'ENROUTE' || raw === 'ONSCENE' || raw === 'DISPATCHED' || report.allocatedUnitCode) {
@@ -50,14 +61,16 @@ const resolveMapReportStatus = (report: ReportItem): { label: string; badgeClass
       badgeClass: 'bg-[#A83B4D] text-[#F7F1EA] border-[#A83B4D]'
     };
   }
-  if (raw === 'VERIFIED' || report.verifiedAt) {
+  if (raw === 'VERIFIED' || report.verifiedAt || report.aiAutoApproved) {
+    const isAiApproved =
+      Boolean(report.aiAutoApproved) || report.aiVerificationStatus === 'AI_AUTO_APPROVED';
     return {
-      label: 'Verified',
-      badgeClass: 'bg-[#670626]/15 text-[#670626] border-[#670626]/30'
+      label: isAiApproved ? 'AI Auto-Approved' : 'Manual Approved',
+      badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300'
     };
   }
   return {
-    label: 'Submitted',
+    label: 'Awaiting Triage',
     badgeClass: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/45'
   };
 };
@@ -65,12 +78,17 @@ const resolveMapReportStatus = (report: ReportItem): { label: string; badgeClass
 export const CivilianLiveMapPage: React.FC = () => {
   const navigate = useNavigate();
   const { session } = useSession();
-  const { coords, isHardwareGeolocated, refreshGps } = useGpsLocation();
+  const { coords, isHardwareGeolocated, resolvedAddress, refreshGps } = useGpsLocation();
   const [fixtures, setFixtures] = useState<IncidentFixture[]>([]);
-  const [allReports, setAllReports] = useState<ReportItem[]>([]);
-  const [myRawReports, setMyRawReports] = useState<ReportItem[]>([]);
+  const [allReports, setAllReports] = useState<ExtendedReportItem[]>([]);
+  const [myRawReports, setMyRawReports] = useState<ExtendedReportItem[]>([]);
   const [activeLayer, setActiveLayer] = useState<MapLayerFilter>('ALL');
   const [isResyncing, setIsResyncing] = useState<boolean>(false);
+
+  const currentStreetAddress = useMemo(
+    () => resolvedAddress || resolveStreetAddressSync(coords.latitude, coords.longitude),
+    [resolvedAddress, coords.latitude, coords.longitude]
+  );
 
   const loadData = useCallback(async () => {
     try {
@@ -81,8 +99,8 @@ export const CivilianLiveMapPage: React.FC = () => {
       ]);
 
       setFixtures(Array.isArray(f) ? f : []);
-      setAllReports(Array.isArray(repList) ? repList : []);
-      setMyRawReports(Array.isArray(myRepList) ? myRepList : []);
+      setAllReports(Array.isArray(repList) ? (repList as ExtendedReportItem[]) : []);
+      setMyRawReports(Array.isArray(myRepList) ? (myRepList as ExtendedReportItem[]) : []);
     } catch (err) {
       console.error('Failed to refresh civilian live map telemetry:', err);
       setFixtures([]);
@@ -134,6 +152,7 @@ export const CivilianLiveMapPage: React.FC = () => {
         lat: coords.latitude,
         lng: coords.longitude,
         title: 'Your Current Position',
+        locationLabel: currentStreetAddress,
         type: 'gps' as const
       });
     }
@@ -147,29 +166,39 @@ export const CivilianLiveMapPage: React.FC = () => {
           title: f.title,
           type: 'fixture' as const,
           category: f.category,
-          agency: f.assignedUnitType
+          agency: f.assignedUnitType,
+          locationLabel: resolveStreetAddressSync(f.latitude, f.longitude)
         });
       });
     }
 
     if (activeLayer === 'ALL' || activeLayer === 'MY_REPORTS') {
       myReports.forEach((r) => {
+        const lat = Number(r.currentLatitude ?? r.latitude);
+        const lng = Number(r.currentLongitude ?? r.longitude);
+        const resolvedStreet = r.locationLabel || resolveStreetAddressSync(lat, lng);
         list.push({
           id: `my-report-${r.id}`,
-          lat: Number(r.currentLatitude ?? r.latitude),
-          lng: Number(r.currentLongitude ?? r.longitude),
+          lat,
+          lng,
           title: r.title,
           status: r.status || 'Reported',
           type: 'incident' as const,
           category: r.category,
           severity: r.severity,
           agency: r.recommendedAgencyUnit || undefined,
+          locationLabel: resolvedStreet,
           evidenceUrl: r.hasImage ? (r.imageUrl || `/api/reports/${r.id}/image`) : undefined,
           reportedAt: r.createdAt || r.submittedAt || undefined,
           verifiedAt: r.verifiedAt,
+          resolvedAt: r.resolvedAt,
+          closedAt: r.closedAt,
+          aiVerificationStatus: r.aiVerificationStatus,
+          closureSummary: r.closureSummary,
+          closureApprovalMode: r.closureApprovalMode,
           requiresManualVerification: r.requiresManualVerification,
           gpsAccuracyMeters: r.gpsAccuracyMeters ?? undefined,
-          description: r.note || r.locationLabel,
+          description: r.note || resolvedStreet,
           allocatedUnitCode: r.allocatedUnitCode,
           allocatedUnitId: r.allocatedUnitId
         });
@@ -187,26 +216,38 @@ export const CivilianLiveMapPage: React.FC = () => {
             statusUpper === 'DISPATCHED' ||
             statusUpper === 'ENROUTE' ||
             statusUpper === 'ONSCENE' ||
+            statusUpper === 'INPROGRESS' ||
+            statusUpper === 'RESOLVED' ||
+            statusUpper === 'CLOSED' ||
             Boolean(r.verifiedAt)
           );
         })
         .forEach((r) => {
+          const lat = Number(r.currentLatitude ?? r.latitude);
+          const lng = Number(r.currentLongitude ?? r.longitude);
+          const resolvedStreet = r.locationLabel || resolveStreetAddressSync(lat, lng);
           list.push({
             id: `community-report-${r.id}`,
-            lat: Number(r.currentLatitude ?? r.latitude),
-            lng: Number(r.currentLongitude ?? r.longitude),
+            lat,
+            lng,
             title: r.title,
             status: r.status || 'Verified',
             type: 'incident' as const,
             category: r.category,
             severity: r.severity,
             agency: r.recommendedAgencyUnit || undefined,
+            locationLabel: resolvedStreet,
             evidenceUrl: r.hasImage ? (r.imageUrl || `/api/reports/${r.id}/image`) : undefined,
             reportedAt: r.createdAt || r.submittedAt || undefined,
             verifiedAt: r.verifiedAt,
+            resolvedAt: r.resolvedAt,
+            closedAt: r.closedAt,
+            aiVerificationStatus: r.aiVerificationStatus,
+            closureSummary: r.closureSummary,
+            closureApprovalMode: r.closureApprovalMode,
             requiresManualVerification: r.requiresManualVerification,
             gpsAccuracyMeters: r.gpsAccuracyMeters ?? undefined,
-            description: r.note || r.locationLabel,
+            description: r.note || resolvedStreet,
             allocatedUnitCode: r.allocatedUnitCode,
             allocatedUnitId: r.allocatedUnitId
           });
@@ -214,7 +255,16 @@ export const CivilianLiveMapPage: React.FC = () => {
     }
 
     return list;
-  }, [coords.latitude, coords.longitude, isHardwareGeolocated, fixtures, myReports, allReports, activeLayer]);
+  }, [
+    coords.latitude,
+    coords.longitude,
+    currentStreetAddress,
+    isHardwareGeolocated,
+    fixtures,
+    myReports,
+    allReports,
+    activeLayer
+  ]);
 
   return (
     <div className="flex flex-col gap-6 w-full pb-12">
@@ -232,7 +282,7 @@ export const CivilianLiveMapPage: React.FC = () => {
         <div className="flex items-center gap-2.5">
           <Link to="/civilian/report">
             <CivilianButton variant="danger" size="sm" className="min-h-[40px] text-sm">
-              + Report Incident
+              + Reports Incident
             </CivilianButton>
           </Link>
           <Link to="/civilian/dashboard">
@@ -258,6 +308,9 @@ export const CivilianLiveMapPage: React.FC = () => {
             </span>
             <span className="text-[#A83B4D]">(±{Math.round(coords.accuracy)}m)</span>
           </div>
+          <span className="text-xs font-sans font-semibold text-[#670626] truncate max-w-xs">
+            {currentStreetAddress}
+          </span>
           <button
             type="button"
             onClick={handleForceResync}
@@ -350,7 +403,7 @@ export const CivilianLiveMapPage: React.FC = () => {
             </span>
             <Link to="/civilian/report" className="mt-2">
               <CivilianButton variant="danger" size="sm" className="text-sm">
-                + Report Incident
+                + Reports Incident
               </CivilianButton>
             </Link>
           </div>
@@ -358,6 +411,7 @@ export const CivilianLiveMapPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[360px] overflow-y-auto pr-1">
             {myReports.map((r) => {
               const statusInfo = resolveMapReportStatus(r);
+              const resolvedStreet = r.locationLabel || resolveStreetAddressSync(r.latitude, r.longitude);
               return (
                 <button
                   key={r.id}
@@ -383,7 +437,7 @@ export const CivilianLiveMapPage: React.FC = () => {
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-[#A83B4D]">
                     <span className="inline-flex items-center gap-1 truncate max-w-[65%]">
                       <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-                      <span className="truncate">{r.locationLabel || 'Katipunan'}</span>
+                      <span className="truncate">{resolvedStreet}</span>
                     </span>
                     <span className="inline-flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" />

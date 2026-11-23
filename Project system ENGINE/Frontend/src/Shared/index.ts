@@ -20,6 +20,8 @@ export * from './ToggleDrawerSidebarMenu';
 export * from './PatientCareRecordModal';
 export * from './PoliceBlotterModal';
 export * from './BackupOptionsModal';
+export * from './ColleagueMentionPicker';
+export * from './ResponderClosureEvidenceModal';
 export * from './radarPointerCategories';
 export * from './PageErrorBoundary';
 export * from './Header';

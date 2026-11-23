@@ -1,7 +1,7 @@
 // [Layer: Shared/Charts]
 // Responsibility: SVG bar graph for incident severity classification with interactive tactical telemetry HUD.
 // Provides smooth interactive hover states, displaying precise coordinate values and percentages upon mouse movement with zero jitter.
-// Universal lambda expressions (=>).
+// Universal lambda expressions (=>). ZERO 'any', ZERO emojis.
 
 import React, { FC, useState } from 'react';
 import { BarChart2 } from 'lucide-react';
@@ -20,8 +20,10 @@ export interface BarGraphChartProps {
 
 const DEFAULT_WIDTH = 400;
 const DEFAULT_HEIGHT = 180;
-const BAR_WIDTH = 42;
-const MIN_SCALE_MAX = 5;
+const LEFT_PADDING = 36;
+const RIGHT_PADDING = 16;
+const TOP_PADDING = 24;
+const BOTTOM_PADDING = 28;
 const TOOLTIP_BOUND_MARGIN = 85;
 const TOP_BOUND_MARGIN = 65;
 const BAR_ELEVATION_OFFSET = 6;
@@ -34,7 +36,6 @@ interface SeverityBadge {
   glowColor: string;
 }
 
-// Severity classification status helper
 const computeSeverityBadge = (color?: string, label?: string): SeverityBadge => {
   const c = (color || '').toLowerCase();
   const l = (label || '').toLowerCase();
@@ -49,7 +50,8 @@ const computeSeverityBadge = (color?: string, label?: string): SeverityBadge => 
     c.includes('red') ||
     c.includes('rose') ||
     l.includes('crit') ||
-    l.includes('sos')
+    l.includes('alert') ||
+    l.includes('emerg')
   ) {
     return {
       text: 'CRITICAL CODE RED',
@@ -60,24 +62,38 @@ const computeSeverityBadge = (color?: string, label?: string): SeverityBadge => 
     };
   }
 
-  // Orange / Amber: HIGH PRIORITY
+  // Orange: HIGH PRIORITY
   if (
     c.includes('ea580c') ||
-    c.includes('f59e0b') ||
-    c.includes('d97706') ||
     c.includes('orange') ||
-    c.includes('amber') ||
-    l.includes('high') ||
-    l.includes('med') ||
-    l.includes('medium') ||
-    l.includes('tier')
+    l.includes('high')
   ) {
     return {
       text: 'HIGH PRIORITY',
+      badgeClass: 'bg-orange-100 text-orange-900 border-orange-300 shadow-sm',
+      dotClass: 'bg-orange-600',
+      textColor: 'text-orange-800',
+      glowColor: '#ea580c'
+    };
+  }
+
+  // Amber / Yellow: MEDIUM PRIORITY
+  if (
+    c.includes('f59e0b') ||
+    c.includes('d97706') ||
+    c.includes('amber') ||
+    c.includes('eab308') ||
+    l.includes('med') ||
+    l.includes('medium') ||
+    l.includes('moderate') ||
+    l.includes('tier')
+  ) {
+    return {
+      text: 'MEDIUM PRIORITY',
       badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 shadow-sm',
       dotClass: 'bg-amber-600',
       textColor: 'text-amber-800',
-      glowColor: '#d97706'
+      glowColor: '#f59e0b'
     };
   }
 
@@ -127,19 +143,30 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
   ];
 
   const total = safeData.reduce((sum, d) => sum + d.value, 0) || 1;
-  const max = Math.max(...safeData.map((d) => d.value), MIN_SCALE_MAX);
+  const rawPeak = Math.max(...safeData.map((d) => d.value), 0);
+  const yAxisStep = rawPeak <= 4 ? 1 : rawPeak <= 8 ? 2 : Math.ceil((rawPeak * 1.2) / 4);
+  const maxScale = yAxisStep * 4;
+  const yTicks = [0, yAxisStep, yAxisStep * 2, yAxisStep * 3, maxScale];
+
   const width = DEFAULT_WIDTH;
-  const barWidth = BAR_WIDTH;
-  const gap = (width - safeData.length * barWidth) / (safeData.length + 1);
+  const plotWidth = width - LEFT_PADDING - RIGHT_PADDING;
+  const plotHeight = height - TOP_PADDING - BOTTOM_PADDING;
+  const baselineY = height - BOTTOM_PADDING;
+
+  const slotWidth = plotWidth / Math.max(1, safeData.length);
+  const barWidth = Math.min(48, Math.max(14, Math.floor(slotWidth * 0.56)));
+  const gap = (plotWidth - safeData.length * barWidth) / (safeData.length + 1);
 
   const hoveredBar = hoveredBarIndex !== null ? safeData[hoveredBarIndex] : null;
   const hoveredSeverity = hoveredBar ? computeSeverityBadge(hoveredBar.color, hoveredBar.label) : null;
   const hoveredBarCenter =
-    hoveredBarIndex !== null ? gap + hoveredBarIndex * (barWidth + gap) + barWidth / 2 : 0;
-  const hoveredBarHeight = hoveredBar ? Math.max((hoveredBar.value / max) * (height - 55), 4) : 0;
-  const hoveredBarElevatedY = height - 25 - hoveredBarHeight - BAR_ELEVATION_OFFSET;
+    hoveredBarIndex !== null
+      ? LEFT_PADDING + gap + hoveredBarIndex * (barWidth + gap) + barWidth / 2
+      : 0;
+  const hoveredBarHeight =
+    hoveredBar && hoveredBar.value > 0 ? (hoveredBar.value / maxScale) * plotHeight : 0;
+  const hoveredBarElevatedY = baselineY - hoveredBarHeight - BAR_ELEVATION_OFFSET;
 
-  // Tooltip positioning logic (bounded within container)
   const isNearTop = hoveredBarElevatedY < TOP_BOUND_MARGIN;
   const isNearLeft = hoveredBarCenter < TOOLTIP_BOUND_MARGIN;
   const isNearRight = hoveredBarCenter > width - TOOLTIP_BOUND_MARGIN;
@@ -187,10 +214,38 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
 
       <div className="relative w-full">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible">
+          {/* Y-axis Horizontal Gridlines & Numeric Ticks */}
+          {yTicks.map((tickVal) => {
+            const tickY = baselineY - (tickVal / maxScale) * plotHeight;
+            return (
+              <g key={`y-${tickVal}`} className="pointer-events-none">
+                <line
+                  x1={LEFT_PADDING}
+                  y1={tickY}
+                  x2={width - RIGHT_PADDING}
+                  y2={tickY}
+                  stroke="rgba(103, 6, 38, 0.14)"
+                  strokeDasharray={tickVal === 0 ? undefined : '3 3'}
+                  strokeWidth="1"
+                />
+                <text
+                  x={LEFT_PADDING - 6}
+                  y={tickY + 3}
+                  textAnchor="end"
+                  fill="#7A4E59"
+                  fontSize="10"
+                  fontFamily="monospace"
+                >
+                  {tickVal}
+                </text>
+              </g>
+            );
+          })}
+
           {safeData.map((d, i) => {
-            const barHeight = Math.max((d.value / max) * (height - 55), 4);
-            const x = gap + i * (barWidth + gap);
-            const y = height - 25 - barHeight;
+            const barHeight = d.value > 0 ? (d.value / maxScale) * plotHeight : 0;
+            const x = LEFT_PADDING + gap + i * (barWidth + gap);
+            const y = baselineY - barHeight;
             const isHovered = hoveredBarIndex === i;
             const isDimmed = hoveredBarIndex !== null && !isHovered;
             const barColor = d.color || '#670626';
@@ -206,34 +261,33 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
                 onMouseEnter={() => setHoveredBarIndex(i)}
                 onMouseLeave={() => setHoveredBarIndex(null)}
               >
-                {/* Elevated Bar + Value Number Group */}
                 <g
                   style={{
                     transform: isHovered ? `translateY(-${BAR_ELEVATION_OFFSET}px)` : 'translateY(0)',
                     transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                    filter: isHovered
-                      ? `drop-shadow(0 6px 10px ${barColor}55)`
-                      : 'none'
+                    filter: isHovered ? `drop-shadow(0 6px 10px ${barColor}55)` : 'none'
                   }}
                 >
-                  <rect
-                    x={x}
-                    y={y}
-                    width={barWidth}
-                    height={barHeight}
-                    rx="6"
-                    fill={barColor}
-                    stroke={isHovered ? '#670626' : barColor}
-                    strokeWidth={isHovered ? 1.5 : 0}
-                    strokeOpacity={isHovered ? 0.9 : 0}
-                    className="transition-all duration-150"
-                  />
+                  {barHeight > 0 && (
+                    <rect
+                      x={x}
+                      y={y}
+                      width={barWidth}
+                      height={barHeight}
+                      rx="6"
+                      fill={barColor}
+                      stroke={isHovered ? '#670626' : barColor}
+                      strokeWidth={isHovered ? 1.5 : 0}
+                      strokeOpacity={isHovered ? 0.9 : 0}
+                      className="transition-all duration-150"
+                    />
+                  )}
                   <text
                     x={x + barWidth / 2}
                     y={y - 6}
                     textAnchor="middle"
                     fill={isHovered ? '#670626' : '#3B1722'}
-                    fontSize={isHovered ? '13' : '12'}
+                    fontSize={isHovered ? '13' : '11.5'}
                     fontWeight="bold"
                     className="transition-all duration-150 select-none font-mono"
                   >
@@ -241,7 +295,6 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
                   </text>
                 </g>
 
-                {/* Grounded Category Label */}
                 <text
                   x={x + barWidth / 2}
                   y={height - 8}
@@ -254,12 +307,11 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
                   {d.label}
                 </text>
 
-                {/* Transparent column hit box for effortless hover activation */}
                 <rect
-                  x={x - 6}
-                  y={10}
-                  width={barWidth + 12}
-                  height={height - 20}
+                  x={x - gap / 2}
+                  y={TOP_PADDING - 10}
+                  width={barWidth + gap}
+                  height={height - TOP_PADDING + 10}
                   fill="transparent"
                   className="pointer-events-auto"
                 />
@@ -271,20 +323,22 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
         {/* Floating Claymorphic Tooltip */}
         {hoveredBar && hoveredSeverity && (
           <div
-            className="absolute pointer-events-none z-30 transition-all duration-150 ease-out"
+            className="absolute pointer-events-none z-30 transition-all duration-150 ease-out flex flex-col"
             style={{
               top: `${(hoveredBarElevatedY / height) * 100}%`,
               ...tooltipLeftStyle
             }}
           >
+            {isNearTop && (
+              <div className="w-2.5 h-2.5 bg-[#F7F1EA] border-l border-t border-[#E9D9D0] transform rotate-45 shadow-sm -mb-[5px] mx-auto z-10" />
+            )}
+
             <div className="clay-surface bg-[#F7F1EA] border border-[#E9D9D0] rounded-xl p-3 shadow-xl min-w-[185px] text-xs font-mono flex flex-col gap-1.5 text-[#3B1722]">
-              {/* Category Label (X-axis) */}
               <div className="flex items-center justify-between gap-3 border-b border-[#E9D9D0] pb-1">
                 <span className="text-xs text-[#7A4E59] uppercase tracking-wider">Category</span>
                 <span className="text-[#670626] font-bold">{hoveredBar.label}</span>
               </div>
 
-              {/* Numerical Value & Percentage Share */}
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[#7A4E59]">Total Count:</span>
                 <span className="text-[#3B1722] font-extrabold text-sm flex items-center gap-1">
@@ -300,7 +354,6 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
                 </span>
               </div>
 
-              {/* Severity Status Badge */}
               <div
                 className={`mt-0.5 inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition-colors duration-150 ${hoveredSeverity.badgeClass}`}
               >
@@ -309,14 +362,9 @@ export const BarGraphChart: FC<BarGraphChartProps> = ({
               </div>
             </div>
 
-            {/* Caret arrow pointing to bar */}
-            <div
-              className={`w-2.5 h-2.5 bg-[#F7F1EA] border-[#E9D9D0] transform rotate-45 shadow-md ${
-                isNearTop
-                  ? 'border-l border-t -mt-[5px] mx-auto'
-                  : 'border-r border-b -mt-[5px] mx-auto'
-              }`}
-            />
+            {!isNearTop && (
+              <div className="w-2.5 h-2.5 bg-[#F7F1EA] border-r border-b border-[#E9D9D0] transform rotate-45 shadow-md -mt-[5px] mx-auto" />
+            )}
           </div>
         )}
       </div>

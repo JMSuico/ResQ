@@ -1,8 +1,7 @@
 // [Layer: Shared/Charts]
 // Responsibility: Interactive SVG Donut chart representing multi-agency workload distribution (RHU, FIRE, PNP).
 // Pure React + SVG architecture with radial slice expansion, dynamic center hole, and tactical HUD tooltips.
-// Provides smooth interactive hover states, displaying precise coordinate values and percentages upon mouse movement with zero jitter.
-// Universal lambda expressions (=>).
+// Universal lambda expressions (=>). ZERO 'any', ZERO emojis.
 
 import React, { FC, useState, useRef, useCallback } from 'react';
 import { PieChart } from 'lucide-react';
@@ -23,8 +22,8 @@ const CENTER_X = 100;
 const CENTER_Y = 100;
 const INNER_HOLE_RADIUS = 35;
 const SLICE_EXPANSION_OFFSET = 8;
-const MAX_SAFE_ANGLE = 359.999;
 const FULL_CIRCLE_DEGREES = 360;
+const START_ANGLE_OFFSET_DEG = -90; // Start at 12 o'clock
 
 interface TacticalStatus {
   label: string;
@@ -76,34 +75,33 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
     { label: 'PNP Police Force', value: 0, color: '#3b82f6' }
   ];
 
-  const total = safeData.reduce((sum, d) => sum + d.value, 0) || 1;
   const realTotal = safeData.reduce((sum, d) => sum + d.value, 0);
-  let accumulatedAngle = 0;
+  const total = realTotal || 1;
+  const activeAgenciesCount = safeData.filter((d) => d.value > 0).length;
+  let accumulatedAngle = START_ANGLE_OFFSET_DEG;
 
   const slices = safeData.map((d) => {
     const angle = realTotal > 0 ? (d.value / total) * FULL_CIRCLE_DEGREES : 0;
     const startAngle = accumulatedAngle;
     accumulatedAngle += angle;
 
+    const isFullCircle = realTotal > 0 && d.value === realTotal;
     const r = DONUT_RADIUS;
     const cx = CENTER_X;
     const cy = CENTER_Y;
 
-    // Prevent arc collapse when a single slice occupies 360 degrees
-    const safeAngle = Math.min(angle, MAX_SAFE_ANGLE);
-
     const x1 = cx + r * Math.cos((Math.PI * startAngle) / 180);
     const y1 = cy + r * Math.sin((Math.PI * startAngle) / 180);
-    const x2 = cx + r * Math.cos((Math.PI * (startAngle + safeAngle)) / 180);
-    const y2 = cy + r * Math.sin((Math.PI * (startAngle + safeAngle)) / 180);
+    const x2 = cx + r * Math.cos((Math.PI * (startAngle + angle)) / 180);
+    const y2 = cy + r * Math.sin((Math.PI * (startAngle + angle)) / 180);
 
-    const largeArc = safeAngle > 180 ? 1 : 0;
+    const largeArc = angle > 180 ? 1 : 0;
     const pathD = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
 
     const midAngle = startAngle + angle / 2;
     const rad = (midAngle * Math.PI) / 180;
-    const dx = Math.cos(rad) * SLICE_EXPANSION_OFFSET;
-    const dy = Math.sin(rad) * SLICE_EXPANSION_OFFSET;
+    const dx = isFullCircle ? 0 : Math.cos(rad) * SLICE_EXPANSION_OFFSET;
+    const dy = isFullCircle ? 0 : Math.sin(rad) * SLICE_EXPANSION_OFFSET;
 
     const percentage = realTotal > 0 ? ((d.value / total) * 100).toFixed(1) : '0.0';
 
@@ -116,6 +114,7 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
       startAngle,
       angle,
       midAngle,
+      isFullCircle,
       dx,
       dy
     };
@@ -137,6 +136,7 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
 
   const activeSlice = hoveredSliceIndex !== null ? slices[hoveredSliceIndex] : null;
   const activeStatus = activeSlice ? computeTacticalStatus(activeSlice.value, total) : null;
+  const isTooltipNearTop = mousePos ? mousePos.y < 145 : false;
 
   return (
     <div
@@ -183,30 +183,56 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
             )}
 
             {/* Pie Slices */}
-            {realTotal > 0 && slices.map((s, i) => {
-              const isHovered = hoveredSliceIndex === i;
-              const isDimmed = hoveredSliceIndex !== null && !isHovered;
+            {realTotal > 0 &&
+              slices.map((s, i) => {
+                if (s.value <= 0) return null;
+                const isHovered = hoveredSliceIndex === i;
+                const isDimmed = hoveredSliceIndex !== null && !isHovered;
 
-              return (
-                <path
-                  key={i}
-                  d={s.pathD}
-                  fill={s.color}
-                  stroke="#F7F1EA"
-                  strokeWidth={isHovered ? 2 : 1}
-                  style={{
-                    transform: isHovered ? `translate(${s.dx}px, ${s.dy}px)` : 'translate(0px, 0px)',
-                    transition: 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out, filter 200ms ease-out',
-                    opacity: isDimmed ? 0.35 : 1,
-                    filter: isHovered ? 'drop-shadow(0 4px 10px rgba(103,6,38,0.25))' : 'none',
-                    transformOrigin: `${CENTER_X}px ${CENTER_Y}px`
-                  }}
-                  className="transition-all duration-200 ease-out cursor-pointer"
-                  onMouseEnter={() => setHoveredSliceIndex(i)}
-                  onMouseLeave={() => setHoveredSliceIndex(null)}
-                />
-              );
-            })}
+                if (s.isFullCircle) {
+                  return (
+                    <circle
+                      key={i}
+                      cx={CENTER_X}
+                      cy={CENTER_Y}
+                      r={(DONUT_RADIUS + INNER_HOLE_RADIUS) / 2}
+                      fill="none"
+                      stroke={s.color}
+                      strokeWidth={DONUT_RADIUS - INNER_HOLE_RADIUS}
+                      style={{
+                        transform: isHovered ? 'scale(1.04)' : 'scale(1)',
+                        transition: 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out, filter 200ms ease-out',
+                        opacity: isDimmed ? 0.35 : 1,
+                        filter: isHovered ? 'drop-shadow(0 4px 10px rgba(103,6,38,0.25))' : 'none',
+                        transformOrigin: `${CENTER_X}px ${CENTER_Y}px`
+                      }}
+                      className="cursor-pointer"
+                      onMouseEnter={() => setHoveredSliceIndex(i)}
+                      onMouseLeave={() => setHoveredSliceIndex(null)}
+                    />
+                  );
+                }
+
+                return (
+                  <path
+                    key={i}
+                    d={s.pathD}
+                    fill={s.color}
+                    stroke="#F7F1EA"
+                    strokeWidth={isHovered ? 2 : 1}
+                    style={{
+                      transform: isHovered ? `translate(${s.dx}px, ${s.dy}px)` : 'translate(0px, 0px)',
+                      transition: 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out, filter 200ms ease-out',
+                      opacity: isDimmed ? 0.35 : 1,
+                      filter: isHovered ? 'drop-shadow(0 4px 10px rgba(103,6,38,0.25))' : 'none',
+                      transformOrigin: `${CENTER_X}px ${CENTER_Y}px`
+                    }}
+                    className="transition-all duration-200 ease-out cursor-pointer"
+                    onMouseEnter={() => setHoveredSliceIndex(i)}
+                    onMouseLeave={() => setHoveredSliceIndex(null)}
+                  />
+                );
+              })}
 
             {/* Donut Center Hole */}
             <circle
@@ -219,7 +245,7 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
               className="pointer-events-none"
             />
 
-            {/* Dynamic Center Donut Content */}
+            {/* Dynamic Center Donut Content (Full Label, No Truncation) */}
             {hoveredSliceIndex === null ? (
               <g className="pointer-events-none select-none transition-all duration-200">
                 <text
@@ -231,7 +257,7 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                   fontWeight="bold"
                   fontFamily="monospace"
                 >
-                  {total}
+                  {realTotal}
                 </text>
                 <text
                   x={CENTER_X}
@@ -252,13 +278,11 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                   y={CENTER_Y - 12}
                   textAnchor="middle"
                   fill={slices[hoveredSliceIndex].color}
-                  fontSize="9.5"
+                  fontSize={slices[hoveredSliceIndex].label.length > 14 ? '7.2' : '8.5'}
                   fontWeight="bold"
-                  letterSpacing="0.03em"
+                  letterSpacing="0.02em"
                 >
-                  {slices[hoveredSliceIndex].label.length > 10
-                    ? slices[hoveredSliceIndex].label.slice(0, 9) + '…'
-                    : slices[hoveredSliceIndex].label}
+                  {slices[hoveredSliceIndex].label}
                 </text>
                 <text
                   x={CENTER_X}
@@ -276,7 +300,7 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                   y={CENTER_Y + 17}
                   textAnchor="middle"
                   fill="#7A4E59"
-                  fontSize="9.5"
+                  fontSize="9"
                   fontWeight="bold"
                 >
                   {slices[hoveredSliceIndex].value} CALLS
@@ -319,9 +343,7 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
                   </span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0 font-mono text-xs">
-                  <span className="text-[#7A4E59] text-xs">
-                    {d.percentage}%
-                  </span>
+                  <span className="text-[#7A4E59] text-xs">{d.percentage}%</span>
                   <span className={`font-bold text-sm ${isHovered ? 'text-[#670626]' : 'text-[#3B1722]'}`}>
                     {d.value}
                   </span>
@@ -332,16 +354,20 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
         </div>
       </div>
 
-      {/* Floating Claymorphic Tooltip */}
+      {/* Floating Claymorphic Tooltip (Flip below cursor if near top to prevent clipping) */}
       {hoveredSliceIndex !== null && activeSlice && activeStatus && (
         <div
           className="pointer-events-none absolute z-30 transition-all duration-100 ease-out"
           style={{
             left: mousePos
-              ? `${Math.max(100, Math.min(mousePos.x, (containerRef.current?.clientWidth || 300) - 100))}px`
+              ? `${Math.max(105, Math.min(mousePos.x, (containerRef.current?.clientWidth || 300) - 105))}px`
               : '50%',
-            top: mousePos ? `${Math.max(mousePos.y - 12, 45)}px` : '40%',
-            transform: 'translate(-50%, -100%)'
+            top: mousePos
+              ? isTooltipNearTop
+                ? `${mousePos.y + 14}px`
+                : `${mousePos.y - 12}px`
+              : '40%',
+            transform: isTooltipNearTop ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
           }}
         >
           <div className="clay-surface bg-[#F7F1EA] border border-[#E9D9D0] rounded-xl shadow-xl p-3 min-w-[205px] flex flex-col gap-1 text-xs font-mono text-[#3B1722]">
@@ -389,7 +415,9 @@ export const PieGraphChart: FC<PieGraphChartProps> = ({
       ) : (
         <div className="mt-2 pt-2 border-t border-[#E9D9D0] flex items-center justify-between text-xs font-mono text-[#7A4E59]">
           <span>HOVER SLICE OR LEGEND FOR FLEET TELEMETRY</span>
-          <span className="text-[#670626] font-bold">{data.length} AGENCIES LOGGED</span>
+          <span className="text-[#670626] font-bold">
+            {activeAgenciesCount} ACTIVE / {safeData.length} AGENCIES
+          </span>
         </div>
       )}
     </div>

@@ -24,4 +24,6 @@ public interface IReportService
     Task<ReportEvidenceRecord?> GetReportEvidenceRecordAsync(Guid reportId, Guid evidenceId, CancellationToken ct = default);
     Task<List<ReportFeedbackResponse>> GetReportFeedbackAsync(Guid reportId, CancellationToken ct = default);
     Task<(bool Success, bool NotFound, string? Error, ReportFeedbackResponse? Feedback)> SubmitReportFeedbackAsync(Guid reportId, Guid userId, SubmitReportFeedbackRequest request, CancellationToken ct = default);
+    Task<(bool Success, bool NotFound, bool Forbidden, string? Error, ClosureEvidenceSubmissionResponse? Result)> SubmitClosureEvidenceAsync(Guid reportId, SubmitClosureEvidenceRequest request, Guid actorUserId, UserRole actorRole, ResponderUnitType actorUnit, string? actorName, string reportsRootPath, CancellationToken ct = default);
+    Task<(bool Success, bool NotFound, bool Forbidden, string? Error, ClosureEvidenceSubmissionResponse? Result)> ApproveClosureAsync(Guid reportId, ApproveClosureRequest request, Guid actorUserId, UserRole actorRole, string? actorName, CancellationToken ct = default);
 }
