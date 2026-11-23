@@ -19,9 +19,12 @@ import {
   uploadReportEvidence,
   ReportEvidenceRecordDto,
   ReportItem,
+  ClosureEvidenceSubmissionResult,
   sendEmergencyBroadcast,
   verifyReport
 } from '@/Endpoints/reportsApi';
+import { resolveStreetAddressSync } from '@/Libs/Map/addressResolver';
+import { computeTwoMinFadeSecondsLeft } from '@/Endpoints/analyticsApi';
 import {
   submitPcrRecord,
   getPcrRecords,
@@ -37,7 +40,8 @@ import {
   useTableCardView,
   DefaultFloatingModalCard,
   Dropdown,
-  PoliceBlotterModal
+  PoliceBlotterModal,
+  ResponderClosureEvidenceModal
 } from '@/Shared';
 import { formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
 import {
@@ -104,11 +108,11 @@ export interface CasualtyVitalEntry {
   pcrReference?: string;
 }
 
-type FilterTabMode = 'ALL' | 'CRITICAL' | 'ACTIVE' | 'RESOLVED';
+type FilterTabMode = 'ALL' | 'CRITICAL' | 'ACTIVE' | 'IN_PROGRESS' | 'RESOLVED';
 type SortMode = 'CRITICAL_FIRST' | 'NEWEST_FIRST' | 'OLDEST_FIRST' | 'STATUS_ORDER';
 
 const MAX_EVIDENCE_SLOTS = 40;
-const COUNTDOWN_TOTAL_SECONDS = 300; // 05:00 -> 00:00
+const TWO_MINUTES_MS = 2 * 60 * 1000;
 
 const COMMON_INTERVENTIONS: string[] = [
   'O2 Therapy (High-Flow)',
@@ -164,15 +168,82 @@ export const formatCountdownMmSs = (totalSeconds: number): string => {
   return `${mins}:${secs}`;
 };
 
-const computeRemainingSecondsFromVerifiedAt = (
-  verifiedAt?: string | null,
-  nowMs: number = Date.now()
-): number => {
-  if (!verifiedAt) return COUNTDOWN_TOTAL_SECONDS;
-  const verifiedMs = new Date(verifiedAt).getTime();
-  if (Number.isNaN(verifiedMs)) return COUNTDOWN_TOTAL_SECONDS;
-  const elapsed = Math.floor((nowMs - verifiedMs) / 1000);
-  return Math.max(0, COUNTDOWN_TOTAL_SECONDS - elapsed);
+const resolveUnitStatusBadge = (inc: ReportItem): {
+  bg: string;
+  text: string;
+  border: string;
+  dot: string;
+  label: string;
+} => {
+  const raw = (inc.status || 'Submitted').trim();
+  const lower = raw.toLowerCase();
+
+  if (lower === 'rejected' || lower === 'declined') {
+    return {
+      bg: 'bg-[#670626]',
+      text: 'text-[#F7F1EA]',
+      border: 'border-[#670626]',
+      dot: 'bg-[#FFD9DD]',
+      label: 'Rejected'
+    };
+  }
+  if (
+    lower === 'resolved' ||
+    lower === 'closed' ||
+    lower === 'completed' ||
+    Boolean(inc.resolvedAt || inc.closedAt)
+  ) {
+    return {
+      bg: 'bg-emerald-100',
+      text: 'text-emerald-900',
+      border: 'border-emerald-700/35',
+      dot: 'bg-emerald-600',
+      label: 'Done'
+    };
+  }
+  if (lower === 'inprogress' || lower === 'in_progress' || lower === 'working progress') {
+    return {
+      bg: 'bg-amber-100',
+      text: 'text-amber-900',
+      border: 'border-amber-700/35',
+      dot: 'bg-amber-600 animate-pulse',
+      label: 'Working Progress'
+    };
+  }
+  if (
+    lower === 'allocated' ||
+    lower === 'dispatched' ||
+    lower === 'enroute' ||
+    lower === 'onscene' ||
+    Boolean(inc.allocatedUnitCode)
+  ) {
+    return {
+      bg: 'bg-[#A83B4D]',
+      text: 'text-[#F7F1EA]',
+      border: 'border-[#A83B4D]',
+      dot: 'bg-[#F7F1EA]',
+      label: lower === 'enroute' ? 'En Route' : lower === 'onscene' ? 'On Scene' : 'Dispatched'
+    };
+  }
+  if (lower === 'verified' || lower === 'responded') {
+    const isAiApproved =
+      Boolean(inc.aiAutoApproved) ||
+      String(inc.aiVerificationStatus || '').trim().toLowerCase() === 'autoapproved';
+    return {
+      bg: 'bg-sky-100',
+      text: 'text-sky-900',
+      border: 'border-sky-700/35',
+      dot: 'bg-sky-600',
+      label: isAiApproved ? 'AI Auto-Approved' : 'Manual Approved'
+    };
+  }
+  return {
+    bg: 'bg-[#E9D9D0]',
+    text: 'text-[#670626]',
+    border: 'border-[#A83B4D]/45',
+    dot: 'bg-[#670626]',
+    label: 'Submitted'
+  };
 };
 
 const createBlankCasualtyEntry = (): CasualtyVitalEntry => ({
@@ -281,7 +352,7 @@ export const UnitIncidentsFeed: React.FC = () => {
   const [isSavingPcr, setIsSavingPcr] = useState<boolean>(false);
 
   const [activeBlotterIncident, setActiveBlotterIncident] = useState<ReportItem | null>(null);
-  const autoClosedIdsRef = useRef<Set<string>>(new Set());
+  const [closureModalIncident, setClosureModalIncident] = useState<ReportItem | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setActionSuccessToast(msg);
@@ -382,37 +453,19 @@ export const UnitIncidentsFeed: React.FC = () => {
     void loadIncidents();
   }, [loadIncidents]);
 
-  // 1-second tick for real DB verifiedAt + 5m - now countdown; persists Resolved to PostgreSQL upon reaching 00:00
+  // 1-second tick solely for live 2-minute Done fade countdown notice (never auto-closes active cases)
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      const currentNow = Date.now();
-      setNowMs(currentNow);
+    const hasActiveFade = incidents.some((inc) => {
+      const rem = computeTwoMinFadeSecondsLeft(inc.resolvedAt, inc.closedAt, inc.status, nowMs);
+      return rem !== null && rem > 0;
+    });
+    if (!hasActiveFade) return;
 
-      incidents.forEach((inc) => {
-        const isTerminal =
-          inc.status === 'Resolved' ||
-          inc.status === 'Closed' ||
-          inc.status === 'Rejected' ||
-          Boolean(inc.resolvedAt);
-        if (!isTerminal && inc.verifiedAt) {
-          const remaining = computeRemainingSecondsFromVerifiedAt(inc.verifiedAt, currentNow);
-          if (remaining <= 0 && !autoClosedIdsRef.current.has(inc.id)) {
-            autoClosedIdsRef.current.add(inc.id);
-            void verifyReport(
-              inc.id,
-              'Resolved',
-              '5-minute post-verification countdown completed. Case resolved.'
-            )
-              .then(() => loadIncidents())
-              .catch(() => {
-                autoClosedIdsRef.current.delete(inc.id);
-              });
-          }
-        }
-      });
+    const interval = window.setInterval(() => {
+      setNowMs(Date.now());
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [incidents, loadIncidents]);
+  }, [incidents, nowMs]);
 
   const agencyBadge = useMemo(() => {
     switch (activeAgencyUnit) {
@@ -463,15 +516,21 @@ export const UnitIncidentsFeed: React.FC = () => {
         return (
           st === 'Submitted' ||
           st === 'Reported' ||
-          st === 'Pending' ||
           st === 'Verified' ||
           st === 'Allocated' ||
           st === 'Dispatched' ||
           st === 'EnRoute' ||
           st === 'OnScene' ||
-          st === 'Responded'
+          st === 'Responded' ||
+          st === 'InProgress'
         );
       }).length,
+    [incidents, getEffectiveStatus]
+  );
+
+  const inProgressCount = useMemo(
+    () =>
+      incidents.filter((i) => getEffectiveStatus(i) === 'InProgress').length,
     [incidents, getEffectiveStatus]
   );
 
@@ -479,7 +538,7 @@ export const UnitIncidentsFeed: React.FC = () => {
     () =>
       incidents.filter((i) => {
         const st = getEffectiveStatus(i);
-        return st === 'Resolved' || st === 'Closed';
+        return st === 'Resolved' || st === 'Closed' || Boolean(i.resolvedAt || i.closedAt);
       }).length,
     [incidents, getEffectiveStatus]
   );
@@ -495,17 +554,26 @@ export const UnitIncidentsFeed: React.FC = () => {
         filterMode === 'ACTIVE' &&
         effectiveStatus !== 'Submitted' &&
         effectiveStatus !== 'Reported' &&
-        effectiveStatus !== 'Pending' &&
         effectiveStatus !== 'Verified' &&
         effectiveStatus !== 'Allocated' &&
         effectiveStatus !== 'Dispatched' &&
         effectiveStatus !== 'EnRoute' &&
         effectiveStatus !== 'OnScene' &&
-        effectiveStatus !== 'Responded'
+        effectiveStatus !== 'Responded' &&
+        effectiveStatus !== 'InProgress'
       ) {
         return false;
       }
-      if (filterMode === 'RESOLVED' && effectiveStatus !== 'Resolved' && effectiveStatus !== 'Closed') {
+      if (filterMode === 'IN_PROGRESS' && effectiveStatus !== 'InProgress') {
+        return false;
+      }
+      if (
+        filterMode === 'RESOLVED' &&
+        effectiveStatus !== 'Resolved' &&
+        effectiveStatus !== 'Closed' &&
+        !inc.resolvedAt &&
+        !inc.closedAt
+      ) {
         return false;
       }
 
@@ -933,55 +1001,6 @@ export const UnitIncidentsFeed: React.FC = () => {
     }
   };
 
-  const handleSubmitReportToIncidentLogs = async (inc: ReportItem, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    const incEvidences = evidenceMap[inc.id] || [];
-    const incPcrs = pcrRecordsByIncident[inc.id] || [];
-
-    try {
-      await verifyReport(
-        inc.id,
-        'Verified',
-        `Field Report verified by ${session?.fullName || 'Responder'} with ${incEvidences.length} evidence item(s) and ${incPcrs.length} PCR vital record(s). 05:00 countdown initiated.`
-      );
-      await loadIncidents();
-
-      dispatchReportEvent({
-        type: 'INCIDENT_REPORT_SUBMITTED_TO_LOGS',
-        incidentId: inc.id,
-        referenceCode: inc.referenceCode
-      });
-
-      broadcastNotificationEvent(
-        `Report Submitted · ${inc.referenceCode}`,
-        `${incEvidences.length} Evidence · ${incPcrs.length} PCR · 05:00 verification timer active`,
-        { incidentId: inc.id }
-      );
-
-      showToast(`${inc.referenceCode} verified — 05:00 auto-close countdown active`);
-    } catch {
-      showToast(`Failed to submit report for ${inc.referenceCode} to server.`);
-    }
-  };
-
-  const handleCompleteCountdownImmediately = async (inc: ReportItem, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    try {
-      await verifyReport(
-        inc.id,
-        'Resolved',
-        `Incident closed by ${session?.fullName || 'Responder'} after verification.`
-      );
-      await loadIncidents();
-      if (selectedDetailIncident?.id === inc.id) {
-        setSelectedDetailIncident({ ...inc, status: 'Resolved', resolvedAt: new Date().toISOString() });
-      }
-      showToast(`${inc.referenceCode} resolved and persisted to PostgreSQL`);
-    } catch {
-      showToast(`Failed to resolve ${inc.referenceCode} on server.`);
-    }
-  };
-
   const activeCasualtyDraft = draftCasualties[activeCasualtyTabIndex] || draftCasualties[0];
   const currentModalEvidences = evidenceModalIncident
     ? evidenceMap[evidenceModalIncident.id] || []
@@ -1028,7 +1047,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               <span className="text-xl font-black text-amber-900">{activeCount}</span>
             </div>
             <div className="px-4 py-2 rounded-xl bg-emerald-100 border border-emerald-700/25 flex flex-col items-center">
-              <span className="text-xs text-emerald-800 font-bold">Resolved</span>
+              <span className="text-xs text-emerald-800 font-bold">Done</span>
               <span className="text-xl font-black text-emerald-900">{resolvedCount}</span>
             </div>
           </div>
@@ -1074,6 +1093,18 @@ export const UnitIncidentsFeed: React.FC = () => {
             </button>
             <button
               type="button"
+              onClick={() => setFilterMode('IN_PROGRESS')}
+              className={`px-3.5 py-2 rounded-xl border font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
+                filterMode === 'IN_PROGRESS'
+                  ? 'bg-[#A83B4D] text-[#F7F1EA] border-[#A83B4D] shadow-sm'
+                  : 'bg-[#E9D9D0] text-[#670626] border-[#670626]/20 hover:border-[#A83B4D]'
+              }`}
+            >
+              <Timer className="w-4 h-4" />
+              <span>Working Progress ({inProgressCount})</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setFilterMode('RESOLVED')}
               className={`px-3.5 py-2 rounded-xl border font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                 filterMode === 'RESOLVED'
@@ -1082,7 +1113,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               }`}
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>Resolved ({resolvedCount})</span>
+              <span>Done ({resolvedCount})</span>
             </button>
           </div>
 
@@ -1132,21 +1163,32 @@ export const UnitIncidentsFeed: React.FC = () => {
           {paginatedItems.map((inc) => {
             const effectiveStatus = getEffectiveStatus(inc);
             const isResponded = effectiveStatus === 'Responded';
-            const isRejected = effectiveStatus === 'Rejected';
+            const isRejected = effectiveStatus === 'Rejected' || effectiveStatus === 'Declined';
             const isClosedOrResolved =
               effectiveStatus === 'Resolved' ||
               effectiveStatus === 'Closed' ||
-              Boolean(inc.resolvedAt);
+              Boolean(inc.resolvedAt || inc.closedAt);
             const isAwaitingVerification =
-              effectiveStatus === 'Reported' ||
-              effectiveStatus === 'Submitted' ||
-              effectiveStatus === 'Pending';
-            const hasActiveTimer = Boolean(inc.verifiedAt) && !isClosedOrResolved && !isRejected;
-            const remainingSeconds = hasActiveTimer
-              ? computeRemainingSecondsFromVerifiedAt(inc.verifiedAt, nowMs)
-              : 0;
+              (effectiveStatus === 'Reported' || effectiveStatus === 'Submitted') &&
+              !inc.verifiedAt &&
+              !inc.allocatedUnitCode &&
+              !isClosedOrResolved &&
+              !isRejected;
+            const canDispatch =
+              (isAwaitingVerification || effectiveStatus === 'Verified') &&
+              !inc.allocatedUnitCode &&
+              !isClosedOrResolved &&
+              !isRejected;
+            const fadeSecondsLeft = computeTwoMinFadeSecondsLeft(
+              inc.resolvedAt,
+              inc.closedAt,
+              inc.status,
+              nowMs
+            );
             const incEvidences = evidenceMap[inc.id] || [];
             const incPcrs = pcrRecordsByIncident[inc.id] || [];
+            const resolvedStreet =
+              inc.locationLabel || resolveStreetAddressSync(inc.latitude, inc.longitude);
 
             const isCritical = inc.severity === 'Critical';
             const isSevere = inc.severity === 'High';
@@ -1172,98 +1214,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               </span>
             );
 
-            const statusConfig = {
-              Submitted: {
-                bg: 'bg-[#E9D9D0]',
-                text: 'text-[#670626]',
-                border: 'border-[#A83B4D]/45',
-                dot: 'bg-[#670626]',
-                label: 'Submitted'
-              },
-              Reported: {
-                bg: 'bg-[#E9D9D0]',
-                text: 'text-[#670626]',
-                border: 'border-[#A83B4D]/45',
-                dot: 'bg-[#670626]',
-                label: 'Submitted'
-              },
-              Pending: {
-                bg: 'bg-amber-100',
-                text: 'text-amber-900',
-                border: 'border-amber-700/30',
-                dot: 'bg-amber-600 animate-pulse',
-                label: 'Pending'
-              },
-              Verified: {
-                bg: 'bg-[#670626]/12',
-                text: 'text-[#670626]',
-                border: 'border-[#670626]/35',
-                dot: 'bg-[#670626]',
-                label: 'Verified'
-              },
-              Rejected: {
-                bg: 'bg-[#670626]',
-                text: 'text-[#F7F1EA]',
-                border: 'border-[#670626]',
-                dot: 'bg-[#FFD9DD]',
-                label: 'Rejected'
-              },
-              Allocated: {
-                bg: 'bg-[#A83B4D]',
-                text: 'text-[#F7F1EA]',
-                border: 'border-[#A83B4D]',
-                dot: 'bg-[#F7F1EA]',
-                label: 'Dispatched'
-              },
-              Dispatched: {
-                bg: 'bg-[#A83B4D]',
-                text: 'text-[#F7F1EA]',
-                border: 'border-[#A83B4D]',
-                dot: 'bg-[#F7F1EA]',
-                label: 'Dispatched'
-              },
-              EnRoute: {
-                bg: 'bg-amber-100',
-                text: 'text-amber-900',
-                border: 'border-amber-700/35',
-                dot: 'bg-amber-600 animate-ping',
-                label: 'En Route'
-              },
-              OnScene: {
-                bg: 'bg-sky-100',
-                text: 'text-sky-900',
-                border: 'border-sky-700/35',
-                dot: 'bg-sky-600 animate-pulse',
-                label: 'On Scene'
-              },
-              Responded: {
-                bg: 'bg-emerald-100',
-                text: 'text-emerald-900',
-                border: 'border-emerald-700/40',
-                dot: 'bg-[#10B981] animate-ping',
-                label: 'Responded'
-              },
-              Resolved: {
-                bg: 'bg-emerald-100',
-                text: 'text-emerald-900',
-                border: 'border-emerald-700/35',
-                dot: 'bg-emerald-600',
-                label: 'Resolved'
-              },
-              Closed: {
-                bg: 'bg-[#E9D9D0]',
-                text: 'text-emerald-900',
-                border: 'border-emerald-700/35',
-                dot: 'bg-emerald-600 opacity-60',
-                label: 'Closed'
-              }
-            }[effectiveStatus] || {
-              bg: 'bg-[#E9D9D0]',
-              text: 'text-[#670626]',
-              border: 'border-[#670626]/20',
-              dot: 'bg-[#670626]',
-              label: effectiveStatus
-            };
+            const statusConfig = resolveUnitStatusBadge(inc);
 
             const cardBorder = isResponded
               ? 'border-l-4 border-l-[#10B981] border-emerald-700/30'
@@ -1341,10 +1292,10 @@ export const UnitIncidentsFeed: React.FC = () => {
                         </span>
                       )}
 
-                      {hasActiveTimer && (
+                      {fadeSecondsLeft !== null && fadeSecondsLeft > 0 && (
                         <span className="px-3 py-0.5 rounded-lg bg-emerald-100 text-emerald-900 border border-emerald-700/35 text-xs font-mono font-black inline-flex items-center gap-1.5">
                           <Timer className="w-3.5 h-3.5 text-emerald-700" />
-                          <span>{formatCountdownMmSs(remainingSeconds)}</span>
+                          <span>Done · Map fade {formatCountdownMmSs(fadeSecondsLeft)}</span>
                         </span>
                       )}
                     </div>
@@ -1356,6 +1307,34 @@ export const UnitIncidentsFeed: React.FC = () => {
                     <p className="text-sm text-[#5C313E] mt-1 max-w-2xl font-sans line-clamp-2">
                       {inc.note || 'No field notes.'}
                     </p>
+
+                    {(inc.closureApprovalMode || inc.closureSummary) && (
+                      <div className="mt-2.5 p-2.5 rounded-xl bg-emerald-50 border border-emerald-700/25 text-xs font-mono text-emerald-950 flex flex-col gap-1 max-w-2xl">
+                        {inc.closureApprovalMode && (
+                          <span className="font-black uppercase text-emerald-800">
+                            Closure Mode: {inc.closureApprovalMode}
+                          </span>
+                        )}
+                        {inc.closureSummary && (
+                          <p className="font-sans text-xs text-emerald-900 line-clamp-2">
+                            {inc.closureSummary}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {Array.isArray(inc.taggedColleagues) && inc.taggedColleagues.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5 max-w-2xl">
+                        {inc.taggedColleagues.map((col) => (
+                          <span
+                            key={col.userId}
+                            className="px-2 py-0.5 rounded-md bg-[#E9D9D0] border border-[#670626]/20 text-xs font-mono font-bold text-[#670626]"
+                          >
+                            @{col.fullName} ({col.unit})
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {(inc.roboflowPrediction || inc.claudeSituationSummary || inc.claudeVisibleHazards) && (
                       <div className="mt-2.5 p-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-xs font-mono text-[#670626] flex flex-col gap-1 max-w-2xl">
@@ -1393,12 +1372,10 @@ export const UnitIncidentsFeed: React.FC = () => {
                         </span>
                       </div>
 
-                      {inc.locationLabel && (
-                        <span className="text-[#2B010E] truncate max-w-xs inline-flex items-center gap-1.5">
-                          <Building className="w-3.5 h-3.5 text-[#A83B4D]" />
-                          <span>{inc.locationLabel}</span>
-                        </span>
-                      )}
+                      <span className="text-[#2B010E] truncate max-w-xs inline-flex items-center gap-1.5" title={resolvedStreet}>
+                        <Building className="w-3.5 h-3.5 text-[#A83B4D]" />
+                        <span>{resolvedStreet}</span>
+                      </span>
 
                       <span className="inline-flex items-center gap-1.5">
                         <User className="w-3.5 h-3.5 text-[#A83B4D]" />
@@ -1453,12 +1430,12 @@ export const UnitIncidentsFeed: React.FC = () => {
                     </>
                   )}
 
-                  {effectiveStatus === 'Verified' && (
+                  {canDispatch && !isAwaitingVerification && (
                     <button
                       type="button"
                       onClick={(e) => void handleVerifyIncidentAction(inc, 'Allocated', e)}
                       className="flex items-center gap-1 px-3 py-2 rounded-xl bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] text-xs font-mono font-bold shadow-sm cursor-pointer"
-                      title="Dispatch unit to verified incident"
+                      title="Dispatch unit to approved incident"
                     >
                       <Send className="w-3.5 h-3.5" />
                       <span>Dispatch</span>
@@ -1524,7 +1501,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                     </button>
                   )}
 
-                  {!isRejected && (
+                  {!isRejected && !isClosedOrResolved && (
                     <>
                       <button
                         type="button"
@@ -1542,12 +1519,15 @@ export const UnitIncidentsFeed: React.FC = () => {
 
                       <button
                         type="button"
-                        onClick={(e) => void handleSubmitReportToIncidentLogs(inc, e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setClosureModalIncident(inc);
+                        }}
                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-mono text-xs font-black border border-[#670626] shadow-sm active:scale-95 transition-all cursor-pointer"
-                        title="Verify & initiate 5-minute countdown"
+                        title="Submit duty closure evidence with AI verification & colleague tagging"
                       >
-                        <Send className="w-4 h-4" />
-                        <span>Submit Report</span>
+                        <Camera className="w-4 h-4" />
+                        <span>Submit Duty Evidence / Close Case</span>
                       </button>
                     </>
                   )}
@@ -1574,13 +1554,22 @@ export const UnitIncidentsFeed: React.FC = () => {
               {paginatedItems.map((inc) => {
                 const effectiveStatus = getEffectiveStatus(inc);
                 const isResponded = effectiveStatus === 'Responded';
-                const isRejected = effectiveStatus === 'Rejected';
+                const isRejected = effectiveStatus === 'Rejected' || effectiveStatus === 'Declined';
+                const isClosedOrResolved =
+                  effectiveStatus === 'Resolved' ||
+                  effectiveStatus === 'Closed' ||
+                  Boolean(inc.resolvedAt || inc.closedAt);
                 const isAwaitingVerification =
-                  effectiveStatus === 'Reported' ||
-                  effectiveStatus === 'Submitted' ||
-                  effectiveStatus === 'Pending';
+                  (effectiveStatus === 'Reported' || effectiveStatus === 'Submitted') &&
+                  !inc.verifiedAt &&
+                  !inc.allocatedUnitCode &&
+                  !isClosedOrResolved &&
+                  !isRejected;
+                const statusBadge = resolveUnitStatusBadge(inc);
                 const incEvidences = evidenceMap[inc.id] || [];
                 const incPcrs = pcrRecordsByIncident[inc.id] || [];
+                const resolvedStreet =
+                  inc.locationLabel || resolveStreetAddressSync(inc.latitude, inc.longitude);
 
                 return (
                   <tr
@@ -1605,8 +1594,8 @@ export const UnitIncidentsFeed: React.FC = () => {
                       </span>
                     </td>
                     <td className="p-4 text-[#2B010E] font-sans font-bold">{inc.title}</td>
-                    <td className="p-4 text-[#5C313E] truncate max-w-[180px] text-xs">
-                      {inc.locationLabel || formatGpsCoord(inc.latitude, inc.longitude)}
+                    <td className="p-4 text-[#5C313E] truncate max-w-[200px] text-xs" title={resolvedStreet}>
+                      {resolvedStreet}
                     </td>
                     <td className="p-4 whitespace-nowrap text-xs">
                       <span className="text-[#670626] font-bold">{incEvidences.length}/40</span>
@@ -1615,20 +1604,10 @@ export const UnitIncidentsFeed: React.FC = () => {
                     </td>
                     <td className="p-4 whitespace-nowrap">
                       <span
-                        className={`px-2.5 py-1 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 ${
-                          isRejected
-                            ? 'bg-[#670626] text-[#F7F1EA] border-[#670626]'
-                            : isResponded
-                            ? 'bg-emerald-100 text-emerald-900 border-emerald-700/35'
-                            : 'bg-[#E9D9D0] border-[#670626]/20 text-[#670626]'
-                        }`}
+                        className={`px-2.5 py-1 rounded-lg border text-xs font-bold inline-flex items-center gap-1.5 ${statusBadge.bg} ${statusBadge.text} ${statusBadge.border}`}
                       >
-                        <span
-                          className={`w-2 h-2 rounded-full ${
-                            isRejected ? 'bg-[#FFD9DD]' : isResponded ? 'bg-[#10B981]' : 'bg-[#670626]'
-                          }`}
-                        />
-                        <span>{effectiveStatus === 'Reported' ? 'Submitted' : effectiveStatus}</span>
+                        <span className={`w-2 h-2 rounded-full ${statusBadge.dot}`} />
+                        <span>{statusBadge.label}</span>
                       </span>
                     </td>
                     <td
@@ -1674,7 +1653,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                           onClick={() => {
                             setBackupModalIncident(inc);
                             setBackupNote(
-                              `Backup requested at ${inc.locationLabel || formatGpsCoord(inc.latitude, inc.longitude)}`
+                              `Backup requested at ${resolvedStreet}`
                             );
                           }}
                           className="px-2.5 py-1.5 rounded-lg bg-[#E9D9D0] hover:bg-[#DFC9BE] text-[#670626] border border-[#670626]/20 font-bold text-xs inline-flex items-center gap-1 cursor-pointer"
@@ -1706,21 +1685,28 @@ export const UnitIncidentsFeed: React.FC = () => {
                             Blotter
                           </button>
                         )}
-                        {!isRejected && (
+                        {!isRejected && !isClosedOrResolved && (
                           <>
                             <button
                               type="button"
                               onClick={(e) => void handleMarkRespondedGreenPointer(inc, e)}
-                              className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs cursor-pointer"
+                              className={`px-2.5 py-1.5 rounded-lg font-black text-xs cursor-pointer ${
+                                isResponded
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              }`}
                             >
                               Responded
                             </button>
                             <button
                               type="button"
-                              onClick={(e) => void handleSubmitReportToIncidentLogs(inc, e)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setClosureModalIncident(inc);
+                              }}
                               className="px-2.5 py-1.5 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-black text-xs cursor-pointer"
                             >
-                              Submit
+                              Close Case
                             </button>
                           </>
                         )}
@@ -1780,12 +1766,37 @@ export const UnitIncidentsFeed: React.FC = () => {
       </div>
 
       {/* Incident Details Modal */}
-      {selectedDetailIncident && (
+      {selectedDetailIncident && (() => {
+        const detailBadge = resolveUnitStatusBadge(selectedDetailIncident);
+        const detailStatusLower = (selectedDetailIncident.status || '').trim().toLowerCase();
+        const detailIsRejected = detailStatusLower === 'rejected' || detailStatusLower === 'declined';
+        const detailIsClosedOrResolved =
+          detailStatusLower === 'resolved' ||
+          detailStatusLower === 'closed' ||
+          detailStatusLower === 'completed' ||
+          Boolean(selectedDetailIncident.resolvedAt || selectedDetailIncident.closedAt);
+        const detailAwaitingVerification =
+          (detailStatusLower === 'reported' || detailStatusLower === 'submitted') &&
+          !selectedDetailIncident.verifiedAt &&
+          !selectedDetailIncident.allocatedUnitCode &&
+          !detailIsClosedOrResolved &&
+          !detailIsRejected;
+        const detailFadeSecondsLeft = computeTwoMinFadeSecondsLeft(
+          selectedDetailIncident.resolvedAt,
+          selectedDetailIncident.closedAt,
+          selectedDetailIncident.status,
+          nowMs
+        );
+        const detailStreet =
+          selectedDetailIncident.locationLabel ||
+          resolveStreetAddressSync(selectedDetailIncident.latitude, selectedDetailIncident.longitude);
+
+        return (
         <DefaultFloatingModalCard
           isOpen={selectedDetailIncident !== null}
           onClose={() => setSelectedDetailIncident(null)}
           title={`${selectedDetailIncident.referenceCode} — Dispatch`}
-          subtitle={selectedDetailIncident.locationLabel || formatGpsCoord(selectedDetailIncident.latitude, selectedDetailIncident.longitude)}
+          subtitle={detailStreet}
           size="2xl"
           footer={
             <div className="flex flex-wrap items-center justify-between w-full gap-2">
@@ -1812,9 +1823,7 @@ export const UnitIncidentsFeed: React.FC = () => {
                 </Button>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {(getEffectiveStatus(selectedDetailIncident) === 'Reported' ||
-                  getEffectiveStatus(selectedDetailIncident) === 'Submitted' ||
-                  getEffectiveStatus(selectedDetailIncident) === 'Pending') && (
+                {detailAwaitingVerification && (
                   <>
                     <Button
                       variant="action-green"
@@ -1834,22 +1843,26 @@ export const UnitIncidentsFeed: React.FC = () => {
                     </Button>
                   </>
                 )}
-                <Button
-                  variant="action-green"
-                  size="sm"
-                  onClick={() => void handleMarkRespondedGreenPointer(selectedDetailIncident)}
-                  icon={<CheckCircle2 className="w-4 h-4" />}
-                >
-                  Responded
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => void handleSubmitReportToIncidentLogs(selectedDetailIncident)}
-                  icon={<Send className="w-4 h-4" />}
-                >
-                  Submit Report
-                </Button>
+                {!detailIsRejected && !detailIsClosedOrResolved && (
+                  <>
+                    <Button
+                      variant="action-green"
+                      size="sm"
+                      onClick={() => void handleMarkRespondedGreenPointer(selectedDetailIncident)}
+                      icon={<CheckCircle2 className="w-4 h-4" />}
+                    >
+                      Responded
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setClosureModalIncident(selectedDetailIncident)}
+                      icon={<Camera className="w-4 h-4" />}
+                    >
+                      Submit Duty Evidence / Close Case
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           }
@@ -1871,7 +1884,7 @@ export const UnitIncidentsFeed: React.FC = () => {
               <div>
                 <span className="text-xs text-[#A83B4D] font-bold block">Status</span>
                 <span className="text-base font-black text-emerald-800">
-                  {getEffectiveStatus(selectedDetailIncident)}
+                  {detailBadge.label}
                 </span>
               </div>
             </div>
@@ -1899,6 +1912,40 @@ export const UnitIncidentsFeed: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {(selectedDetailIncident.closureApprovalMode || selectedDetailIncident.closureSummary) && (
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-700/25 space-y-1.5 text-xs font-mono text-emerald-950">
+                {selectedDetailIncident.closureApprovalMode && (
+                  <div className="font-black uppercase text-emerald-800">
+                    Closure Approval Mode: {selectedDetailIncident.closureApprovalMode}
+                  </div>
+                )}
+                {selectedDetailIncident.closureSummary && (
+                  <p className="font-sans text-sm text-emerald-900">
+                    {selectedDetailIncident.closureSummary}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {Array.isArray(selectedDetailIncident.taggedColleagues) &&
+              selectedDetailIncident.taggedColleagues.length > 0 && (
+                <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 space-y-2">
+                  <span className="text-xs font-bold uppercase text-[#A83B4D] block">
+                    Tagged Unit Colleagues
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedDetailIncident.taggedColleagues.map((col) => (
+                      <span
+                        key={col.userId}
+                        className="px-2.5 py-1 rounded-lg bg-[#F7F1EA] border border-[#670626]/20 text-xs font-mono font-bold text-[#670626]"
+                      >
+                        @{col.fullName} · {col.unit} ({col.rankOrTitle})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
             {(selectedDetailIncident.roboflowPrediction ||
               selectedDetailIncident.claudeSituationSummary ||
@@ -1933,54 +1980,37 @@ export const UnitIncidentsFeed: React.FC = () => {
               </div>
             )}
 
-            {/* 5-Minute Verification Countdown from real DB verifiedAt */}
-            {selectedDetailIncident.verifiedAt && (
+            {/* Case Closure / 2-Minute Done Fade Countdown Notice */}
+            {(detailIsClosedOrResolved || detailStatusLower === 'inprogress') && (
               <div className="p-4 rounded-xl bg-emerald-100 border-2 border-emerald-700/35 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-black text-emerald-900 flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-emerald-700" />
-                    <span>Verification Countdown</span>
+                    <span>
+                      {detailIsClosedOrResolved
+                        ? 'Case Done — Map Pointer Lifecycle'
+                        : 'Working Progress (InProgress)'}
+                    </span>
                   </div>
                   <p className="text-xs text-emerald-800 mt-1">
-                    {selectedDetailIncident.status === 'Resolved' ||
-                    selectedDetailIncident.status === 'Closed' ||
-                    Boolean(selectedDetailIncident.resolvedAt)
-                      ? 'Resolved in PostgreSQL.'
-                      : 'Auto-closes at 00:00 via verifyReport.'}
+                    {detailIsClosedOrResolved
+                      ? detailFadeSecondsLeft !== null && detailFadeSecondsLeft > 0
+                        ? `Resolved in PostgreSQL. Map pointer fades in ${formatCountdownMmSs(detailFadeSecondsLeft)}.`
+                        : 'Resolved & closed in PostgreSQL.'
+                      : 'Responder evidence under active remediation. Submit updated closure evidence when finished.'}
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
+                {detailIsClosedOrResolved && detailFadeSecondsLeft !== null && (
                   <span className="px-3.5 py-2 rounded-xl bg-[#F7F1EA] border border-emerald-700/35 text-xl font-black text-emerald-900">
-                    {selectedDetailIncident.status === 'Resolved' ||
-                    selectedDetailIncident.status === 'Closed' ||
-                    Boolean(selectedDetailIncident.resolvedAt)
-                      ? '00:00'
-                      : formatCountdownMmSs(
-                          computeRemainingSecondsFromVerifiedAt(
-                            selectedDetailIncident.verifiedAt,
-                            nowMs
-                          )
-                        )}
+                    {formatCountdownMmSs(detailFadeSecondsLeft)}
                   </span>
-                  {selectedDetailIncident.status !== 'Resolved' &&
-                    selectedDetailIncident.status !== 'Closed' &&
-                    !selectedDetailIncident.resolvedAt && (
-                      <Button
-                        variant="action-green"
-                        size="xs"
-                        onClick={(e) =>
-                          void handleCompleteCountdownImmediately(selectedDetailIncident, e)
-                        }
-                      >
-                        Close Now
-                      </Button>
-                    )}
-                </div>
+                )}
               </div>
             )}
           </div>
         </DefaultFloatingModalCard>
-      )}
+        );
+      })()}
 
       {/* 3-Option Backup Modal */}
       {backupModalIncident && (
@@ -2622,6 +2652,29 @@ export const UnitIncidentsFeed: React.FC = () => {
           }}
         />
       )}
+
+      <ResponderClosureEvidenceModal
+        isOpen={closureModalIncident !== null}
+        onClose={() => setClosureModalIncident(null)}
+        incident={closureModalIncident}
+        responderUnit={activeAgencyUnit}
+        onSubmitted={(result: ClosureEvidenceSubmissionResult) => {
+          showToast(
+            result.message ||
+              `Updated ${result.report?.referenceCode || 'incident'} (${result.reportStatus})`
+          );
+          dispatchReportEvent({
+            type: 'CLOSURE_EVIDENCE_SUBMITTED',
+            reportId: result.report?.id,
+            status: result.reportStatus
+          });
+          if (selectedDetailIncident?.id && result.report?.id === selectedDetailIncident.id) {
+            setSelectedDetailIncident(result.report);
+          }
+          setClosureModalIncident(null);
+          void loadIncidents();
+        }}
+      />
     </div>
   );
 };

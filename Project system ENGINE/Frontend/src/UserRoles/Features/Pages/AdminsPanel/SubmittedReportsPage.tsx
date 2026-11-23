@@ -22,9 +22,19 @@ import {
   Camera,
   XCircle,
   Sparkles,
-  Loader2
+  Loader2,
+  Users,
+  ShieldCheck
 } from 'lucide-react';
-import { getAllReports, verifyReport, autoApproveReportWithAi, ReportItem } from '@/Endpoints/reportsApi';
+import {
+  getAllReports,
+  verifyReport,
+  autoApproveReportWithAi,
+  approveReportClosure,
+  ReportItem,
+  TaggedColleagueItem
+} from '@/Endpoints/reportsApi';
+import { parseUtcTimestamp } from '@/Endpoints/analyticsApi';
 import { getPcrRecords, PatientCareRecord } from '@/Endpoints/responderOpsApi';
 import { requestJson } from '@/Endpoints/apiClient';
 import {
@@ -37,7 +47,8 @@ import {
 } from '@/Shared';
 import { usePagination, useDebounce, useValueRefreshAuto } from '@/Hooks';
 import { formatDateTimeWithSecondsAmPm } from '@/Shared/radarPointerCategories';
-import { KATIPUNAN_BASE_COORDS, getKatipunanBarangay } from '@/Libs/Map/mapAccuracy';
+import { KATIPUNAN_BASE_COORDS } from '@/Libs/Map/mapAccuracy';
+import { resolveStreetAddressSync, isRawCoordinateLabel } from '@/Libs/Map/addressResolver';
 import { AdminButton } from './Shared/AdminButton';
 import { AdminModalCard } from './Shared/AdminModalCard';
 import {
@@ -73,6 +84,7 @@ interface ReportEvidenceApiItem {
   caption?: string;
   timestamp?: string;
   createdAtUtc?: string;
+  taggedColleagues?: TaggedColleagueItem[];
 }
 
 const mapPcrToCasualty = (p: PatientCareRecord): PcrCasualtyItem => ({
@@ -129,15 +141,19 @@ export interface SubmittedReportRecord {
   pointerIconType?: string | null;
   aiAutoApproved?: boolean;
   aiVerificationStatus?: string | null;
+  closureSummary?: string | null;
+  closureApprovalMode?: string | null;
+  taggedColleagues?: TaggedColleagueItem[];
 }
-
-const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
 export const SubmittedReportsPage: FC = () => {
   const [reports, setReports] = useState<SubmittedReportRecord[]>([]);
   const [dossierPcrByReportId, setDossierPcrByReportId] = useState<Record<string, PcrCasualtyItem[]>>({});
   const [dossierEvidencesByReportId, setDossierEvidencesByReportId] = useState<
     Record<string, Array<{ url: string; timestamp?: string; caption?: string }>>
+  >({});
+  const [dossierColleaguesByReportId, setDossierColleaguesByReportId] = useState<
+    Record<string, TaggedColleagueItem[]>
   >({});
   const [isLoadingDossier, setIsLoadingDossier] = useState<boolean>(false);
   const [searchRaw, setSearchRaw] = useState<string>('');
@@ -153,12 +169,7 @@ export const SubmittedReportsPage: FC = () => {
   const [isLightboxOpen, setIsLightboxOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [aiProcessingId, setAiProcessingId] = useState<string | null>(null);
-  const [currentTime, setCurrentTime] = useState<number>(Date.now());
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const [closureProcessingId, setClosureProcessingId] = useState<string | null>(null);
 
   const loadSubmittedReports = useCallback(async (): Promise<void> => {
     try {
@@ -172,24 +183,33 @@ export const SubmittedReportsPage: FC = () => {
         .filter((rep): rep is ReportItem => Boolean(rep && rep.id))
         .map((rep) => {
           const s = (rep.status || 'Reported').toLowerCase();
-          const isRejected = s === 'rejected';
-          const isVerified = !isRejected && (Boolean(rep.verifiedAt) || s === 'verified' || s === 'responded');
-          const isClosed = s === 'resolved' || s === 'completed' || s === 'closed';
+          const isRejected = s === 'rejected' || s === 'declined';
+          const isClosed =
+            s === 'resolved' ||
+            s === 'completed' ||
+            s === 'closed' ||
+            s === 'responded' ||
+            Boolean(rep.closedAt) ||
+            Boolean(rep.resolvedAt);
+          const isVerified = !isRejected && !isClosed && (Boolean(rep.verifiedAt) || s === 'verified');
           const safePhoto = rep.hasImage ? (rep.imageUrl || `/api/reports/${rep.id}/image`) : null;
           const refCode = rep.referenceCode || `RESQ-${rep.id.slice(0, 8).toUpperCase()}`;
+          const lat = rep.latitude ?? KATIPUNAN_BASE_COORDS.latitude;
+          const lng = rep.longitude ?? KATIPUNAN_BASE_COORDS.longitude;
+          const resolvedLocation = !isRawCoordinateLabel(rep.locationLabel)
+            ? rep.locationLabel
+            : resolveStreetAddressSync(lat, lng);
 
           return {
             id: rep.id,
             referenceCode: refCode,
             title: rep.title || 'Field Incident Report',
-            category: rep.category || 'General',
+            category: rep.category || 'VehicularAccident',
             severity: rep.severity || 'Medium',
-            status: rep.status || 'Submitted',
-            locationLabel:
-              rep.locationLabel ||
-              getKatipunanBarangay(rep.latitude ?? KATIPUNAN_BASE_COORDS.latitude, rep.longitude ?? KATIPUNAN_BASE_COORDS.longitude),
-            latitude: rep.latitude ?? KATIPUNAN_BASE_COORDS.latitude,
-            longitude: rep.longitude ?? KATIPUNAN_BASE_COORDS.longitude,
+            status: rep.status || 'Reported',
+            locationLabel: resolvedLocation,
+            latitude: lat,
+            longitude: lng,
             ipAddress: rep.submittedIpAddress || 'Unavailable',
             responderName: rep.reporterName || 'Unknown Reporter',
             responderUnit: rep.allocatedUnitCode || rep.recommendedAgencyUnit || 'UNASSIGNED',
@@ -198,7 +218,7 @@ export const SubmittedReportsPage: FC = () => {
             verifiedAt: rep.verifiedAt || null,
             verifiedBy: isVerified ? 'LDRRMO Admin Command' : undefined,
             isClosed,
-            closedAt: rep.resolvedAt || null,
+            closedAt: rep.closedAt || rep.resolvedAt || null,
             isRejected,
             allocatedUnitCode: rep.allocatedUnitCode,
             evidencePhotos: safePhoto ? [{ url: safePhoto, timestamp: rep.createdAt, caption: 'Attached Evidence' }] : [],
@@ -213,7 +233,10 @@ export const SubmittedReportsPage: FC = () => {
             claudeVisibleHazards: rep.claudeVisibleHazards,
             pointerIconType: rep.pointerIconType,
             aiAutoApproved: Boolean(rep.aiAutoApproved),
-            aiVerificationStatus: rep.aiVerificationStatus ?? null
+            aiVerificationStatus: rep.aiVerificationStatus ?? null,
+            closureSummary: rep.closureSummary ?? null,
+            closureApprovalMode: rep.closureApprovalMode ?? null,
+            taggedColleagues: Array.isArray(rep.taggedColleagues) ? rep.taggedColleagues : []
           };
         });
 
@@ -259,6 +282,23 @@ export const SubmittedReportsPage: FC = () => {
           ...prev,
           [reportId]: mappedEvidences
         }));
+
+        const colleagueMap = new Map<string, TaggedColleagueItem>();
+        evidences.forEach((ev) => {
+          if (Array.isArray(ev.taggedColleagues)) {
+            ev.taggedColleagues.forEach((col) => {
+              if (col && col.userId && !colleagueMap.has(col.userId)) {
+                colleagueMap.set(col.userId, col);
+              }
+            });
+          }
+        });
+        if (colleagueMap.size > 0) {
+          setDossierColleaguesByReportId((prev) => ({
+            ...prev,
+            [reportId]: Array.from(colleagueMap.values())
+          }));
+        }
       }
     } finally {
       setIsLoadingDossier(false);
@@ -272,11 +312,32 @@ export const SubmittedReportsPage: FC = () => {
   useValueRefreshAuto(loadSubmittedReports, { intervalMs: 8000 });
 
   const totalSubmitted = reports.length;
-  const pendingReview = reports.filter((r) => {
-    const b = formatIncidentStatusBadge(r.status, r.allocatedUnitCode, r.verifiedAt, r.closedAt);
-    return b.label === 'Submitted' || b.label === 'Pending';
+  const aiAutoApprovedCount = reports.filter(
+    (r) =>
+      r.aiAutoApproved ||
+      (r.aiVerificationStatus || '').toUpperCase() === 'AI_AUTO_APPROVED' ||
+      (r.aiVerificationStatus || '').toUpperCase() === 'AUTO_APPROVED'
+  ).length;
+  const awaitingClosureCount = reports.filter(
+    (r) =>
+      !r.isClosed &&
+      !r.isRejected &&
+      ((r.closureApprovalMode || '').toUpperCase() === 'AWAITING_MANUAL_APPROVE' ||
+        (r.status || '').toLowerCase() === 'inprogress')
+  ).length;
+  const manualReviewCount = reports.filter((r) => {
+    if (r.isClosed || r.isRejected) return false;
+    const aiUpper = (r.aiVerificationStatus || '').toUpperCase();
+    const s = (r.status || '').toLowerCase();
+    return (
+      (r.closureApprovalMode || '').toUpperCase() === 'AWAITING_MANUAL_APPROVE' ||
+      s === 'inprogress' ||
+      s === 'reported' ||
+      aiUpper === 'PENDING_MANUAL_REVIEW' ||
+      aiUpper === 'AWAITING_MANUAL_REVIEW' ||
+      aiUpper === 'AI_NON_INCIDENT_FLAGGED'
+    );
   }).length;
-  const verifiedCount = reports.filter((r) => r.isVerified && !r.isClosed && !r.isRejected).length;
   const closedCount = reports.filter((r) => r.isClosed).length;
 
   const handleVerifyOrRejectReport = useCallback(
@@ -313,7 +374,7 @@ export const SubmittedReportsPage: FC = () => {
         );
         setToastMessage(
           nextStatus === 'Verified'
-            ? 'Report verified. 5-Minute auto-close timer started on radar HUD.'
+            ? 'Report manually approved and marked Verified.'
             : 'Report marked as Rejected.'
         );
         setTimeout(() => setToastMessage(null), 4000);
@@ -363,6 +424,62 @@ export const SubmittedReportsPage: FC = () => {
     [loadSubmittedReports]
   );
 
+  const handleApproveClosure = useCallback(
+    async (reportId: string, useAi: boolean): Promise<void> => {
+      setClosureProcessingId(reportId);
+      const closedTimestamp = new Date().toISOString();
+      try {
+        const res = await approveReportClosure(
+          reportId,
+          useAi ? { useAi: true } : { useAi: false, targetStatus: 'Resolved' }
+        );
+        const nextStatus = res.reportStatus || res.report?.status || (res.autoApproved || !useAi ? 'Resolved' : 'InProgress');
+        const nextLower = nextStatus.toLowerCase();
+        const resolvedNow = nextLower === 'resolved' || nextLower === 'closed' || nextLower === 'completed';
+
+        setReports((prev) =>
+          prev.map((r) => {
+            if (r.id !== reportId) return r;
+            return {
+              ...r,
+              status: nextStatus,
+              isClosed: resolvedNow,
+              closedAt: resolvedNow ? (res.report?.closedAt || res.report?.resolvedAt || closedTimestamp) : r.closedAt,
+              closureSummary: res.report?.closureSummary ?? res.aiReasoning ?? r.closureSummary,
+              closureApprovalMode: res.report?.closureApprovalMode ?? res.approvalMode ?? r.closureApprovalMode,
+              aiVerificationStatus: res.report?.aiVerificationStatus ?? r.aiVerificationStatus
+            };
+          })
+        );
+
+        window.dispatchEvent(
+          new CustomEvent('resqtrack:report', {
+            detail: {
+              id: reportId,
+              status: nextStatus,
+              isClosed: resolvedNow,
+              closedAt: resolvedNow ? closedTimestamp : null
+            }
+          })
+        );
+        setToastMessage(
+          res.message ||
+            (useAi
+              ? 'AI closure verification completed.'
+              : 'Closure manually approved as Done.')
+        );
+        await loadSubmittedReports();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Failed to process closure approval.';
+        setToastMessage(msg);
+      } finally {
+        setClosureProcessingId(null);
+        setTimeout(() => setToastMessage(null), 4000);
+      }
+    },
+    [loadSubmittedReports]
+  );
+
   const handleAiAutoApprove = useCallback(
     async (reportId: string): Promise<void> => {
       setAiProcessingId(reportId);
@@ -370,8 +487,9 @@ export const SubmittedReportsPage: FC = () => {
       try {
         const res = await autoApproveReportWithAi(reportId);
         const approved = Boolean(res.autoApproved || (res.status || '').toLowerCase() === 'verified');
-        const nextStatus = approved ? 'Verified' : (res.status || 'Pending');
-        const nextAiStatus = res.aiVerificationStatus || (approved ? 'AUTO_APPROVED' : 'MANUAL_REVIEW');
+        const nextStatus = approved ? 'Verified' : (res.status || 'Reported');
+        const nextAiStatus =
+          res.aiVerificationStatus || (approved ? 'AI_AUTO_APPROVED' : 'PENDING_MANUAL_REVIEW');
 
         setReports((prev) =>
           prev.map((r) => {
@@ -400,7 +518,7 @@ export const SubmittedReportsPage: FC = () => {
         setToastMessage(
           res.message ||
             (approved
-              ? 'AI Auto-Approved photo report. 5-Minute auto-close timer started.'
+              ? 'AI Auto-Approved photo report.'
               : 'AI flagged report for manual review.')
         );
         await loadSubmittedReports();
@@ -416,7 +534,7 @@ export const SubmittedReportsPage: FC = () => {
   );
 
   const renderAiStatusPill = (r: SubmittedReportRecord) => {
-    if (aiProcessingId === r.id) {
+    if (aiProcessingId === r.id || closureProcessingId === r.id) {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-[#670626] text-[#F7F1EA] animate-pulse">
           <Loader2 className="w-3 h-3 animate-spin" />
@@ -424,7 +542,16 @@ export const SubmittedReportsPage: FC = () => {
         </span>
       );
     }
-    if (r.aiAutoApproved || r.aiVerificationStatus === 'AUTO_APPROVED') {
+    const aiStatus = (r.aiVerificationStatus || '').trim().toUpperCase();
+    if (aiStatus === 'ADMIN_MANUAL_APPROVED_CLOSURE') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-emerald-100 text-emerald-900 border border-emerald-700/30">
+          <ShieldCheck className="w-3 h-3" />
+          Admin Approved Closure
+        </span>
+      );
+    }
+    if (r.aiAutoApproved || aiStatus === 'AI_AUTO_APPROVED' || aiStatus === 'AUTO_APPROVED') {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-emerald-100 text-emerald-900 border border-emerald-700/30">
           <Sparkles className="w-3 h-3" />
@@ -432,10 +559,24 @@ export const SubmittedReportsPage: FC = () => {
         </span>
       );
     }
-    if (r.aiVerificationStatus === 'MANUAL_REVIEW' || r.roboflowNeedsReview) {
+    if (aiStatus === 'AI_NON_INCIDENT_FLAGGED') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-rose-100 text-rose-900 border border-rose-700/30">
+          AI Non-Incident Flagged
+        </span>
+      );
+    }
+    if (aiStatus === 'PENDING_MANUAL_REVIEW' || aiStatus === 'MANUAL_REVIEW' || r.roboflowNeedsReview) {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-700/30">
-          Manual Review
+          Pending Manual Review
+        </span>
+      );
+    }
+    if (aiStatus === 'AWAITING_MANUAL_REVIEW') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-[#E9D9D0] text-[#670626] border border-[#670626]/25">
+          Awaiting Manual Review
         </span>
       );
     }
@@ -474,11 +615,13 @@ export const SubmittedReportsPage: FC = () => {
     }
 
     result.sort((a, b) => {
+      const timeA = parseUtcTimestamp(a.submittedAt)?.getTime() ?? new Date(a.submittedAt).getTime();
+      const timeB = parseUtcTimestamp(b.submittedAt)?.getTime() ?? new Date(b.submittedAt).getTime();
       if (sortOrder === 'newest') {
-        return new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime();
+        return timeB - timeA;
       }
       if (sortOrder === 'oldest') {
-        return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+        return timeA - timeB;
       }
       if (sortOrder === 'responder_az') {
         return a.responderName.localeCompare(b.responderName);
@@ -517,32 +660,22 @@ export const SubmittedReportsPage: FC = () => {
       }
     });
 
+    const baseColleagues = base.taggedColleagues || [];
+    const dossierColleagues = dossierColleaguesByReportId[base.id] || [];
+    const colleagueMap = new Map<string, TaggedColleagueItem>();
+    [...baseColleagues, ...dossierColleagues].forEach((c) => {
+      if (c && c.userId && !colleagueMap.has(c.userId)) {
+        colleagueMap.set(c.userId, c);
+      }
+    });
+
     return {
       ...base,
       casualties: dossierCasualties ?? base.casualties,
-      evidencePhotos: mergedEvidences
+      evidencePhotos: mergedEvidences,
+      taggedColleagues: Array.from(colleagueMap.values())
     };
-  }, [reports, selectedReportId, dossierPcrByReportId, dossierEvidencesByReportId]);
-
-  const getRemainingSeconds = (verifiedAtStr: string | null): number => {
-    if (!verifiedAtStr) return 0;
-    const verifiedMs = new Date(verifiedAtStr).getTime();
-    if (isNaN(verifiedMs)) return 0;
-    const elapsed = currentTime - verifiedMs;
-    const remaining = Math.max(0, FIVE_MINUTES_MS - elapsed);
-    return Math.floor(remaining / 1000);
-  };
-
-  useEffect(() => {
-    reports.forEach((r) => {
-      if (r.isVerified && !r.isClosed && !r.isRejected && r.verifiedAt) {
-        const rem = getRemainingSeconds(r.verifiedAt);
-        if (rem <= 0) {
-          void handleManualClose(r.id);
-        }
-      }
-    });
-  }, [currentTime, reports, handleManualClose]);
+  }, [reports, selectedReportId, dossierPcrByReportId, dossierEvidencesByReportId, dossierColleaguesByReportId]);
 
   const openLightbox = (images: Array<{ url: string; timestamp?: string; caption?: string }>, idx: number) => {
     setLightboxImages(images.map((img) => ({ url: img.url, timestamp: img.timestamp, caption: img.caption })));
@@ -601,41 +734,43 @@ export const SubmittedReportsPage: FC = () => {
             <FileText className="w-4 h-4 text-[#670626]" />
           </div>
           <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{totalSubmitted}</h3>
-          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">All submitted</span>
-        </div>
-
-        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-amber-600 flex flex-col justify-between`}>
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Submitted / Pending</p>
-            <Clock className="w-4 h-4 text-amber-700" />
-          </div>
-          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{pendingReview}</h3>
-          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Awaiting review</span>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">All submitted dossiers</span>
         </div>
 
         <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-[#A83B4D] flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Verified</p>
-            <Activity className="w-4 h-4 text-[#A83B4D]" />
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">AI Auto-Approved</p>
+            <Sparkles className="w-4 h-4 text-[#670626]" />
           </div>
-          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{verifiedCount}</h3>
-          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">5m auto-close</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{aiAutoApprovedCount}</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Roboflow + Claude verified</span>
+        </div>
+
+        <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-amber-600 flex flex-col justify-between`}>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Manual &amp; Closure Review</p>
+            <Clock className="w-4 h-4 text-amber-700" />
+          </div>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{manualReviewCount}</h3>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">
+            {awaitingClosureCount} awaiting closure approval
+          </span>
         </div>
 
         <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-emerald-700 flex flex-col justify-between`}>
           <div className="flex items-center justify-between">
-            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Resolved</p>
+            <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Done / Closed</p>
             <CheckCircle2 className="w-4 h-4 text-emerald-700" />
           </div>
           <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{closedCount}</h3>
-          <span className="text-xs text-emerald-800 font-mono font-bold mt-0.5">Closed cases</span>
+          <span className="text-xs text-emerald-800 font-mono font-bold mt-0.5">Finalized &amp; resolved</span>
         </div>
       </div>
 
       {/* Filter Tabs + SearchBar + Sorter */}
       <div className={`${CLAY_SURFACE} p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3`}>
         <div className="flex flex-wrap items-center gap-1.5">
-          {(['ALL', 'Submitted', 'Pending', 'Verified', 'Dispatched', 'Resolved', 'Rejected'] as const).map((tab) => (
+          {(['ALL', 'Submitted', 'Verified', 'Working Progress', 'Dispatched', 'Done', 'Rejected'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -692,22 +827,26 @@ export const SubmittedReportsPage: FC = () => {
                   <th className="py-3.5 px-4">Responding Unit / Reporter</th>
                   <th className="py-3.5 px-4">Casualties / PCR</th>
                   <th className="py-3.5 px-4">Evidence</th>
-                  <th className="py-3.5 px-4">Status & Timer</th>
+                  <th className="py-3.5 px-4">Status &amp; AI Triage</th>
                   <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#670626]/10 font-mono">
                 {paginatedItems.map((r) => {
-                  const remSec = getRemainingSeconds(r.verifiedAt);
-                  const mm = Math.floor(remSec / 60).toString().padStart(2, '0');
-                  const ss = (remSec % 60).toString().padStart(2, '0');
                   const statusBadge = formatIncidentStatusBadge(
                     r.status,
                     r.allocatedUnitCode,
                     r.verifiedAt,
                     r.closedAt
                   );
-                  const canVerifyOrReject = statusBadge.label === 'Submitted' || statusBadge.label === 'Pending';
+                  const canVerifyOrReject = statusBadge.label === 'Submitted';
+                  const hasClosureEvidencePending =
+                    !r.isClosed &&
+                    !r.isRejected &&
+                    ((r.closureApprovalMode || '').toUpperCase() === 'AWAITING_MANUAL_APPROVE' ||
+                      statusBadge.label === 'Working Progress' ||
+                      (r.status || '').toLowerCase() === 'inprogress');
+                  const colleagues = r.taggedColleagues || [];
 
                   return (
                     <tr
@@ -735,6 +874,19 @@ export const SubmittedReportsPage: FC = () => {
                           <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
                           {r.locationLabel}
                         </p>
+                        {colleagues.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1 max-w-xs">
+                            {colleagues.map((col) => (
+                              <span
+                                key={col.userId}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#F7F1EA] border border-[#670626]/20 text-[10px] font-mono font-bold text-[#670626]"
+                              >
+                                <Users className="w-2.5 h-2.5 text-[#A83B4D]" />
+                                {col.fullName} ({col.unit})
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         {(r.roboflowPrediction || r.claudeSituationSummary) && (
                           <div className="mt-1.5 px-2.5 py-1 rounded-lg bg-[#E9D9D0] border border-[#670626]/20 text-[11px] font-mono text-[#670626] max-w-xs">
                             <span className="font-black block truncate">
@@ -804,9 +956,16 @@ export const SubmittedReportsPage: FC = () => {
                             {statusBadge.label}
                           </span>
                           <div>{renderAiStatusPill(r)}</div>
-                          {statusBadge.label === 'Verified' && !r.isClosed && remSec > 0 && (
-                            <div className="text-xs text-[#A83B4D] font-bold">
-                              Closing in {mm}:{ss}
+                          {r.closureApprovalMode && !r.isClosed && (
+                            <div className="text-[11px] text-[#A83B4D] font-bold">
+                              {r.closureApprovalMode === 'AWAITING_MANUAL_APPROVE'
+                                ? 'Closure evidence awaiting approval'
+                                : r.closureApprovalMode}
+                            </div>
+                          )}
+                          {r.isClosed && r.closedAt && (
+                            <div className="text-[11px] text-emerald-800 font-bold">
+                              Done {formatDateTimeWithSecondsAmPm(r.closedAt)}
                             </div>
                           )}
                         </div>
@@ -851,6 +1010,34 @@ export const SubmittedReportsPage: FC = () => {
                               </AdminButton>
                             </>
                           )}
+                          {hasClosureEvidencePending && (
+                            <>
+                              <AdminButton
+                                variant="success"
+                                size="xs"
+                                disabled={closureProcessingId === r.id}
+                                onClick={() => void handleApproveClosure(r.id, false)}
+                                icon={<ShieldCheck className="w-3.5 h-3.5" />}
+                              >
+                                Manual Approve Done
+                              </AdminButton>
+                              <AdminButton
+                                variant="primary"
+                                size="xs"
+                                disabled={closureProcessingId === r.id}
+                                onClick={() => void handleApproveClosure(r.id, true)}
+                                icon={
+                                  closureProcessingId === r.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                  )
+                                }
+                              >
+                                AI Auto-Approve Closure
+                              </AdminButton>
+                            </>
+                          )}
                           {!r.isClosed && !r.isRejected && (
                             <AdminButton
                               variant="outline"
@@ -879,16 +1066,20 @@ export const SubmittedReportsPage: FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {paginatedItems.map((r) => {
-            const remSec = getRemainingSeconds(r.verifiedAt);
-            const mm = Math.floor(remSec / 60).toString().padStart(2, '0');
-            const ss = (remSec % 60).toString().padStart(2, '0');
             const statusBadge = formatIncidentStatusBadge(
               r.status,
               r.allocatedUnitCode,
               r.verifiedAt,
               r.closedAt
             );
-            const canVerifyOrReject = statusBadge.label === 'Submitted' || statusBadge.label === 'Pending';
+            const canVerifyOrReject = statusBadge.label === 'Submitted';
+            const hasClosureEvidencePending =
+              !r.isClosed &&
+              !r.isRejected &&
+              ((r.closureApprovalMode || '').toUpperCase() === 'AWAITING_MANUAL_APPROVE' ||
+                statusBadge.label === 'Working Progress' ||
+                (r.status || '').toLowerCase() === 'inprogress');
+            const colleagues = r.taggedColleagues || [];
 
             return (
               <div
@@ -939,6 +1130,20 @@ export const SubmittedReportsPage: FC = () => {
                     </div>
                   </div>
 
+                  {colleagues.length > 0 && (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                      {colleagues.map((col) => (
+                        <span
+                          key={col.userId}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#E9D9D0] border border-[#670626]/20 text-[11px] font-mono font-bold text-[#670626]"
+                        >
+                          <Users className="w-3 h-3 text-[#A83B4D]" />
+                          {col.fullName} ({col.unit})
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   {(r.roboflowPrediction || r.claudeSituationSummary) && (
                     <div className={`${CLAY_WELL} mt-2.5 p-2.5 text-xs font-mono text-[#670626] flex flex-col gap-1`}>
                       <div className="flex items-center justify-between gap-2">
@@ -963,10 +1168,12 @@ export const SubmittedReportsPage: FC = () => {
                     </div>
                   )}
 
-                  {statusBadge.label === 'Verified' && !r.isClosed && remSec > 0 && (
-                    <div className="mt-3 p-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-xs font-mono text-[#670626] flex items-center justify-between">
-                      <span>Auto-Close Countdown:</span>
-                      <span className="font-black">{mm}:{ss}</span>
+                  {r.closureSummary && (
+                    <div className="mt-2.5 p-2.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 text-xs font-sans text-[#670626]">
+                      <span className="font-mono font-bold uppercase text-[10px] text-[#A83B4D] block">
+                        Closure Summary
+                      </span>
+                      {r.closureSummary}
                     </div>
                   )}
                 </div>
@@ -1012,6 +1219,28 @@ export const SubmittedReportsPage: FC = () => {
                           onClick={() => void handleVerifyOrRejectReport(r.id, 'Rejected')}
                         >
                           Reject
+                        </AdminButton>
+                      </>
+                    )}
+                    {hasClosureEvidencePending && (
+                      <>
+                        <AdminButton
+                          variant="success"
+                          size="xs"
+                          disabled={closureProcessingId === r.id}
+                          onClick={() => void handleApproveClosure(r.id, false)}
+                          icon={<ShieldCheck className="w-3 h-3" />}
+                        >
+                          Manual Approve Done
+                        </AdminButton>
+                        <AdminButton
+                          variant="primary"
+                          size="xs"
+                          disabled={closureProcessingId === r.id}
+                          onClick={() => void handleApproveClosure(r.id, true)}
+                          icon={<Sparkles className="w-3 h-3" />}
+                        >
+                          AI Auto-Approve Closure
                         </AdminButton>
                       </>
                     )}
@@ -1245,6 +1474,34 @@ export const SubmittedReportsPage: FC = () => {
               </div>
             )}
 
+            {(selectedReport.taggedColleagues && selectedReport.taggedColleagues.length > 0) && (
+              <div className={`${CLAY_WELL} p-3.5 space-y-2`}>
+                <span className="text-xs font-mono font-bold uppercase text-[#A83B4D] flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-[#670626]" />
+                  Tagged Field Colleagues ({selectedReport.taggedColleagues.length})
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedReport.taggedColleagues.map((col) => (
+                    <span
+                      key={col.userId}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#F7F1EA] border border-[#670626]/20 text-xs font-mono font-bold text-[#670626]"
+                    >
+                      {col.fullName} · {col.unit} ({col.rankOrTitle})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedReport.closureSummary && (
+              <div className={`${CLAY_WELL} p-3.5 space-y-1`}>
+                <span className="text-xs font-mono font-bold uppercase text-[#A83B4D]">
+                  Closure Summary {selectedReport.closureApprovalMode ? `(${selectedReport.closureApprovalMode})` : ''}
+                </span>
+                <p className="text-xs text-[#670626]">{selectedReport.closureSummary}</p>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[#670626]/15">
               <span className="text-xs font-mono text-[#A83B4D]">
                 Updates live map &amp; alert bell
@@ -1297,6 +1554,37 @@ export const SubmittedReportsPage: FC = () => {
                     </AdminButton>
                   </>
                 )}
+                {!selectedReport.isClosed &&
+                  !selectedReport.isRejected &&
+                  ((selectedReport.closureApprovalMode || '').toUpperCase() === 'AWAITING_MANUAL_APPROVE' ||
+                    (selectedReport.status || '').toLowerCase() === 'inprogress') && (
+                    <>
+                      <AdminButton
+                        variant="success"
+                        size="sm"
+                        disabled={closureProcessingId === selectedReport.id}
+                        onClick={() => {
+                          void handleApproveClosure(selectedReport.id, false);
+                          setIsDetailModalOpen(false);
+                        }}
+                        icon={<ShieldCheck className="w-3.5 h-3.5" />}
+                      >
+                        Manual Approve Done
+                      </AdminButton>
+                      <AdminButton
+                        variant="primary"
+                        size="sm"
+                        disabled={closureProcessingId === selectedReport.id}
+                        onClick={() => {
+                          void handleApproveClosure(selectedReport.id, true);
+                          setIsDetailModalOpen(false);
+                        }}
+                        icon={<Sparkles className="w-3.5 h-3.5" />}
+                      >
+                        AI Auto-Approve Closure
+                      </AdminButton>
+                    </>
+                  )}
                 {!selectedReport.isClosed && !selectedReport.isRejected && (
                   <AdminButton
                     variant="outline"

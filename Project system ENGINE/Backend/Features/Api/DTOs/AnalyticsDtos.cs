@@ -37,3 +37,21 @@ public record HeatmapMatrixResponse(
     List<string> Hours,
     int[][] Matrix
 );
+
+public record AnalyticsOverviewResponse(
+    List<int> VolumeSeries,
+    int ActiveIncidents,
+    int ResolvedIncidents,
+    int OnDutyUnits,
+    DateTime GeneratedAtUtc
+);
+
+public record RoleAnalyticsDashboardResponse(
+    string Scope,
+    AnalyticsSummaryResponse Summary,
+    List<TelemetryDataPoint> VolumeTrend,
+    List<SeverityBreakdownItem> SeverityBreakdown,
+    List<AgencyWorkloadItem> AgencyWorkload,
+    HeatmapMatrixResponse HeatmapMatrix,
+    List<SeverityBreakdownItem> CategoryBreakdown
+);

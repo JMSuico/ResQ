@@ -38,6 +38,7 @@ import {
   KATIPUNAN_BASE_COORDS,
   getKatipunanBarangay
 } from '@/Libs/Map/mapAccuracy';
+import { resolveStreetAddressSync } from '@/Libs/Map/addressResolver';
 import { AdminButton } from './Shared/AdminButton';
 import { CLAY_SURFACE, CLAY_WELL } from './Shared/adminCommandHelpers';
 
@@ -143,7 +144,8 @@ export const StrategicMapPage: FC = () => {
       title: fix.title,
       type: 'fixture' as const,
       category: fix.category,
-      agency: fix.assignedUnitType
+      agency: fix.assignedUnitType,
+      locationLabel: resolveStreetAddressSync(Number(fix.latitude), Number(fix.longitude))
     })),
     ...reports
       .filter((r) => {
@@ -162,9 +164,17 @@ export const StrategicMapPage: FC = () => {
         severity: rep.severity,
         evidenceUrl: rep.hasImage ? (rep.imageUrl || `/api/reports/${rep.id}/image`) : undefined,
         verifiedAt: rep.verifiedAt,
+        resolvedAt: rep.resolvedAt,
+        closedAt: rep.closedAt,
+        aiVerificationStatus: rep.aiVerificationStatus,
+        closureSummary: rep.closureSummary,
+        closureApprovalMode: rep.closureApprovalMode,
+        taggedColleagues: rep.taggedColleagues,
+        pointerIconType: rep.pointerIconType ?? undefined,
         requiresManualVerification: rep.requiresManualVerification,
         gpsAccuracyMeters: rep.gpsAccuracyMeters ?? undefined,
-        description: rep.note || rep.locationLabel,
+        locationLabel: rep.locationLabel || resolveStreetAddressSync(Number(rep.currentLatitude ?? rep.latitude), Number(rep.currentLongitude ?? rep.longitude)),
+        description: rep.note || undefined,
         allocatedUnitId: rep.allocatedUnitId,
         allocatedUnitCode: rep.allocatedUnitCode
       })),
@@ -183,7 +193,8 @@ export const StrategicMapPage: FC = () => {
         title: `${u.unitCode} (${u.agency}) - ${u.status}`,
         type: 'gps' as const,
         agency: u.agency,
-        status: u.status
+        status: u.status,
+        locationLabel: resolveStreetAddressSync(Number(u.baseLatitude), Number(u.baseLongitude))
       }))
   ], [fixtures, reports, roster, filterAgency]);
 
@@ -208,7 +219,11 @@ export const StrategicMapPage: FC = () => {
   );
 
   const unallocatedQueue = useMemo(
-    () => reports.filter((r) => !r.allocatedUnitId && (r.status || '').toLowerCase() !== 'resolved'),
+    () =>
+      reports.filter((r) => {
+        const st = (r.status || '').toLowerCase();
+        return !r.allocatedUnitId && st !== 'resolved' && st !== 'closed' && st !== 'rejected';
+      }),
     [reports]
   );
 
@@ -218,7 +233,11 @@ export const StrategicMapPage: FC = () => {
   );
 
   const resolvedCount = useMemo(
-    () => reports.filter((r) => (r.status || '').toLowerCase() === 'resolved').length,
+    () =>
+      reports.filter((r) => {
+        const st = (r.status || '').toLowerCase();
+        return st === 'resolved' || st === 'closed' || Boolean(r.resolvedAt || r.closedAt);
+      }).length,
     [reports]
   );
 
@@ -488,7 +507,7 @@ export const StrategicMapPage: FC = () => {
               <div className={`${CLAY_WELL} flex items-center justify-between p-2.5`}>
                 <span className="flex items-center gap-1.5 font-semibold">
                   <Activity className="w-3.5 h-3.5 text-[#670626]" />
-                  Citizen SOS Ingestion
+                  Citizen Incident Ingestion
                 </span>
                 <span className="font-mono text-[#670626] font-black">
                   {reports.length} RECEIVED
@@ -500,85 +519,125 @@ export const StrategicMapPage: FC = () => {
                   Unallocated Beacons
                 </span>
                 <span className="font-mono font-black text-[#670626]">
-                  {unallocatedQueue.length > 0 ? `${unallocatedQueue.length} PENDING` : 'ALL ALLOCATED'}
+                  {unallocatedQueue.length > 0 ? `${unallocatedQueue.length} AWAITING DISPATCH` : 'ALL ALLOCATED'}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Pane 3: Active Responder Units */}
+          {/* Pane 3: Active Responder Units (Color-Indicated Fleet Heatmap) */}
           <div className={`tactical-card ${CLAY_SURFACE} p-4 flex flex-col gap-2.5 border-l-4 border-l-sky-700`}>
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono font-bold tracking-wider text-[#670626] uppercase flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-[#A83B4D]" />
-                Active Units
+                Active Units Heatmap
               </span>
               <span className="text-xs px-2 py-0.5 rounded bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] font-mono font-bold">
                 {activeResponders.length} Deployed
               </span>
             </div>
             <div className="space-y-1.5 text-sm">
-              <div className={`${CLAY_WELL} flex items-center justify-between p-2`}>
-                <span className="flex items-center gap-1.5 font-semibold">
-                  <HeartPulse className="w-3.5 h-3.5 text-[#670626]" />
-                  RHU Medical
-                </span>
-                <span className="font-mono font-bold text-[#670626]">
-                  {roster.filter((u) => (u.agency || '').toUpperCase() === 'RHU').length} Units
-                </span>
-              </div>
-              <div className={`${CLAY_WELL} flex items-center justify-between p-2`}>
-                <span className="flex items-center gap-1.5 font-semibold">
-                  <Flame className="w-3.5 h-3.5 text-orange-700" />
-                  BFP Fire Rescue
-                </span>
-                <span className="font-mono font-bold text-[#670626]">
-                  {roster.filter((u) => {
+              {[
+                {
+                  label: 'RHU Medical',
+                  count: roster.filter((u) => (u.agency || '').toUpperCase() === 'RHU').length,
+                  icon: <HeartPulse className="w-3.5 h-3.5 text-sky-800" />,
+                  bg: 'bg-sky-50 border-sky-200',
+                  bar: 'bg-sky-600',
+                  text: 'text-sky-900'
+                },
+                {
+                  label: 'BFP Fire Rescue',
+                  count: roster.filter((u) => {
                     const ag = (u.agency || '').toUpperCase();
                     return ag === 'FIRE' || ag === 'BFP';
-                  }).length} Units
-                </span>
-              </div>
-              <div className={`${CLAY_WELL} flex items-center justify-between p-2`}>
-                <span className="flex items-center gap-1.5 font-semibold">
-                  <Shield className="w-3.5 h-3.5 text-sky-700" />
-                  PNP Police Force
-                </span>
-                <span className="font-mono font-bold text-[#670626]">
-                  {roster.filter((u) => (u.agency || '').toUpperCase() === 'PNP').length} Units
-                </span>
-              </div>
+                  }).length,
+                  icon: <Flame className="w-3.5 h-3.5 text-orange-800" />,
+                  bg: 'bg-orange-50 border-orange-200',
+                  bar: 'bg-orange-600',
+                  text: 'text-orange-900'
+                },
+                {
+                  label: 'PNP Police Force',
+                  count: roster.filter((u) => (u.agency || '').toUpperCase() === 'PNP').length,
+                  icon: <Shield className="w-3.5 h-3.5 text-indigo-800" />,
+                  bg: 'bg-indigo-50 border-indigo-200',
+                  bar: 'bg-indigo-600',
+                  text: 'text-indigo-900'
+                }
+              ].map((row) => {
+                const maxUnits = Math.max(1, roster.length);
+                const pct = Math.round((row.count / maxUnits) * 100);
+                return (
+                  <div key={row.label} className={`rounded-xl border p-2 ${row.bg}`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`flex items-center gap-1.5 font-semibold text-xs ${row.text}`}>
+                        {row.icon}
+                        {row.label}
+                      </span>
+                      <span className={`font-mono font-bold text-xs ${row.text}`}>
+                        {row.count} Units ({pct}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-white/70 mt-1 overflow-hidden">
+                      <div className={`h-full rounded-full ${row.bar}`} style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          {/* Pane 4: Severity Breakdown */}
+          {/* Pane 4: Color-Indicated Severity Breakdown Heatmap */}
           <div className={`tactical-card ${CLAY_SURFACE} p-4 flex flex-col gap-2.5 border-l-4 border-l-[#670626]`}>
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono font-bold tracking-wider text-[#670626] uppercase flex items-center gap-1.5">
                 <Activity className="w-4 h-4 text-[#A83B4D]" />
-                Severity Breakdown
+                Severity Heatmap
               </span>
               <span className="text-xs px-2 py-0.5 rounded bg-[#E9D9D0] border border-[#670626]/20 text-[#670626] font-mono font-bold">
-                {dynamicResolutionRate} Resolved
+                {dynamicResolutionRate} Done
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2.5 text-sm">
-              <div className={`${CLAY_WELL} p-2.5 flex flex-col`}>
-                <span className="text-xs text-[#670626] font-mono font-bold">Critical</span>
-                <span className="text-xl font-black text-[#670626] mt-0.5">{criticalQueue.length}</span>
-              </div>
-              <div className={`${CLAY_WELL} p-2.5 flex flex-col`}>
-                <span className="text-xs text-[#A83B4D] font-mono font-bold">High</span>
-                <span className="text-xl font-black text-[#670626] mt-0.5">{highQueue.length}</span>
-              </div>
-              <div className={`${CLAY_WELL} p-2.5 flex flex-col`}>
-                <span className="text-xs text-sky-800 font-mono font-bold">Medium</span>
-                <span className="text-xl font-black text-[#670626] mt-0.5">{mediumQueue.length}</span>
-              </div>
-              <div className={`${CLAY_WELL} p-2.5 flex flex-col`}>
-                <span className="text-xs text-emerald-800 font-mono font-bold">Low</span>
-                <span className="text-xl font-black text-[#670626] mt-0.5">{lowQueue.length}</span>
-              </div>
+              {[
+                {
+                  label: 'Critical',
+                  count: criticalQueue.length,
+                  baseBg: criticalQueue.length > 0 ? 'bg-[#670626] text-[#F7F1EA] border-[#4A031A]' : 'bg-rose-50 text-rose-900 border-rose-200',
+                  subText: criticalQueue.length > 0 ? 'text-[#F3D8DE]' : 'text-rose-700'
+                },
+                {
+                  label: 'High',
+                  count: highQueue.length,
+                  baseBg: highQueue.length >= 3 ? 'bg-orange-600 text-white border-orange-700' : highQueue.length > 0 ? 'bg-orange-100 text-orange-950 border-orange-300' : 'bg-orange-50 text-orange-900 border-orange-200',
+                  subText: highQueue.length >= 3 ? 'text-orange-100' : 'text-orange-700'
+                },
+                {
+                  label: 'Medium',
+                  count: mediumQueue.length,
+                  baseBg: mediumQueue.length >= 3 ? 'bg-amber-500 text-amber-950 border-amber-600' : mediumQueue.length > 0 ? 'bg-amber-100 text-amber-950 border-amber-300' : 'bg-amber-50 text-amber-900 border-amber-200',
+                  subText: 'text-amber-800'
+                },
+                {
+                  label: 'Low',
+                  count: lowQueue.length,
+                  baseBg: lowQueue.length >= 3 ? 'bg-emerald-600 text-white border-emerald-700' : lowQueue.length > 0 ? 'bg-emerald-100 text-emerald-950 border-emerald-300' : 'bg-emerald-50 text-emerald-900 border-emerald-200',
+                  subText: lowQueue.length >= 3 ? 'text-emerald-100' : 'text-emerald-700'
+                }
+              ].map((cell) => {
+                const total = Math.max(1, reports.length);
+                const share = Math.round((cell.count / total) * 100);
+                return (
+                  <div key={cell.label} className={`rounded-xl border p-2.5 flex flex-col justify-between transition-colors ${cell.baseBg}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono font-bold uppercase">{cell.label}</span>
+                      <span className={`text-[10px] font-mono font-bold ${cell.subText}`}>{share}%</span>
+                    </div>
+                    <span className="text-xl font-black mt-0.5">{cell.count}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

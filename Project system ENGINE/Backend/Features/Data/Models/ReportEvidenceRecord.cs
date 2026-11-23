@@ -28,4 +28,21 @@ public class ReportEvidenceRecord
     public string UploadedByName { get; set; } = string.Empty;
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    [MaxLength(40)]
+    public string ClosureOutcome { get; set; } = string.Empty;
+
+    [MaxLength(40)]
+    public string AiVerdict { get; set; } = string.Empty;
+
+    [MaxLength(1000)]
+    public string AiReasoning { get; set; } = string.Empty;
+
+    public string? TaggedColleagueUserIdsJson { get; set; }
+
+    public string? TaggedColleagueNamesJson { get; set; }
+
+    public Guid? ApprovedByUserId { get; set; }
+
+    public DateTime? ApprovedAtUtc { get; set; }
 }

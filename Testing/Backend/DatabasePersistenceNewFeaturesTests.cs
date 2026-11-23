@@ -110,9 +110,9 @@ public class DatabasePersistenceNewFeaturesTests
             var createdReport = await reportService.CreateReportAsync(
                 civilian.Id,
                 new CreateReportRequest(
-                    Title: "Flooded Bridge",
-                    Note: "Water overtopping approach",
-                    Category: IncidentCategory.NaturalDisaster,
+                    Title: "Highway Bridge Collision",
+                    Note: "Multi-vehicle obstruction on north approach",
+                    Category: IncidentCategory.VehicularAccident,
                     Severity: IncidentSeverity.High,
                     Latitude: 8.512,
                     Longitude: 123.281,

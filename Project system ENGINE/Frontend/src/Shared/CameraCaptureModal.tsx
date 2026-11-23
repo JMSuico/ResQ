@@ -49,8 +49,8 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
   isOpen,
   onClose,
   onCapture,
-  title = 'Incident Camera',
-  instructionText = 'Take a live photo of the scene.'
+  title = 'Reports Incident Camera',
+  instructionText = 'Take a live photo of the incident scene for AI verification.'
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -242,13 +242,19 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
     void runLiveAiPreCheck(cleanDataUrl);
   }, [coords, isHardwareGeolocated, signalQuality, isUsingFallback, stream, runLiveAiPreCheck]);
 
+  const isAiAutoApproveReady = Boolean(
+    aiPreview &&
+      aiPreview.isGenuineIncident === true &&
+      !isBlurry &&
+      aiPreview.detectedCategory !== 'NonIncident' &&
+      (aiPreview.autoApproveEligible === true || !aiPreview.roboflowNeedsReview)
+  );
+
   const handleConfirmAndSend = () => {
     if (!capturedUrl) return;
 
-    const aiConfirmedGenuine =
-      Boolean(aiPreview?.isGenuineIncident) && !aiPreview?.roboflowNeedsReview;
     const requiresManualVerification = aiPreview
-      ? isBlurry || !aiConfirmedGenuine
+      ? isBlurry || !isAiAutoApproveReady
       : isBlurry;
 
     onCapture(capturedUrl, {
@@ -352,7 +358,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
                       : `Clear Photo (${blurrinessScore} / ${activeThreshold})`}
                   </p>
                   <p className="text-xs opacity-90">
-                    {isBlurry ? 'Low clarity — manual review required.' : 'Scene clarity verified.'}
+                    {isBlurry ? 'Low clarity — flagged for duty officer review.' : 'Scene clarity verified.'}
                   </p>
                 </div>
               </div>
@@ -361,7 +367,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
                   isBlurry ? 'bg-amber-200/80 text-amber-950' : 'bg-emerald-200/80 text-emerald-950'
                 }`}
               >
-                {isBlurry ? 'Manual Review' : 'Clarity OK'}
+                {isBlurry ? 'Officer Review' : 'Clarity OK'}
               </span>
             </div>
 
@@ -375,7 +381,7 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
             {!isAnalyzingAi && aiPreview && (
               <div
                 className={`p-3 rounded-xl border text-xs font-mono flex items-center justify-between gap-2 ${
-                  aiPreview.isGenuineIncident !== false
+                  aiPreview.isGenuineIncident === true && aiPreview.detectedCategory !== 'NonIncident'
                     ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
                     : 'bg-amber-50 border-amber-300 text-amber-950'
                 }`}
@@ -383,15 +389,15 @@ export const CameraCaptureModal: FC<CameraCaptureModalProps> = ({
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 flex-shrink-0" />
                   <span className="font-bold">
-                    {aiPreview.isGenuineIncident !== false
+                    {aiPreview.isGenuineIncident === true && aiPreview.detectedCategory !== 'NonIncident'
                       ? `AI Verified Incident (${aiPreview.detectedCategory} / ${aiPreview.recommendedSeverity})`
-                      : 'No emergency detected in photo — manual review required'}
+                      : 'Non-incident or no emergency detected — flagged for duty officer triage'}
                   </span>
                 </div>
                 <span className="px-2 py-0.5 rounded bg-white/75 font-bold uppercase">
-                  {aiPreview.isGenuineIncident !== false && !aiPreview.roboflowNeedsReview && !isBlurry
-                    ? 'Auto-Approve Ready'
-                    : 'Review Flagged'}
+                  {isAiAutoApproveReady
+                    ? 'AI Auto-Approve Ready'
+                    : aiPreview.aiVerificationStatus || 'Awaiting Triage'}
                 </span>
               </div>
             )}

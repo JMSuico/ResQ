@@ -89,6 +89,16 @@ public class Report
 
     public DateTime? ResolvedAt { get; set; }
 
+    public DateTime? ClosedAt { get; set; }
+
+    [MaxLength(1000)]
+    public string? ClosureSummary { get; set; }
+
+    [MaxLength(64)]
+    public string? ClosureApprovalMode { get; set; }
+
+    public string? TaggedColleaguesJson { get; set; }
+
     [MaxLength(120)]
     public string? RoboflowModelId { get; set; } = "accident-and-non-accident-label-image-dataset/14";
 

@@ -23,16 +23,11 @@ import {
 } from 'lucide-react';
 import { AGENCY_METADATA } from '@/Libs/Assets/data';
 import { getApiBaseUrl } from '@/Endpoints/apiClient';
+import { getAnalyticsOverview } from '@/Endpoints/analyticsApi';
 import { InkOrbitFeatures } from '@/components/ui';
 
 interface PublicHealthPayload {
   status?: string;
-}
-
-interface PublicAnalyticsOverviewPayload {
-  volumeSeries?: number[];
-  values?: number[];
-  points?: Array<{ value?: number }>;
 }
 
 const EMPTY_TELEMETRY_SERIES: number[] = [0, 0, 0, 0, 0, 0];
@@ -42,6 +37,11 @@ export const LandingPage: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [telemetryValues, setTelemetryValues] = useState<number[]>(EMPTY_TELEMETRY_SERIES);
+  const [telemetrySummary, setTelemetrySummary] = useState<{
+    activeIncidents: number;
+    resolvedIncidents: number;
+    onDutyUnits: number;
+  } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -68,34 +68,25 @@ export const LandingPage: React.FC = () => {
       }
 
       try {
-        const overviewRes = await fetch(
-          baseUrl ? `${baseUrl}/api/analytics/overview` : '/api/analytics/overview',
-          {
-            method: 'GET',
-            headers: { Accept: 'application/json' },
-            credentials: 'include'
-          }
-        );
-        if (!overviewRes.ok) {
-          if (isMounted) {
-            setTelemetryValues(EMPTY_TELEMETRY_SERIES);
-          }
-          return;
-        }
-        const data = (await overviewRes.json()) as PublicAnalyticsOverviewPayload | Array<{ value?: number }>;
+        const overview = await getAnalyticsOverview();
         if (!isMounted) return;
-        if (Array.isArray(data)) {
-          const parsed = data
-            .map((d) => (typeof d?.value === 'number' && Number.isFinite(d.value) ? d.value : 0));
-          setTelemetryValues(parsed.length > 1 ? parsed : EMPTY_TELEMETRY_SERIES);
-        } else if (Array.isArray(data?.volumeSeries) && data.volumeSeries.length > 1) {
-          setTelemetryValues(data.volumeSeries);
-        } else if (Array.isArray(data?.values) && data.values.length > 1) {
-          setTelemetryValues(data.values);
-        } else if (Array.isArray(data?.points) && data.points.length > 1) {
-          setTelemetryValues(
-            data.points.map((p) => (typeof p?.value === 'number' && Number.isFinite(p.value) ? p.value : 0))
-          );
+        const activeCount = typeof overview?.activeIncidents === 'number' ? overview.activeIncidents : 0;
+        const resolvedCount = typeof overview?.resolvedIncidents === 'number' ? overview.resolvedIncidents : 0;
+        const onDutyCount = typeof overview?.onDutyUnits === 'number' ? overview.onDutyUnits : 0;
+        setTelemetrySummary({
+          activeIncidents: activeCount,
+          resolvedIncidents: resolvedCount,
+          onDutyUnits: onDutyCount
+        });
+
+        const rawSeries = Array.isArray(overview?.volumeSeries)
+          ? overview.volumeSeries.map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0))
+          : [];
+        const seriesHasActivity = rawSeries.some((v) => v > 0);
+        if (rawSeries.length > 1 && (seriesHasActivity || (activeCount === 0 && resolvedCount === 0))) {
+          setTelemetryValues(rawSeries);
+        } else if (activeCount > 0 || resolvedCount > 0) {
+          setTelemetryValues([0, Math.max(0, activeCount), Math.max(0, resolvedCount), Math.max(0, activeCount + resolvedCount), Math.max(0, onDutyCount), Math.max(1, activeCount + resolvedCount)]);
         } else {
           setTelemetryValues(EMPTY_TELEMETRY_SERIES);
         }
@@ -390,19 +381,19 @@ export const LandingPage: React.FC = () => {
 
                 <h3 className="text-2xl sm:text-3xl font-black text-[#2B010E]">Citizen Dashboard</h3>
                 <p className="text-sm sm:text-base text-[#670626]/85 mt-2 font-medium">
-                  Fast emergency reporting, SOS beacons, and live station proximity.
+                  Fast incident reporting, live distress beacons, and station proximity.
                 </p>
 
                 <div className="mt-6 space-y-3 text-sm">
                   <div className="clay-well p-3.5 flex items-center gap-3">
                     <Camera className="w-4 h-4 text-[#670626] flex-shrink-0" />
-                    <strong className="text-[#2B010E] font-sans">1-Tap SOS Camera</strong>
+                    <strong className="text-[#2B010E] font-sans">Reports Incident Camera</strong>
                     <span className="text-xs sm:text-sm text-[#A83B4D] font-medium ml-auto hidden sm:inline">Blur filter &amp; auto-GPS</span>
                   </div>
 
                   <div className="clay-well p-3.5 flex items-center gap-3">
                     <AlertTriangle className="w-4 h-4 text-[#670626] flex-shrink-0" />
-                    <strong className="text-[#2B010E] font-sans">SOS Distress Beacon</strong>
+                    <strong className="text-[#2B010E] font-sans">Live Distress Beacon</strong>
                     <span className="text-xs sm:text-sm text-[#A83B4D] font-medium ml-auto hidden sm:inline">Live LDRRMO broadcast</span>
                   </div>
 
@@ -605,7 +596,9 @@ export const LandingPage: React.FC = () => {
             }}
             insights={{
               title: 'Risk & Velocity Analytics',
-              description: 'Municipal risk scoring and response velocity tracking.',
+              description: telemetrySummary
+                ? `Active: ${telemetrySummary.activeIncidents} · Resolved: ${telemetrySummary.resolvedIncidents} · Units On-Duty: ${telemetrySummary.onDutyUnits}`
+                : 'Municipal risk scoring and response velocity tracking.',
               values: telemetryValues,
               forecastFrom: Math.max(1, telemetryValues.length - 2)
             }}

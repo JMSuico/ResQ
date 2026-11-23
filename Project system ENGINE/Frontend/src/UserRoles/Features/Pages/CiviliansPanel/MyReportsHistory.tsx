@@ -1,7 +1,8 @@
 // [Layer: UserRoles/Features/Pages/CiviliansPanel]
 // Responsibility: Displays real-time status progression of the authenticated resident's own filed reports
-// via GET /api/reports/mine, sorted newest-to-oldest, with all status pills
-// (Submitted / Reported, Pending, Verified, Dispatched, Resolved, Rejected).
+// via GET /api/reports/mine, sorted newest-to-oldest, with clean status tabs
+// (All, Submitted, Verified, Dispatched, Working Progress, Done, Rejected), closure summaries,
+// and the "My Incident & Community Trend Analytics" panel (BarGraphChart, HeatmapChart, 4-stage progression).
 // Strictly 100% arrow functions (=>), ZERO 'any', ZERO emojis, and ZERO Active & Dispatched counters.
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -18,17 +19,25 @@ import {
   Flame,
   HeartPulse,
   ShieldAlert,
-  Waves,
-  AlertTriangle
+  AlertTriangle,
+  BarChart3,
+  CheckCircle2
 } from 'lucide-react';
 import { getMyReports, ReportItem } from '@/Endpoints/reportsApi';
+import {
+  getRoleAnalyticsDashboard,
+  toManilaParts,
+  RoleAnalyticsDashboardDto
+} from '@/Endpoints/analyticsApi';
 import { requestJson } from '@/Endpoints/apiClient';
 import { ImageLightboxModal } from '@/Shared/ImageLightboxModal';
 import { SearchBar } from '@/Shared/SearchBar';
 import { TableCardToggle, useTableCardView } from '@/Shared/TableCardToggle';
+import { BarGraphChart, BarGraphItem, HeatmapChart } from '@/Shared';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { useSession } from '@/Hooks/useSession';
 import { formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
+import { resolveStreetAddressSync } from '@/Libs/Map/addressResolver';
 import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { useDistressBeacon } from '@/Hooks/useDistressBeacon';
 import { CivilianButton } from './Shared/CivilianButton';
@@ -42,18 +51,18 @@ type ExtendedReportItem = ReportItem & {
 type StatusFilter =
   | 'all'
   | 'Submitted'
-  | 'Pending'
   | 'Verified'
   | 'Dispatched'
-  | 'Resolved'
+  | 'Working Progress'
+  | 'Done'
   | 'Rejected';
 
 type NormalizedStatus =
   | 'Submitted'
-  | 'Pending'
   | 'Verified'
   | 'Dispatched'
-  | 'Resolved'
+  | 'Working Progress'
+  | 'Done'
   | 'Rejected';
 
 const SEVERITY_PILL_MAP: Record<string, string> = {
@@ -72,9 +81,6 @@ const renderPointerIconBadge = (pointerIconType?: string | null): React.ReactNod
     case 'medical':
       return <HeartPulse className="w-3.5 h-3.5 text-[#670626]" />;
     case 'crime':
-      return <ShieldAlert className="w-3.5 h-3.5 text-[#670626]" />;
-    case 'flood':
-      return <Waves className="w-3.5 h-3.5 text-[#670626]" />;
     default:
       return <ShieldAlert className="w-3.5 h-3.5 text-[#670626]" />;
   }
@@ -124,12 +130,21 @@ const getDeterministicStatus = (
     };
   }
 
-  if (raw === 'RESOLVED' || raw === 'CLOSED' || Boolean(r.resolvedAt)) {
+  if (raw === 'RESOLVED' || raw === 'CLOSED' || Boolean(r.resolvedAt) || Boolean(r.closedAt)) {
     return {
-      normalizedStatus: 'Resolved',
-      pillLabel: 'Resolved',
+      normalizedStatus: 'Done',
+      pillLabel: 'Mark as Done',
       currentStage: 3,
       badgeClass: 'bg-[#E9D9D0] text-[#670626] border-[#670626]/40'
+    };
+  }
+
+  if (raw === 'INPROGRESS' || raw === 'IN_PROGRESS' || raw === 'WORKINGPROGRESS' || raw === 'WORKING PROGRESS') {
+    return {
+      normalizedStatus: 'Working Progress',
+      pillLabel: 'Working Progress',
+      currentStage: 2,
+      badgeClass: 'bg-[#A83B4D] text-[#F7F1EA] border-[#A83B4D]'
     };
   }
 
@@ -149,34 +164,71 @@ const getDeterministicStatus = (
   }
 
   if (raw === 'VERIFIED' || Boolean(r.verifiedAt) || Boolean(r.aiAutoApproved)) {
+    const isAiApproved =
+      Boolean(r.aiAutoApproved) || r.aiVerificationStatus === 'AI_AUTO_APPROVED';
     return {
       normalizedStatus: 'Verified',
-      pillLabel: r.aiAutoApproved ? 'AI Auto-Approved' : 'Verified',
+      pillLabel: isAiApproved ? 'AI Auto-Approved' : 'Manual Approved',
       currentStage: 1,
       badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300'
     };
   }
 
-  if (raw === 'PENDING' || raw === 'PENDINGVERIFICATION') {
-    return {
-      normalizedStatus: 'Pending',
-      pillLabel: 'Pending',
-      currentStage: 0,
-      badgeClass: 'bg-[#E9D9D0] text-[#A83B4D] border-[#A83B4D]/45'
-    };
-  }
-
+  const hasAiSignals = Boolean(r.roboflowPrediction || r.claudeModelUsed);
   return {
     normalizedStatus: 'Submitted',
-    pillLabel: 'Submitted',
+    pillLabel: hasAiSignals ? 'AI Reviewing' : 'Awaiting Triage',
     currentStage: 0,
     badgeClass: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/45'
   };
 };
 
+const getClosureApprovalBadge = (r: ExtendedReportItem): { label: string; badgeClass: string } => {
+  const mode = (r.closureApprovalMode || '').toLowerCase();
+  if (mode.includes('ai') || mode === 'auto' || mode === 'autoapproved') {
+    return {
+      label: 'AI Auto-Approved Closure',
+      badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-300'
+    };
+  }
+  return {
+    label: 'Admin Approved Done',
+    badgeClass: 'bg-[#F7F1EA] text-[#670626] border-[#670626]/30'
+  };
+};
+
+const computeSeverityFallbackFromReports = (list: ExtendedReportItem[]): BarGraphItem[] => {
+  const low = list.filter((r) => (r.severity || '').toLowerCase() === 'low').length;
+  const medium = list.filter((r) => (r.severity || '').toLowerCase() === 'medium').length;
+  const high = list.filter((r) => (r.severity || '').toLowerCase() === 'high').length;
+  const critical = list.filter((r) => {
+    const sev = (r.severity || '').toLowerCase();
+    return sev === 'critical' || sev === 'severe';
+  }).length;
+
+  return [
+    { label: 'Low', value: low, color: '#10b981' },
+    { label: 'Medium', value: medium, color: '#f59e0b' },
+    { label: 'High', value: high, color: '#ea580c' },
+    { label: 'Critical', value: critical, color: '#ef4444' }
+  ];
+};
+
+const computeHeatmapFallbackFromReports = (list: ExtendedReportItem[]): number[][] => {
+  const matrix: number[][] = Array.from({ length: 7 }, () => Array(6).fill(0));
+  list.forEach((r) => {
+    const parts = toManilaParts(r.createdAt || r.submittedAt);
+    if (!parts) return;
+    const hourBlock = Math.min(5, Math.max(0, Math.floor(parts.hour / 4)));
+    matrix[parts.dayIndex][hourBlock] += 1;
+  });
+  return matrix;
+};
+
 export const MyReportsHistory: React.FC = () => {
   const { session } = useSession();
   const [reports, setReports] = useState<ExtendedReportItem[]>([]);
+  const [roleAnalytics, setRoleAnalytics] = useState<RoleAnalyticsDashboardDto | null>(null);
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -210,7 +262,11 @@ export const MyReportsHistory: React.FC = () => {
 
   const loadReports = useCallback(async () => {
     try {
-      const data = await getMyReports();
+      const [data, analyticsData] = await Promise.all([
+        getMyReports(),
+        getRoleAnalyticsDashboard('30d').catch(() => null)
+      ]);
+
       const safeList = Array.isArray(data) ? (data as ExtendedReportItem[]) : [];
       const ownReports = safeList
         .filter((r) => {
@@ -227,6 +283,7 @@ export const MyReportsHistory: React.FC = () => {
         return timeB - timeA;
       });
       setReports(ownReports);
+      setRoleAnalytics(analyticsData);
     } catch (err) {
       console.error('Failed to load citizen reports history:', err);
       setReports([]);
@@ -246,18 +303,81 @@ export const MyReportsHistory: React.FC = () => {
     loadReports();
   });
 
+  const severityChartData: BarGraphItem[] = useMemo(() => {
+    const apiItems = roleAnalytics?.severityBreakdown;
+    const hasApiValues =
+      Array.isArray(apiItems) &&
+      apiItems.length > 0 &&
+      apiItems.some((item) => item.value > 0);
+
+    if (hasApiValues && apiItems) {
+      const colorMap: Record<string, string> = {
+        low: '#10b981',
+        medium: '#f59e0b',
+        high: '#ea580c',
+        critical: '#ef4444'
+      };
+      return apiItems.map((item) => {
+        const lower = (item.label || '').toLowerCase();
+        const matchedKey = Object.keys(colorMap).find((k) => lower.includes(k));
+        return {
+          label: item.label,
+          value: item.value,
+          color: item.color || (matchedKey ? colorMap[matchedKey] : '#670626')
+        };
+      });
+    }
+    return computeSeverityFallbackFromReports(reports);
+  }, [roleAnalytics, reports]);
+
+  const heatmapMatrix: number[][] = useMemo(() => {
+    const apiMatrix = roleAnalytics?.heatmapMatrix?.matrix;
+    const isValidApiMatrix =
+      Array.isArray(apiMatrix) &&
+      apiMatrix.length === 7 &&
+      apiMatrix.every((row) => Array.isArray(row) && row.length === 6) &&
+      apiMatrix.some((row) => row.some((val) => val > 0));
+
+    if (isValidApiMatrix && apiMatrix) {
+      return apiMatrix;
+    }
+    return computeHeatmapFallbackFromReports(reports);
+  }, [roleAnalytics, reports]);
+
+  const stageSummaryCounts = useMemo(() => {
+    let submitted = 0;
+    let approved = 0;
+    let activeProgress = 0;
+    let done = 0;
+
+    reports.forEach((r) => {
+      const { normalizedStatus } = getDeterministicStatus(r);
+      if (normalizedStatus === 'Submitted') submitted += 1;
+      else if (normalizedStatus === 'Verified') approved += 1;
+      else if (normalizedStatus === 'Dispatched' || normalizedStatus === 'Working Progress') {
+        activeProgress += 1;
+      } else if (normalizedStatus === 'Done') {
+        done += 1;
+      }
+    });
+
+    return { submitted, approved, activeProgress, done };
+  }, [reports]);
+
   const filteredReports = useMemo(() => {
     return reports.filter((r) => {
-      const { normalizedStatus } = getDeterministicStatus(r);
+      const { normalizedStatus, pillLabel } = getDeterministicStatus(r);
       if (statusFilter !== 'all' && normalizedStatus !== statusFilter) return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
+        const resolvedStreet = r.locationLabel || resolveStreetAddressSync(r.latitude, r.longitude);
         const codeMatch = r.referenceCode?.toLowerCase().includes(q);
         const titleMatch = r.title?.toLowerCase().includes(q);
-        const locMatch = r.locationLabel?.toLowerCase().includes(q);
+        const locMatch = resolvedStreet.toLowerCase().includes(q);
         const catMatch = r.category?.toLowerCase().includes(q);
-        const statusMatch = normalizedStatus.toLowerCase().includes(q);
+        const statusMatch =
+          normalizedStatus.toLowerCase().includes(q) || pillLabel.toLowerCase().includes(q);
         if (!codeMatch && !titleMatch && !locMatch && !catMatch && !statusMatch) return false;
       }
 
@@ -268,10 +388,10 @@ export const MyReportsHistory: React.FC = () => {
   const statusTabs: StatusFilter[] = [
     'all',
     'Submitted',
-    'Pending',
     'Verified',
     'Dispatched',
-    'Resolved',
+    'Working Progress',
+    'Done',
     'Rejected'
   ];
 
@@ -325,7 +445,7 @@ export const MyReportsHistory: React.FC = () => {
         <div className="flex items-center gap-3">
           <Link to="/civilian/report">
             <CivilianButton variant="danger" size="sm" className="min-h-[40px] text-sm">
-              + New Report
+              + Reports Incident
             </CivilianButton>
           </Link>
         </div>
@@ -339,7 +459,85 @@ export const MyReportsHistory: React.FC = () => {
         </div>
       )}
 
-      {/* 3. Status Filter Bar, Search Bar, and TableCardToggle */}
+      {/* 3. My Incident & Community Trend Analytics Panel */}
+      <section
+        aria-label="My Incident and Community Trend Analytics"
+        className="clay-surface p-5 sm:p-6 rounded-2xl bg-[#F7F1EA] text-[#670626] border border-[#670626]/15 shadow-[0_14px_34px_rgba(74,4,26,0.22)] flex flex-col gap-5"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#670626]/15 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 flex items-center justify-center">
+              <BarChart3 className="w-5 h-5 text-[#670626]" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-black text-[#670626] leading-tight">
+                My Incident &amp; Community Trend Analytics
+              </h2>
+              <p className="text-xs font-mono text-[#A83B4D]">
+                PHT (UTC+8) Severity, 7D × 4H Activity Density &amp; Lifecycle Progression
+              </p>
+            </div>
+          </div>
+          <span className="px-3 py-1 rounded-full bg-[#E9D9D0] border border-[#670626]/20 text-xs font-mono font-bold text-[#670626] self-start sm:self-auto">
+            {roleAnalytics?.scope ? `Scope: ${roleAnalytics.scope}` : 'Live PHT Ledger'}
+          </span>
+        </div>
+
+        {/* 4-Stage Horizontal Progression Tracker */}
+        <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-3">
+          <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#670626]">
+            4-Stage Incident Progression Summary
+          </span>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="p-3 rounded-xl bg-[#F7F1EA] border border-[#670626]/15 flex flex-col gap-1">
+              <span className="text-[11px] font-mono font-bold uppercase text-[#A83B4D]">
+                1. Submitted
+              </span>
+              <span className="text-xl font-black font-mono text-[#670626]">
+                {stageSummaryCounts.submitted}
+              </span>
+            </div>
+            <div className="p-3 rounded-xl bg-[#F7F1EA] border border-emerald-300 flex flex-col gap-1">
+              <span className="text-[11px] font-mono font-bold uppercase text-emerald-800">
+                2. Approved (AI / Manual)
+              </span>
+              <span className="text-xl font-black font-mono text-emerald-900">
+                {stageSummaryCounts.approved}
+              </span>
+            </div>
+            <div className="p-3 rounded-xl bg-[#F7F1EA] border border-[#A83B4D]/40 flex flex-col gap-1">
+              <span className="text-[11px] font-mono font-bold uppercase text-[#A83B4D]">
+                3. Dispatched / Working Progress
+              </span>
+              <span className="text-xl font-black font-mono text-[#670626]">
+                {stageSummaryCounts.activeProgress}
+              </span>
+            </div>
+            <div className="p-3 rounded-xl bg-[#670626] text-[#F7F1EA] border border-[#670626] flex flex-col gap-1">
+              <span className="text-[11px] font-mono font-bold uppercase text-[#E9D9D0]">
+                4. Mark as Done
+              </span>
+              <span className="text-xl font-black font-mono text-[#F7F1EA]">
+                {stageSummaryCounts.done}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <BarGraphChart
+            data={severityChartData}
+            title="Reports by Severity"
+            height={200}
+          />
+          <HeatmapChart
+            matrix={heatmapMatrix}
+            title="7-Day × 4-Hour Incident Activity Heatmap (PHT)"
+          />
+        </div>
+      </section>
+
+      {/* 4. Status Filter Bar, Search Bar, and TableCardToggle */}
       <div className="clay-surface flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-4 rounded-2xl bg-[#F7F1EA] text-[#670626] border border-[#670626]/15 shadow-[0_12px_30px_rgba(74,4,26,0.22)]">
         <div className="flex items-center gap-2 overflow-x-auto pb-1 lg:pb-0">
           {statusTabs.map((tab) => {
@@ -376,7 +574,7 @@ export const MyReportsHistory: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. Empty State */}
+      {/* 5. Empty State */}
       {filteredReports.length === 0 ? (
         <div className="clay-surface p-12 text-center flex flex-col items-center justify-center gap-3 rounded-2xl bg-[#F7F1EA] text-[#670626] border border-[#670626]/15 shadow-[0_14px_32px_rgba(74,4,26,0.22)]">
           <div className="w-14 h-14 rounded-2xl bg-[#E9D9D0] border border-[#670626]/20 flex items-center justify-center text-[#670626]">
@@ -384,21 +582,23 @@ export const MyReportsHistory: React.FC = () => {
           </div>
           <h3 className="text-lg font-black text-[#670626]">No Reports Found</h3>
           <p className="text-sm text-[#A83B4D] max-w-sm">
-            {searchQuery ? `No reports matching "${searchQuery}".` : 'No reports submitted yet.'}
+            {searchQuery ? `No reports matching "${searchQuery}".` : 'No reports in this category yet.'}
           </p>
           <Link to="/civilian/report" className="mt-2">
             <CivilianButton variant="danger" size="sm" className="text-sm">
-              Submit Report
+              Submit Reports Incident
             </CivilianButton>
           </Link>
         </div>
       ) : viewMode === 'card' ? (
-        /* 5. CARD VIEW */
+        /* 6. CARD VIEW */
         <div className="flex flex-col gap-5">
           {filteredReports.map((r) => {
             const { normalizedStatus, pillLabel, currentStage, badgeClass } =
               getDeterministicStatus(r);
             const sevClass = SEVERITY_PILL_MAP[r.severity] || SEVERITY_PILL_MAP.Low;
+            const resolvedStreet = r.locationLabel || resolveStreetAddressSync(r.latitude, r.longitude);
+            const closureBadge = normalizedStatus === 'Done' ? getClosureApprovalBadge(r) : null;
 
             return (
               <div
@@ -425,7 +625,7 @@ export const MyReportsHistory: React.FC = () => {
                     <h2 className="text-lg font-black text-[#670626] mt-1">{r.title}</h2>
                     <span className="text-xs text-[#A83B4D] flex items-center gap-1.5 font-medium">
                       <MapPin className="w-4 h-4 text-[#670626] flex-shrink-0" />
-                      <span>{r.locationLabel || 'Katipunan Sector'}</span>
+                      <span>{resolvedStreet}</span>
                       <span className="text-[#670626]/40">/</span>
                       <span className="font-mono text-xs text-[#670626]">
                         {formatGpsCoord(r.latitude, r.longitude)}
@@ -445,15 +645,16 @@ export const MyReportsHistory: React.FC = () => {
                       Filed {formatRelativeTime(r.createdAt || r.submittedAt)}
                     </span>
 
-                    {normalizedStatus === 'Dispatched' && r.allocatedUnitCode && (
-                      <span className="mt-1 px-3 py-1 rounded-lg bg-[#E9D9D0] text-[#670626] border border-[#670626]/25 font-mono text-xs font-bold flex items-center gap-1.5">
-                        <Ambulance className="w-4 h-4 text-[#670626]" />
-                        <span>En Route:</span>
-                        <strong className="text-[#4A041A]">{r.allocatedUnitCode}</strong>
-                      </span>
-                    )}
+                    {(normalizedStatus === 'Dispatched' || normalizedStatus === 'Working Progress') &&
+                      r.allocatedUnitCode && (
+                        <span className="mt-1 px-3 py-1 rounded-lg bg-[#E9D9D0] text-[#670626] border border-[#670626]/25 font-mono text-xs font-bold flex items-center gap-1.5">
+                          <Ambulance className="w-4 h-4 text-[#670626]" />
+                          <span>En Route:</span>
+                          <strong className="text-[#4A041A]">{r.allocatedUnitCode}</strong>
+                        </span>
+                      )}
 
-                    {normalizedStatus === 'Resolved' && (
+                    {normalizedStatus === 'Done' && (
                       <button
                         type="button"
                         onClick={() => handleOpenFeedbackModal(r)}
@@ -473,18 +674,18 @@ export const MyReportsHistory: React.FC = () => {
                   </div>
                 ) : (
                   <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 flex flex-col gap-2.5">
-                    <div className="flex items-center justify-between text-xs font-mono font-bold">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono font-bold">
                       <span className={currentStage >= 0 ? 'text-[#670626]' : 'text-[#A83B4D]/60'}>
                         Submitted
                       </span>
                       <span className={currentStage >= 1 ? 'text-[#670626]' : 'text-[#A83B4D]/60'}>
-                        Verified
+                        Approved (AI / Manual)
                       </span>
                       <span className={currentStage >= 2 ? 'text-[#670626]' : 'text-[#A83B4D]/60'}>
-                        Dispatched
+                        Dispatched / Working Progress
                       </span>
-                      <span className={currentStage >= 3 ? 'text-[#670626]' : 'text-[#A83B4D]/60'}>
-                        Resolved
+                      <span className={`sm:text-right ${currentStage >= 3 ? 'text-[#670626]' : 'text-[#A83B4D]/60'}`}>
+                        Mark as Done
                       </span>
                     </div>
 
@@ -501,6 +702,33 @@ export const MyReportsHistory: React.FC = () => {
                         }`}
                       />
                     </div>
+                  </div>
+                )}
+
+                {/* Closure Summary & Approval Badge */}
+                {normalizedStatus === 'Done' && closureBadge && (
+                  <div className="p-3.5 rounded-xl bg-[#E9D9D0] border border-[#670626]/20 flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-mono font-black text-[#670626] uppercase">
+                        <CheckCircle2 className="w-4 h-4 text-[#670626]" />
+                        <span>Closure Verification</span>
+                      </span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold border ${closureBadge.badgeClass}`}
+                      >
+                        {closureBadge.label}
+                      </span>
+                    </div>
+                    {r.closureSummary && (
+                      <p className="text-xs text-[#670626] leading-relaxed font-medium">
+                        {r.closureSummary}
+                      </p>
+                    )}
+                    {(r.closedAt || r.resolvedAt) && (
+                      <span className="text-[11px] font-mono text-[#A83B4D]">
+                        Completed {formatRelativeTime(r.closedAt || r.resolvedAt)}
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -526,7 +754,7 @@ export const MyReportsHistory: React.FC = () => {
                           </span>
                         )}
                         <span className="px-2 py-0.5 rounded bg-[#F7F1EA] border border-[#A83B4D]/40 text-[#A83B4D] font-bold">
-                          {r.claudeModelUsed || 'Pending AI'}
+                          {r.claudeModelUsed || 'AI Reviewing'}
                         </span>
                       </div>
                     </div>
@@ -586,7 +814,7 @@ export const MyReportsHistory: React.FC = () => {
           })}
         </div>
       ) : (
-        /* 6. TABLE VIEW */
+        /* 7. TABLE VIEW */
         <div className="clay-surface rounded-2xl border border-[#670626]/15 overflow-hidden bg-[#F7F1EA] text-[#670626] shadow-[0_14px_34px_rgba(74,4,26,0.22)]">
           <div className="overflow-x-auto">
             <table className="w-full text-left font-mono text-sm">
@@ -605,6 +833,7 @@ export const MyReportsHistory: React.FC = () => {
                 {filteredReports.map((r) => {
                   const { normalizedStatus, pillLabel, badgeClass } = getDeterministicStatus(r);
                   const sevClass = SEVERITY_PILL_MAP[r.severity] || SEVERITY_PILL_MAP.Low;
+                  const resolvedStreet = r.locationLabel || resolveStreetAddressSync(r.latitude, r.longitude);
 
                   return (
                     <tr key={r.id} className="hover:bg-[#E9D9D0]/55 transition-colors">
@@ -616,7 +845,7 @@ export const MyReportsHistory: React.FC = () => {
                           {r.title}
                         </span>
                         <span className="text-xs text-[#A83B4D] truncate block">
-                          {r.locationLabel}
+                          {resolvedStreet}
                         </span>
                       </td>
                       <td className="p-4 text-[#670626] whitespace-nowrap text-xs">
@@ -654,7 +883,7 @@ export const MyReportsHistory: React.FC = () => {
                               Photo
                             </button>
                           )}
-                          {normalizedStatus === 'Resolved' && (
+                          {normalizedStatus === 'Done' && (
                             <button
                               type="button"
                               onClick={() => handleOpenFeedbackModal(r)}
@@ -685,7 +914,7 @@ export const MyReportsHistory: React.FC = () => {
         {selectedFeedbackReport && (
           <div className="flex flex-col gap-4 text-[#670626]">
             <div className="p-4 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 text-sm font-mono">
-              <span className="text-[#A83B4D] block mb-0.5 text-xs font-bold">Resolved:</span>
+              <span className="text-[#A83B4D] block mb-0.5 text-xs font-bold">Mark as Done:</span>
               <span className="font-black text-[#670626] block">
                 #{selectedFeedbackReport.referenceCode} - {selectedFeedbackReport.title}
               </span>

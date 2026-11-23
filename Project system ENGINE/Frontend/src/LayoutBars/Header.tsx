@@ -31,6 +31,7 @@ import { useDrawerSidebar } from '@/Shared/ToggleDrawerSidebarMenu';
 import { requestJson } from '@/Endpoints/apiClient';
 import { getAlerts, getAllReports, markAlertRead, markAllAlertsRead, AlertItem, ReportItem } from '@/Endpoints/reportsApi';
 import { getDispatchRequests, DispatchRequestRecord } from '@/Endpoints/responderOpsApi';
+import { parseUtcTimestamp } from '@/Endpoints/analyticsApi';
 import { createPortal } from 'react-dom';
 import { useFluidResposiveness } from '@/Hooks/useFluidResposiveness';
 
@@ -50,6 +51,7 @@ export interface ResponderNotificationItem {
   id: string;
   referenceCode: string;
   category: ResponderNotificationCategory;
+  statusLabel?: string;
   incidentCategory?: string;
   targetUnit?: string;
   title: string;
@@ -68,6 +70,13 @@ interface RawNotificationPayload {
   type?: string;
   notificationType?: string;
   category?: string;
+  status?: string;
+  statusLabel?: string;
+  aiAutoApproved?: boolean;
+  aiVerificationStatus?: string | null;
+  closureApprovalMode?: string | null;
+  closedAt?: string | null;
+  resolvedAt?: string | null;
   incidentCategory?: string;
   targetUnit?: string;
   unit?: string;
@@ -102,8 +111,8 @@ const COMPACT_FILTER_CATEGORIES: ReadonlyArray<{
 }> = [
   { category: 'REQUEST DISPATCH DEPLOY', label: 'Dispatch' },
   { category: 'ADMIN REQUEST YOU TO DEPLOY', label: 'Admin Deploy' },
-  { category: 'INCIDENT HAPPENS ON', label: 'Incident' },
-  { category: 'VERIFIED SUBMITTED INCIDENT LOGS', label: 'Verified' }
+  { category: 'INCIDENT HAPPENS ON', label: 'Incident Reported' },
+  { category: 'VERIFIED SUBMITTED INCIDENT LOGS', label: 'Approved' }
 ];
 
 const SEVERITY_PRIORITY_RANK: Record<string, number> = {
@@ -271,9 +280,8 @@ const normalizeNotificationCategory = (
   if (
     combined.includes('VERIFIED SUBMITTED') ||
     combined.includes('VERIFIED_SUBMITTED') ||
-    combined.includes('5-MINUTE') ||
-    combined.includes('5 MINUTE') ||
-    combined.includes('COUNTDOWN') ||
+    combined.includes('AI AUTO-APPROVED') ||
+    combined.includes('MANUAL APPROVED') ||
     combined.includes('VERIFIED INCIDENT LOG')
   ) {
     return 'VERIFIED SUBMITTED INCIDENT LOGS';
@@ -281,6 +289,8 @@ const normalizeNotificationCategory = (
   if (
     combined.includes('SUBMITTED INCIDENT') ||
     combined.includes('SUBMITTED_INCIDENT') ||
+    combined.includes('WORKING PROGRESS') ||
+    combined.includes('INPROGRESS') ||
     combined.includes('PCR') ||
     combined.includes('SUBMITTED LOG')
   ) {
@@ -289,6 +299,7 @@ const normalizeNotificationCategory = (
   if (
     combined.includes('CLOSE CASE') ||
     combined.includes('CLOSE_CASE') ||
+    combined.includes('MARK AS DONE') ||
     combined.includes('CASE CLOSED') ||
     combined.includes('DECLARED CLOSED') ||
     combined.includes('SOLVED')
@@ -296,6 +307,60 @@ const normalizeNotificationCategory = (
     return 'CLOSE CASE';
   }
   return 'INCIDENT HAPPENS ON';
+};
+
+const resolveIncidentStatusLabel = (
+  category: ResponderNotificationCategory,
+  rawStatus?: string | null,
+  aiAutoApproved?: boolean,
+  aiVerificationStatus?: string | null,
+  explicitLabel?: string
+): string => {
+  if (explicitLabel && explicitLabel.trim()) {
+    return explicitLabel.trim();
+  }
+  const s = (rawStatus || '').trim().toLowerCase();
+  const aiUpper = (aiVerificationStatus || '').trim().toUpperCase();
+
+  if (
+    s === 'resolved' ||
+    s === 'closed' ||
+    s === 'completed' ||
+    s === 'responded' ||
+    category === 'CLOSE CASE'
+  ) {
+    return 'Mark as Done';
+  }
+  if (
+    s === 'inprogress' ||
+    s === 'in_progress' ||
+    s === 'working progress' ||
+    s === 'allocated' ||
+    s === 'enroute' ||
+    s === 'onscene' ||
+    s === 'dispatched' ||
+    category === 'SUBMITTED INCIDENT LOGS'
+  ) {
+    return 'Working Progress';
+  }
+  if (
+    s === 'verified' ||
+    aiAutoApproved ||
+    aiUpper === 'AI_AUTO_APPROVED' ||
+    aiUpper === 'AUTO_APPROVED' ||
+    category === 'VERIFIED SUBMITTED INCIDENT LOGS'
+  ) {
+    return aiAutoApproved || aiUpper === 'AI_AUTO_APPROVED' || aiUpper === 'AUTO_APPROVED'
+      ? 'AI Auto-Approved'
+      : 'Manual Approved';
+  }
+  if (category === 'REQUEST DISPATCH DEPLOY') {
+    return 'Request Dispatch Deploy';
+  }
+  if (category === 'ADMIN REQUEST YOU TO DEPLOY') {
+    return 'Admin Deploy Order';
+  }
+  return 'Incident Reported';
 };
 
 const resolveTargetRoute = (
@@ -366,10 +431,19 @@ const normalizeRawNotification = (
     activeUnit
   );
 
+  const statusLabel = resolveIncidentStatusLabel(
+    category,
+    raw.status,
+    raw.aiAutoApproved,
+    raw.aiVerificationStatus,
+    raw.statusLabel
+  );
+
   return {
     id,
     referenceCode,
     category,
+    statusLabel,
     incidentCategory: raw.incidentCategory || raw.category,
     targetUnit: raw.targetUnit || raw.recommendedAgencyUnit || raw.unit || raw.agency,
     title,
@@ -388,30 +462,41 @@ const mapAlertToNotification = (
   readIds: string[],
   activeRole: string,
   activeUnit: string
-): ResponderNotificationItem =>
-  normalizeRawNotification(
+): ResponderNotificationItem => {
+  const statusLower = (alert.status || '').trim().toLowerCase();
+  const notifType: ResponderNotificationCategory =
+    statusLower === 'resolved' || statusLower === 'closed' || statusLower === 'responded'
+      ? 'CLOSE CASE'
+      : statusLower === 'inprogress' ||
+        statusLower === 'allocated' ||
+        statusLower === 'enroute' ||
+        statusLower === 'onscene' ||
+        statusLower === 'dispatched'
+      ? 'SUBMITTED INCIDENT LOGS'
+      : statusLower === 'verified'
+      ? 'VERIFIED SUBMITTED INCIDENT LOGS'
+      : 'INCIDENT HAPPENS ON';
+
+  return normalizeRawNotification(
     {
       id: alert.reportId,
       reportId: alert.reportId,
       referenceCode: alert.referenceCode,
       title: alert.title,
       category: alert.category,
+      status: alert.status,
       incidentCategory: alert.category,
       severity: alert.severity,
       timestamp: alert.timestamp,
       isRead: alert.isRead,
-      notificationType:
-        alert.status?.toLowerCase() === 'resolved' || alert.status?.toLowerCase() === 'closed'
-          ? 'CLOSE CASE'
-          : alert.status?.toLowerCase() === 'verified'
-          ? 'VERIFIED SUBMITTED INCIDENT LOGS'
-          : 'INCIDENT HAPPENS ON'
+      notificationType: notifType
     },
     idx,
     readIds,
     activeRole,
     activeUnit
   );
+};
 
 const mapReportToNotification = (
   report: ReportItem,
@@ -420,13 +505,33 @@ const mapReportToNotification = (
   activeRole: string,
   activeUnit: string
 ): ResponderNotificationItem => {
-  const statusLower = (report.status || '').toLowerCase();
-  const notifType: ResponderNotificationCategory =
-    statusLower === 'resolved' || statusLower === 'closed'
-      ? 'CLOSE CASE'
-      : statusLower === 'verified'
-      ? 'VERIFIED SUBMITTED INCIDENT LOGS'
-      : 'INCIDENT HAPPENS ON';
+  const statusLower = (report.status || '').trim().toLowerCase();
+  const isDone =
+    statusLower === 'resolved' ||
+    statusLower === 'closed' ||
+    statusLower === 'completed' ||
+    statusLower === 'responded' ||
+    Boolean(report.closedAt) ||
+    Boolean(report.resolvedAt);
+  const isWorking =
+    statusLower === 'inprogress' ||
+    statusLower === 'in_progress' ||
+    statusLower === 'allocated' ||
+    statusLower === 'enroute' ||
+    statusLower === 'onscene' ||
+    statusLower === 'dispatched';
+  const isApproved =
+    statusLower === 'verified' ||
+    Boolean(report.aiAutoApproved) ||
+    report.aiVerificationStatus === 'AI_AUTO_APPROVED';
+
+  const notifType: ResponderNotificationCategory = isDone
+    ? 'CLOSE CASE'
+    : isWorking
+    ? 'SUBMITTED INCIDENT LOGS'
+    : isApproved
+    ? 'VERIFIED SUBMITTED INCIDENT LOGS'
+    : 'INCIDENT HAPPENS ON';
 
   return normalizeRawNotification(
     {
@@ -436,6 +541,9 @@ const mapReportToNotification = (
       title: report.title,
       message: report.note || `${report.category} reported at ${report.locationLabel || 'Katipunan'}`,
       category: report.category,
+      status: isDone ? 'Resolved' : report.status,
+      aiAutoApproved: report.aiAutoApproved,
+      aiVerificationStatus: report.aiVerificationStatus,
       incidentCategory: report.category,
       targetUnit: report.recommendedAgencyUnit || report.allocatedUnitCode || undefined,
       severity: report.severity,
@@ -466,6 +574,15 @@ const mapDispatchToNotification = (
       ? 'ADMIN REQUEST YOU TO DEPLOY'
       : 'REQUEST DISPATCH DEPLOY';
 
+  const statusLabel =
+    dispatch.status === 'CLOSED'
+      ? 'Mark as Done'
+      : dispatch.status === 'RESPONDED'
+      ? 'Working Progress'
+      : dispatch.direction === 'ADMIN_ORDER'
+      ? 'Admin Deploy Order'
+      : 'Request Dispatch Deploy';
+
   return normalizeRawNotification(
     {
       id: dispatch.id,
@@ -474,6 +591,7 @@ const mapDispatchToNotification = (
       title: `${dispatch.incidentTitle} (${dispatch.status})`,
       message: dispatch.notes || `${dispatch.responderName} — ${dispatch.location}`,
       category: dispatch.category,
+      statusLabel,
       incidentCategory: dispatch.category,
       targetUnit: dispatch.responderId,
       severity: dispatch.severity,
@@ -491,7 +609,7 @@ const mapDispatchToNotification = (
 
 const formatTimeAgo = (iso?: string): string => {
   if (!iso) return 'JUST NOW';
-  const parsed = Date.parse(iso);
+  const parsed = parseUtcTimestamp(iso)?.getTime() ?? Date.parse(iso);
   if (Number.isNaN(parsed)) return iso;
   const diffSec = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
   if (diffSec < 60) return `${diffSec}S AGO`;
@@ -727,8 +845,8 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
     });
 
     return [...filtered].sort((a, b) => {
-      const tsA = Date.parse(a.timestamp) || 0;
-      const tsB = Date.parse(b.timestamp) || 0;
+      const tsA = parseUtcTimestamp(a.timestamp)?.getTime() ?? (Date.parse(a.timestamp) || 0);
+      const tsB = parseUtcTimestamp(b.timestamp)?.getTime() ?? (Date.parse(b.timestamp) || 0);
       if (sortOrder === 'oldest') {
         return tsA - tsB;
       }
@@ -807,13 +925,14 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
     setNotifications((prev) => prev.filter((n) => !n.isRead));
   };
 
-  const getCategoryVisuals = (category: ResponderNotificationCategory) => {
+  const getCategoryVisuals = (category: ResponderNotificationCategory, statusLabel?: string) => {
     switch (category) {
       case 'REQUEST DISPATCH DEPLOY':
         return {
           icon: Send,
           badgeClass: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/35',
           iconWrapClass: 'bg-[#E9D9D0] border-[#A83B4D]/35 text-[#670626]',
+          displayLabel: statusLabel || 'Request Dispatch Deploy',
           routeLabel: 'Request & Deploy'
         };
       case 'ADMIN REQUEST YOU TO DEPLOY':
@@ -821,6 +940,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           icon: Radio,
           badgeClass: 'bg-[#670626] text-[#F7F1EA] border-[#4A041A]',
           iconWrapClass: 'bg-[#670626] border-[#4A041A] text-[#F7F1EA]',
+          displayLabel: statusLabel || 'Admin Deploy Order',
           routeLabel: 'Deploy Order'
         };
       case 'INCIDENT HAPPENS ON':
@@ -828,28 +948,32 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
           icon: AlertTriangle,
           badgeClass: 'bg-[#FAF5EE] text-[#670626] border-[#A83B4D]/45',
           iconWrapClass: 'bg-[#E9D9D0] border-[#670626]/30 text-[#670626]',
-          routeLabel: sessionScope.unit === 'PNP' ? 'Reports' : 'Incident Feed'
+          displayLabel: statusLabel || 'Incident Reported',
+          routeLabel: sessionScope.unit === 'PNP' ? 'Incident Logs' : 'Incident Feed'
         };
       case 'SUBMITTED INCIDENT LOGS':
         return {
           icon: FileText,
-          badgeClass: 'bg-[#E9D9D0] text-[#2B010E] border-[#A83B4D]/35',
-          iconWrapClass: 'bg-[#E9D9D0] border-[#A83B4D]/35 text-[#670626]',
-          routeLabel: 'Reports'
+          badgeClass: 'bg-amber-100 text-amber-900 border-amber-700/30',
+          iconWrapClass: 'bg-amber-100 border-amber-700/30 text-amber-900',
+          displayLabel: statusLabel || 'Working Progress',
+          routeLabel: 'Working Progress'
         };
       case 'VERIFIED SUBMITTED INCIDENT LOGS':
         return {
           icon: ShieldCheck,
           badgeClass: 'bg-[#670626]/15 text-[#670626] border-[#670626]/35',
           iconWrapClass: 'bg-[#E9D9D0] border-[#670626]/35 text-[#670626]',
-          routeLabel: 'Verified Timer'
+          displayLabel: statusLabel || 'Manual Approved',
+          routeLabel: 'Approved Incidents'
         };
       case 'CLOSE CASE':
         return {
           icon: CheckCircle2,
-          badgeClass: 'bg-[#E9D9D0] text-[#2B010E] border-[#A83B4D]/35',
-          iconWrapClass: 'bg-[#E9D9D0] border-[#A83B4D]/35 text-[#670626]',
-          routeLabel: 'Closed Case'
+          badgeClass: 'bg-emerald-100 text-emerald-900 border-emerald-700/30',
+          iconWrapClass: 'bg-emerald-100 border-emerald-700/30 text-emerald-900',
+          displayLabel: statusLabel || 'Mark as Done',
+          routeLabel: 'Mark as Done'
         };
     }
   };
@@ -1188,7 +1312,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                     </li>
                   ) : (
                     filteredNotifications.map((item) => {
-                      const visuals = getCategoryVisuals(item.category);
+                      const visuals = getCategoryVisuals(item.category, item.statusLabel);
                       const CategoryIcon = visuals.icon;
 
                       return (
@@ -1219,7 +1343,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
                               <span
                                 className={`px-2 py-0.5 rounded-md text-xs font-mono font-bold uppercase tracking-wider border ${visuals.badgeClass}`}
                               >
-                                {item.category}
+                                {visuals.displayLabel}
                               </span>
 
                               <div className="flex items-center gap-1.5 text-xs font-mono text-[#A83B4D]">

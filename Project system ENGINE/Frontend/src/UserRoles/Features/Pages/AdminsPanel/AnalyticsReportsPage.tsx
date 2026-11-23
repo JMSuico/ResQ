@@ -19,17 +19,22 @@ import {
   X
 } from 'lucide-react';
 import {
+  ASIA_MANILA_OFFSET_MS,
   getAnalyticsSummary,
   getVolume24h,
   getSeverityBreakdown,
   getAgencyWorkload,
   getHeatmapMatrix,
+  parseUtcTimestamp,
+  toManilaParts,
+  buildAgencyWorkloadFromReports,
   AnalyticsSummaryDto,
   TelemetryDataPoint,
   SeverityBreakdownItem,
   AgencyWorkloadItem
 } from '@/Endpoints/analyticsApi';
 import { getAllReports, ReportItem } from '@/Endpoints/reportsApi';
+import { getDutyRoster, DutyUnit } from '@/Endpoints/responderOpsApi';
 import { LinearCurveyChart, BarGraphChart, PieGraphChart, HeatmapChart } from '@/Shared/Charts';
 import { Dropdown } from '@/Shared';
 import { useValueRefreshAuto } from '@/Hooks';
@@ -59,6 +64,7 @@ export const AnalyticsReportsPage: FC = () => {
   const [agencyData, setAgencyData] = useState<AgencyWorkloadItem[]>([]);
   const [heatmapMatrix, setHeatmapMatrix] = useState<number[][]>([]);
   const [reports, setReports] = useState<ExtendedReportItem[]>([]);
+  const [roster, setRoster] = useState<DutyUnit[]>([]);
 
   const [selectedHorizon, setSelectedHorizon] = useState<string>('30d');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -68,13 +74,14 @@ export const AnalyticsReportsPage: FC = () => {
   const loadData = async (): Promise<void> => {
     try {
       setIsRefreshing(true);
-      const [sum, vol, sev, age, heat, reps] = await Promise.all([
+      const [sum, vol, sev, age, heat, reps, units] = await Promise.all([
         getAnalyticsSummary(),
         getVolume24h(),
         getSeverityBreakdown(),
         getAgencyWorkload(),
         getHeatmapMatrix(),
-        getAllReports().catch(() => [] as ExtendedReportItem[])
+        getAllReports().catch(() => [] as ExtendedReportItem[]),
+        getDutyRoster().catch(() => [] as DutyUnit[])
       ]);
 
       const effectiveSummary = sum || DEFAULT_SUMMARY;
@@ -86,6 +93,7 @@ export const AnalyticsReportsPage: FC = () => {
       setAgencyData(Array.isArray(age) ? age : []);
       setHeatmapMatrix(heat?.matrix && heat.matrix.length > 0 ? heat.matrix : []);
       setReports(effectiveReports);
+      setRoster(Array.isArray(units) ? units : []);
     } catch (err) {
       console.error('[AnalyticsReportsPage] Error syncing analytics:', err);
     } finally {
@@ -100,19 +108,19 @@ export const AnalyticsReportsPage: FC = () => {
   useValueRefreshAuto(loadData, { intervalMs: 10000 });
 
   const filterReportsByHorizon = (items: ExtendedReportItem[], horizon: string): ExtendedReportItem[] => {
-    const now = new Date();
-    const nowMs = now.getTime();
+    const nowMs = Date.now();
+    const nowPht = new Date(nowMs + ASIA_MANILA_OFFSET_MS);
 
     return items.filter((r) => {
       const ts = r.createdAt || r.timestamp;
-      if (!ts) return true;
-      const d = new Date(ts);
-      if (isNaN(d.getTime())) return true;
+      const dUtc = parseUtcTimestamp(ts);
+      if (!dUtc) return true;
+      const dPht = new Date(dUtc.getTime() + ASIA_MANILA_OFFSET_MS);
 
-      if (horizon === '7d') return nowMs - d.getTime() <= 7 * 24 * 60 * 60 * 1000;
-      if (horizon === '30d') return nowMs - d.getTime() <= 30 * 24 * 60 * 60 * 1000;
-      if (horizon === 'quarter') return nowMs - d.getTime() <= 90 * 24 * 60 * 60 * 1000;
-      if (horizon === 'annual') return d.getFullYear() === now.getFullYear() || d.getFullYear() === 2026;
+      if (horizon === '7d') return nowMs - dUtc.getTime() <= 7 * 24 * 60 * 60 * 1000;
+      if (horizon === '30d') return nowMs - dUtc.getTime() <= 30 * 24 * 60 * 60 * 1000;
+      if (horizon === 'quarter') return nowMs - dUtc.getTime() <= 90 * 24 * 60 * 60 * 1000;
+      if (horizon === 'annual') return dPht.getUTCFullYear() === nowPht.getUTCFullYear();
       return true;
     });
   };
@@ -133,11 +141,9 @@ export const AnalyticsReportsPage: FC = () => {
     };
 
     validReports.forEach((r) => {
-      const ts = r.createdAt || r.timestamp;
-      if (!ts) return;
-      const d = new Date(ts);
-      if (isNaN(d.getTime())) return;
-      const hour = d.getHours();
+      const parts = toManilaParts(r.createdAt || r.timestamp);
+      if (!parts) return;
+      const hour = parts.hour;
       if (hour < 4) buckets['00:00'] += 1;
       else if (hour < 8) buckets['04:00'] += 1;
       else if (hour < 12) buckets['08:00'] += 1;
@@ -149,6 +155,19 @@ export const AnalyticsReportsPage: FC = () => {
     const entries = Object.entries(buckets).map(([label, value]) => ({ label, value }));
     return entries.some((e) => e.value > 0) ? entries : volumeData;
   }, [validReports, volumeData]);
+
+  const computedHeatmapMatrix = useMemo(() => {
+    const grid = Array.from({ length: 7 }, () => Array(6).fill(0));
+    let anyCount = 0;
+    validReports.forEach((r) => {
+      const parts = toManilaParts(r.createdAt || r.timestamp);
+      if (!parts) return;
+      const hIdx = Math.min(5, Math.max(0, Math.floor(parts.hour / 4)));
+      grid[parts.dayIndex][hIdx] += 1;
+      anyCount += 1;
+    });
+    return anyCount > 0 ? grid : heatmapMatrix;
+  }, [validReports, heatmapMatrix]);
 
   const computedSeverityData = useMemo(() => {
     const low = validReports.filter((r) => (r.severity || '').toLowerCase() === 'low').length;
@@ -172,36 +191,16 @@ export const AnalyticsReportsPage: FC = () => {
   }, [validReports, severityData]);
 
   const computedAgencyData = useMemo(() => {
-    const rhu = validReports.filter((r) => {
-      const a = (r.recommendedAgencyUnit || '').toUpperCase();
-      const c = (r.category || '').toLowerCase();
-      const code = (r.allocatedUnitCode || '').toUpperCase();
-      return a === 'RHU' || c.includes('medic') || c.includes('health') || code.includes('RHU');
-    }).length;
-
-    const fire = validReports.filter((r) => {
-      const a = (r.recommendedAgencyUnit || '').toUpperCase();
-      const c = (r.category || '').toLowerCase();
-      const code = (r.allocatedUnitCode || '').toUpperCase();
-      return a === 'FIRE' || a === 'BFP' || c.includes('fire') || code.includes('FIRE') || code.includes('BFP');
-    }).length;
-
-    const pnp = validReports.filter((r) => {
-      const a = (r.recommendedAgencyUnit || '').toUpperCase();
-      const c = (r.category || '').toLowerCase();
-      const code = (r.allocatedUnitCode || '').toUpperCase();
-      return a === 'PNP' || c.includes('police') || c.includes('crime') || code.includes('PNP');
-    }).length;
-
-    if (rhu === 0 && fire === 0 && pnp === 0 && agencyData.length > 0) {
+    const built = buildAgencyWorkloadFromReports(validReports);
+    const hasValues = built.some((b) => b.value > 0);
+    if (!hasValues && agencyData.length > 0) {
       return agencyData;
     }
-
-    return [
-      { label: 'RHU Medical', value: rhu, color: '#670626' },
-      { label: 'BFP Fire Rescue', value: fire, color: '#A83B4D' },
-      { label: 'PNP Police Force', value: pnp, color: '#0284c7' }
-    ];
+    return built.map((item) => ({
+      label: item.label,
+      value: item.value,
+      color: item.color
+    }));
   }, [validReports, agencyData]);
 
   const tivaVelocity = useMemo(() => {
@@ -224,11 +223,13 @@ export const AnalyticsReportsPage: FC = () => {
     [validReports]
   );
 
-  const dispatchRatioPercent = useMemo(() => {
-    const total = summary?.totalResponders ?? 0;
-    if (total === 0) return '0.0%';
-    return `${(((summary?.activeDispatches ?? 0) / total) * 100).toFixed(1)}%`;
-  }, [summary]);
+  const fleetCounts = useMemo(() => {
+    const totalUnits = roster.length;
+    const dispatchedUnits = roster.filter((u) => u.status === 'Dispatched').length;
+    const onDutyUnits = roster.filter((u) => u.status === 'OnDuty' || u.status === 'Dispatched').length;
+    const ratio = totalUnits > 0 ? `${((dispatchedUnits / totalUnits) * 100).toFixed(1)}%` : '0.0%';
+    return { totalUnits, dispatchedUnits, onDutyUnits, ratio };
+  }, [roster]);
 
   const activeReportsCount = useMemo(
     () => Math.max(0, (summary?.totalIncidents ?? 0) - (summary?.resolvedCount ?? 0)),
@@ -239,7 +240,7 @@ export const AnalyticsReportsPage: FC = () => {
     () => [
       {
         title: 'Triage Ingestion Velocity',
-        status: `${summary?.totalIncidents ?? 0} reports · ${summary?.criticalIncidents ?? 0} SOS · Index ${tivaVelocity}`,
+        status: `${summary?.totalIncidents ?? 0} reports · ${summary?.criticalIncidents ?? 0} Critical · Index ${tivaVelocity}`,
         description: 'Weighted report density across Katipunan sectors.'
       },
       {
@@ -253,13 +254,13 @@ export const AnalyticsReportsPage: FC = () => {
       {
         title: 'Dispatch Allocation Ratio',
         status:
-          (summary?.totalResponders ?? 0) > 0
-            ? `${dispatchRatioPercent} (${summary?.activeDispatches ?? 0}/${summary?.totalResponders ?? 0} units)`
+          fleetCounts.totalUnits > 0
+            ? `${fleetCounts.ratio} (${fleetCounts.dispatchedUnits}/${fleetCounts.totalUnits} fleet units)`
             : '0.0% allocated',
-        description: 'Active dispatches vs available units.'
+        description: 'Dispatched fleet units vs total registered units.'
       }
     ],
-    [summary, tivaVelocity, sharpnessPercent, blurryReportsCount, validReports.length, dispatchRatioPercent]
+    [summary, tivaVelocity, sharpnessPercent, blurryReportsCount, validReports.length, fleetCounts]
   );
 
   const progressItems = useMemo(() => {
@@ -438,9 +439,9 @@ export const AnalyticsReportsPage: FC = () => {
             <Users className="w-4 h-4 text-sky-700" />
           </div>
           <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">
-            {summary.onDutyResponders} / {summary.totalResponders}
+            {fleetCounts.totalUnits > 0 ? `${fleetCounts.onDutyUnits} / ${fleetCounts.totalUnits}` : `${summary.onDutyResponders} / ${summary.totalResponders}`}
           </h3>
-          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">Multi-Agency Roster</span>
+          <span className="text-xs text-[#A83B4D] font-mono mt-0.5">{summary.totalResponders} Responder Personnel</span>
         </div>
 
         <div className={`tactical-card ${CLAY_SURFACE} p-4 border-l-4 border-l-amber-600 flex flex-col justify-between`}>
@@ -457,15 +458,15 @@ export const AnalyticsReportsPage: FC = () => {
             <p className="text-xs font-mono uppercase text-[#A83B4D] font-bold">Dispatched Fleet Ratio</p>
             <TrendingUp className="w-4 h-4 text-emerald-700" />
           </div>
-          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{dispatchRatioPercent}</h3>
-          <span className="text-xs text-emerald-800 font-mono font-bold mt-0.5">{summary.activeDispatches} Units Deployed</span>
+          <h3 className="text-2xl sm:text-3xl font-black text-[#670626] mt-1.5">{fleetCounts.ratio}</h3>
+          <span className="text-xs text-emerald-800 font-mono font-bold mt-0.5">{fleetCounts.dispatchedUnits} Fleet Units Dispatched</span>
         </div>
       </div>
 
       {/* Primary Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className={`tactical-card ${CLAY_SURFACE} p-5`}>
-          <LinearCurveyChart data={computedVolumeData} color="#A83B4D" title="Incident Response Velocity Trend" />
+          <LinearCurveyChart data={computedVolumeData} color="#A83B4D" title={`Incident Velocity (${selectedHorizon.toUpperCase()} · PHT)`} />
         </div>
         <div className={`tactical-card ${CLAY_SURFACE} p-5`}>
           <BarGraphChart data={computedSeverityData} title="Incident Severity Distribution" />
@@ -478,8 +479,8 @@ export const AnalyticsReportsPage: FC = () => {
       {/* Heatmap */}
       <div className={`tactical-card ${CLAY_SURFACE} p-5`}>
         <HeatmapChart
-          matrix={heatmapMatrix}
-          title="Weekly Incident Density (Katipunan)"
+          matrix={computedHeatmapMatrix}
+          title={`Weekly Incident Density (${selectedHorizon.toUpperCase()} · PHT)`}
         />
       </div>
 

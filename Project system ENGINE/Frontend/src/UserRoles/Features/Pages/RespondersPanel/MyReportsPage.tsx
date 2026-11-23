@@ -14,13 +14,18 @@ import {
   createReport,
   verifyReport,
   ReportEvidenceRecordDto,
-  ReportItem
+  ReportItem,
+  TaggedColleagueItem,
+  ClosureEvidenceSubmissionResult
 } from '@/Endpoints/reportsApi';
 import {
   getPcrRecords,
   submitPcrRecord,
-  PatientCareRecord
+  PatientCareRecord,
+  ColleagueResponderItem
 } from '@/Endpoints/responderOpsApi';
+import { resolveStreetAddressSync } from '@/Libs/Map/addressResolver';
+import { computeTwoMinFadeSecondsLeft } from '@/Endpoints/analyticsApi';
 import {
   useSession,
   useGpsLocation,
@@ -36,7 +41,9 @@ import {
   CameraCaptureModal,
   CameraCaptureMetadata,
   ImageLightboxModal,
-  Button
+  Button,
+  ResponderClosureEvidenceModal,
+  ColleagueMentionPicker
 } from '@/Shared';
 import { formatGpsCoord, formatRelativeTime } from '@/Libs/Assets/formatters';
 import {
@@ -50,7 +57,6 @@ import {
   Activity,
   ShieldCheck,
   HeartPulse,
-  Play,
   Lock,
   ChevronLeft,
   ChevronRight,
@@ -62,10 +68,11 @@ import {
   Check,
   XCircle,
   Send,
-  Trash2
+  Trash2,
+  Timer
 } from 'lucide-react';
 
-const FIVE_MINUTES_SECONDS = 300;
+const TWO_MINUTES_MS = 2 * 60 * 1000;
 const MAX_EVIDENCE_PHOTOS = 40;
 
 export interface EvidencePhotoItem {
@@ -137,10 +144,17 @@ export interface IncidentLogEntry {
   casualties: CasualtyVitalsEntry[];
   evidencePhotos: EvidencePhotoItem[];
   isHardwareGeolocated: boolean;
+  aiAutoApproved?: boolean;
+  aiVerificationStatus?: string | null;
+  resolvedAt?: string | null;
+  closureSummary?: string | null;
+  closureApprovalMode?: string | null;
+  taggedColleagues?: TaggedColleagueItem[];
+  rawReport?: ReportItem;
 }
 
-type LogFilterTab = 'ALL_LOGS' | 'ACTIVE_IN_ACTION' | 'VERIFIED_5M_TIMER' | 'CLOSED_SOLVED';
-type LogSortMode = 'NEWEST' | 'OLDEST' | 'SEVERITY' | 'TIMER_URGENCY';
+type LogFilterTab = 'ALL_LOGS' | 'ACTIVE_IN_ACTION' | 'WORKING_PROGRESS' | 'CLOSED_SOLVED';
+type LogSortMode = 'NEWEST' | 'OLDEST' | 'SEVERITY';
 
 export const formatEvidenceTimestampExact = (input?: string | number | Date | null): string => {
   const dateObj = input ? new Date(input) : new Date();
@@ -166,17 +180,50 @@ export const formatMmSs = (seconds: number): string => {
   return `${mins}:${secs}`;
 };
 
-export const computeRemainingSeconds = (verifiedAt: string | null, nowMs: number): number => {
-  if (!verifiedAt) return FIVE_MINUTES_SECONDS;
-  const verifiedMs = new Date(verifiedAt).getTime();
-  if (Number.isNaN(verifiedMs)) return FIVE_MINUTES_SECONDS;
-  const elapsedSeconds = Math.floor((nowMs - verifiedMs) / 1000);
-  return Math.max(0, FIVE_MINUTES_SECONDS - elapsedSeconds);
-};
+export { computeTwoMinFadeSecondsLeft };
 
-export const computeProgressPct = (remainingSeconds: number): number => {
-  const pct = (1 - remainingSeconds / FIVE_MINUTES_SECONDS) * 100;
-  return Math.min(100, Math.max(0, Number(pct.toFixed(1))));
+const getLogStatusMeta = (log: IncidentLogEntry): {
+  label: string;
+  pillClass: string;
+} => {
+  const s = (log.status || 'Submitted').trim().toLowerCase();
+  if (s === 'rejected' || s === 'declined') {
+    return {
+      label: 'Rejected',
+      pillClass: 'bg-[#670626] text-[#F7F1EA] border-[#670626]'
+    };
+  }
+  if (s === 'resolved' || s === 'closed' || s === 'completed' || log.isClosed) {
+    return {
+      label: 'Done',
+      pillClass: 'bg-emerald-100 border-emerald-700/30 text-emerald-900'
+    };
+  }
+  if (s === 'inprogress' || s === 'in_progress' || s === 'working progress') {
+    return {
+      label: 'Working Progress',
+      pillClass: 'bg-amber-100 border-amber-700/30 text-amber-900'
+    };
+  }
+  if (s === 'dispatched' || s === 'allocated' || s === 'enroute' || s === 'onscene') {
+    return {
+      label: 'Dispatched',
+      pillClass: 'bg-[#A83B4D] border-[#A83B4D] text-[#F7F1EA]'
+    };
+  }
+  if (s === 'verified' || s === 'responded' || log.isVerified) {
+    const isAi =
+      Boolean(log.aiAutoApproved) ||
+      String(log.aiVerificationStatus || '').trim().toLowerCase() === 'autoapproved';
+    return {
+      label: isAi ? 'AI Auto-Approved' : 'Manual Approved',
+      pillClass: 'bg-sky-100 border-sky-700/30 text-sky-900'
+    };
+  }
+  return {
+    label: 'Submitted',
+    pillClass: 'bg-[#E9D9D0] border-[#A83B4D]/45 text-[#670626]'
+  };
 };
 
 const getClaySeverityBadge = (severity: string): string => {
@@ -213,13 +260,13 @@ const normalizeStatusForActiveFormula = (status: string): string => {
   const s = (status || '').trim();
   if (
     s === 'Submitted' ||
-    s === 'Pending' ||
     s === 'Verified' ||
     s === 'Rejected' ||
     s === 'Dispatched' ||
     s === 'EnRoute' ||
     s === 'OnScene' ||
     s === 'Responded' ||
+    s === 'InProgress' ||
     s === 'Resolved' ||
     s === 'Closed'
   ) {
@@ -232,7 +279,7 @@ const normalizeStatusForActiveFormula = (status: string): string => {
 
 const isAwaitingVerificationStatus = (status: string): boolean => {
   const s = (status || '').trim().toLowerCase();
-  return s === 'submitted' || s === 'reported' || s === 'pending';
+  return s === 'submitted' || s === 'reported';
 };
 
 const createEmptyDraftCasualty = (): DraftCasualtyInput => ({
@@ -252,7 +299,7 @@ const createEmptyDraftCasualty = (): DraftCasualtyInput => ({
 
 export const MyReportsPage: React.FC = () => {
   const { session } = useSession();
-  const { coords, isHardwareGeolocated } = useGpsLocation();
+  const { coords, isHardwareGeolocated, resolvedAddress } = useGpsLocation();
   const { viewMode, setViewMode } = useTableCardView('card');
 
   const activeAgencyUnit = (
@@ -261,6 +308,13 @@ export const MyReportsPage: React.FC = () => {
       : (typeof window !== 'undefined' ? sessionStorage.getItem('resqtrack_unit') : null) || 'RHU'
   ).toUpperCase();
   const agencyHeaderMeta = getAgencyHeaderMeta(activeAgencyUnit);
+
+  const defaultCategoryForUnit =
+    activeAgencyUnit === 'FIRE'
+      ? 'StructuralFire'
+      : activeAgencyUnit === 'PNP'
+      ? 'CrimeOrSecurity'
+      : 'MedicalEmergency';
 
   const [logs, setLogs] = useState<IncidentLogEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -272,6 +326,7 @@ export const MyReportsPage: React.FC = () => {
   const [sortMode, setSortMode] = useState<LogSortMode>('NEWEST');
 
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
+  const [closureTargetReport, setClosureTargetReport] = useState<ReportItem | null>(null);
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false);
   const [cameraTargetLogId, setCameraTargetLogId] = useState<string | null>(null);
@@ -279,14 +334,21 @@ export const MyReportsPage: React.FC = () => {
 
   const [newTitle, setNewTitle] = useState<string>('');
   const [newNote, setNewNote] = useState<string>('');
+  const [newLocationLabel, setNewLocationLabel] = useState<string>('');
   const [newSeverity, setNewSeverity] = useState<string>('Critical');
-  const [newCategory, setNewCategory] = useState<string>('MedicalEmergency');
+  const [newCategory, setNewCategory] = useState<string>(defaultCategoryForUnit);
+  const [taggedColleagues, setTaggedColleagues] = useState<ColleagueResponderItem[]>([]);
   const [capturedPhotos, setCapturedPhotos] = useState<EvidencePhotoItem[]>([]);
   const [newCasualties, setNewCasualties] = useState<DraftCasualtyInput[]>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const closedBroadcastSetRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const autoAddr = resolvedAddress || resolveStreetAddressSync(coords.latitude, coords.longitude);
+    if (!newLocationLabel.trim() && autoAddr) {
+      setNewLocationLabel(autoAddr);
+    }
+  }, [resolvedAddress, coords.latitude, coords.longitude, newLocationLabel]);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -371,17 +433,11 @@ export const MyReportsPage: React.FC = () => {
           r.verifiedAt || r.status === 'Verified' || r.status === 'Resolved'
         );
         const verifiedAt = r.verifiedAt || null;
-        const remaining = backendVerified && verifiedAt ? computeRemainingSeconds(verifiedAt, Date.now()) : FIVE_MINUTES_SECONDS;
         const backendClosed = Boolean(
           r.status === 'Resolved' ||
             r.status === 'Closed' ||
-            Boolean(r.resolvedAt) ||
-            (backendVerified && verifiedAt && remaining === 0)
+            Boolean(r.resolvedAt || r.closedAt)
         );
-
-        if (backendClosed) {
-          closedBroadcastSetRef.current.add(r.id);
-        }
 
         const dbEvidences = evidencesByReportId.get(r.id) || [];
         const mergedPhotos: EvidencePhotoItem[] = dbEvidences
@@ -407,6 +463,8 @@ export const MyReportsPage: React.FC = () => {
         }
 
         const casualties = pcrByReportId[r.id] || [];
+        const resolvedStreet =
+          r.locationLabel || resolveStreetAddressSync(r.latitude, r.longitude);
 
         mergedById.set(r.id, {
           id: r.id,
@@ -418,12 +476,13 @@ export const MyReportsPage: React.FC = () => {
           status: backendClosed ? 'Closed' : normalizeStatusForActiveFormula(r.status),
           isVerified: backendVerified,
           verifiedAt,
-          verifiedBy: backendVerified ? 'Command / Verified' : undefined,
+          verifiedBy: backendVerified ? 'Command / Approved' : undefined,
           isClosed: backendClosed,
-          closedAt: r.resolvedAt || null,
+          closedAt: r.closedAt || r.resolvedAt || null,
+          resolvedAt: r.resolvedAt || null,
           latitude: r.latitude,
           longitude: r.longitude,
-          locationLabel: r.locationLabel || formatGpsCoord(r.latitude, r.longitude),
+          locationLabel: resolvedStreet,
           ipAddress: r.submittedIpAddress || 'Unavailable',
           responderName: r.reporterName || session?.fullName || 'Responder',
           responderId: r.reporterId || session?.userId || '',
@@ -431,7 +490,13 @@ export const MyReportsPage: React.FC = () => {
           createdAt: r.createdAt,
           casualties,
           evidencePhotos: mergedPhotos.slice(0, MAX_EVIDENCE_PHOTOS),
-          isHardwareGeolocated: r.isHardwareGeolocated
+          isHardwareGeolocated: r.isHardwareGeolocated,
+          aiAutoApproved: r.aiAutoApproved,
+          aiVerificationStatus: r.aiVerificationStatus,
+          closureSummary: r.closureSummary,
+          closureApprovalMode: r.closureApprovalMode,
+          taggedColleagues: r.taggedColleagues,
+          rawReport: r
         });
       });
 
@@ -494,68 +559,20 @@ export const MyReportsPage: React.FC = () => {
     };
   }, [loadAllIncidentLogs]);
 
-  // 1-second live tick for 5-Minute Verification Countdown & Auto-Close via PostgreSQL verifyReport
+  // 1-second live tick solely for live 2-minute Done fade countdown notice (no premature auto-close)
   useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      const currentNow = Date.now();
-      setNowMs(currentNow);
+    const hasActiveFade = logs.some((l) => {
+      const rem = computeTwoMinFadeSecondsLeft(l.resolvedAt, l.closedAt, l.status, nowMs);
+      return rem !== null && rem > 0;
+    });
+    if (!hasActiveFade) return;
 
-      logs.forEach((log) => {
-        if (log.isVerified && !log.isClosed && log.verifiedAt) {
-          const rem = computeRemainingSeconds(log.verifiedAt, currentNow);
-          if (rem === 0 && !closedBroadcastSetRef.current.has(log.id)) {
-            closedBroadcastSetRef.current.add(log.id);
-            const closedAtIso = new Date(currentNow).toISOString();
-            window.dispatchEvent(
-              new CustomEvent('resqtrack:notification', {
-                detail: {
-                  type: 'CLOSE_CASE',
-                  action: 'CLOSE_CASE',
-                  reportId: log.id,
-                  referenceCode: log.referenceCode,
-                  title: log.title,
-                  message: `Incident ${log.referenceCode} (${log.title}) auto-closed after 5-minute verification timer reached 00:00.`,
-                  timestamp: closedAtIso
-                }
-              })
-            );
-            void verifyReport(
-              log.id,
-              'Resolved',
-              'Case auto-closed upon completion of 5-minute verification timer.'
-            )
-              .then(() => loadAllIncidentLogs())
-              .catch(() => {
-                closedBroadcastSetRef.current.delete(log.id);
-              });
-          }
-        }
-      });
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
     }, 1000);
 
     return () => window.clearInterval(intervalId);
-  }, [logs, loadAllIncidentLogs]);
-
-  const handleStartFiveMinTimer = useCallback(
-    async (logItem: IncidentLogEntry, e?: React.MouseEvent) => {
-      if (e) e.stopPropagation();
-      const verifiedIso = new Date().toISOString();
-      closedBroadcastSetRef.current.delete(logItem.id);
-
-      try {
-        await verifyReport(
-          logItem.id,
-          'Verified',
-          `Verified at ${formatEvidenceTimestampExact(verifiedIso)} — 5-minute auto-close countdown initiated.`
-        );
-        await loadAllIncidentLogs();
-        showToast(`5m timer started for ${logItem.referenceCode}`);
-      } catch {
-        showToast(`Failed to verify ${logItem.referenceCode} on server.`);
-      }
-    },
-    [loadAllIncidentLogs, showToast]
-  );
+  }, [logs, nowMs]);
 
   const handleVerifyOrRejectLog = useCallback(
     async (
@@ -572,15 +589,10 @@ export const MyReportsPage: React.FC = () => {
           ? `Rejected by ${responderLabel} (${activeAgencyUnit}) at ${formatEvidenceTimestampExact(nowIso)}.`
           : actionStatus === 'Dispatched'
           ? `Dispatched by ${responderLabel} (${activeAgencyUnit}) at ${formatEvidenceTimestampExact(nowIso)}.`
-          : `Verified by ${responderLabel} (${activeAgencyUnit}) at ${formatEvidenceTimestampExact(nowIso)}.`;
+          : `Manually approved by ${responderLabel} (${activeAgencyUnit}) at ${formatEvidenceTimestampExact(nowIso)}.`;
 
       try {
         await verifyReport(logItem.id, backendStatus, noteText);
-        if (actionStatus === 'Verified') {
-          closedBroadcastSetRef.current.delete(logItem.id);
-        } else if (actionStatus === 'Rejected') {
-          closedBroadcastSetRef.current.add(logItem.id);
-        }
         await loadAllIncidentLogs();
 
         if (typeof window !== 'undefined') {
@@ -599,20 +611,22 @@ export const MyReportsPage: React.FC = () => {
     [activeAgencyUnit, session?.fullName, loadAllIncidentLogs, showToast]
   );
 
-  const { totalLogged, activeInAction, verifiedActioned, resolvedMissions, verifiedActiveTimerCount } = useMemo(() => {
+  const { totalLogged, activeInAction, verifiedActioned, resolvedMissions, workingProgressCount } = useMemo(() => {
     const safeLogs = Array.isArray(logs) ? logs : [];
     const total = safeLogs.length;
 
     let activeCount = 0;
     let verifiedCount = 0;
     let resolvedCount = 0;
-    let timerRunningCount = 0;
+    let inProgressCount = 0;
 
-    const activeStatuses = new Set(['Dispatched', 'EnRoute', 'OnScene', 'Responded']);
+    const activeStatuses = new Set(['Dispatched', 'EnRoute', 'OnScene', 'Responded', 'InProgress']);
 
     safeLogs.forEach((l) => {
-      const rem = l.isVerified ? computeRemainingSeconds(l.verifiedAt, nowMs) : FIVE_MINUTES_SECONDS;
-      const effectivelyClosed = Boolean(l.isClosed || (l.isVerified && rem === 0));
+      const lowerStatus = (l.status || '').toLowerCase();
+      const effectivelyClosed = Boolean(
+        l.isClosed || lowerStatus === 'resolved' || lowerStatus === 'closed' || Boolean(l.resolvedAt || l.closedAt)
+      );
 
       if (activeStatuses.has(l.status) && !effectivelyClosed) {
         activeCount += 1;
@@ -623,8 +637,8 @@ export const MyReportsPage: React.FC = () => {
       if (effectivelyClosed) {
         resolvedCount += 1;
       }
-      if (l.isVerified && !effectivelyClosed && rem > 0) {
-        timerRunningCount += 1;
+      if (lowerStatus === 'inprogress' && !effectivelyClosed) {
+        inProgressCount += 1;
       }
     });
 
@@ -633,22 +647,24 @@ export const MyReportsPage: React.FC = () => {
       activeInAction: activeCount,
       verifiedActioned: verifiedCount,
       resolvedMissions: resolvedCount,
-      verifiedActiveTimerCount: timerRunningCount
+      workingProgressCount: inProgressCount
     };
-  }, [logs, nowMs]);
+  }, [logs]);
 
   const filteredAndSortedLogs = useMemo(() => {
-    const activeStatuses = new Set(['Dispatched', 'EnRoute', 'OnScene', 'Responded']);
+    const activeStatuses = new Set(['Dispatched', 'EnRoute', 'OnScene', 'Responded', 'InProgress']);
     const q = debouncedSearch.trim().toLowerCase();
 
     const filtered = logs.filter((l) => {
-      const rem = l.isVerified ? computeRemainingSeconds(l.verifiedAt, nowMs) : FIVE_MINUTES_SECONDS;
-      const effectivelyClosed = Boolean(l.isClosed || (l.isVerified && rem === 0));
+      const lowerStatus = (l.status || '').toLowerCase();
+      const effectivelyClosed = Boolean(
+        l.isClosed || lowerStatus === 'resolved' || lowerStatus === 'closed' || Boolean(l.resolvedAt || l.closedAt)
+      );
 
       if (activeTab === 'ACTIVE_IN_ACTION') {
         if (!activeStatuses.has(l.status) || effectivelyClosed) return false;
-      } else if (activeTab === 'VERIFIED_5M_TIMER') {
-        if (!l.isVerified || effectivelyClosed || rem <= 0) return false;
+      } else if (activeTab === 'WORKING_PROGRESS') {
+        if (lowerStatus !== 'inprogress' || effectivelyClosed) return false;
       } else if (activeTab === 'CLOSED_SOLVED') {
         if (!effectivelyClosed) return false;
       }
@@ -687,14 +703,9 @@ export const MyReportsPage: React.FC = () => {
       if (sortMode === 'SEVERITY') {
         return (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0);
       }
-      if (sortMode === 'TIMER_URGENCY') {
-        const remA = a.isVerified && !a.isClosed ? computeRemainingSeconds(a.verifiedAt, nowMs) : 9999;
-        const remB = b.isVerified && !b.isClosed ? computeRemainingSeconds(b.verifiedAt, nowMs) : 9999;
-        return remA - remB;
-      }
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [logs, activeTab, debouncedSearch, sortMode, nowMs]);
+  }, [logs, activeTab, debouncedSearch, sortMode]);
 
   const {
     currentPage,
@@ -793,6 +804,11 @@ export const MyReportsPage: React.FC = () => {
 
     setIsSubmitting(true);
     try {
+      const resolvedLabel =
+        newLocationLabel.trim() ||
+        resolvedAddress ||
+        resolveStreetAddressSync(coords.latitude, coords.longitude);
+
       const res = await createReport({
         title: newTitle.trim(),
         note: newNote.trim(),
@@ -800,9 +816,11 @@ export const MyReportsPage: React.FC = () => {
         severity: newSeverity,
         latitude: coords.latitude,
         longitude: coords.longitude,
-        locationLabel: `${activeAgencyUnit} Field Geotag`,
+        locationLabel: resolvedLabel,
         imageDataUrl: capturedPhotos[0]?.url || undefined,
-        isHardwareGeolocated
+        isHardwareGeolocated,
+        taggedColleagueIds:
+          taggedColleagues.length > 0 ? taggedColleagues.map((c) => c.id) : undefined
       });
 
       const createdReportId = res?.report?.id;
@@ -844,6 +862,8 @@ export const MyReportsPage: React.FC = () => {
       setIsCreateModalOpen(false);
       setNewTitle('');
       setNewNote('');
+      setNewLocationLabel('');
+      setTaggedColleagues([]);
       setCapturedPhotos([]);
       setNewCasualties([]);
     } catch {
@@ -938,7 +958,7 @@ export const MyReportsPage: React.FC = () => {
         <div className="clay-surface p-5 rounded-2xl bg-[#F7F1EA] border border-[#670626]/15 hover:-translate-y-0.5 transition-all duration-200 shadow-[0_14px_34px_rgba(74,4,26,0.22)]">
           <div className="flex items-center justify-between">
             <span className="text-sm font-mono font-bold text-[#670626]">
-              Verified
+              Approved
             </span>
             <div className="w-8 h-8 rounded-lg bg-[#E9D9D0] border border-[#670626]/20 flex items-center justify-center">
               <ShieldCheck className="w-4 h-4 text-[#670626]" />
@@ -953,7 +973,7 @@ export const MyReportsPage: React.FC = () => {
         <div className="clay-surface p-5 rounded-2xl bg-[#F7F1EA] border border-[#670626]/15 hover:-translate-y-0.5 transition-all duration-200 shadow-[0_14px_34px_rgba(74,4,26,0.22)]">
           <div className="flex items-center justify-between">
             <span className="text-sm font-mono font-bold text-[#670626]">
-              Resolved
+              Done
             </span>
             <div className="w-8 h-8 rounded-lg bg-emerald-100 border border-emerald-700/25 flex items-center justify-center">
               <CheckCircle2 className="w-4 h-4 text-emerald-800" />
@@ -1002,17 +1022,17 @@ export const MyReportsPage: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              setActiveTab('VERIFIED_5M_TIMER');
+              setActiveTab('WORKING_PROGRESS');
               goToPage(1);
             }}
             className={`px-3.5 py-2 rounded-xl border font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'VERIFIED_5M_TIMER'
+              activeTab === 'WORKING_PROGRESS'
                 ? 'bg-[#A83B4D] text-[#F7F1EA] border-[#A83B4D] shadow-sm'
                 : 'bg-[#E9D9D0] text-[#670626] border-[#670626]/20 hover:border-[#A83B4D]'
             }`}
           >
-            <Clock className="w-4 h-4" />
-            <span>Verified ({verifiedActiveTimerCount})</span>
+            <Timer className="w-4 h-4" />
+            <span>Working Progress ({workingProgressCount})</span>
           </button>
 
           <button
@@ -1027,7 +1047,7 @@ export const MyReportsPage: React.FC = () => {
                 : 'bg-[#E9D9D0] text-emerald-900 border-[#670626]/20 hover:border-emerald-700/45'
             }`}
           >
-            Resolved ({resolvedMissions})
+            Done ({resolvedMissions})
           </button>
         </div>
 
@@ -1043,7 +1063,6 @@ export const MyReportsPage: React.FC = () => {
               <option value="NEWEST">Sort: Newest</option>
               <option value="OLDEST">Sort: Oldest</option>
               <option value="SEVERITY">Sort: Severity</option>
-              <option value="TIMER_URGENCY">Sort: Timer</option>
             </select>
           </div>
 
@@ -1075,10 +1094,15 @@ export const MyReportsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {paginatedItems.map((log) => {
             const sevClass = getClaySeverityBadge(log.severity);
-            const remainingSec = log.isVerified ? computeRemainingSeconds(log.verifiedAt, nowMs) : FIVE_MINUTES_SECONDS;
+            const fadeSecLeft = computeTwoMinFadeSecondsLeft(log.resolvedAt, log.closedAt, log.status, nowMs);
             const isRejected = log.status === 'Rejected';
-            const effectivelyClosed = Boolean(!isRejected && (log.isClosed || (log.isVerified && remainingSec === 0)));
-            const progressPct = effectivelyClosed ? 100 : log.isVerified ? computeProgressPct(remainingSec) : 0;
+            const effectivelyClosed = Boolean(!isRejected && (log.isClosed || fadeSecLeft !== null));
+            const progressPct =
+              fadeSecLeft !== null
+                ? Math.min(100, Math.max(0, Math.round(((120 - fadeSecLeft) / 120) * 100)))
+                : effectivelyClosed
+                ? 100
+                : 0;
             const awaitingVerification = isAwaitingVerificationStatus(log.status) && !log.isVerified && !isRejected;
 
             return (
@@ -1117,12 +1141,16 @@ export const MyReportsPage: React.FC = () => {
                     ) : effectivelyClosed ? (
                       <span className="px-3 py-1 rounded-lg bg-emerald-100 border border-emerald-700/30 text-emerald-900 text-xs font-mono font-bold flex items-center gap-1.5">
                         <Lock className="w-3.5 h-3.5" />
-                        <span>Closed</span>
+                        <span>
+                          {fadeSecLeft !== null && fadeSecLeft > 0
+                            ? `Mark as Done · ${formatMmSs(fadeSecLeft)}`
+                            : 'Mark as Done'}
+                        </span>
                       </span>
                     ) : log.isVerified ? (
                       <span className="px-3 py-1 rounded-lg bg-[#670626]/12 border border-[#670626]/30 text-[#670626] text-xs font-mono font-bold flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{formatMmSs(remainingSec)}</span>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{log.status === 'Working Progress' ? 'Working Progress' : 'Approved'}</span>
                       </span>
                     ) : (
                       <span className="px-3 py-1 rounded-lg bg-amber-100 border border-amber-700/30 text-amber-900 text-xs font-mono font-bold flex items-center gap-1.5">
@@ -1161,39 +1189,70 @@ export const MyReportsPage: React.FC = () => {
                         <span>{formatEvidenceTimestampExact(log.closedAt)}</span>
                       </div>
                     ) : effectivelyClosed ? (
-                      <div className="flex items-center justify-between text-xs font-mono text-emerald-900 font-bold">
-                        <span>Case Resolved</span>
-                        <span>{formatEvidenceTimestampExact(log.closedAt)}</span>
-                      </div>
-                    ) : log.isVerified ? (
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between text-xs font-mono text-[#670626] font-bold">
-                          <span>Auto-close Timer</span>
+                        <div className="flex items-center justify-between text-xs font-mono text-emerald-900 font-bold">
                           <span>
-                            {formatMmSs(remainingSec)} ({progressPct}%)
+                            {fadeSecLeft !== null && fadeSecLeft > 0
+                              ? 'Mark as Done (Map Fade Countdown)'
+                              : 'Case Resolved (Mark as Done)'}
+                          </span>
+                          <span>
+                            {fadeSecLeft !== null && fadeSecLeft > 0
+                              ? `${formatMmSs(fadeSecLeft)} (${progressPct}%)`
+                              : formatEvidenceTimestampExact(log.closedAt || log.resolvedAt)}
                           </span>
                         </div>
-                        <div className="w-full h-2.5 rounded-full bg-[#F7F1EA] overflow-hidden border border-[#670626]/20">
-                          <div
-                            className="h-full bg-gradient-to-r from-[#670626] via-[#A83B4D] to-emerald-600 transition-all duration-500"
-                            style={{ width: `${progressPct}%` }}
-                          />
-                        </div>
+                        {fadeSecLeft !== null && fadeSecLeft > 0 && (
+                          <div className="w-full h-2.5 rounded-full bg-[#F7F1EA] overflow-hidden border border-emerald-700/25">
+                            <div
+                              className="h-full bg-gradient-to-r from-[#670626] via-[#A83B4D] to-emerald-600 transition-all duration-500"
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ) : log.isVerified ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-[#670626] font-bold">
+                        <span>
+                          {log.status === 'Working Progress'
+                            ? 'Working Progress — Awaiting Final Clearance'
+                            : 'Approved — Ready for Field Closure Evidence'}
+                        </span>
+                        {log.rawReport && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setClosureTargetReport(log.rawReport ?? null);
+                            }}
+                            className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Submit Evidence / Close</span>
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <div className="space-y-2.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs font-mono text-amber-900 font-bold">
-                            {awaitingVerification ? 'Awaiting Verification' : 'Pending verification'}
+                            {awaitingVerification ? 'Awaiting Verification' : 'Awaiting Triage'}
                           </span>
-                          <button
-                            type="button"
-                            onClick={(e) => void handleStartFiveMinTimer(log, e)}
-                            className="px-3 py-1 rounded-lg bg-[#F7F1EA] hover:bg-white text-[#670626] border border-[#670626]/25 font-mono text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <Play className="w-3 h-3 fill-current" />
-                            <span>Start Timer</span>
-                          </button>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {log.rawReport && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setClosureTargetReport(log.rawReport ?? null);
+                                }}
+                                className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>Submit Evidence / Close</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#670626]/12">
@@ -1269,10 +1328,15 @@ export const MyReportsPage: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-[#670626]/12 bg-[#F7F1EA]">
               {paginatedItems.map((log) => {
-                const remainingSec = log.isVerified ? computeRemainingSeconds(log.verifiedAt, nowMs) : FIVE_MINUTES_SECONDS;
+                const fadeSecLeft = computeTwoMinFadeSecondsLeft(log.resolvedAt, log.closedAt, log.status, nowMs);
                 const isRejected = log.status === 'Rejected';
-                const effectivelyClosed = Boolean(!isRejected && (log.isClosed || (log.isVerified && remainingSec === 0)));
-                const progressPct = effectivelyClosed ? 100 : log.isVerified ? computeProgressPct(remainingSec) : 0;
+                const effectivelyClosed = Boolean(!isRejected && (log.isClosed || fadeSecLeft !== null));
+                const progressPct =
+                  fadeSecLeft !== null
+                    ? Math.min(100, Math.max(0, Math.round(((120 - fadeSecLeft) / 120) * 100)))
+                    : effectivelyClosed
+                    ? 100
+                    : 0;
 
                 return (
                   <tr
@@ -1310,22 +1374,29 @@ export const MyReportsPage: React.FC = () => {
                           <span>Rejected</span>
                         </span>
                       ) : effectivelyClosed ? (
-                        <span className="px-2.5 py-1 rounded-lg bg-emerald-100 border border-emerald-700/30 text-emerald-900 text-xs font-bold inline-flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Closed</span>
-                        </span>
-                      ) : log.isVerified ? (
                         <div className="flex flex-col gap-1">
-                          <span className="text-[#670626] font-bold text-xs">
-                            {formatMmSs(remainingSec)} ({progressPct}%)
+                          <span className="px-2.5 py-1 rounded-lg bg-emerald-100 border border-emerald-700/30 text-emerald-900 text-xs font-bold inline-flex items-center gap-1 w-fit">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>
+                              {fadeSecLeft !== null && fadeSecLeft > 0
+                                ? `Mark as Done · ${formatMmSs(fadeSecLeft)}`
+                                : 'Mark as Done'}
+                            </span>
                           </span>
-                          <div className="w-36 h-2 rounded-full bg-[#E9D9D0] overflow-hidden border border-[#670626]/20">
-                            <div
-                              className="h-full bg-[#670626] transition-all duration-500"
-                              style={{ width: `${progressPct}%` }}
-                            />
-                          </div>
+                          {fadeSecLeft !== null && fadeSecLeft > 0 && (
+                            <div className="w-36 h-1.5 rounded-full bg-[#E9D9D0] overflow-hidden border border-emerald-700/20">
+                              <div
+                                className="h-full bg-emerald-600 transition-all duration-500"
+                                style={{ width: `${progressPct}%` }}
+                              />
+                            </div>
+                          )}
                         </div>
+                      ) : log.isVerified ? (
+                        <span className="px-2.5 py-1 rounded-lg bg-[#670626]/12 border border-[#670626]/30 text-[#670626] text-xs font-bold inline-flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{log.status === 'Working Progress' ? 'Working Progress' : 'Approved'}</span>
+                        </span>
                       ) : (
                         <span className="px-2.5 py-1 rounded-lg bg-amber-100 border border-amber-700/30 text-amber-900 text-xs font-bold">
                           {log.status}
@@ -1432,18 +1503,20 @@ export const MyReportsPage: React.FC = () => {
 
       {/* Incident Log Details Modal */}
       {selectedLog && (() => {
-        const modalRemainingSec = selectedLog.isVerified
-          ? computeRemainingSeconds(selectedLog.verifiedAt, nowMs)
-          : FIVE_MINUTES_SECONDS;
-        const modalRejected = selectedLog.status === 'Rejected';
-        const modalClosed = Boolean(
-          !modalRejected && (selectedLog.isClosed || (selectedLog.isVerified && modalRemainingSec === 0))
+        const modalFadeSecLeft = computeTwoMinFadeSecondsLeft(
+          selectedLog.resolvedAt,
+          selectedLog.closedAt,
+          selectedLog.status,
+          nowMs
         );
-        const modalProgressPct = modalClosed
-          ? 100
-          : selectedLog.isVerified
-          ? computeProgressPct(modalRemainingSec)
-          : 0;
+        const modalRejected = selectedLog.status === 'Rejected';
+        const modalClosed = Boolean(!modalRejected && (selectedLog.isClosed || modalFadeSecLeft !== null));
+        const modalProgressPct =
+          modalFadeSecLeft !== null
+            ? Math.min(100, Math.max(0, Math.round(((120 - modalFadeSecLeft) / 120) * 100)))
+            : modalClosed
+            ? 100
+            : 0;
 
         return (
           <DefaultFloatingModalCard
@@ -1476,12 +1549,16 @@ export const MyReportsPage: React.FC = () => {
                 ) : modalClosed ? (
                   <span className="px-3.5 py-2 rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-700/30 font-bold inline-flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Closed</span>
+                    <span>
+                      {modalFadeSecLeft !== null && modalFadeSecLeft > 0
+                        ? `Mark as Done · ${formatMmSs(modalFadeSecLeft)}`
+                        : 'Mark as Done'}
+                    </span>
                   </span>
                 ) : selectedLog.isVerified ? (
                   <span className="px-3.5 py-2 rounded-xl bg-[#E9D9D0] text-[#670626] border border-[#670626]/30 font-bold inline-flex items-center gap-1.5">
-                    <Clock className="w-4 h-4" />
-                    <span>Closing in {formatMmSs(modalRemainingSec)}</span>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{selectedLog.status === 'Working Progress' ? 'Working Progress' : 'Approved'}</span>
                   </span>
                 ) : (
                   <span className="px-3.5 py-2 rounded-xl bg-amber-100 text-amber-900 border border-amber-700/30 font-bold inline-flex items-center gap-1.5">
@@ -1541,18 +1618,8 @@ export const MyReportsPage: React.FC = () => {
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
                   <span className="text-sm font-bold text-[#670626] flex items-center gap-1.5">
                     <Clock className="w-4 h-4" />
-                    <span>Verification Timer</span>
+                    <span>Closure & Map Fade Status</span>
                   </span>
-                  {!modalClosed && !modalRejected && !selectedLog.isVerified && (
-                    <button
-                      type="button"
-                      onClick={(e) => void handleStartFiveMinTimer(selectedLog, e)}
-                      className="px-3.5 py-1.5 rounded-lg bg-[#670626] hover:bg-[#4A041A] text-[#F7F1EA] font-black text-xs inline-flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Start Timer</span>
-                    </button>
-                  )}
                 </div>
 
                 {modalRejected ? (
@@ -1561,30 +1628,37 @@ export const MyReportsPage: React.FC = () => {
                     <span>{formatEvidenceTimestampExact(selectedLog.closedAt)}</span>
                   </div>
                 ) : modalClosed ? (
-                  <div className="text-emerald-900 font-bold text-sm flex items-center justify-between">
-                    <span>Closed</span>
-                    <span>{formatEvidenceTimestampExact(selectedLog.closedAt)}</span>
+                  <div className="space-y-2">
+                    <div className="text-emerald-900 font-bold text-sm flex items-center justify-between">
+                      <span>
+                        {modalFadeSecLeft !== null && modalFadeSecLeft > 0
+                          ? 'Mark as Done (2-Min Map Icon Fade)'
+                          : 'Case Resolved (Mark as Done)'}
+                      </span>
+                      <span>
+                        {modalFadeSecLeft !== null && modalFadeSecLeft > 0
+                          ? `${formatMmSs(modalFadeSecLeft)} (${modalProgressPct}%)`
+                          : formatEvidenceTimestampExact(selectedLog.closedAt || selectedLog.resolvedAt)}
+                      </span>
+                    </div>
+                    {modalFadeSecLeft !== null && modalFadeSecLeft > 0 && (
+                      <div className="w-full h-3 rounded-full bg-[#F7F1EA] overflow-hidden border border-emerald-700/25">
+                        <div
+                          className="h-full bg-gradient-to-r from-[#670626] via-[#A83B4D] to-emerald-600 transition-all duration-500"
+                          style={{ width: `${modalProgressPct}%` }}
+                        />
+                      </div>
+                    )}
                   </div>
                 ) : selectedLog.isVerified ? (
-                  <div>
-                    <div className="flex items-center justify-between text-xs text-[#670626] font-bold mb-2">
-                      <span>
-                        {selectedLog.verifiedBy || 'Command'} · {formatEvidenceTimestampExact(selectedLog.verifiedAt)}
-                      </span>
-                      <span className="text-base font-black">
-                        {formatMmSs(modalRemainingSec)} ({modalProgressPct}%)
-                      </span>
-                    </div>
-                    <div className="w-full h-3 rounded-full bg-[#F7F1EA] overflow-hidden border border-[#670626]/25">
-                      <div
-                        className="h-full bg-gradient-to-r from-[#670626] via-[#A83B4D] to-emerald-600 transition-all duration-500"
-                        style={{ width: `${modalProgressPct}%` }}
-                      />
-                    </div>
-                  </div>
+                  <p className="text-[#670626] text-sm font-semibold">
+                    {selectedLog.status === 'Working Progress'
+                      ? 'Working Progress — Submit final scene/treatment photo evidence to mark as Done.'
+                      : 'Approved — Ready for responder closure photo evidence submission.'}
+                  </p>
                 ) : (
                   <p className="text-[#5C313E] text-sm">
-                    Pending verification.
+                    Awaiting field triage or responder closure evidence.
                   </p>
                 )}
               </div>
@@ -1782,6 +1856,16 @@ export const MyReportsPage: React.FC = () => {
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2 border-t border-[#670626]/15">
+                {!selectedLog.isClosed && selectedLog.rawReport && (
+                  <Button
+                    variant="action-green"
+                    size="sm"
+                    onClick={() => setClosureTargetReport(selectedLog.rawReport ?? null)}
+                  >
+                    <CheckCircle2 className="w-4 h-4 inline mr-1.5" />
+                    <span>Submit Duty Evidence / Close Case</span>
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setSelectedLogId(null)}>
                   Close
                 </Button>
@@ -1866,7 +1950,7 @@ export const MyReportsPage: React.FC = () => {
                   <option value="MedicalEmergency">Medical Emergency</option>
                   <option value="VehicularAccident">Vehicular Accident</option>
                   <option value="StructuralFire">Structural Fire</option>
-                  <option value="HazardFixture">Hazard Fixture</option>
+                  <option value="CrimeOrSecurity">Crime / Security Incident</option>
                 </select>
               </div>
 
@@ -2011,6 +2095,24 @@ export const MyReportsPage: React.FC = () => {
             </div>
 
             <div className="flex flex-col gap-1.5">
+              <label className="text-[#670626] font-bold">Extracted Street / Highway Location</label>
+              <input
+                type="text"
+                value={newLocationLabel}
+                onChange={(e) => setNewLocationLabel(e.target.value)}
+                placeholder="Dipolog-Sindangan National Highway, Katipunan, Zamboanga del Norte"
+                className="px-3.5 py-2.5 rounded-xl bg-[#FFFBF7] border border-[#D8C1B5] text-[#2B010E] placeholder-[#9B727D] focus:outline-none focus:border-[#670626]"
+              />
+            </div>
+
+            <ColleagueMentionPicker
+              unitLabel={activeAgencyUnit}
+              selectedColleagues={taggedColleagues}
+              onChange={setTaggedColleagues}
+              label={`Tag Same-Unit Colleagues (${activeAgencyUnit} Only)`}
+            />
+
+            <div className="flex flex-col gap-1.5">
               <label className="text-[#670626] font-bold">Field Notes</label>
               <textarea
                 value={newNote}
@@ -2039,6 +2141,21 @@ export const MyReportsPage: React.FC = () => {
         onClose={() => setLightboxImageUrl(null)}
         imageUrl={lightboxImageUrl}
         title="Incident Evidence"
+      />
+
+      <ResponderClosureEvidenceModal
+        isOpen={closureTargetReport !== null}
+        onClose={() => setClosureTargetReport(null)}
+        incident={closureTargetReport}
+        responderUnit={activeAgencyUnit}
+        onSubmitted={(result) => {
+          showToast(
+            result.message ||
+              `Updated ${result.report?.referenceCode || 'incident'} (${result.reportStatus})`
+          );
+          setClosureTargetReport(null);
+          void loadAllIncidentLogs();
+        }}
       />
     </div>
   );

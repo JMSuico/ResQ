@@ -82,6 +82,7 @@ export interface ResponderBadgeVisual {
 
 export const MEDIC_POINTER_SETTINGS_STORAGE_KEY = 'resqtrack_medic_pointer_settings';
 export const RESPONDED_GREEN_COLOR = '#10B981';
+export const TWO_MINUTE_CLOSE_SECONDS = 120; // 2 minutes (02:00 -> 00:00)
 export const DEFAULT_VERIFICATION_CLOSE_SECONDS = 300; // 5 minutes (05:00 -> 00:00)
 
 // Crisp high-contrast vector SVG silhouettes (24x24 viewBox)
@@ -93,9 +94,6 @@ export const SVG_BURNING_HOUSE =
 
 export const SVG_WEAPON_DANGER =
   '<circle cx="12" cy="12" r="8"/><path d="M12 2v4"/><path d="M12 18v4"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="m8.5 15.5 7-7"/><path d="m13 8 3 3"/>';
-
-export const SVG_FLOOD_RESCUE =
-  '<path d="M4 11 12 4l8 7"/><path d="M6 10v4"/><path d="M18 10v4"/><path d="M2 17c1.5 1 3 1 4.5 0s3-1 4.5 0 3 1 4.5 0 3-1 4.5 0"/><path d="M2 21c1.5 1 3 1 4.5 0s3-1 4.5 0 3 1 4.5 0 3-1 4.5 0"/>';
 
 export const SVG_MEDICAL_TRAUMA =
   '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M12 8v5"/><path d="M9.5 10.5h5"/>';
@@ -491,8 +489,7 @@ const matchCategoryText = (rawText: string, seedId?: string): RadarPointerCatego
     text.includes('critical condition') ||
     text.includes('cardiac') ||
     text.includes('trauma') ||
-    text.includes('medical') ||
-    text.includes('flood')
+    text.includes('medical')
   ) {
     return RADAR_POINTER_CATEGORIES[12]; // CRITICAL_CONDITIONS
   }
@@ -517,7 +514,7 @@ const matchCategoryText = (rawText: string, seedId?: string): RadarPointerCatego
   return RADAR_POINTER_CATEGORIES[12];
 };
 
-// Resolves crisp vector icon, semantic color, and accessible aria-label for any incident marker
+// Resolves crisp vector icon, semantic color, and accessible aria-label strictly aligned with car-crash | fire | medical | crime
 export const resolveIncidentBeaconVisual = (
   input: {
     category?: string;
@@ -526,122 +523,152 @@ export const resolveIncidentBeaconVisual = (
     title?: string;
     description?: string;
     severity?: string;
+    pointerIconType?: string | null;
   },
   meta: RadarPointerCategoryMeta,
   isResponded: boolean
 ): TacticalBeaconVisual => {
+  const iconHint = (input.pointerIconType || '').trim().toLowerCase();
   const norm = `${input.category || ''} ${input.pointerCategory || ''} ${input.type || ''} ${
     input.title || ''
   } ${input.description || ''} ${meta.code || ''}`.toLowerCase();
 
+  const resolveCoreKind = (): {
+    bgColor: string;
+    ringColor: string;
+    svgMarkup: string;
+    ariaLabel: string;
+    kindLabel: string;
+  } => {
+    // Explicit pointerIconType alignment (car-crash | fire | medical | crime)
+    if (iconHint === 'fire') {
+      return {
+        bgColor: '#EA580C',
+        ringColor: '#FDBA74',
+        svgMarkup: SVG_BURNING_HOUSE,
+        ariaLabel: 'Structure Fire Beacon',
+        kindLabel: 'Structural Fire'
+      };
+    }
+    if (iconHint === 'crime') {
+      return {
+        bgColor: '#991B1B',
+        ringColor: '#FCA5A5',
+        svgMarkup: SVG_WEAPON_DANGER,
+        ariaLabel: 'Crime or Security Incident Beacon',
+        kindLabel: 'Crime / Security'
+      };
+    }
+    if (iconHint === 'car-crash') {
+      const isCritical = (input.severity || '').toLowerCase() === 'critical' || norm.includes('multi');
+      return {
+        bgColor: isCritical ? '#DC2626' : '#D97706',
+        ringColor: isCritical ? '#FCA5A5' : '#FCD34D',
+        svgMarkup: SVG_CAR_CRASH,
+        ariaLabel: 'Vehicular Accident Beacon',
+        kindLabel: 'Vehicular Accident'
+      };
+    }
+    if (iconHint === 'medical') {
+      return {
+        bgColor: meta.color || '#DC2626',
+        ringColor: '#FCA5A5',
+        svgMarkup: SVG_MEDICAL_TRAUMA,
+        ariaLabel: `Medical Emergency Beacon: ${meta.label}`,
+        kindLabel: meta.shortLabel || 'Medical Emergency'
+      };
+    }
+
+    // 1. Structural Fire
+    if (
+      norm.includes('fire') ||
+      norm.includes('burn') ||
+      norm.includes('arson') ||
+      norm.includes('flame') ||
+      norm.includes('bfp') ||
+      norm.includes('explosion')
+    ) {
+      return {
+        bgColor: '#EA580C',
+        ringColor: '#FDBA74',
+        svgMarkup: SVG_BURNING_HOUSE,
+        ariaLabel: 'Structure Fire Beacon',
+        kindLabel: 'Structural Fire'
+      };
+    }
+
+    // 2. Crime / Security / Armed Threat
+    if (
+      norm.includes('homicide') ||
+      norm.includes('genocide') ||
+      norm.includes('armed') ||
+      norm.includes('knife') ||
+      norm.includes('pistol') ||
+      norm.includes('gun') ||
+      norm.includes('weapon') ||
+      norm.includes('violence') ||
+      norm.includes('assault') ||
+      norm.includes('shooting') ||
+      norm.includes('crime') ||
+      norm.includes('security') ||
+      norm.includes('carnap') ||
+      norm.includes('motornap') ||
+      norm.includes('checkpoint') ||
+      norm.includes('suicide')
+    ) {
+      return {
+        bgColor: '#991B1B',
+        ringColor: '#FCA5A5',
+        svgMarkup: SVG_WEAPON_DANGER,
+        ariaLabel: 'Crime or Security Incident Beacon',
+        kindLabel: 'Crime / Security'
+      };
+    }
+
+    // 3. Vehicular / Car Crash
+    if (
+      norm.includes('vehicle') ||
+      norm.includes('vehicular') ||
+      norm.includes('car') ||
+      norm.includes('crash') ||
+      norm.includes('collision') ||
+      norm.includes('pileup') ||
+      norm.includes('traffic') ||
+      norm.includes('motor') ||
+      norm.includes('road rage')
+    ) {
+      const isCritical = (input.severity || '').toLowerCase() === 'critical' || norm.includes('multi');
+      return {
+        bgColor: isCritical ? '#DC2626' : '#D97706',
+        ringColor: isCritical ? '#FCA5A5' : '#FCD34D',
+        svgMarkup: SVG_CAR_CRASH,
+        ariaLabel: 'Vehicular Accident Beacon',
+        kindLabel: 'Vehicular Accident'
+      };
+    }
+
+    // 4. Medical / Trauma (default tactical medical silhouette)
+    return {
+      bgColor: meta.color || '#DC2626',
+      ringColor: '#FCA5A5',
+      svgMarkup: SVG_MEDICAL_TRAUMA,
+      ariaLabel: `Medical Emergency Beacon: ${meta.label}`,
+      kindLabel: meta.shortLabel || 'Medical Emergency'
+    };
+  };
+
+  const resolved = resolveCoreKind();
   if (isResponded) {
     return {
       bgColor: RESPONDED_GREEN_COLOR,
       ringColor: '#34D399',
-      svgMarkup: meta.svgPathMarkup,
-      ariaLabel: `Responded incident: ${meta.label}`,
-      kindLabel: 'Responded'
+      svgMarkup: resolved.svgMarkup,
+      ariaLabel: `Done incident: ${meta.label}`,
+      kindLabel: 'Mark as Done'
     };
   }
 
-  // 1. Burning Home / Structure Fire
-  if (
-    norm.includes('fire') ||
-    norm.includes('burn') ||
-    norm.includes('arson') ||
-    norm.includes('flame') ||
-    norm.includes('bfp') ||
-    norm.includes('explosion')
-  ) {
-    return {
-      bgColor: '#EA580C',
-      ringColor: '#FDBA74',
-      svgMarkup: SVG_BURNING_HOUSE,
-      ariaLabel: 'Structure Fire or Burning Home Beacon',
-      kindLabel: 'Structure Fire'
-    };
-  }
-
-  // 2. Homicide / Armed / Violence / Knife / Pistol Threat
-  if (
-    norm.includes('homicide') ||
-    norm.includes('genocide') ||
-    norm.includes('armed') ||
-    norm.includes('knife') ||
-    norm.includes('pistol') ||
-    norm.includes('gun') ||
-    norm.includes('weapon') ||
-    norm.includes('violence') ||
-    norm.includes('assault') ||
-    norm.includes('shooting') ||
-    norm.includes('crime')
-  ) {
-    return {
-      bgColor: '#991B1B',
-      ringColor: '#FCA5A5',
-      svgMarkup: SVG_WEAPON_DANGER,
-      ariaLabel: 'Armed Threat or Violent Incident Beacon',
-      kindLabel: 'Armed Threat'
-    };
-  }
-
-  // 3. Vehicular / Car Accident
-  if (
-    norm.includes('vehicle') ||
-    norm.includes('vehicular') ||
-    norm.includes('car') ||
-    norm.includes('crash') ||
-    norm.includes('collision') ||
-    norm.includes('pileup') ||
-    norm.includes('traffic') ||
-    norm.includes('motor')
-  ) {
-    const isCritical = (input.severity || '').toLowerCase() === 'critical' || norm.includes('multi');
-    return {
-      bgColor: isCritical ? '#DC2626' : '#D97706',
-      ringColor: isCritical ? '#FCA5A5' : '#FCD34D',
-      svgMarkup: SVG_CAR_CRASH,
-      ariaLabel: 'Vehicular Accident Beacon',
-      kindLabel: 'Vehicular Crash'
-    };
-  }
-
-  // 4. Flood / Typhoon / Water Disaster
-  if (norm.includes('flood') || norm.includes('typhoon') || norm.includes('water') || norm.includes('landslide')) {
-    return {
-      bgColor: '#0284C7',
-      ringColor: '#7DD3FC',
-      svgMarkup: SVG_FLOOD_RESCUE,
-      ariaLabel: 'Flood or Weather Hazard Beacon',
-      kindLabel: 'Flood Hazard'
-    };
-  }
-
-  // 5. Medical / Trauma
-  if (
-    meta.isMedicAllowed ||
-    norm.includes('medical') ||
-    norm.includes('trauma') ||
-    norm.includes('cardiac') ||
-    norm.includes('injur') ||
-    norm.includes('hospital')
-  ) {
-    return {
-      bgColor: meta.color || '#DC2626',
-      ringColor: '#FCA5A5',
-      svgMarkup: meta.svgPathMarkup || SVG_MEDICAL_TRAUMA,
-      ariaLabel: `Medical Triage Beacon: ${meta.label}`,
-      kindLabel: meta.shortLabel
-    };
-  }
-
-  return {
-    bgColor: meta.color || '#670626',
-    ringColor: '#E9D9D0',
-    svgMarkup: meta.svgPathMarkup,
-    ariaLabel: `Incident Beacon: ${meta.label}`,
-    kindLabel: meta.shortLabel
-  };
+  return resolved;
 };
 
 // Resolves agency vehicle badge for responder units (FIRE, RHU, PNP, LDRRMO)
@@ -772,6 +799,9 @@ export const formatCountdownMmSs = (seconds: number): string => {
   const secs = clamped % 60;
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 };
+
+export const formatTwoMinCountdown = (secondsRemaining: number): string =>
+  formatCountdownMmSs(Math.min(TWO_MINUTE_CLOSE_SECONDS, Math.max(0, secondsRemaining)));
 
 export const formatDateTimeWithSecondsAmPm = (dateInput?: string | number | Date | null): string => {
   const d = dateInput ? new Date(dateInput) : new Date();

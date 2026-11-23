@@ -5,6 +5,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Backend.Features.Api.DTOs;
 using Backend.Features.Data.Enums;
+using Backend.Features.Data.Models;
+using Backend.Features.Repositories.Interfaces;
 using Backend.Features.Services.Interfaces;
 
 namespace Backend.Features.Api.Controllers;
@@ -13,7 +15,9 @@ namespace Backend.Features.Api.Controllers;
 [Route("api/responder")]
 [Route("api/responders")]
 [Route("api/responder-ops")]
-public class RespondersController(IResponderOpsService responderOpsService) : ControllerBase
+public class RespondersController(
+    IResponderOpsService responderOpsService,
+    IUserRepository? userRepo = null) : ControllerBase
 {
     [HttpGet("roster")]
     public async Task<IActionResult> GetRosterAsync([FromQuery] ResponderUnitType? agency, CancellationToken ct) =>
@@ -62,6 +66,43 @@ public class RespondersController(IResponderOpsService responderOpsService) : Co
     [HttpGet("hydrants")]
     public async Task<IActionResult> GetHydrantsAsync(CancellationToken ct) =>
         Ok(await responderOpsService.GetHydrantsAsync(ct));
+
+    [HttpGet("colleagues")]
+    public async Task<IActionResult> GetUnitColleaguesAsync(
+        [FromQuery] string? query = null,
+        [FromQuery] string? q = null,
+        [FromQuery] ResponderUnitType? agency = null,
+        CancellationToken ct = default)
+    {
+        if (HttpContext?.Items["UserRole"] is not UserRole role)
+            return Unauthorized(new { message = "Authentication session required." });
+
+        if (role != UserRole.Responder && role != UserRole.LDRRMO_Admin)
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Only Responders and LDRRMO Administrators may view unit colleagues." });
+
+        ResponderUnitType callerUnit = await ResolveCallerUnitAsync(ct);
+        string? effectiveQuery = !string.IsNullOrWhiteSpace(query) ? query : q;
+        return Ok(await responderOpsService.GetUnitColleaguesAsync(callerUnit, role, effectiveQuery, agency, ct));
+    }
+
+    private async Task<ResponderUnitType> ResolveCallerUnitAsync(CancellationToken ct)
+    {
+        if (HttpContext?.Items["UserUnit"] is ResponderUnitType unit && unit != ResponderUnitType.None)
+            return unit;
+
+        if (HttpContext?.Items["User"] is User ctxUser && ctxUser.Unit != ResponderUnitType.None)
+            return ctxUser.Unit;
+
+        Guid? uid = GetCurrentUserId();
+        if (uid.HasValue && uid.Value != Guid.Empty && userRepo is not null)
+        {
+            User? dbUser = await userRepo.GetByIdAsync(uid.Value, ct);
+            if (dbUser is not null)
+                return dbUser.Unit;
+        }
+
+        return ResponderUnitType.None;
+    }
 
     private bool IsAuthorizedResponderOrAdmin() =>
         HttpContext.Items["UserRole"] is UserRole role

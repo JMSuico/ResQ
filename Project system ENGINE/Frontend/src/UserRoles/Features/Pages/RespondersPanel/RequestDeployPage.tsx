@@ -261,7 +261,7 @@ export const RequestDeployPage: FC = () => {
         setHighlightedId(created.id);
         setSelectedRecord(created);
         addToast(
-          `Created ${activeAgency} Dispatch Request ${created.incidentCode} in PENDING state.`,
+          `Created ${activeAgency} Dispatch Request ${created.incidentCode} as Submitted.`,
           'success'
         );
       }
@@ -331,7 +331,7 @@ export const RequestDeployPage: FC = () => {
       setFormEvidenceUrl('');
       setFormNotes('');
       addToast(
-        `Request ${created.incidentCode} submitted as PENDING. Waiting for LDRRMO Admin approval.`,
+        `Request ${created.incidentCode} submitted for LDRRMO Admin approval.`,
         'success'
       );
     } catch {
@@ -349,7 +349,7 @@ export const RequestDeployPage: FC = () => {
         setSelectedRecord(updated);
         setHighlightedId(updated.id);
         addToast(
-          `Admin Approved! Request ${updated.incidentCode} transitioned from PENDING to DEPLOY.`,
+          `Admin Approved! Request ${updated.incidentCode} transitioned from Submitted to DEPLOY.`,
           'success'
         );
       } else {
@@ -461,9 +461,9 @@ export const RequestDeployPage: FC = () => {
     switch (status) {
       case 'PENDING':
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-100 text-amber-900 border border-amber-700/30">
-            <Clock className="w-3.5 h-3.5 animate-spin" />
-            PENDING
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#E9D9D0] text-[#670626] border border-[#A83B4D]/40">
+            <Clock className="w-3.5 h-3.5 text-[#A83B4D]" />
+            SUBMITTED
           </span>
         );
       case 'TO BE DEPLOYED':
@@ -594,13 +594,13 @@ export const RequestDeployPage: FC = () => {
         <div className="clay-surface bg-[#F7F1EA] text-[#2B010E] border border-[#670626]/15 hover:-translate-y-0.5 transition-all duration-200 rounded-2xl p-5 flex items-center justify-between">
           <div>
             <p className="text-xs font-mono font-bold uppercase tracking-wider text-[#A83B4D]">
-              Pending Requests
+              Submitted Requests
             </p>
             <p className="text-3xl font-black text-[#670626] mt-1.5 tabular-nums">
               {kpiCounts.unitPending}
             </p>
           </div>
-          <div className="p-3 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 text-amber-800">
+          <div className="p-3 rounded-xl bg-[#E9D9D0] border border-[#670626]/15 text-[#670626]">
             <Clock className="w-6 h-6" />
           </div>
         </div>
@@ -1193,8 +1193,8 @@ export const RequestDeployPage: FC = () => {
               </h4>
               {selectedRecord.direction === 'MEDIC_REQUEST' ? (
                 <div className="flex flex-wrap items-center gap-3 text-sm font-mono pt-1">
-                  <span className="px-3 py-1 rounded-lg bg-amber-100 text-amber-900 border border-amber-700/30 font-bold">
-                    1. {activeAgency} REQUEST (PENDING)
+                  <span className="px-3 py-1 rounded-lg bg-[#F7F1EA] text-[#670626] border border-[#670626]/25 font-bold">
+                    1. {activeAgency} REQUEST (SUBMITTED)
                   </span>
                   <span className="text-[#A83B4D]">&rarr;</span>
                   <span
@@ -1241,7 +1241,7 @@ export const RequestDeployPage: FC = () => {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         title={`Request Deploy (${agencyMeta.label})`}
-        subtitle="Submits a pending request for LDRRMO Admin approval."
+        subtitle="Submits a dispatch request for LDRRMO Admin approval."
         size="xl"
       >
         <form onSubmit={handleCreateUnitRequest} className="space-y-4 text-sm text-[#2B010E]">

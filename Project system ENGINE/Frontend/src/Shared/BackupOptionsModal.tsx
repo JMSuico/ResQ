@@ -236,7 +236,7 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
           </div>
         </div>
 
-        {/* Option 2: Distress SOS to Nearby Responders */}
+        {/* Option 2: Distress Backup / Incident to Nearby Responders */}
         <div
           onClick={() => setSelectedMode('DISTRESS_NEARBY')}
           className={`p-4 rounded-xl border transition-all cursor-pointer ${
@@ -252,7 +252,7 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
               </div>
               <div>
                 <h4 className="text-sm font-extrabold text-[#991B1B] tracking-wide">
-                  2. Distress SOS to Nearby Responders
+                  2. Distress Backup / Incident to Nearby Responders
                 </h4>
                 <p className="text-xs font-mono text-[#7A4E59]">
                   Priority Digital Beacon to RHU / PNP / BFP / LDRRMO
@@ -268,13 +268,13 @@ export const BackupOptionsModal: FC<BackupOptionsModalProps> = ({
                 setSelectedMode('DISTRESS_NEARBY');
                 triggerBackupOption(
                   'DISTRESS_NEARBY',
-                  '2. Distress SOS to Nearby Responders',
+                  '2. Distress Backup / Incident to Nearby Responders',
                   'In-App Broadcast: ALL NEARBY UNITS (RHU / PNP / BFP / LDRRMO)'
                 );
               }}
               icon={<Radio className="w-3.5 h-3.5" />}
             >
-              Broadcast Distress SOS
+              Broadcast Distress Backup / Incident
             </Button>
           </div>
         </div>

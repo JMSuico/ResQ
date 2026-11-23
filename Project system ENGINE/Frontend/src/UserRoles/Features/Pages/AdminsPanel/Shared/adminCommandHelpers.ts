@@ -57,7 +57,7 @@ export const CLAY_SELECT =
   'w-full bg-[#E9D9D0]/75 border border-[#670626]/20 rounded-xl px-3.5 py-2.5 text-sm text-[#670626] font-semibold focus:outline-none focus:border-[#670626] focus:bg-[#F7F1EA] transition-colors';
 
 export interface IncidentStatusDisplay {
-  label: 'Submitted' | 'Pending' | 'Verified' | 'Dispatched' | 'Resolved' | 'Rejected';
+  label: 'Submitted' | 'Verified' | 'Working Progress' | 'Dispatched' | 'Done' | 'Rejected';
   pillClass: string;
 }
 
@@ -75,16 +75,36 @@ export const formatIncidentStatusBadge = (
       pillClass: 'bg-[#670626] text-[#F7F1EA] border border-[#670626]'
     };
   }
-  if (raw === 'RESOLVED' || raw === 'CLOSED' || raw === 'COMPLETED' || Boolean(resolvedAt)) {
+  if (
+    raw === 'RESOLVED' ||
+    raw === 'CLOSED' ||
+    raw === 'COMPLETED' ||
+    raw === 'RESPONDED' ||
+    raw === 'DONE' ||
+    Boolean(resolvedAt)
+  ) {
     return {
-      label: 'Resolved',
+      label: 'Done',
       pillClass: 'bg-emerald-100 text-emerald-900 border border-emerald-700/30'
+    };
+  }
+  if (
+    raw === 'INPROGRESS' ||
+    raw === 'IN_PROGRESS' ||
+    raw === 'WORKING_PROGRESS' ||
+    raw === 'WORKING PROGRESS'
+  ) {
+    return {
+      label: 'Working Progress',
+      pillClass: 'bg-amber-100 text-amber-900 border border-amber-700/30'
     };
   }
   if (
     raw === 'ALLOCATED' ||
     raw === 'ENROUTE' ||
+    raw === 'EN_ROUTE' ||
     raw === 'ONSCENE' ||
+    raw === 'ON_SCENE' ||
     raw === 'DISPATCHED' ||
     Boolean(allocatedUnitCode)
   ) {
@@ -93,16 +113,10 @@ export const formatIncidentStatusBadge = (
       pillClass: 'bg-[#A83B4D] text-[#F7F1EA] border border-[#A83B4D]'
     };
   }
-  if (raw === 'VERIFIED' || raw === 'RESPONDED' || Boolean(verifiedAt)) {
+  if (raw === 'VERIFIED' || Boolean(verifiedAt)) {
     return {
       label: 'Verified',
       pillClass: 'bg-[#670626]/15 text-[#670626] border border-[#670626]/35'
-    };
-  }
-  if (raw === 'PENDING') {
-    return {
-      label: 'Pending',
-      pillClass: 'bg-amber-100 text-amber-900 border border-amber-700/30'
     };
   }
   return {

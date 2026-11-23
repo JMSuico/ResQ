@@ -1,8 +1,8 @@
 // [Layer: UserRoles/Features/Pages/CiviliansPanel]
 // Responsibility: Resident emergency dashboard with 2-column hero layout:
 // Left column: Evacuation Safe Zones map with legend and ENLARGE TO REDIRECT CTA to /civilian/live-map.
-// Right column: Report Emergency card with One-Tap SOS camera trigger, Detailed Report CTA,
-// live GPS lock readout, optional personal contact text input, and clean status tracking.
+// Right column: Reports Incident card with One-Tap Incident camera trigger, Detailed Report CTA,
+// live GPS lock & resolved street address readout, optional personal contact text input, and clean status tracking.
 // Strictly 100% arrow functions (=>), ZERO 'any', ZERO emojis, and ZERO tel:/sms: dial links.
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -28,11 +28,19 @@ import { useReportEventBus } from '@/Hooks/useReportEventBus';
 import { useGpsLocation } from '@/Hooks/useGpsLocation';
 import { useValueRefreshAuto } from '@/Hooks/useValueRefreshAuto';
 import { useDistressBeacon } from '@/Hooks/useDistressBeacon';
+import { resolveStreetAddressSync } from '@/Libs/Map/addressResolver';
 import { CivilianButton } from './Shared/CivilianButton';
 
 const REFRESH_INTERVAL_MS = 8000;
 const SUCCESS_TOAST_TIMEOUT_MS = 9000;
 const CONTACT_STORAGE_KEY = 'resqtrack_reporter_contact_number';
+
+const ACTIVE_INCIDENT_CATEGORIES = new Set<string>([
+  'VehicularAccident',
+  'MedicalEmergency',
+  'StructuralFire',
+  'CrimeOrSecurity'
+]);
 
 type ExtendedReportItem = ReportItem & {
   aiAutoApproved?: boolean;
@@ -51,18 +59,35 @@ const getStoredContactNumber = (): string => {
   }
 };
 
+const resolveActiveCategory = (candidate?: string | null): string => {
+  if (candidate && ACTIVE_INCIDENT_CATEGORIES.has(candidate)) {
+    return candidate;
+  }
+  const lower = (candidate || '').toLowerCase();
+  if (lower.includes('fire') || lower.includes('flame')) return 'StructuralFire';
+  if (lower.includes('medical') || lower.includes('injury') || lower.includes('trauma')) return 'MedicalEmergency';
+  if (lower.includes('crime') || lower.includes('security') || lower.includes('police')) return 'CrimeOrSecurity';
+  return 'VehicularAccident';
+};
+
 const formatDashboardStatus = (report: ExtendedReportItem): { label: string; pillClass: string } => {
-  const raw = (report.status || 'Reported').toUpperCase();
+  const raw = (report.status || 'Reported').trim().toUpperCase();
   if (raw === 'REJECTED') {
     return {
       label: 'Rejected',
       pillClass: 'bg-[#670626] text-[#F7F1EA] border-[#670626]'
     };
   }
-  if (raw === 'RESOLVED' || raw === 'CLOSED' || report.resolvedAt) {
+  if (raw === 'RESOLVED' || raw === 'CLOSED' || Boolean(report.resolvedAt) || Boolean(report.closedAt)) {
     return {
-      label: 'Resolved',
+      label: 'Mark as Done',
       pillClass: 'bg-[#E9D9D0] text-[#670626] border-[#670626]/35'
+    };
+  }
+  if (raw === 'INPROGRESS' || raw === 'IN_PROGRESS' || raw === 'WORKINGPROGRESS') {
+    return {
+      label: 'Working Progress',
+      pillClass: 'bg-[#A83B4D] text-[#F7F1EA] border-[#A83B4D]'
     };
   }
   if (raw === 'ALLOCATED' || raw === 'ENROUTE' || raw === 'ONSCENE' || raw === 'DISPATCHED' || report.allocatedUnitCode) {
@@ -72,13 +97,15 @@ const formatDashboardStatus = (report: ExtendedReportItem): { label: string; pil
     };
   }
   if (raw === 'VERIFIED' || report.verifiedAt || report.aiAutoApproved) {
+    const isAiApproved =
+      Boolean(report.aiAutoApproved) || report.aiVerificationStatus === 'AI_AUTO_APPROVED';
     return {
-      label: report.aiAutoApproved ? 'AI Auto-Approved' : 'Verified',
+      label: isAiApproved ? 'AI Auto-Approved' : 'Manual Approved',
       pillClass: 'bg-emerald-100 text-emerald-900 border-emerald-300'
     };
   }
   return {
-    label: 'Submitted — Pending Review',
+    label: 'AI Verification & Approval',
     pillClass: 'bg-[#E9D9D0] text-[#670626] border-[#A83B4D]/45'
   };
 };
@@ -86,7 +113,7 @@ const formatDashboardStatus = (report: ExtendedReportItem): { label: string; pil
 export const CivilianDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { session } = useSession();
-  const { coords, isHardwareGeolocated, refreshGps } = useGpsLocation();
+  const { coords, isHardwareGeolocated, resolvedAddress, refreshGps } = useGpsLocation();
 
   const [fixtures, setFixtures] = useState<IncidentFixture[]>([]);
   const [myReports, setMyReports] = useState<ExtendedReportItem[]>([]);
@@ -98,6 +125,11 @@ export const CivilianDashboard: React.FC = () => {
   const [isResyncingGps, setIsResyncingGps] = useState<boolean>(false);
 
   const { dispatchReportEvent } = useReportEventBus();
+
+  const currentStreetAddress = useMemo(
+    () => resolvedAddress || resolveStreetAddressSync(coords.latitude, coords.longitude),
+    [resolvedAddress, coords.latitude, coords.longitude]
+  );
 
   const loadData = useCallback(async () => {
     try {
@@ -176,7 +208,7 @@ export const CivilianDashboard: React.FC = () => {
     setTimeout(() => setIsResyncingGps(false), 1000);
   };
 
-  const handleQuickSosTrigger = () => {
+  const handleQuickIncidentTrigger = () => {
     if (!isHardwareGeolocated && coords.isFallback) {
       refreshGps();
       setGpsWarning('Enable device GPS/location before opening camera.');
@@ -190,15 +222,13 @@ export const CivilianDashboard: React.FC = () => {
     try {
       const trimmedContact = includeContactCheck ? reporterContactNumber.trim() : '';
       const aiPreview = meta?.aiPreview;
+      const isGenuine = aiPreview?.isGenuineIncident === true && aiPreview?.detectedCategory !== 'NonIncident';
       const payload: CivilianCreateReportPayload = {
-        title: 'Emergency Reported via One-Tap SOS',
-        note: `One-Tap SOS Camera. GPS ±${Math.round(coords.accuracy)}m.`,
-        category:
-          aiPreview?.isGenuineIncident !== false && aiPreview?.detectedCategory
-            ? aiPreview.detectedCategory
-            : 'VehicularAccident',
+        title: 'Incident Reported via One-Tap Incident',
+        note: `One-Tap Incident Camera. ${currentStreetAddress}. GPS ±${Math.round(coords.accuracy)}m.`,
+        category: resolveActiveCategory(isGenuine ? aiPreview?.detectedCategory : 'VehicularAccident'),
         severity:
-          aiPreview?.isGenuineIncident !== false && aiPreview?.recommendedSeverity
+          isGenuine && aiPreview?.recommendedSeverity
             ? aiPreview.recommendedSeverity
             : 'Critical',
         latitude: coords.latitude,
@@ -207,7 +237,7 @@ export const CivilianDashboard: React.FC = () => {
         isHardwareGeolocated,
         isBlurry: meta?.isBlurry ?? false,
         requiresManualVerification: meta?.requiresManualVerification ?? false,
-        locationLabel: 'Citizen Current GPS Location',
+        locationLabel: currentStreetAddress,
         imageDataUrl: dataUrl,
         reporterContactNumber: trimmedContact || undefined,
         roboflowModelId: aiPreview?.roboflowModelId ?? null,
@@ -244,11 +274,11 @@ export const CivilianDashboard: React.FC = () => {
       setMyReports((prev) => [reportItem, ...prev]);
       const isVerified = reportItem.status === 'Verified' || Boolean(reportItem.aiAutoApproved);
       setReportSuccess(
-        `Report #${reportItem.referenceCode} logged (${isVerified ? 'AI Auto-Approved' : 'Pending Review'}).`
+        `Report #${reportItem.referenceCode} logged (${isVerified ? 'AI Auto-Approved' : 'AI Verification & Approval'}).`
       );
       setTimeout(() => setReportSuccess(null), SUCCESS_TOAST_TIMEOUT_MS);
     } catch (err: unknown) {
-      console.error('Failed to submit emergency report:', err);
+      console.error('Failed to submit incident report:', err);
     }
   };
 
@@ -259,6 +289,7 @@ export const CivilianDashboard: React.FC = () => {
         lat: coords.latitude,
         lng: coords.longitude,
         title: 'Your Current Position',
+        locationLabel: currentStreetAddress,
         type: 'gps' as const
       },
       ...fixtures.map((f) => ({
@@ -268,20 +299,40 @@ export const CivilianDashboard: React.FC = () => {
         title: f.title,
         type: 'fixture' as const,
         category: f.category,
-        agency: f.assignedUnitType
+        agency: f.assignedUnitType,
+        locationLabel: resolveStreetAddressSync(f.latitude, f.longitude)
       })),
-      ...myReports.map((r) => ({
-        id: `my-report-${r.id}`,
-        lat: r.latitude,
-        lng: r.longitude,
-        title: `Your Report: ${r.title}`,
-        status: r.status || 'Reported',
-        type: 'incident' as const,
-        category: r.category,
-        agency: r.recommendedAgencyUnit || undefined
-      }))
+      ...myReports.map((r) => {
+        const lat = Number(r.currentLatitude ?? r.latitude);
+        const lng = Number(r.currentLongitude ?? r.longitude);
+        const resolvedStreet = r.locationLabel || resolveStreetAddressSync(lat, lng);
+        return {
+          id: `my-report-${r.id}`,
+          lat,
+          lng,
+          title: `Your Report: ${r.title}`,
+          status: r.status || 'Reported',
+          type: 'incident' as const,
+          category: r.category,
+          severity: r.severity,
+          agency: r.recommendedAgencyUnit || undefined,
+          locationLabel: resolvedStreet,
+          description: r.note || resolvedStreet,
+          reportedAt: r.createdAt || r.submittedAt || undefined,
+          verifiedAt: r.verifiedAt,
+          resolvedAt: r.resolvedAt,
+          closedAt: r.closedAt,
+          aiVerificationStatus: r.aiVerificationStatus,
+          closureSummary: r.closureSummary,
+          closureApprovalMode: r.closureApprovalMode,
+          evidenceUrl: r.hasImage ? (r.imageUrl || `/api/reports/${r.id}/image`) : undefined,
+          gpsAccuracyMeters: r.gpsAccuracyMeters ?? undefined,
+          allocatedUnitCode: r.allocatedUnitCode,
+          allocatedUnitId: r.allocatedUnitId
+        };
+      })
     ],
-    [coords.latitude, coords.longitude, fixtures, myReports]
+    [coords.latitude, coords.longitude, currentStreetAddress, fixtures, myReports]
   );
 
   const latestReport = myReports[0] || null;
@@ -394,9 +445,9 @@ export const CivilianDashboard: React.FC = () => {
           </div>
         </section>
 
-        {/* RIGHT COLUMN: REPORT EMERGENCY CARD + CLEAN STATUS TRACKING */}
+        {/* RIGHT COLUMN: REPORTS INCIDENT CARD + CLEAN STATUS TRACKING */}
         <section
-          aria-label="Report Emergency"
+          aria-label="Reports Incident"
           className="lg:col-span-5 clay-surface p-5 sm:p-6 rounded-2xl bg-[#F7F1EA] text-[#670626] border border-[#670626]/15 shadow-[0_16px_38px_rgba(74,4,26,0.28),inset_0_1px_0_rgba(255,255,255,0.85)] flex flex-col justify-between gap-5"
         >
           <div className="flex flex-col gap-4">
@@ -405,7 +456,7 @@ export const CivilianDashboard: React.FC = () => {
                 Emergency Dispatch
               </span>
               <h2 className="text-2xl font-black text-[#670626] tracking-tight mt-0.5">
-                Report Emergency
+                Reports Incident
               </h2>
             </div>
 
@@ -432,6 +483,9 @@ export const CivilianDashboard: React.FC = () => {
                 <span className="px-2 py-0.5 rounded-md bg-[#F7F1EA] border border-[#670626]/20 text-[#670626] font-bold">
                   ±{Math.round(coords.accuracy)}m
                 </span>
+              </div>
+              <div className="text-xs font-medium text-[#670626]/90 truncate">
+                {currentStreetAddress}
               </div>
             </div>
 
@@ -464,22 +518,22 @@ export const CivilianDashboard: React.FC = () => {
               )}
             </div>
 
-            {/* One-Tap SOS Primary CTA */}
+            {/* One-Tap Incident Primary CTA */}
             <button
               type="button"
-              onClick={handleQuickSosTrigger}
+              onClick={handleQuickIncidentTrigger}
               className="w-full min-h-[72px] px-6 py-4 rounded-2xl bg-[#670626] hover:bg-[#4A041A] active:scale-[0.99] text-[#F7F1EA] shadow-[0_12px_28px_rgba(74,4,26,0.38)] border border-[#A83B4D]/50 transition-all flex items-center justify-center gap-4 cursor-pointer"
-              aria-label="One-Tap SOS Emergency Camera Trigger"
+              aria-label="One-Tap Incident Camera Trigger"
             >
               <div className="w-11 h-11 rounded-xl bg-[#F7F1EA]/15 border border-[#F7F1EA]/25 flex items-center justify-center flex-shrink-0">
                 <Camera className="w-6 h-6 text-[#F7F1EA]" />
               </div>
               <div className="flex flex-col text-left">
                 <span className="font-black text-lg tracking-wide leading-none">
-                  One-Tap SOS
+                  One-Tap Incident
                 </span>
                 <span className="text-xs font-mono text-[#E9D9D0] mt-1">
-                  Live camera &amp; GPS
+                  Live camera &amp; 1-BPM GPS beacon
                 </span>
               </div>
             </button>
@@ -540,13 +594,13 @@ export const CivilianDashboard: React.FC = () => {
         </section>
       </div>
 
-      {/* 1-Tap Emergency Camera Modal */}
+      {/* 1-Tap Incident Camera Modal */}
       <CameraCaptureModal
         isOpen={isCameraOpen}
         onClose={() => setIsCameraOpen(false)}
         onCapture={handleQuickReport}
-        title="One-Tap SOS Camera"
-        instructionText="Take a live photo of the scene."
+        title="Reports Incident Camera"
+        instructionText="Take a live photo of the incident scene."
       />
     </div>
   );

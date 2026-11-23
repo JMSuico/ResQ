@@ -101,6 +101,18 @@ export const KATIPUNAN_LANDMARKS: LandmarkReference[] = [
 // Reference grid for Katipunan barangay matching
 export const KATIPUNAN_BARANGAYS: BarangayReference[] = [
   {
+    name: 'Barangay Uno (Poblacion Coastal)',
+    displayName: 'Brgy. Uno (Poblacion Coastal)',
+    latitude: 8.5180,
+    longitude: 123.2820
+  },
+  {
+    name: 'Barangay Dos (Poblacion Central)',
+    displayName: 'Brgy. Dos (Poblacion Central)',
+    latitude: 8.5130,
+    longitude: 123.2830
+  },
+  {
     name: 'Barangay Daanglungsod',
     displayName: 'Brgy. Daanglungsod',
     latitude: 8.5110,
@@ -113,16 +125,46 @@ export const KATIPUNAN_BARANGAYS: BarangayReference[] = [
     longitude: 123.2910
   },
   {
-    name: 'Barangay Uno (Poblacion Coastal)',
-    displayName: 'Brgy. Uno (Poblacion Coastal)',
-    latitude: 8.5180,
-    longitude: 123.2820
+    name: 'Barangay Mias',
+    displayName: 'Brgy. Mias',
+    latitude: 8.4985,
+    longitude: 123.2795
   },
   {
-    name: 'Barangay Dos (Poblacion Central)',
-    displayName: 'Brgy. Dos (Poblacion Central)',
-    latitude: 8.5130,
-    longitude: 123.2830
+    name: 'Barangay Basagan',
+    displayName: 'Brgy. Basagan',
+    latitude: 8.4865,
+    longitude: 123.2735
+  },
+  {
+    name: 'Barangay Seres',
+    displayName: 'Brgy. Seres',
+    latitude: 8.4745,
+    longitude: 123.2685
+  },
+  {
+    name: 'Barangay Situbo',
+    displayName: 'Brgy. Situbo',
+    latitude: 8.4585,
+    longitude: 123.2625
+  },
+  {
+    name: 'Barangay Miatan',
+    displayName: 'Brgy. Miatan',
+    latitude: 8.4955,
+    longitude: 123.2985
+  },
+  {
+    name: 'Barangay Loyuran',
+    displayName: 'Brgy. Loyuran',
+    latitude: 8.4825,
+    longitude: 123.2925
+  },
+  {
+    name: 'Barangay Balok',
+    displayName: 'Brgy. Balok',
+    latitude: 8.4685,
+    longitude: 123.2845
   }
 ];
 

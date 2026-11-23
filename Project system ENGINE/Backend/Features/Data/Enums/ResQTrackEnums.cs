@@ -33,9 +33,7 @@ public enum IncidentCategory
     VehicularAccident = 1,
     MedicalEmergency = 2,
     StructuralFire = 3,
-    CrimeOrSecurity = 4,
-    NaturalDisaster = 5,
-    HazardFixture = 6
+    CrimeOrSecurity = 4
 }
 
 public enum IncidentSeverity
@@ -56,7 +54,8 @@ public enum ReportStatus
     Resolved = 6,
     Rejected = 7,
     Responded = 8,
-    Closed = 9
+    Closed = 9,
+    InProgress = 10
 }
 
 public enum DutyStatus

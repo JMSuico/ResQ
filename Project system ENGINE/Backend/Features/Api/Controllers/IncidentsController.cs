@@ -24,11 +24,24 @@ public class IncidentsController(ITriageService triageService, IReportService re
         HttpContext.Items["UserId"] is Guid uid ? uid : Guid.Empty;
 
     [HttpPost("incidents")]
-    public async Task<IActionResult> CreateIncidentAsync([FromBody] CreateReportRequest request, CancellationToken ct) =>
-        await reportService.ResolveReporterIdAsync(HttpContext?.Items["UserId"] as Guid?, ct) is var reporterId
-        && await reportService.CreateReportAsync(reporterId, request, ReportsDirectory, ct, submittedIpAddress: ClientNetworkHelper.ResolveClientIpAddress(HttpContext)) is var report
-            ? StatusCode(StatusCodes.Status201Created, new { message = "Report submitted successfully.", report, @event = "resqtrack:report" })
-            : BadRequest();
+    public async Task<IActionResult> CreateIncidentAsync([FromBody] CreateReportRequest request, CancellationToken ct)
+    {
+        try
+        {
+            Guid reporterId = await reportService.ResolveReporterIdAsync(HttpContext?.Items["UserId"] as Guid?, ct);
+            ReportResponse report = await reportService.CreateReportAsync(
+                reporterId,
+                request,
+                ReportsDirectory,
+                ct,
+                submittedIpAddress: ClientNetworkHelper.ResolveClientIpAddress(HttpContext));
+            return StatusCode(StatusCodes.Status201Created, new { message = "Report submitted successfully.", report, @event = "resqtrack:report" });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+        }
+    }
 
     [HttpPost("incidents/analyze-image")]
     public async Task<IActionResult> AnalyzeIncidentImageAsync([FromBody] AnalyzeIncidentImageRequest request, CancellationToken ct) =>
@@ -53,9 +66,13 @@ public class IncidentsController(ITriageService triageService, IReportService re
     public async Task<IActionResult> VerifyReportAsync(Guid id, [FromBody] VerifyReportRequest request, CancellationToken ct) =>
         !IsAuthorizedResponderOrAdmin
             ? StatusCode(StatusCodes.Status403Forbidden, new { message = "Only LDRRMO Administrators and Responders may verify incidents." })
-            : await triageService.VerifyReportAsync(id, CurrentUserId, request, ct) is var (success, error) && success
-                ? Ok(new { message = "Incident status updated." })
-                : BadRequest(new { message = error });
+            : !Enum.IsDefined(request.Status)
+                ? BadRequest(new { message = "Invalid report status." })
+                : request.Severity.HasValue && !Enum.IsDefined(request.Severity.Value)
+                    ? BadRequest(new { message = "Invalid incident severity." })
+                    : await triageService.VerifyReportAsync(id, CurrentUserId, request, ct) is var (success, error) && success
+                        ? Ok(new { message = "Incident status updated." })
+                        : BadRequest(new { message = error });
 
     [HttpPost("reports/{id:guid}/allocate")]
     [HttpPost("reports/{id:guid}/assign")]
